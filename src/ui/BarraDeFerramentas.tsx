@@ -21,6 +21,8 @@ interface BarraDeFerramentasProps {
   readonly onImportarDxf: () => void;
   readonly onAbrirTecido: () => void;
   readonly onAbrirEnfesto: () => void;
+  readonly onSugerirPosicao: () => void;
+  readonly podeSugerirPosicao: boolean;
 }
 
 const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
@@ -112,6 +114,20 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">
         <button onClick={props.onAbrirTecido} title="Configurar o tecido do projeto">Tecido</button>
         <button onClick={props.onAbrirEnfesto} title="Configurar o tipo e os parâmetros do enfesto">Enfesto</button>
+      </div>
+
+      <div className="grupo-de-ferramentas" role="group" aria-label="Encaixe">
+        <button
+          onClick={props.onSugerirPosicao}
+          disabled={!props.podeSugerirPosicao}
+          title={
+            props.podeSugerirPosicao
+              ? 'Semiautomático: sugere uma posição sem sobreposição para a peça selecionada (ajuste depois arrastando)'
+              : 'Selecione uma peça e configure o enfesto primeiro'
+          }
+        >
+          Sugerir posição
+        </button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Visualização">

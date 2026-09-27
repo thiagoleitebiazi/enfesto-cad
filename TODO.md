@@ -125,7 +125,29 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   espacial para projetos muito grandes (ver seção 14 do escopo original).
 
 ## Etapa 6 — Enfesto manual e semiautomático
-**Não iniciado.**
+**Núcleo funcional entregue.**
+- [x] Manual: arrastar uma peça com o mouse (clique e arraste no canvas, modo
+  "Selecionar") move-a de verdade, com validação em tempo real (o indicador
+  de validação e o contorno vermelho tracejado já refletem sobreposição/
+  fora dos limites/espaçamento durante a edição, herdado da Etapa 5). Uma
+  prévia em tempo real é desenhada durante o arrasto; o deslocamento só
+  entra no histórico de desfazer/refazer ao soltar o mouse (não a cada
+  pixel).
+- [x] Semiautomático: `domain/posicionamento.ts#sugerirPosicaoSemSobreposicao`
+  — heurística "primeiro encaixe" (varre a área útil, primeira posição sem
+  sobreposição e respeitando a distância mínima). Botão "Sugerir posição"
+  (grupo Encaixe da barra de ferramentas) aplica a sugestão à peça
+  selecionada; se nenhuma posição couber, avisa em vez de posicionar errado
+  ou travar. Reaproveitável como bloco de construção do motor automático da
+  Etapa 7.
+- [x] Verificado numa sessão real do Electron: arrastar uma peça e conferir
+  a nova posição por seleção de clique (posição antiga vazia, nova posição
+  populada) + desfazer restaura a posição exata; duplicar uma peça sobre a
+  original (sobreposição real), clicar "Sugerir posição" e ver o indicador
+  de validação ir de "1 erro(s)" para "sem problemas".
+- [ ] Sem otimização multi-peça ainda (isso é o motor da Etapa 7) — a
+  sugestão olha uma peça de cada vez, ignorando quantidade/tamanhos
+  variados/melhor aproveitamento global.
 
 ## Etapa 7 — Motor de NESTING automático
 **Não iniciado.**
@@ -153,6 +175,9 @@ principal do Electron (decisão já tomada, implementação pendente).
   sobreposição, espaçamento insuficiente, fora dos limites do tecido,
   rotação proibida vs. explicitamente permitida, escala suspeita (pequena/
   grande), contorno/furo inválido, `projetoTemErrosCriticos`.
+- `src/domain/posicionamento.test.ts` — sugestão em área vazia, desvio de
+  peça existente respeitando distância mínima, `null` quando a peça não
+  cabe ou a área está ocupada, margens respeitadas.
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).

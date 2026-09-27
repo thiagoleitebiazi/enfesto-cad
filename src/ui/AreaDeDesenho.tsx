@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { contornoDeCorte, type Molde } from '../domain/molde';
-import { pontoDentroDoContorno, type Ponto2D } from '../core/geometria';
+import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
+import { pontoDentroDoContorno, somar, type Ponto2D } from '../core/geometria';
 import {
   aplicarZoom,
   mundoParaTela,
@@ -37,6 +37,7 @@ interface AreaDeDesenhoProps {
   readonly onSelecionar: (id: string | null) => void;
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
   readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
+  readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
 }
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
@@ -61,6 +62,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onSelecionar,
     onCursorMove,
     onCliqueNoCanvas,
+    onMoverPeca,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
@@ -74,6 +76,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ultimoY: 0,
   });
   const espacoPressionadoRef = useRef(false);
+  const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
+  const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
 
   useEffect(() => {
     const alvo = containerRef.current;
@@ -145,7 +149,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ctx.fillStyle = COR_FUNDO;
     ctx.fillRect(0, 0, tamanho.largura, tamanho.altura);
 
-    for (const peca of pecas) {
+    for (const pecaOriginal of pecas) {
+      // Enquanto uma peça está sendo arrastada, desenha-se a versão já
+      // deslocada (prévia em tempo real) sem tocar no estado real ainda —
+      // o deslocamento só é confirmado (e entra no histórico) ao soltar o mouse.
+      const peca =
+        deltaDeArrasto && deltaDeArrasto.id === pecaOriginal.id
+          ? transladarMolde(pecaOriginal, deltaDeArrasto.delta, pecaOriginal.id)
+          : pecaOriginal;
+
       // Contorno + furos num único path com regra evenodd: os furos aparecem
       // como buracos reais no preenchimento, não apenas linhas por cima.
       ctx.beginPath();
@@ -266,7 +278,19 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (modo === 'definir-fio' && pontosEmEdicao.length === 1 && cursorLocal) {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
-  }, [pecas, selecionadoId, idsComErro, transform, tamanho, desenharSeta, pontosEmEdicao, contornoFinalizado, cursorLocal, modo]);
+  }, [
+    pecas,
+    selecionadoId,
+    idsComErro,
+    transform,
+    tamanho,
+    desenharSeta,
+    pontosEmEdicao,
+    contornoFinalizado,
+    cursorLocal,
+    modo,
+    deltaDeArrasto,
+  ]);
 
   // Desenha a régua horizontal.
   useEffect(() => {
@@ -348,6 +372,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (modo === 'selecionar') {
       const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
       onSelecionar(encontrada ? encontrada.id : null);
+      if (encontrada) {
+        arrastoRef.current = { id: encontrada.id, ultimoMundo: mundo };
+        setDeltaDeArrasto({ id: encontrada.id, delta: { x: 0, y: 0 } });
+      }
       return;
     }
     onCliqueNoCanvas(mundo);
@@ -369,14 +397,35 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const mundo = telaParaMundo(tela, transform);
     setCursorLocal(mundo);
     onCursorMove(mundo);
+
+    if (arrastoRef.current) {
+      const deltaPasso = { x: mundo.x - arrastoRef.current.ultimoMundo.x, y: mundo.y - arrastoRef.current.ultimoMundo.y };
+      arrastoRef.current.ultimoMundo = mundo;
+      setDeltaDeArrasto((atual) =>
+        atual ? { id: atual.id, delta: somar(atual.delta, deltaPasso) } : atual,
+      );
+    }
+  }
+
+  function finalizarArrasto(): void {
+    if (arrastoRef.current && deltaDeArrasto) {
+      const { id, delta } = deltaDeArrasto;
+      if (Math.abs(delta.x) > 1e-6 || Math.abs(delta.y) > 1e-6) {
+        onMoverPeca(id, delta);
+      }
+    }
+    arrastoRef.current = null;
+    setDeltaDeArrasto(null);
   }
 
   function aoSoltarMouse(): void {
     panRef.current.ativo = false;
+    finalizarArrasto();
   }
 
   function aoSairMouse(): void {
     panRef.current.ativo = false;
+    finalizarArrasto();
     setCursorLocal(null);
     onCursorMove(null);
   }

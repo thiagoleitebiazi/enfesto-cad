@@ -20,6 +20,7 @@ import type { Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
+import { sugerirPosicaoSemSobreposicao } from './domain/posicionamento';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import './App.css';
@@ -221,6 +222,27 @@ export default function App(): React.JSX.Element {
     [pecas, selecionadoId, aplicarMudanca],
   );
 
+  const moverPeca = useCallback(
+    (id: string, deslocamento: Ponto2D) => {
+      aplicarMudanca(pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p)));
+    },
+    [pecas, aplicarMudanca],
+  );
+
+  const sugerirPosicaoParaSelecionada = useCallback(() => {
+    const peca = pecas.find((p) => p.id === selecionadoId);
+    if (!peca || !enfesto) return;
+    const outras = pecas.filter((p) => p.id !== selecionadoId);
+    const delta = sugerirPosicaoSemSobreposicao(peca, outras, enfesto);
+    if (!delta) {
+      window.alert(
+        'Não foi possível encontrar uma posição sem sobreposição dentro da área útil do enfesto configurado. Tente posicionar manualmente ou revise as dimensões do enfesto.',
+      );
+      return;
+    }
+    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? transladarMolde(p, delta, p.id) : p)));
+  }, [pecas, selecionadoId, enfesto, aplicarMudanca]);
+
   const finalizarContornoEmEdicao = useCallback(() => {
     if (pontosEmEdicao.length < 3) return;
     if (area(pontosEmEdicao) <= 0) {
@@ -385,6 +407,8 @@ export default function App(): React.JSX.Element {
         onImportarDxf={importarDxfHandler}
         onAbrirTecido={() => setPainelAberto('tecido')}
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
+        onSugerirPosicao={sugerirPosicaoParaSelecionada}
+        podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -447,6 +471,7 @@ export default function App(): React.JSX.Element {
           onSelecionar={setSelecionadoId}
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
+          onMoverPeca={moverPeca}
         />
         <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
       </div>
