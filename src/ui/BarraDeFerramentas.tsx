@@ -19,12 +19,13 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoPique: () => void;
   readonly onEntrarModoMarca: () => void;
   readonly onImportarDxf: () => void;
+  readonly onAbrirTecido: () => void;
+  readonly onAbrirEnfesto: () => void;
 }
 
 const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 const NAO_IMPLEMENTADO_EXPORTAR = 'Ainda não implementado — exportação de PDF vetorial (Etapa 8)';
-const NAO_IMPLEMENTADO_CONFIG = 'Ainda não implementado — tecido e enfesto (Etapa 4)';
 const NAO_IMPLEMENTADO_COPIAR = 'Ainda não implementado — copiar/colar (use Duplicar por enquanto)';
 
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
@@ -109,8 +110,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">
-        <button disabled title={NAO_IMPLEMENTADO_CONFIG}>Tecido</button>
-        <button disabled title={NAO_IMPLEMENTADO_CONFIG}>Enfesto</button>
+        <button onClick={props.onAbrirTecido} title="Configurar o tecido do projeto">Tecido</button>
+        <button onClick={props.onAbrirEnfesto} title="Configurar o tipo e os parâmetros do enfesto">Enfesto</button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Visualização">

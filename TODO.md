@@ -62,10 +62,28 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 - [ ] Renomear/editar rótulo de uma Marca depois de criada.
 
 ## Etapa 4 — Tecido e tipos de enfesto
-**Não iniciado.** Nenhuma entidade `Tecido` ou `Enfesto` existe ainda. Os 5
-tipos (Par, Ímpar, Zigue-zague, Tubular, Ramado) precisam ser modelados como
-modalidades independentes (o pedido é explícito: não presumir equivalência
-entre Ramado e Tubular).
+**Núcleo funcional entregue.**
+- [x] Entidade `Tecido` (`domain/tecido.ts`): nome, referência, composição
+  opcional, largura total/útil, direcional, pelo, padrão (liso/listrado/
+  xadrez), observações.
+- [x] 5 tipos de enfesto como união discriminada (`domain/enfesto.ts`), cada
+  um modalidade independente — Ramado não reaproveita nenhum campo de
+  Tubular (ver ADR 0003). Tubular tem `larguraDoTuboMm` próprio; Ramado tem
+  `alinhamentoDasBordas`/`sentidoDeAlimentacao` próprios.
+- [x] Regras reais implementadas (não só armazenamento): Par/Tubular dobram
+  o tecido (2 espessuras físicas por camada); só Zigue-zague alterna a face
+  do tecido a cada camada (`orientacaoDaCamada`,
+  `enfestoInverteFaceEmAlgumaCamada` — liga com a seção 5 para tecidos
+  direcionais).
+- [x] Painéis de configuração (`PainelDeTecido`, `PainelDeEnfesto`) com
+  formulário condicional por tipo e diagrama de corte lateral
+  (`DiagramaDeEnfesto`, SVG mostrando espessura dobrada e inversão de face).
+  Botões "Tecido"/"Enfesto" da barra de ferramentas agora reais.
+- [x] Faixa de status mostra o tecido/enfesto configurados (ou "não
+  configurado").
+- [ ] Ainda não há nenhum bloqueio que impeça avançar para nesting sem
+  tecido/enfesto configurados — isso será natural quando a Etapa 6/7 (que
+  de fato precisam desses dados) forem implementadas.
 
 ## Etapa 5 — Sentido do fio e validação geométrica
 **Parcialmente feito.** `domain/molde.ts`:
@@ -101,7 +119,11 @@ principal do Electron (decisão já tomada, implementação pendente).
 
 ## Testes automatizados existentes hoje
 
-64 testes em 4 arquivos:
+88 testes em 6 arquivos:
+- `src/domain/tecido.test.ts` — criação válida/inválida, `tecidoExigeRespeitoDeOrientacao`.
+- `src/domain/enfesto.test.ts` — validação comum aos 5 tipos, parâmetros
+  próprios de Tubular e Ramado, espessuras físicas por camada, inversão de
+  face por camada no Zigue-zague.
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).

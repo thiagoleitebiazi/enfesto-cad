@@ -7,6 +7,11 @@ import { aplicarZoom, type TransformacaoDeTela } from './ui/transformacaoDeTela'
 import { criarMolde, transladarMolde, adicionarPique, adicionarMarca, type Molde } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
+import type { Tecido } from './domain/tecido';
+import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
+import { ROTULO_DO_TIPO } from './domain/enfesto';
+import { PainelDeTecido } from './ui/PainelDeTecido';
+import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import './App.css';
 
 function pecasDeDemonstracao(): Molde[] {
@@ -58,6 +63,10 @@ export default function App(): React.JSX.Element {
   const [pontosEmEdicao, setPontosEmEdicao] = useState<Ponto2D[]>([]);
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
+
+  const [tecido, setTecido] = useState<Tecido | null>(null);
+  const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(null);
+  const [painelAberto, setPainelAberto] = useState<'tecido' | 'enfesto' | null>(null);
 
   const aplicarMudanca = useCallback(
     (novasPecas: Molde[]) => {
@@ -333,7 +342,35 @@ export default function App(): React.JSX.Element {
         onEntrarModoPique={entrarModoPique}
         onEntrarModoMarca={entrarModoMarca}
         onImportarDxf={importarDxfHandler}
+        onAbrirTecido={() => setPainelAberto('tecido')}
+        onAbrirEnfesto={() => setPainelAberto('enfesto')}
       />
+      <div className="faixa-de-configuracao">
+        <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
+        <span>
+          Enfesto: {enfesto ? `${ROTULO_DO_TIPO[enfesto.tipo]}, ${enfesto.quantidadeDeCamadas} camadas` : 'não configurado'}
+        </span>
+      </div>
+      {painelAberto === 'tecido' && (
+        <PainelDeTecido
+          tecidoAtual={tecido}
+          onFechar={() => setPainelAberto(null)}
+          onSalvar={(t) => {
+            setTecido(t);
+            setPainelAberto(null);
+          }}
+        />
+      )}
+      {painelAberto === 'enfesto' && (
+        <PainelDeEnfesto
+          configAtual={enfesto}
+          onFechar={() => setPainelAberto(null)}
+          onSalvar={(c) => {
+            setEnfesto(c);
+            setPainelAberto(null);
+          }}
+        />
+      )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (
         <div className="faixa-de-instrucao" role="status">
           {modo === 'novo-molde' && 'Clique para adicionar pontos do contorno. Enter para fechar, Esc para cancelar.'}
