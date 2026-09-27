@@ -14,6 +14,7 @@ const COR_FUNDO = '#c9cdd3';
 const COR_TECIDO = '#f4f5f7';
 const COR_CONTORNO = '#2b2f36';
 const COR_CONTORNO_SELECIONADO = '#1565c0';
+const COR_CONTORNO_COM_ERRO = '#c62828';
 const COR_FIO = '#c62828';
 const COR_LINHA_DE_CORTE = '#6b7280';
 const COR_PIQUE = '#8e24aa';
@@ -27,6 +28,7 @@ export type ModoDeDesenho = 'selecionar' | 'novo-molde' | 'novo-furo' | 'definir
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
+  readonly idsComErro: ReadonlySet<string>;
   readonly transform: TransformacaoDeTela;
   readonly modo: ModoDeDesenho;
   readonly pontosEmEdicao: readonly Ponto2D[];
@@ -50,6 +52,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const {
     pecas,
     selecionadoId,
+    idsComErro,
     transform,
     modo,
     pontosEmEdicao,
@@ -152,9 +155,12 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
       ctx.fillStyle = COR_TECIDO;
       ctx.fill('evenodd');
-      ctx.strokeStyle = peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
-      ctx.lineWidth = peca.id === selecionadoId ? 2.5 : 1.5;
+      const temErro = idsComErro.has(peca.id);
+      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+      ctx.lineWidth = peca.id === selecionadoId || temErro ? 2.5 : 1.5;
+      if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
+      ctx.setLineDash([]);
 
       for (const furo of peca.furos) {
         ctx.beginPath();
@@ -260,7 +266,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (modo === 'definir-fio' && pontosEmEdicao.length === 1 && cursorLocal) {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
-  }, [pecas, selecionadoId, transform, tamanho, desenharSeta, pontosEmEdicao, contornoFinalizado, cursorLocal, modo]);
+  }, [pecas, selecionadoId, idsComErro, transform, tamanho, desenharSeta, pontosEmEdicao, contornoFinalizado, cursorLocal, modo]);
 
   // Desenha a régua horizontal.
   useEffect(() => {

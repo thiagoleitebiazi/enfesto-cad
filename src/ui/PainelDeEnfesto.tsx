@@ -21,6 +21,7 @@ interface CamposDeFormulario {
   quantidadeDeCamadas: string;
   margemLateralMm: string;
   margemDeExtremidadeMm: string;
+  distanciaMinimaEntrePecasMm: string;
   larguraDoTuboMm: string;
   alinhamentoDasBordas: 'alinhado' | 'escalonado';
   sentidoDeAlimentacao: 'unico' | 'alternado';
@@ -34,6 +35,7 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     quantidadeDeCamadas: String(config?.quantidadeDeCamadas ?? 10),
     margemLateralMm: String(config?.margemLateralMm ?? 10),
     margemDeExtremidadeMm: String(config?.margemDeExtremidadeMm ?? 20),
+    distanciaMinimaEntrePecasMm: String(config?.distanciaMinimaEntrePecasMm ?? 3),
     larguraDoTuboMm: String(config?.tipo === 'tubular' ? config.larguraDoTuboMm : 1500),
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
@@ -47,6 +49,7 @@ function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
     quantidadeDeCamadas: Number.parseInt(c.quantidadeDeCamadas, 10),
     margemLateralMm: Number.parseFloat(c.margemLateralMm),
     margemDeExtremidadeMm: Number.parseFloat(c.margemDeExtremidadeMm),
+    distanciaMinimaEntrePecasMm: Number.parseFloat(c.distanciaMinimaEntrePecasMm),
   };
   if (c.tipo === 'tubular') {
     return { ...base, tipo: 'tubular', larguraDoTuboMm: Number.parseFloat(c.larguraDoTuboMm) };
@@ -156,6 +159,15 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
             min={0}
             value={campos.margemDeExtremidadeMm}
             onChange={(e) => alterar({ margemDeExtremidadeMm: e.target.value })}
+          />
+        </label>
+        <label>
+          Distância mínima entre peças (mm)
+          <input
+            type="number"
+            min={0}
+            value={campos.distanciaMinimaEntrePecasMm}
+            onChange={(e) => alterar({ distanciaMinimaEntrePecasMm: e.target.value })}
           />
         </label>
 

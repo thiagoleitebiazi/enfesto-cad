@@ -18,6 +18,8 @@ export interface ConfiguracaoBase {
   readonly quantidadeDeCamadas: number;
   readonly margemLateralMm: number;
   readonly margemDeExtremidadeMm: number;
+  /** Distância mínima exigida entre os contornos de duas peças quaisquer (seção 6). */
+  readonly distanciaMinimaEntrePecasMm: number;
 }
 
 export interface ConfiguracaoPar extends ConfiguracaoBase {
@@ -73,6 +75,9 @@ function validarBase(config: ConfiguracaoBase, nomeDoTipo: string): void {
   }
   if (!Number.isFinite(config.margemDeExtremidadeMm) || config.margemDeExtremidadeMm < 0) {
     throw new Error(`Enfesto ${nomeDoTipo}: margem de extremidade precisa ser >= 0.`);
+  }
+  if (!Number.isFinite(config.distanciaMinimaEntrePecasMm) || config.distanciaMinimaEntrePecasMm < 0) {
+    throw new Error(`Enfesto ${nomeDoTipo}: distância mínima entre peças precisa ser >= 0.`);
   }
 }
 

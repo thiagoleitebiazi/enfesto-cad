@@ -5,6 +5,8 @@ import {
   pontoMaisProximoNoContorno,
   deslocarContornoParaFora,
   transladarContorno,
+  rotacionarContorno,
+  rotacionar,
   somar,
 } from '../core/geometria';
 
@@ -57,6 +59,8 @@ export interface Molde {
   readonly linhaDeFio: LinhaDeFio;
   readonly quantidade: number;
   readonly restricaoDeRotacao: RestricaoDeRotacao;
+  /** Rotação acumulada em relação à orientação original (criação/importação), normalizada em [0, 360). */
+  readonly anguloDeRotacaoGraus: number;
 }
 
 export interface DadosDeNovoMolde {
@@ -111,6 +115,7 @@ export function criarMolde(dados: DadosDeNovoMolde, id: string): Molde {
     linhaDeFio: dados.linhaDeFio,
     quantidade: dados.quantidade ?? 1,
     restricaoDeRotacao: dados.restricaoDeRotacao ?? RESTRICAO_PADRAO,
+    anguloDeRotacaoGraus: 0,
   };
 }
 
@@ -158,6 +163,31 @@ export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: str
       inicio: somar(molde.linhaDeFio.inicio, deslocamento),
       fim: somar(molde.linhaDeFio.fim, deslocamento),
     },
+  };
+}
+
+/**
+ * Rotaciona um molde inteiro por `anguloGraus` em torno do centro do seu
+ * retângulo envolvente. Esta função é pura geometria — NÃO verifica se a
+ * rotação é permitida pela `restricaoDeRotacao` do molde; quem chama (a UI)
+ * deve checar `rotacaoEhPermitida` antes e recusar/alertar se não for (regra
+ * crítica da seção 5 — nunca ignorada).
+ */
+export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
+  const centro = retanguloEnvolvente(molde.contorno);
+  const pivo = { x: (centro.minX + centro.maxX) / 2, y: (centro.minY + centro.maxY) / 2 };
+  return {
+    ...molde,
+    contorno: rotacionarContorno(molde.contorno, pivo, anguloGraus),
+    linhasInternas: molde.linhasInternas.map((l) => rotacionarContorno(l, pivo, anguloGraus)),
+    furos: molde.furos.map((f) => rotacionarContorno(f, pivo, anguloGraus)),
+    piques: molde.piques.map((p) => ({ ...p, posicao: rotacionar(p.posicao, pivo, anguloGraus) })),
+    marcas: molde.marcas.map((m) => ({ ...m, posicao: rotacionar(m.posicao, pivo, anguloGraus) })),
+    linhaDeFio: {
+      inicio: rotacionar(molde.linhaDeFio.inicio, pivo, anguloGraus),
+      fim: rotacionar(molde.linhaDeFio.fim, pivo, anguloGraus),
+    },
+    anguloDeRotacaoGraus: normalizarAngulo(molde.anguloDeRotacaoGraus + anguloGraus),
   };
 }
 

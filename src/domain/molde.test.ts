@@ -12,6 +12,7 @@ import {
   removerMarca,
   contornoDeCorte,
   transladarMolde,
+  rotacionarMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -208,3 +209,60 @@ describe('transladarMolde', () => {
 function somarPontos(a: { x: number; y: number }, b: { x: number; y: number }) {
   return { x: a.x + b.x, y: a.y + b.y };
 }
+
+describe('rotacionarMolde', () => {
+  it('novo molde começa com anguloDeRotacaoGraus = 0', () => {
+    expect(criarMolde(dadosBase(), 'm1').anguloDeRotacaoGraus).toBe(0);
+  });
+
+  it('acumula o ângulo de rotação e normaliza em [0, 360)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const rotacionado90 = rotacionarMolde(molde, 90);
+    expect(rotacionado90.anguloDeRotacaoGraus).toBe(90);
+    const rotacionadoDeNovo = rotacionarMolde(rotacionado90, 300);
+    expect(rotacionadoDeNovo.anguloDeRotacaoGraus).toBe(30);
+  });
+
+  it('preserva a área do contorno (rotação rígida)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const rotacionado = rotacionarMolde(molde, 37);
+    expect(area(rotacionado.contorno)).toBeCloseTo(area(molde.contorno), 6);
+  });
+
+  it('rotaciona a linha de fio junto com o contorno (mesmo pivô)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const rotacionado = rotacionarMolde(molde, 90);
+    // fio original vertical (100,50)-(100,250); após 90° deve ficar horizontal.
+    const dx = rotacionado.linhaDeFio.fim.x - rotacionado.linhaDeFio.inicio.x;
+    const dy = rotacionado.linhaDeFio.fim.y - rotacionado.linhaDeFio.inicio.y;
+    expect(Math.abs(dy)).toBeLessThan(1e-6);
+    expect(Math.abs(dx)).toBeGreaterThan(0);
+  });
+
+  it('rotaciona furos, piques e marcas junto com o contorno', () => {
+    const comExtras = adicionarMarca(
+      adicionarPique(
+        criarMolde(dadosBase({ furos: [[ponto(90, 140), ponto(110, 140), ponto(110, 160), ponto(90, 160)]] }), 'm1'),
+        ponto(-5, 150),
+        'p1',
+      ),
+      ponto(60, 90),
+      'ma1',
+    );
+    const posicaoOriginalDoPique = comExtras.piques[0]!.posicao;
+    const rotacionado = rotacionarMolde(comExtras, 180);
+    expect(rotacionado.piques[0]!.posicao).not.toEqual(posicaoOriginalDoPique);
+    expect(rotacionado.furos[0]).not.toEqual(comExtras.furos[0]);
+    expect(rotacionado.marcas[0]!.posicao).not.toEqual(comExtras.marcas[0]!.posicao);
+  });
+
+  it('rotação de 360° (ou 0°) mantém a peça geometricamente equivalente', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const rotacionado = rotacionarMolde(molde, 360);
+    expect(rotacionado.anguloDeRotacaoGraus).toBe(0);
+    for (let i = 0; i < molde.contorno.length; i++) {
+      expect(rotacionado.contorno[i]!.x).toBeCloseTo(molde.contorno[i]!.x, 6);
+      expect(rotacionado.contorno[i]!.y).toBeCloseTo(molde.contorno[i]!.y, 6);
+    }
+  });
+});

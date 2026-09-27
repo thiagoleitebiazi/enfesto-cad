@@ -4,12 +4,22 @@ import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { aplicarZoom, type TransformacaoDeTela } from './ui/transformacaoDeTela';
-import { criarMolde, transladarMolde, adicionarPique, adicionarMarca, type Molde } from './domain/molde';
+import {
+  criarMolde,
+  transladarMolde,
+  adicionarPique,
+  adicionarMarca,
+  rotacionarMolde,
+  rotacaoEhPermitida,
+  rotacoesPermitidas,
+  type Molde,
+} from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
 import type { Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO } from './domain/enfesto';
+import { validarProjeto } from './domain/validacao';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import './App.css';
@@ -67,6 +77,16 @@ export default function App(): React.JSX.Element {
   const [tecido, setTecido] = useState<Tecido | null>(null);
   const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(null);
   const [painelAberto, setPainelAberto] = useState<'tecido' | 'enfesto' | null>(null);
+  const [mostrarValidacao, setMostrarValidacao] = useState(false);
+
+  const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
+  const idsComErro = useMemo(
+    () =>
+      new Set(
+        problemasDeValidacao.filter((p) => p.severidade === 'erro').flatMap((p) => p.pecasEnvolvidasIds),
+      ),
+    [problemasDeValidacao],
+  );
 
   const aplicarMudanca = useCallback(
     (novasPecas: Molde[]) => {
@@ -176,6 +196,27 @@ export default function App(): React.JSX.Element {
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
       aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? { ...p, ...patch } : p)));
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const girarPecaSelecionada = useCallback(
+    (anguloGraus: number) => {
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      if (!peca) return;
+      const anguloResultante = peca.anguloDeRotacaoGraus + anguloGraus;
+      if (!rotacaoEhPermitida(peca.restricaoDeRotacao, anguloResultante)) {
+        const permitidas = rotacoesPermitidas(peca.restricaoDeRotacao)
+          .map((r) => `${r}°`)
+          .join(', ');
+        window.alert(
+          `Rotação de ${anguloGraus}° não permitida para "${peca.nome}" — violaria o sentido do fio.\n` +
+            `Rotações permitidas para esta peça: ${permitidas}.\n` +
+            `Para permitir mais rotações, use as caixas "Permitir 180°"/"Permitir 90°/270°" nas propriedades da peça.`,
+        );
+        return;
+      }
+      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? rotacionarMolde(p, anguloGraus) : p)));
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
@@ -397,6 +438,7 @@ export default function App(): React.JSX.Element {
         <AreaDeDesenho
           pecas={pecas}
           selecionadoId={selecionadoId}
+          idsComErro={idsComErro}
           transform={transform}
           modo={modo}
           pontosEmEdicao={pontosEmEdicao}
@@ -406,13 +448,35 @@ export default function App(): React.JSX.Element {
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
         />
-        <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} />
+        <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
       </div>
+      {mostrarValidacao && (
+        <div className="faixa-de-validacao" role="alert">
+          <strong>Validação do projeto:</strong>
+          {problemasDeValidacao.length === 0 ? (
+            <p>Nenhum problema encontrado.</p>
+          ) : (
+            <ul>
+              {problemasDeValidacao.map((p, i) => (
+                <li
+                  key={i}
+                  className={`severidade-${p.severidade}`}
+                  onClick={() => p.pecasEnvolvidasIds[0] && setSelecionadoId(p.pecasEnvolvidasIds[0])}
+                >
+                  [{p.severidade === 'erro' ? 'ERRO' : 'aviso'}] {p.mensagem}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <BarraDeStatus
         cursorMundo={cursorMundo}
         transform={transform}
         totalDePecas={pecas.length}
         temSelecao={selecionadoId !== null}
+        problemas={problemasDeValidacao}
+        onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
       />
     </div>
   );

@@ -43,6 +43,7 @@ export interface PatchDeMolde {
 interface PainelDePropriedadesProps {
   readonly peca: Molde | null;
   readonly onAlterar: (patch: PatchDeMolde) => void;
+  readonly onGirar: (anguloGraus: number) => void;
 }
 
 export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JSX.Element {
@@ -133,9 +134,26 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             Permitir 90°/270°
           </label>
         </fieldset>
+
+        <div className="grupo-de-rotacao">
+          <span className="legenda-inline">Girar peça</span>
+          <div className="botoes-de-rotacao">
+            <button type="button" onClick={() => props.onGirar(90)}>
+              90°
+            </button>
+            <button type="button" onClick={() => props.onGirar(180)}>
+              180°
+            </button>
+            <button type="button" onClick={() => props.onGirar(270)}>
+              270°
+            </button>
+          </div>
+        </div>
       </form>
 
       <dl className="lista-de-propriedades">
+        <dt>Ângulo atual</dt>
+        <dd>{peca.anguloDeRotacaoGraus}°</dd>
         <dt>Largura</dt>
         <dd>{dim.larguraMm.toFixed(1)} mm</dd>
         <dt>Altura</dt>

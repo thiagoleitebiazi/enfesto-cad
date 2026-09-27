@@ -195,3 +195,85 @@ export function deslocarContornoParaFora(contorno: Contorno, distanciaMm: number
   }
   return resultado;
 }
+
+const EPSILON_GEOMETRICO = 1e-6;
+
+function orientacaoDeTresPontos(p: Ponto2D, q: Ponto2D, r: Ponto2D): -1 | 0 | 1 {
+  const valor = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (Math.abs(valor) < EPSILON_GEOMETRICO) return 0;
+  return valor > 0 ? 1 : -1;
+}
+
+function pontoNoSegmentoColinear(p: Ponto2D, q: Ponto2D, r: Ponto2D): boolean {
+  return (
+    r.x <= Math.max(p.x, q.x) + EPSILON_GEOMETRICO &&
+    r.x >= Math.min(p.x, q.x) - EPSILON_GEOMETRICO &&
+    r.y <= Math.max(p.y, q.y) + EPSILON_GEOMETRICO &&
+    r.y >= Math.min(p.y, q.y) - EPSILON_GEOMETRICO
+  );
+}
+
+/** Teste clássico de interseção de segmentos (orientação + casos colineares). */
+export function segmentosSeIntersectam(p1: Ponto2D, q1: Ponto2D, p2: Ponto2D, q2: Ponto2D): boolean {
+  const o1 = orientacaoDeTresPontos(p1, q1, p2);
+  const o2 = orientacaoDeTresPontos(p1, q1, q2);
+  const o3 = orientacaoDeTresPontos(p2, q2, p1);
+  const o4 = orientacaoDeTresPontos(p2, q2, q1);
+
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && pontoNoSegmentoColinear(p1, q1, p2)) return true;
+  if (o2 === 0 && pontoNoSegmentoColinear(p1, q1, q2)) return true;
+  if (o3 === 0 && pontoNoSegmentoColinear(p2, q2, p1)) return true;
+  if (o4 === 0 && pontoNoSegmentoColinear(p2, q2, q1)) return true;
+  return false;
+}
+
+/** Menor distância entre dois segmentos (0 se eles se cruzam ou se tocam). */
+export function distanciaEntreSegmentos(p1: Ponto2D, q1: Ponto2D, p2: Ponto2D, q2: Ponto2D): number {
+  if (segmentosSeIntersectam(p1, q1, p2, q2)) return 0;
+  return Math.min(
+    distancia(p1, pontoMaisProximoNoSegmento(p1, p2, q2)),
+    distancia(q1, pontoMaisProximoNoSegmento(q1, p2, q2)),
+    distancia(p2, pontoMaisProximoNoSegmento(p2, p1, q1)),
+    distancia(q2, pontoMaisProximoNoSegmento(q2, p1, q1)),
+  );
+}
+
+export function bboxesSeSobrepoem(a: RetanguloEnvolvente, b: RetanguloEnvolvente): boolean {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+/**
+ * Verdadeiro se os dois contornos se sobrepõem (alguma aresta cruza a outra,
+ * ou um contorno está inteiramente dentro do outro). Pré-filtro por bbox
+ * para não pagar o custo O(n·m) quando os retângulos envolventes nem se
+ * tocam.
+ */
+export function contornosSeSobrepoem(a: Contorno, b: Contorno): boolean {
+  if (a.length < 2 || b.length < 2) return false;
+  if (!bboxesSeSobrepoem(retanguloEnvolvente(a), retanguloEnvolvente(b))) return false;
+
+  const n = a.length;
+  const m = b.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      if (segmentosSeIntersectam(a[i]!, a[(i + 1) % n]!, b[j]!, b[(j + 1) % m]!)) return true;
+    }
+  }
+  return pontoDentroDoContorno(a[0]!, b) || pontoDentroDoContorno(b[0]!, a);
+}
+
+/** Menor distância entre os perímetros de dois contornos (0 se eles se sobrepõem). */
+export function distanciaEntreContornos(a: Contorno, b: Contorno): number {
+  if (contornosSeSobrepoem(a, b)) return 0;
+  const n = a.length;
+  const m = b.length;
+  let menor = Infinity;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      const d = distanciaEntreSegmentos(a[i]!, a[(i + 1) % n]!, b[j]!, b[(j + 1) % m]!);
+      if (d < menor) menor = d;
+    }
+  }
+  return menor;
+}

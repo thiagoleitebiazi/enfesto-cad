@@ -15,6 +15,11 @@ import {
   pontoMaisProximoNoSegmento,
   pontoMaisProximoNoContorno,
   deslocarContornoParaFora,
+  segmentosSeIntersectam,
+  distanciaEntreSegmentos,
+  bboxesSeSobrepoem,
+  contornosSeSobrepoem,
+  distanciaEntreContornos,
 } from './geometria';
 
 describe('operações vetoriais', () => {
@@ -186,5 +191,98 @@ describe('deslocarContornoParaFora (margem de costura)', () => {
 
   it('lança erro para contorno com menos de 3 pontos', () => {
     expect(() => deslocarContornoParaFora([ponto(0, 0), ponto(1, 1)], 5)).toThrow();
+  });
+});
+
+describe('segmentosSeIntersectam', () => {
+  it('detecta cruzamento em X', () => {
+    expect(segmentosSeIntersectam(ponto(0, 0), ponto(10, 10), ponto(0, 10), ponto(10, 0))).toBe(true);
+  });
+
+  it('segmentos paralelos separados não se cruzam', () => {
+    expect(segmentosSeIntersectam(ponto(0, 0), ponto(10, 0), ponto(0, 5), ponto(10, 5))).toBe(false);
+  });
+
+  it('detecta toque colinear (um segmento encosta na ponta do outro)', () => {
+    expect(segmentosSeIntersectam(ponto(0, 0), ponto(10, 0), ponto(10, 0), ponto(20, 0))).toBe(true);
+  });
+
+  it('segmentos que não se alinham nem se cruzam retornam falso', () => {
+    expect(segmentosSeIntersectam(ponto(0, 0), ponto(1, 1), ponto(5, 5), ponto(6, 6))).toBe(false);
+  });
+});
+
+describe('distanciaEntreSegmentos', () => {
+  it('zero quando os segmentos se cruzam', () => {
+    expect(distanciaEntreSegmentos(ponto(0, 0), ponto(10, 10), ponto(0, 10), ponto(10, 0))).toBe(0);
+  });
+
+  it('distância real entre dois segmentos paralelos', () => {
+    expect(distanciaEntreSegmentos(ponto(0, 0), ponto(10, 0), ponto(0, 5), ponto(10, 5))).toBeCloseTo(5, 9);
+  });
+
+  it('distância entre segmentos perpendiculares que não se cruzam', () => {
+    // Segmento vertical de (20,0) a (20,10); segmento horizontal de (0,0) a (10,0).
+    // Ponto mais próximo do vertical no horizontal é (10,0); distância = 10.
+    expect(distanciaEntreSegmentos(ponto(0, 0), ponto(10, 0), ponto(20, 0), ponto(20, 10))).toBeCloseTo(10, 9);
+  });
+});
+
+describe('bboxesSeSobrepoem', () => {
+  it('verdadeiro para retângulos sobrepostos', () => {
+    const a = retanguloEnvolvente([ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)]);
+    const b = retanguloEnvolvente([ponto(5, 5), ponto(15, 5), ponto(15, 15), ponto(5, 15)]);
+    expect(bboxesSeSobrepoem(a, b)).toBe(true);
+  });
+
+  it('falso para retângulos distantes', () => {
+    const a = retanguloEnvolvente([ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)]);
+    const b = retanguloEnvolvente([ponto(100, 100), ponto(110, 100), ponto(110, 110), ponto(100, 110)]);
+    expect(bboxesSeSobrepoem(a, b)).toBe(false);
+  });
+
+  it('verdadeiro quando os retângulos apenas se tocam na borda', () => {
+    const a = retanguloEnvolvente([ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)]);
+    const b = retanguloEnvolvente([ponto(10, 0), ponto(20, 0), ponto(20, 10), ponto(10, 10)]);
+    expect(bboxesSeSobrepoem(a, b)).toBe(true);
+  });
+});
+
+describe('contornosSeSobrepoem', () => {
+  const quadradoA = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+
+  it('detecta sobreposição parcial (arestas se cruzam)', () => {
+    const quadradoB = [ponto(5, 5), ponto(15, 5), ponto(15, 15), ponto(5, 15)];
+    expect(contornosSeSobrepoem(quadradoA, quadradoB)).toBe(true);
+  });
+
+  it('detecta quando um contorno está inteiramente dentro do outro (sem cruzar arestas)', () => {
+    const pequenoDentro = [ponto(2, 2), ponto(4, 2), ponto(4, 4), ponto(2, 4)];
+    expect(contornosSeSobrepoem(quadradoA, pequenoDentro)).toBe(true);
+    expect(contornosSeSobrepoem(pequenoDentro, quadradoA)).toBe(true);
+  });
+
+  it('falso para contornos distantes (nem os bboxes se tocam)', () => {
+    const distante = [ponto(100, 100), ponto(110, 100), ponto(110, 110), ponto(100, 110)];
+    expect(contornosSeSobrepoem(quadradoA, distante)).toBe(false);
+  });
+
+  it('falso para contornos vizinhos que só encostam a borda, sem cruzar', () => {
+    const vizinho = [ponto(10, 0), ponto(20, 0), ponto(20, 10), ponto(10, 10)];
+    expect(contornosSeSobrepoem(quadradoA, vizinho)).toBe(true); // arestas coincidentes contam como toque
+  });
+});
+
+describe('distanciaEntreContornos', () => {
+  it('zero quando os contornos se sobrepõem', () => {
+    const a = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const b = [ponto(5, 5), ponto(15, 5), ponto(15, 15), ponto(5, 15)];
+    expect(distanciaEntreContornos(a, b)).toBe(0);
+  });
+
+  it('distância real entre dois contornos separados', () => {
+    const a = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const b = [ponto(20, 0), ponto(30, 0), ponto(30, 10), ponto(20, 10)];
+    expect(distanciaEntreContornos(a, b)).toBeCloseTo(10, 9);
   });
 });

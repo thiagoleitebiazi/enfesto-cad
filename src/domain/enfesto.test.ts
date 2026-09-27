@@ -15,6 +15,7 @@ function base(tipo: ConfiguracaoDeEnfesto['tipo']): ConfiguracaoDeEnfesto {
     quantidadeDeCamadas: 10,
     margemLateralMm: 10,
     margemDeExtremidadeMm: 20,
+    distanciaMinimaEntrePecasMm: 5,
     tipo,
     // Campos extras exigidos por Tubular/Ramado — inofensivos para os
     // demais tipos, que simplesmente os ignoram; sobrescritos nos testes
@@ -48,6 +49,12 @@ describe('criarConfiguracaoDeEnfesto — validação comum', () => {
     expect(() => criarConfiguracaoDeEnfesto({ ...base('impar'), margemLateralMm: -1 })).toThrow(/margem lateral/);
     expect(() => criarConfiguracaoDeEnfesto({ ...base('impar'), margemDeExtremidadeMm: -1 })).toThrow(
       /margem de extremidade/,
+    );
+  });
+
+  it('rejeita distância mínima entre peças negativa', () => {
+    expect(() => criarConfiguracaoDeEnfesto({ ...base('impar'), distanciaMinimaEntrePecasMm: -1 })).toThrow(
+      /distância mínima/,
     );
   });
 });
