@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Molde } from '../domain/molde';
+import { contornoDeCorte, type Molde } from '../domain/molde';
 import { pontoDentroDoContorno, type Ponto2D } from '../core/geometria';
 import {
   aplicarZoom,
@@ -15,25 +15,56 @@ const COR_TECIDO = '#f4f5f7';
 const COR_CONTORNO = '#2b2f36';
 const COR_CONTORNO_SELECIONADO = '#1565c0';
 const COR_FIO = '#c62828';
+const COR_LINHA_DE_CORTE = '#6b7280';
+const COR_PIQUE = '#8e24aa';
+const COR_MARCA = '#00838f';
+const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#dfe2e6';
 const COR_REGUA_TRACO = '#5a6270';
+
+export type ModoDeDesenho = 'selecionar' | 'novo-molde' | 'novo-furo' | 'definir-fio' | 'pique' | 'marca';
 
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
   readonly transform: TransformacaoDeTela;
+  readonly modo: ModoDeDesenho;
+  readonly pontosEmEdicao: readonly Ponto2D[];
+  readonly contornoFinalizado: readonly Ponto2D[] | null;
   readonly onTransformChange: (t: TransformacaoDeTela) => void;
   readonly onSelecionar: (id: string | null) => void;
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
+  readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
+}
+
+function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
+  contorno.forEach((p, i) => {
+    const tela = mundoParaTela(p, transform);
+    if (i === 0) ctx.moveTo(tela.x, tela.y);
+    else ctx.lineTo(tela.x, tela.y);
+  });
+  ctx.closePath();
 }
 
 export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
-  const { pecas, selecionadoId, transform, onTransformChange, onSelecionar, onCursorMove } = props;
+  const {
+    pecas,
+    selecionadoId,
+    transform,
+    modo,
+    pontosEmEdicao,
+    contornoFinalizado,
+    onTransformChange,
+    onSelecionar,
+    onCursorMove,
+    onCliqueNoCanvas,
+  } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
   const reguaVerticalRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tamanho, setTamanho] = useState({ largura: 800, altura: 600 });
+  const [cursorLocal, setCursorLocal] = useState<Ponto2D | null>(null);
   const panRef = useRef<{ ativo: boolean; ultimoX: number; ultimoY: number }>({
     ativo: false,
     ultimoX: 0,
@@ -69,11 +100,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   }, []);
 
   const desenharSeta = useCallback(
-    (ctx: CanvasRenderingContext2D, inicio: Ponto2D, fim: Ponto2D): void => {
+    (ctx: CanvasRenderingContext2D, inicio: Ponto2D, fim: Ponto2D, cor: string): void => {
       const i = mundoParaTela(inicio, transform);
       const f = mundoParaTela(fim, transform);
-      ctx.strokeStyle = COR_FIO;
-      ctx.fillStyle = COR_FIO;
+      ctx.strokeStyle = cor;
+      ctx.fillStyle = cor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(i.x, i.y);
@@ -112,18 +143,26 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ctx.fillRect(0, 0, tamanho.largura, tamanho.altura);
 
     for (const peca of pecas) {
+      // Contorno + furos num único path com regra evenodd: os furos aparecem
+      // como buracos reais no preenchimento, não apenas linhas por cima.
       ctx.beginPath();
-      peca.contorno.forEach((p, i) => {
-        const tela = mundoParaTela(p, transform);
-        if (i === 0) ctx.moveTo(tela.x, tela.y);
-        else ctx.lineTo(tela.x, tela.y);
-      });
-      ctx.closePath();
+      traçarContorno(ctx, peca.contorno, transform);
+      for (const furo of peca.furos) {
+        traçarContorno(ctx, furo, transform);
+      }
       ctx.fillStyle = COR_TECIDO;
-      ctx.fill();
+      ctx.fill('evenodd');
       ctx.strokeStyle = peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
       ctx.lineWidth = peca.id === selecionadoId ? 2.5 : 1.5;
       ctx.stroke();
+
+      for (const furo of peca.furos) {
+        ctx.beginPath();
+        traçarContorno(ctx, furo, transform);
+        ctx.strokeStyle = peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
 
       for (const linha of peca.linhasInternas) {
         ctx.beginPath();
@@ -137,9 +176,91 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.stroke();
       }
 
-      desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim);
+      if (peca.margemDeCosturaMm > 0) {
+        ctx.beginPath();
+        traçarContorno(ctx, contornoDeCorte(peca), transform);
+        ctx.strokeStyle = COR_LINHA_DE_CORTE;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      for (const pique of peca.piques) {
+        const n = peca.contorno.length;
+        const a = peca.contorno[pique.indiceAresta % n]!;
+        const b = peca.contorno[(pique.indiceAresta + 1) % n]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const comprimento = Math.hypot(dx, dy) || 1;
+        const normalX = dy / comprimento;
+        const normalY = -dx / comprimento;
+        const tamanhoMm = 6;
+        const p1 = mundoParaTela(pique.posicao, transform);
+        const p2 = mundoParaTela(
+          { x: pique.posicao.x + normalX * tamanhoMm, y: pique.posicao.y + normalY * tamanhoMm },
+          transform,
+        );
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = COR_PIQUE;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      for (const marca of peca.marcas) {
+        const p = mundoParaTela(marca.posicao, transform);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = COR_MARCA;
+        ctx.fill();
+      }
+
+      desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, COR_FIO);
     }
-  }, [pecas, selecionadoId, transform, tamanho, desenharSeta]);
+
+    // Contorno recém-fechado, aguardando a definição da linha de fio.
+    if (contornoFinalizado && contornoFinalizado.length >= 3) {
+      ctx.beginPath();
+      traçarContorno(ctx, contornoFinalizado, transform);
+      ctx.strokeStyle = COR_EM_EDICAO;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Contorno em edição (novo molde / novo furo): linha aberta + vértices.
+    if (pontosEmEdicao.length > 0) {
+      ctx.beginPath();
+      pontosEmEdicao.forEach((p, i) => {
+        const tela = mundoParaTela(p, transform);
+        if (i === 0) ctx.moveTo(tela.x, tela.y);
+        else ctx.lineTo(tela.x, tela.y);
+      });
+      if (cursorLocal) {
+        const tela = mundoParaTela(cursorLocal, transform);
+        ctx.lineTo(tela.x, tela.y);
+      }
+      ctx.strokeStyle = COR_EM_EDICAO;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (const p of pontosEmEdicao) {
+        const tela = mundoParaTela(p, transform);
+        ctx.beginPath();
+        ctx.arc(tela.x, tela.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = COR_EM_EDICAO;
+        ctx.fill();
+      }
+    }
+
+    // Prévia da linha de fio sendo definida (primeiro clique já feito).
+    if (modo === 'definir-fio' && pontosEmEdicao.length === 1 && cursorLocal) {
+      desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
+    }
+  }, [pecas, selecionadoId, transform, tamanho, desenharSeta, pontosEmEdicao, contornoFinalizado, cursorLocal, modo]);
 
   // Desenha a régua horizontal.
   useEffect(() => {
@@ -217,8 +338,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (e.button !== 0) return;
     const tela = posicaoDoMouse(e);
     const mundo = telaParaMundo(tela, transform);
-    const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
-    onSelecionar(encontrada ? encontrada.id : null);
+
+    if (modo === 'selecionar') {
+      const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
+      onSelecionar(encontrada ? encontrada.id : null);
+      return;
+    }
+    onCliqueNoCanvas(mundo);
   }
 
   function aoMoverMouse(e: React.MouseEvent<HTMLCanvasElement>): void {
@@ -234,7 +360,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       return;
     }
     const tela = posicaoDoMouse(e);
-    onCursorMove(telaParaMundo(tela, transform));
+    const mundo = telaParaMundo(tela, transform);
+    setCursorLocal(mundo);
+    onCursorMove(mundo);
   }
 
   function aoSoltarMouse(): void {
@@ -243,6 +371,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
   function aoSairMouse(): void {
     panRef.current.ativo = false;
+    setCursorLocal(null);
     onCursorMove(null);
   }
 
@@ -267,6 +396,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           onMouseLeave={aoSairMouse}
           onWheel={aoRolarMouse}
           onContextMenu={(e) => e.preventDefault()}
+          style={{ cursor: modo === 'selecionar' ? 'default' : 'crosshair' }}
         />
       </div>
     </div>

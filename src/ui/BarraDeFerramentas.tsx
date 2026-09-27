@@ -1,4 +1,7 @@
+import type { ModoDeDesenho } from './AreaDeDesenho';
+
 interface BarraDeFerramentasProps {
+  readonly modo: ModoDeDesenho;
   readonly podeDesfazer: boolean;
   readonly podeRefazer: boolean;
   readonly temSelecao: boolean;
@@ -10,11 +13,17 @@ interface BarraDeFerramentasProps {
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onAjustarTela: () => void;
+  readonly onEntrarModoSelecionar: () => void;
+  readonly onEntrarModoNovoMolde: () => void;
+  readonly onEntrarModoNovoFuro: () => void;
+  readonly onEntrarModoPique: () => void;
+  readonly onEntrarModoMarca: () => void;
+  readonly onImportarDxf: () => void;
 }
 
 const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
-const NAO_IMPLEMENTADO_DESENHO = 'Ainda não implementado — edição de contorno/pontos/curvas (Etapa 3)';
-const NAO_IMPLEMENTADO_IO = 'Ainda não implementado — importação/exportação (Etapas 3 e 8)';
+const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
+const NAO_IMPLEMENTADO_EXPORTAR = 'Ainda não implementado — exportação de PDF vetorial (Etapa 8)';
 const NAO_IMPLEMENTADO_CONFIG = 'Ainda não implementado — tecido e enfesto (Etapa 4)';
 const NAO_IMPLEMENTADO_COPIAR = 'Ainda não implementado — copiar/colar (use Duplicar por enquanto)';
 
@@ -46,17 +55,57 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Desenho">
-        <button aria-pressed="true" title="Selecionar objetos (ferramenta ativa)">
+        <button
+          aria-pressed={props.modo === 'selecionar'}
+          className={props.modo === 'selecionar' ? 'item-selecionado' : ''}
+          onClick={props.onEntrarModoSelecionar}
+          title="Selecionar objetos (Esc)"
+        >
           Selecionar
         </button>
-        <button disabled title={NAO_IMPLEMENTADO_DESENHO}>Linha</button>
-        <button disabled title={NAO_IMPLEMENTADO_DESENHO}>Curva</button>
-        <button disabled title={NAO_IMPLEMENTADO_DESENHO}>Piques/Furos</button>
+        <button
+          aria-pressed={props.modo === 'novo-molde'}
+          className={props.modo === 'novo-molde' ? 'item-selecionado' : ''}
+          onClick={props.onEntrarModoNovoMolde}
+          title="Novo molde: clique para adicionar pontos do contorno, Enter para fechar"
+        >
+          Novo Molde
+        </button>
+        <button disabled title={NAO_IMPLEMENTADO_CURVA}>Curva</button>
+        <button
+          aria-pressed={props.modo === 'novo-furo'}
+          className={props.modo === 'novo-furo' ? 'item-selecionado' : ''}
+          onClick={props.onEntrarModoNovoFuro}
+          disabled={!props.temSelecao}
+          title={props.temSelecao ? 'Novo furo na peça selecionada: clique os pontos, Enter para fechar' : 'Selecione uma peça primeiro'}
+        >
+          Furo
+        </button>
+        <button
+          aria-pressed={props.modo === 'pique'}
+          className={props.modo === 'pique' ? 'item-selecionado' : ''}
+          onClick={props.onEntrarModoPique}
+          disabled={!props.temSelecao}
+          title={props.temSelecao ? 'Adicionar pique: clique perto da borda da peça selecionada' : 'Selecione uma peça primeiro'}
+        >
+          Pique
+        </button>
+        <button
+          aria-pressed={props.modo === 'marca'}
+          className={props.modo === 'marca' ? 'item-selecionado' : ''}
+          onClick={props.onEntrarModoMarca}
+          disabled={!props.temSelecao}
+          title={props.temSelecao ? 'Adicionar marca de referência na peça selecionada' : 'Selecione uma peça primeiro'}
+        >
+          Marca
+        </button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Importação e exportação">
-        <button disabled title={NAO_IMPLEMENTADO_IO}>Importar DXF</button>
-        <button disabled title={NAO_IMPLEMENTADO_IO}>Exportar PDF</button>
+        <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF">
+          Importar DXF
+        </button>
+        <button disabled title={NAO_IMPLEMENTADO_EXPORTAR}>Exportar PDF</button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">

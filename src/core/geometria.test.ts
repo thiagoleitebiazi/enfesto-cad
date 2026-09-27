@@ -12,6 +12,9 @@ import {
   pontoDentroDoContorno,
   transladarContorno,
   rotacionarContorno,
+  pontoMaisProximoNoSegmento,
+  pontoMaisProximoNoContorno,
+  deslocarContornoParaFora,
 } from './geometria';
 
 describe('operações vetoriais', () => {
@@ -108,5 +111,80 @@ describe('transformações de contorno', () => {
       37,
     );
     expect(area(rotacionado)).toBeCloseTo(area(contorno), 6);
+  });
+});
+
+describe('pontoMaisProximoNoSegmento', () => {
+  it('projeta sobre o segmento quando a projeção cai dentro dele', () => {
+    const p = pontoMaisProximoNoSegmento(ponto(5, 3), ponto(0, 0), ponto(10, 0));
+    expect(p).toEqual({ x: 5, y: 0 });
+  });
+
+  it('prende no início do segmento quando a projeção cai antes dele', () => {
+    const p = pontoMaisProximoNoSegmento(ponto(-5, 3), ponto(0, 0), ponto(10, 0));
+    expect(p).toEqual({ x: 0, y: 0 });
+  });
+
+  it('prende no fim do segmento quando a projeção cai depois dele', () => {
+    const p = pontoMaisProximoNoSegmento(ponto(15, 3), ponto(0, 0), ponto(10, 0));
+    expect(p).toEqual({ x: 10, y: 0 });
+  });
+
+  it('lida com segmento degenerado (a === b)', () => {
+    const p = pontoMaisProximoNoSegmento(ponto(5, 5), ponto(1, 1), ponto(1, 1));
+    expect(p).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe('pontoMaisProximoNoContorno', () => {
+  const quadrado = [ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(0, 100)];
+
+  it('encontra a aresta mais próxima de um ponto fora do contorno', () => {
+    const resultado = pontoMaisProximoNoContorno(ponto(50, -10), quadrado);
+    expect(resultado.ponto).toEqual({ x: 50, y: 0 });
+    expect(resultado.indiceAresta).toBe(0);
+    expect(resultado.distancia).toBeCloseTo(10, 9);
+  });
+
+  it('encontra a aresta mais próxima de um ponto dentro do contorno', () => {
+    const resultado = pontoMaisProximoNoContorno(ponto(95, 50), quadrado);
+    expect(resultado.indiceAresta).toBe(1);
+    expect(resultado.ponto).toEqual({ x: 100, y: 50 });
+  });
+
+  it('lança erro para contorno com menos de 2 pontos', () => {
+    expect(() => pontoMaisProximoNoContorno(ponto(0, 0), [ponto(1, 1)])).toThrow();
+  });
+});
+
+describe('deslocarContornoParaFora (margem de costura)', () => {
+  it('desloca um retângulo simétrico para fora, aumentando cada dimensão em 2x a distância', () => {
+    const retangulo = [ponto(0, 0), ponto(100, 0), ponto(100, 50), ponto(0, 50)];
+    const deslocado = deslocarContornoParaFora(retangulo, 10);
+    const bboxOriginal = retanguloEnvolvente(retangulo);
+    const bboxDeslocado = retanguloEnvolvente(deslocado);
+    expect(bboxDeslocado.largura).toBeCloseTo(bboxOriginal.largura + 20, 6);
+    expect(bboxDeslocado.altura).toBeCloseTo(bboxOriginal.altura + 20, 6);
+  });
+
+  it('o contorno deslocado envolve completamente o original (todo vértice original está dentro)', () => {
+    const retangulo = [ponto(0, 0), ponto(100, 0), ponto(100, 50), ponto(0, 50)];
+    const deslocado = deslocarContornoParaFora(retangulo, 5);
+    for (const v of retangulo) {
+      // Vértices do próprio contorno original ficam sobre a borda dele, então
+      // testamos com uma pequena contração para não cair exatamente na fronteira.
+      const levementeParaDentro = { x: v.x === 0 ? 0.1 : v.x - 0.1, y: v.y === 0 ? 0.1 : v.y - 0.1 };
+      expect(pontoDentroDoContorno(levementeParaDentro, deslocado)).toBe(true);
+    }
+  });
+
+  it('área aumenta com o deslocamento para fora', () => {
+    const triangulo = [ponto(0, 0), ponto(40, 0), ponto(20, 30)];
+    const deslocado = deslocarContornoParaFora(triangulo, 5);
+    expect(area(deslocado)).toBeGreaterThan(area(triangulo));
+  });
+
+  it('lança erro para contorno com menos de 3 pontos', () => {
+    expect(() => deslocarContornoParaFora([ponto(0, 0), ponto(1, 1)], 5)).toThrow();
   });
 });

@@ -106,3 +106,92 @@ export function transladarContorno(contorno: Contorno, deslocamento: Ponto2D): C
 export function rotacionarContorno(contorno: Contorno, centro: Ponto2D, anguloGraus: number): Contorno {
   return contorno.map((p) => rotacionar(p, centro, anguloGraus));
 }
+
+/** Ponto mais próximo de `p` sobre o segmento [a, b] (projeção com grampo em [0,1]). */
+export function pontoMaisProximoNoSegmento(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const comprimentoQuadrado = dx * dx + dy * dy;
+  if (comprimentoQuadrado === 0) return a;
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / comprimentoQuadrado;
+  t = Math.max(0, Math.min(1, t));
+  return { x: a.x + dx * t, y: a.y + dy * t };
+}
+
+export interface PontoNoContorno {
+  readonly ponto: Ponto2D;
+  readonly indiceAresta: number;
+  readonly distancia: number;
+}
+
+/** Encontra o ponto mais próximo de `p` sobre o perímetro do contorno (qualquer aresta). */
+export function pontoMaisProximoNoContorno(p: Ponto2D, contorno: Contorno): PontoNoContorno {
+  if (contorno.length < 2) {
+    throw new Error('Contorno precisa de ao menos 2 pontos para ter um perímetro.');
+  }
+  let melhor: PontoNoContorno | null = null;
+  const n = contorno.length;
+  for (let i = 0; i < n; i++) {
+    const a = contorno[i]!;
+    const b = contorno[(i + 1) % n]!;
+    const candidato = pontoMaisProximoNoSegmento(p, a, b);
+    const d = distancia(p, candidato);
+    if (!melhor || d < melhor.distancia) {
+      melhor = { ponto: candidato, indiceAresta: i, distancia: d };
+    }
+  }
+  return melhor!;
+}
+
+function normalExternaDaAresta(a: Ponto2D, b: Ponto2D): Ponto2D {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const comprimento = Math.hypot(dx, dy);
+  if (comprimento === 0) return { x: 0, y: 0 };
+  // Para um contorno de área assinada positiva, a normal externa de uma
+  // aresta a->b é a rotação de -90° do vetor da aresta.
+  return { x: dy / comprimento, y: -dx / comprimento };
+}
+
+function intersecaoDeRetas(p1: Ponto2D, d1: Ponto2D, p2: Ponto2D, d2: Ponto2D): Ponto2D {
+  const denominador = d1.x * d2.y - d1.y * d2.x;
+  if (Math.abs(denominador) < 1e-9) {
+    // Arestas quase paralelas (colineares): o ponto médio das origens já
+    // deslocadas é uma aproximação segura, sem geração de picos.
+    return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  }
+  const t = ((p2.x - p1.x) * d2.y - (p2.y - p1.y) * d2.x) / denominador;
+  return { x: p1.x + d1.x * t, y: p1.y + d1.y * t };
+}
+
+/**
+ * Desloca cada aresta do contorno para fora por `distanciaMm` (deslocamento de
+ * linhas + interseção nos vértices — junção em esquadria/"miter"). Usado para
+ * a margem de costura (linha de corte = contorno original + esta margem).
+ *
+ * Limitação conhecida: em cantos reflexos muito agudos combinados com uma
+ * distância grande em relação ao tamanho do contorno, o resultado pode
+ * autointerseccionar-se (não há verificação/correção disso aqui).
+ */
+export function deslocarContornoParaFora(contorno: Contorno, distanciaMm: number): Contorno {
+  if (contorno.length < 3) {
+    throw new Error('Contorno precisa de ao menos 3 pontos para ser deslocado.');
+  }
+  const orientado = areaAssinada(contorno) >= 0 ? contorno : [...contorno].reverse();
+  const n = orientado.length;
+  const normais = orientado.map((p, i) => normalExternaDaAresta(p, orientado[(i + 1) % n]!));
+
+  const resultado: Ponto2D[] = [];
+  for (let i = 0; i < n; i++) {
+    const iAnterior = (i - 1 + n) % n;
+    const pAnterior = orientado[iAnterior]!;
+    const pAtual = orientado[i]!;
+    const pProximo = orientado[(i + 1) % n]!;
+    const origemAnterior = somar(pAnterior, escalar(normais[iAnterior]!, distanciaMm));
+    const origemAtual = somar(pAtual, escalar(normais[i]!, distanciaMm));
+    resultado.push(
+      intersecaoDeRetas(origemAnterior, subtrair(pAtual, pAnterior), origemAtual, subtrair(pProximo, pAtual)),
+    );
+  }
+  return resultado;
+}

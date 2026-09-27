@@ -1,4 +1,4 @@
-import type { Molde } from '../domain/molde';
+import type { Molde, RestricaoDeRotacao } from '../domain/molde';
 import { dimensoesDoMolde, rotacoesPermitidas } from '../domain/molde';
 
 interface PainelDePecasProps {
@@ -21,7 +21,7 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
                 className={peca.id === props.selecionadoId ? 'item-selecionado' : ''}
                 onClick={() => props.onSelecionar(peca.id)}
               >
-                {peca.nome} <span className="referencia">({peca.referencia}, {peca.tamanho})</span>
+                {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho})</span>
               </button>
             </li>
           ))}
@@ -31,8 +31,18 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
   );
 }
 
+export interface PatchDeMolde {
+  readonly nome?: string;
+  readonly referencia?: string;
+  readonly tamanho?: string;
+  readonly quantidade?: number;
+  readonly margemDeCosturaMm?: number;
+  readonly restricaoDeRotacao?: RestricaoDeRotacao;
+}
+
 interface PainelDePropriedadesProps {
   readonly peca: Molde | null;
+  readonly onAlterar: (patch: PatchDeMolde) => void;
 }
 
 export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JSX.Element {
@@ -45,21 +55,87 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
     );
   }
 
-  const dim = dimensoesDoMolde(props.peca);
-  const rotacoes = rotacoesPermitidas(props.peca.restricaoDeRotacao);
+  const peca = props.peca;
+  const dim = dimensoesDoMolde(peca);
+  const rotacoes = rotacoesPermitidas(peca.restricaoDeRotacao);
 
   return (
     <section className="painel-lateral" aria-label="Propriedades da peça selecionada">
       <h2>Propriedades</h2>
+      <form className="formulario-de-propriedades" onSubmit={(e) => e.preventDefault()}>
+        <label>
+          Nome
+          <input type="text" value={peca.nome} onChange={(e) => props.onAlterar({ nome: e.target.value })} />
+        </label>
+        <label>
+          Referência
+          <input
+            type="text"
+            value={peca.referencia}
+            onChange={(e) => props.onAlterar({ referencia: e.target.value })}
+          />
+        </label>
+        <label>
+          Tamanho
+          <input type="text" value={peca.tamanho} onChange={(e) => props.onAlterar({ tamanho: e.target.value })} />
+        </label>
+        <label>
+          Quantidade
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={peca.quantidade}
+            onChange={(e) => {
+              const valor = Number.parseInt(e.target.value, 10);
+              if (Number.isFinite(valor) && valor >= 1) props.onAlterar({ quantidade: valor });
+            }}
+          />
+        </label>
+        <label>
+          Margem de costura (mm)
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            value={peca.margemDeCosturaMm}
+            onChange={(e) => {
+              const valor = Number.parseFloat(e.target.value);
+              if (Number.isFinite(valor) && valor >= 0) props.onAlterar({ margemDeCosturaMm: valor });
+            }}
+          />
+        </label>
+
+        <fieldset className="grupo-de-rotacao">
+          <legend>Rotações permitidas (sentido do fio)</legend>
+          <label className="opcao-em-linha">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.permite180}
+              onChange={(e) =>
+                props.onAlterar({
+                  restricaoDeRotacao: { ...peca.restricaoDeRotacao, permite180: e.target.checked },
+                })
+              }
+            />
+            Permitir 180°
+          </label>
+          <label className="opcao-em-linha">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.permite90e270}
+              onChange={(e) =>
+                props.onAlterar({
+                  restricaoDeRotacao: { ...peca.restricaoDeRotacao, permite90e270: e.target.checked },
+                })
+              }
+            />
+            Permitir 90°/270°
+          </label>
+        </fieldset>
+      </form>
+
       <dl className="lista-de-propriedades">
-        <dt>Nome</dt>
-        <dd>{props.peca.nome}</dd>
-        <dt>Referência</dt>
-        <dd>{props.peca.referencia}</dd>
-        <dt>Tamanho</dt>
-        <dd>{props.peca.tamanho}</dd>
-        <dt>Quantidade</dt>
-        <dd>{props.peca.quantidade}</dd>
         <dt>Largura</dt>
         <dd>{dim.larguraMm.toFixed(1)} mm</dd>
         <dt>Altura</dt>
@@ -68,6 +144,12 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
         <dd>{(dim.areaMm2 / 100).toFixed(1)} cm²</dd>
         <dt>Rotações permitidas</dt>
         <dd>{rotacoes.map((r) => `${r}°`).join(', ')}</dd>
+        <dt>Piques</dt>
+        <dd>{peca.piques.length}</dd>
+        <dt>Furos</dt>
+        <dd>{peca.furos.length}</dd>
+        <dt>Marcas</dt>
+        <dd>{peca.marcas.length}</dd>
       </dl>
     </section>
   );

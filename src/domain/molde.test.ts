@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { ponto } from '../core/geometria';
+import { ponto, area } from '../core/geometria';
 import {
   criarMolde,
   dimensoesDoMolde,
   anguloDaLinhaDeFio,
   rotacoesPermitidas,
   rotacaoEhPermitida,
+  adicionarPique,
+  removerPique,
+  adicionarMarca,
+  removerMarca,
+  contornoDeCorte,
+  transladarMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -40,6 +46,31 @@ describe('criarMolde', () => {
 
   it('rejeita quantidade menor que 1', () => {
     expect(() => criarMolde(dadosBase({ quantidade: 0 }), 'm4')).toThrow(/quantidade/);
+  });
+
+  it('rejeita furo com contorno degenerado', () => {
+    const furoDegenerado = [ponto(50, 50), ponto(60, 50)];
+    expect(() => criarMolde(dadosBase({ furos: [furoDegenerado] }), 'm5')).toThrow(/furo/);
+  });
+
+  it('rejeita margem de costura negativa', () => {
+    expect(() => criarMolde(dadosBase({ margemDeCosturaMm: -1 }), 'm6')).toThrow(/margem/);
+  });
+
+  it('aceita furos, piques, marcas e margem de costura válidos', () => {
+    const molde = criarMolde(
+      dadosBase({
+        furos: [[ponto(50, 50), ponto(70, 50), ponto(70, 70), ponto(50, 70)]],
+        piques: [{ id: 'p1', posicao: ponto(0, 100), indiceAresta: 3 }],
+        marcas: [{ id: 'm1', posicao: ponto(100, 150), rotulo: 'dobra' }],
+        margemDeCosturaMm: 10,
+      }),
+      'm7',
+    );
+    expect(molde.furos).toHaveLength(1);
+    expect(molde.piques).toHaveLength(1);
+    expect(molde.marcas[0]?.rotulo).toBe('dobra');
+    expect(molde.margemDeCosturaMm).toBe(10);
   });
 });
 
@@ -104,3 +135,76 @@ describe('restrição de rotação — regra crítica do sentido do fio', () => 
     }
   });
 });
+
+describe('piques', () => {
+  it('adiciona um pique na aresta mais próxima do clique', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    // dadosBase: contorno 200x300 com origem em (0,0); clicar perto de (0,150)
+    // deve cair na aresta esquerda (índice 3: de (0,300) a (0,0)).
+    const comPique = adicionarPique(molde, ponto(-5, 150), 'pique-1');
+    expect(comPique.piques).toHaveLength(1);
+    expect(comPique.piques[0]?.posicao).toEqual({ x: 0, y: 150 });
+  });
+
+  it('remove um pique pelo id', () => {
+    const molde = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(-5, 150), 'pique-1');
+    const semPique = removerPique(molde, 'pique-1');
+    expect(semPique.piques).toHaveLength(0);
+  });
+});
+
+describe('marcas', () => {
+  it('adiciona uma marca com rótulo opcional', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const comMarca = adicionarMarca(molde, ponto(100, 150), 'marca-1', 'centro');
+    expect(comMarca.marcas[0]).toEqual({ id: 'marca-1', posicao: { x: 100, y: 150 }, rotulo: 'centro' });
+  });
+
+  it('remove uma marca pelo id', () => {
+    const molde = adicionarMarca(criarMolde(dadosBase(), 'm1'), ponto(100, 150), 'marca-1');
+    const semMarca = removerMarca(molde, 'marca-1');
+    expect(semMarca.marcas).toHaveLength(0);
+  });
+});
+
+describe('contornoDeCorte (margem de costura)', () => {
+  it('sem margem, a linha de corte é igual ao contorno original', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(contornoDeCorte(molde)).toBe(molde.contorno);
+  });
+
+  it('com margem, a linha de corte é maior que o contorno original', () => {
+    const molde = criarMolde(dadosBase({ margemDeCosturaMm: 10 }), 'm1');
+    expect(area(contornoDeCorte(molde))).toBeGreaterThan(area(molde.contorno));
+  });
+});
+
+describe('transladarMolde', () => {
+  it('translada contorno, furos, piques, marcas e linha de fio de forma consistente', () => {
+    const original = adicionarMarca(
+      adicionarPique(
+        criarMolde(
+          dadosBase({ furos: [[ponto(50, 50), ponto(70, 50), ponto(70, 70), ponto(50, 70)]] }),
+          'm1',
+        ),
+        ponto(-5, 150),
+        'pique-1',
+      ),
+      ponto(100, 150),
+      'marca-1',
+    );
+    const deslocamento = ponto(30, -20);
+    const copia = transladarMolde(original, deslocamento, 'm2');
+
+    expect(copia.id).toBe('m2');
+    expect(copia.contorno[0]).toEqual(ponto(30, -20));
+    expect(copia.furos[0]?.[0]).toEqual(ponto(80, 30));
+    expect(copia.piques[0]?.posicao).toEqual(ponto(30, 130));
+    expect(copia.marcas[0]?.posicao).toEqual(ponto(130, 130));
+    expect(copia.linhaDeFio.inicio).toEqual(somarPontos(original.linhaDeFio.inicio, deslocamento));
+  });
+});
+
+function somarPontos(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return { x: a.x + b.x, y: a.y + b.y };
+}

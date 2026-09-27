@@ -27,15 +27,39 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 - [ ] Multisseleção (retângulo de seleção, Shift+clique) — não implementado.
 
 ## Etapa 3 — Modelo de dados dos moldes e importação
-**Não iniciado.** `domain/molde.ts` já existe com o modelo de dados (id,
-nome, referência, tamanho, contorno, linhas internas, linha de fio,
-quantidade, restrição de rotação) mas:
-- [ ] Edição de pontos/linhas/curvas na interface (hoje só existem as 2
-  peças de demonstração, hardcoded em `App.tsx`).
-- [ ] Piques, furos, marcas, margens de costura.
-- [ ] Importação DXF (nem sequer iniciada — precisa avaliar biblioteca de
-  parsing).
-- [ ] Importação AAMA/ASTM — avaliar viabilidade real antes de prometer.
+**Núcleo funcional entregue.**
+- [x] Modelo completo: contorno, linhas internas, furos, piques, marcas,
+  margem de costura, linha de fio, restrição de rotação (`domain/molde.ts`).
+- [x] Ferramenta "Novo Molde": clique para adicionar pontos, Enter fecha o
+  contorno, dois cliques seguintes definem a linha de fio (nunca presumida —
+  seção 5). Esc cancela em qualquer momento.
+- [x] Ferramenta "Furo": mesmo fluxo de desenho, aplicado à peça selecionada.
+- [x] Ferramenta "Pique": clique perto da borda da peça selecionada
+  (`adicionarPique` encontra a aresta mais próxima de verdade).
+- [x] Ferramenta "Marca": ponto de referência na peça selecionada.
+- [x] Painel de propriedades editável (nome, referência, tamanho, quantidade,
+  margem de costura, permite180/permite90e270) — não é mais só leitura.
+- [x] Linha de corte (contorno + margem de costura) desenhada tracejada
+  quando margem > 0 (`contornoDeCorte`, deslocamento de arestas com junção em
+  esquadria — ver limitação R-2 em MATRIZ_DE_RISCOS.md).
+- [x] Furos renderizados como buracos reais (regra `evenodd` do Canvas), não
+  apenas contornos por cima.
+- [x] Importação DXF real: parser próprio (`formats/dxf-importacao.ts`),
+  reconhece LWPOLYLINE/LINE/CIRCLE/POLYLINE clássico, unidade via
+  `$INSUNITS`, heurística de camada (CONTORNO/FURO/FIO por nome). **Nunca
+  inventa uma linha de fio ausente** — peças sem fio reconhecível não são
+  adicionadas automaticamente, ficam listadas num aviso pedindo desenho
+  manual. Ligado a um diálogo de arquivo real via IPC do Electron
+  (`electron/main.ts` + `preload.ts`).
+- [ ] Importação AAMA/ASTM: tratada apenas como heurística de nome de camada
+  sobre DXF comum, não uma implementação certificada — ver ADR 0002 e risco
+  R-1 (nenhum arquivo real de terceiros disponível para testar).
+- [ ] Edição de pontos já existentes (arrastar vértice de um molde já criado)
+  — hoje só é possível desenhar um contorno novo do zero, não editar um
+  existente ponto a ponto.
+- [ ] Curvas (Bézier) — só segmentos retos por enquanto, botão "Curva"
+  permanece desabilitado e diz isso.
+- [ ] Renomear/editar rótulo de uma Marca depois de criada.
 
 ## Etapa 4 — Tecido e tipos de enfesto
 **Não iniciado.** Nenhuma entidade `Tecido` ou `Enfesto` existe ainda. Os 5
@@ -77,14 +101,25 @@ principal do Electron (decisão já tomada, implementação pendente).
 
 ## Testes automatizados existentes hoje
 
+64 testes em 4 arquivos:
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
-  dentro-do-contorno, translação/rotação de contorno.
-- `src/domain/molde.test.ts` — construção válida/inválida, dimensões reais,
-  ângulo da linha de fio, e a regra crítica de rotação (inclui teste de que
-  nenhuma flag "otimiza automaticamente" a orientação).
+  dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
+  segmento/contorno, deslocamento de contorno para fora (margem de costura).
+- `src/domain/molde.test.ts` — construção válida/inválida (incluindo furos e
+  margem), dimensões reais, ângulo da linha de fio, a regra crítica de
+  rotação, piques/marcas (adicionar/remover), `contornoDeCorte`,
+  `transladarMolde` (usado por Duplicar — cobre furos/piques/marcas/fio).
 - `src/ui/transformacaoDeTela.test.ts` — inversão mundo↔tela, zoom mantendo
   o pivô fixo, limites de escala, escolha do passo da régua.
+- `src/formats/dxf-importacao.test.ts` — unidades (mm/polegadas/ausente),
+  contorno+fio básico, furos e linhas internas por camada, regra crítica
+  (nunca inventar linha de fio), heurística de fallback de contorno, múltiplas
+  peças por arquivo, POLYLINE clássica, arquivo sem polilinha nenhuma. Todas
+  as fixtures são sintéticas — ver risco R-1.
 
 Nenhum teste de UI de integração (React Testing Library) ainda — a UI tem
 lógica de canvas (não testável por `render()`/queries de DOM da mesma forma
-que formulários); testado manualmente via `npm run dev`.
+que formulários). A ferramenta "Novo Molde" + Pique + Furo + margem de
+costura + importação DXF foi verificada manualmente numa sessão real do
+Electron (cliques sintéticos via `sendInputEvent`/`dispatchEvent` reais, não
+simulação de teste — script descartável, não commitado).

@@ -1,4 +1,16 @@
-// Ponte entre o processo principal (Node/Electron) e a interface (renderer).
-// Vazio por enquanto: nenhuma funcionalidade de persistência em arquivo real
-// foi implementada ainda (ver Etapa 9 do plano). Nada aqui deve ser exposto
-// à página até ter uma função real por trás.
+import { contextBridge, ipcRenderer } from 'electron';
+
+export interface ArquivoAberto {
+  readonly caminho: string;
+  readonly conteudo: string;
+}
+
+const api = {
+  async abrirArquivoDxf(): Promise<ArquivoAberto | null> {
+    return ipcRenderer.invoke('abrir-arquivo-dxf') as Promise<ArquivoAberto | null>;
+  },
+};
+
+export type EnfestoCadApi = typeof api;
+
+contextBridge.exposeInMainWorld('enfestoCad', api);
