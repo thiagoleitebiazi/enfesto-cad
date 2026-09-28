@@ -16,6 +16,8 @@ import {
 } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
+import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
+import { gerarRelatorioDeProducao } from './domain/relatorio';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
 import type { Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -30,6 +32,7 @@ import { PainelDeNesting } from './ui/PainelDeNesting';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
 import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
+import { PainelDeRelatorio } from './ui/PainelDeRelatorio';
 import {
   criarProjeto,
   registrarEvento,
@@ -119,6 +122,8 @@ export default function App(): React.JSX.Element {
   const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
   const [mostrarBiblioteca, setMostrarBiblioteca] = useState(false);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
+  const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
 
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
@@ -506,6 +511,40 @@ export default function App(): React.JSX.Element {
     [pecas, enfesto, tecido, registrarEventoEPersistir],
   );
 
+  const relatorioAtual = useMemo(
+    () => gerarRelatorioDeProducao(projetoAtual, new Date().toISOString()),
+    [projetoAtual, mostrarRelatorio],
+  );
+
+  const exportarRelatorio = useCallback(
+    async (formato: 'pdf' | 'xlsx') => {
+      const api = window.enfestoCad;
+      if (!api) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return;
+      }
+      setGerandoRelatorio(true);
+      try {
+        const blob =
+          formato === 'pdf'
+            ? await gerarPdfDeRelatorio(relatorioAtual)
+            : await gerarExcelDeRelatorio(relatorioAtual);
+        const buffer = await blob.arrayBuffer();
+        const sugestaoDeNome = `relatorio-${projetoAtual.codigo}.${formato}`;
+        const caminhoSalvo = await api.salvarArquivo(sugestaoDeNome, buffer);
+        if (caminhoSalvo) {
+          setMostrarRelatorio(false);
+          registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Relatório salvo em ${caminhoSalvo}`);
+        }
+      } catch (e) {
+        window.alert(`Falha ao gerar o relatório: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setGerandoRelatorio(false);
+      }
+    },
+    [relatorioAtual, projetoAtual.codigo, pecas, tecido, enfesto, registrarEventoEPersistir],
+  );
+
   const estadoAoVivoRef = useRef<EstadoDoProjeto>({ pecas, tecido, enfesto });
   useEffect(() => {
     estadoAoVivoRef.current = { pecas, tecido, enfesto };
@@ -721,6 +760,7 @@ export default function App(): React.JSX.Element {
         onSalvarComo={salvarComo}
         onAbrirBiblioteca={abrirBiblioteca}
         onAbrirHistorico={() => setMostrarHistorico(true)}
+        onAbrirRelatorio={() => setMostrarRelatorio(true)}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -792,6 +832,15 @@ export default function App(): React.JSX.Element {
             setMostrarHistorico(false);
           }}
           onFechar={() => setMostrarHistorico(false)}
+        />
+      )}
+      {mostrarRelatorio && (
+        <PainelDeRelatorio
+          relatorio={relatorioAtual}
+          gerando={gerandoRelatorio}
+          onExportarPdf={() => void exportarRelatorio('pdf')}
+          onExportarExcel={() => void exportarRelatorio('xlsx')}
+          onFechar={() => setMostrarRelatorio(false)}
         />
       )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (

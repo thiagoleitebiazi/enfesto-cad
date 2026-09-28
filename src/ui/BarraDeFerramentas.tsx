@@ -31,6 +31,7 @@ interface BarraDeFerramentasProps {
   readonly onSalvarComo: () => void;
   readonly onAbrirBiblioteca: () => void;
   readonly onAbrirHistorico: () => void;
+  readonly onAbrirRelatorio: () => void;
 }
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
@@ -122,6 +123,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           title={props.podeExportarPdf ? 'Exportar PDF vetorial em escala 1:1' : 'Adicione ao menos uma peça primeiro'}
         >
           Exportar PDF
+        </button>
+        <button onClick={props.onAbrirRelatorio} title="Relatório de produção (PDF/Excel)">
+          Relatórios
         </button>
       </div>
 

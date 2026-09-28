@@ -269,13 +269,63 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   muito grandes/histórico muito extenso — ver riscos R-6/R-7.
 
 ## Etapa 10 — Relatórios, testes integrados, empacotamento Windows
-**Não iniciado.**
+**Núcleo funcional entregue.**
+- [x] `domain/relatorio.ts#gerarRelatorioDeProducao`: puro, sem I/O, recebe um
+  `Projeto` e devolve projeto/referências/tecido/enfesto/peças por tamanho/
+  comprimento utilizado/área ocupada/aproveitamento-desperdício (recalculados
+  da geometria atual, nunca de um resultado de nesting salvo à parte) /versão
+  do encaixe (conta eventos `execucao-de-nesting` no histórico, ADR 0006).
+- [x] `formats/relatorio-exportacao.ts`: `gerarPdfDeRelatorio` (pdfkit,
+  mesmo padrão vetorial do ADR 0005) e `gerarExcelDeRelatorio` (`exceljs` —
+  `xlsx` foi avaliado e rejeitado por vulnerabilidade real de severidade alta
+  via `npm audit`; ver ADR 0007, risco R-8).
+- [x] `PainelDeRelatorio` (mesmo padrão de sobreposição dos demais painéis) +
+  botão "Relatórios" na barra de ferramentas, com exportação real via o
+  mesmo canal IPC `salvar-arquivo` (generalizado para detectar a extensão do
+  arquivo e escolher o filtro do diálogo nativo — PDF ou Excel).
+- [x] Bug real encontrado e corrigido numa verificação em Electron real (não
+  pelos testes automatizados — ver risco R-9): `Helvetica-Bold` não estava
+  registrada, travando a exportação em PDF do relatório com um diálogo
+  nativo bloqueante. Corrigido registrando também
+  `pdfkit/standard-fonts/HelveticaBold`. Ver ADR 0007.
+- [x] Verificado numa sessão real do Electron: abrir o relatório mostra os
+  dados reais do projeto carregado (2 modelos tamanho M, 4 peças no total),
+  exportar Excel produz um `.xlsx` real (assinatura ZIP `PK`, 7738 bytes),
+  reabrir o painel e exportar PDF produz um PDF real (assinatura `%PDF`,
+  4890 bytes) — ambos os arquivos passaram pelo canal IPC de verdade
+  (`salvar-arquivo`), painel fecha automaticamente após cada exportação bem-
+  sucedida.
+- [x] Teste integrado (`src/integracao.test.ts`): encadeia DXF → `Molde` →
+  nesting automático → PDF do encaixe → `Projeto` → relatório de produção →
+  PDF/Excel do relatório, tudo com dados reais (sem mocks). Cruza o
+  aproveitamento calculado de forma independente pelo relatório com o
+  aproveitamento devolvido pelo próprio motor de nesting — confirma que as
+  duas camadas concordam sobre a mesma geometria.
+- [x] Empacotamento Windows real via `electron-builder` (NSIS): script
+  `npm run package:win` gera `release/Enfesto CAD Setup 0.1.0.exe` (~89MB,
+  instalador de verdade com desinstalador) e `release/win-unpacked/` (build
+  desempacotado). Verificado lançando o executável empacotado diretamente
+  (sem instalar no sistema): janela real abre com o título "Enfesto CAD".
+  Ver ADR 0008.
+- [x] Risco real descoberto ao auditar a árvore completa de dependências
+  pela primeira vez (`npm audit` após instalar `electron-builder`):
+  `electron@33.4.11` está várias versões principais atrás e acumula
+  vulnerabilidades reais conhecidas. Deliberadamente não corrigido nesta
+  etapa (upgrade de versão principal, risco real de quebra, merece etapa
+  própria) — registrado como risco R-10 em MATRIZ_DE_RISCOS.md, não
+  escondido.
+- [ ] Nenhuma assinatura de código real no instalador (sem certificado) —
+  Windows SmartScreen vai avisar sobre executável não verificado. Ver ADR
+  0008.
+- [ ] Sem ícone customizado — usa o ícone padrão do Electron.
+- [ ] `electron@33.4.11` não atualizado (risco R-10) — decisão deliberada,
+  não uma limitação técnica.
 
 ---
 
 ## Testes automatizados existentes hoje
 
-88 testes em 6 arquivos:
+185 testes em 14 arquivos:
 - `src/domain/tecido.test.ts` — criação válida/inválida, `tecidoExigeRespeitoDeOrientacao`.
 - `src/domain/enfesto.test.ts` — validação comum aos 5 tipos, parâmetros
   próprios de Tubular e Ramado, espessuras físicas por camada, inversão de
@@ -299,11 +349,6 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   ladrilhado, rótulo de texto decodificado dos glifos hex do pdfkit),
   escala 1:1 verificada geometricamente (linha vetorial da régua de
   referência medida no fluxo de conteúdo).
-- `src/domain/projeto.test.ts` — geração de código, criação com evento
-  inicial, registro de eventos sem perder os anteriores, restauração de
-  versão preservando todo o histórico (incluindo erro para id inexistente),
-  alterar status/renomear, filtro por texto/status combinados, ordenação
-  por mais recente.
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).
@@ -318,6 +363,24 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   (nunca inventar linha de fio), heurística de fallback de contorno, múltiplas
   peças por arquivo, POLYLINE clássica, arquivo sem polilinha nenhuma. Todas
   as fixtures são sintéticas — ver risco R-1.
+- `src/domain/projeto.test.ts` — geração de código, criação com evento
+  inicial, registro de eventos sem perder os anteriores, restauração de
+  versão preservando todo o histórico, alterar status/renomear, filtro por
+  texto/status combinados, ordenação por mais recente.
+- `src/domain/relatorio.test.ts` — campos básicos (nome/código/status/data),
+  "não configurado" quando falta tecido, agrupamento por tamanho (modelos x
+  quantidade total), ordenação alfabética, comprimento utilizado como maior
+  extensão em Y, aproveitamento+desperdício somando 100%, zero peças sem
+  NaN, contagem de `versaoDoEncaixe` por eventos de nesting, referências
+  únicas ignorando vazias.
+- `src/formats/relatorio-exportacao.test.ts` — PDF real (assinatura `%PDF-`,
+  tamanho mínimo), Excel real com round-trip completo (escreve com
+  `exceljs` e lê de volta com o mesmo `exceljs`, conferindo nomes de
+  planilha e valores de célula específicos — não só "não lançou exceção").
+- `src/integracao.test.ts` — encadeia DXF → Molde → nesting automático →
+  PDF do encaixe → Projeto → relatório de produção → PDF/Excel do
+  relatório, com dados reais e cruzando o aproveitamento calculado por duas
+  camadas independentes (nesting e relatório) para confirmar que concordam.
 
 Nenhum teste de UI de integração (React Testing Library) ainda — a UI tem
 lógica de canvas (não testável por `render()`/queries de DOM da mesma forma

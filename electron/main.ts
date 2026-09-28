@@ -43,10 +43,15 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
 ipcMain.handle(
   'salvar-arquivo',
   async (_evento, opcoes: { sugestaoDeNome: string; conteudo: ArrayBuffer }) => {
+    const extensao = path.extname(opcoes.sugestaoDeNome).replace(/^\./, '') || 'txt';
+    const NOMES_POR_EXTENSAO: Record<string, string> = {
+      pdf: 'PDF',
+      xlsx: 'Excel',
+    };
     const resultado = await dialog.showSaveDialog({
       title: 'Salvar arquivo',
       defaultPath: opcoes.sugestaoDeNome,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      filters: [{ name: NOMES_POR_EXTENSAO[extensao] ?? extensao.toUpperCase(), extensions: [extensao] }],
     });
     if (resultado.canceled || !resultado.filePath) return null;
     await writeFile(resultado.filePath, Buffer.from(opcoes.conteudo));
