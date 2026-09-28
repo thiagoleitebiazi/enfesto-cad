@@ -23,6 +23,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirEnfesto: () => void;
   readonly onSugerirPosicao: () => void;
   readonly podeSugerirPosicao: boolean;
+  readonly onNestingAutomatico: () => void;
+  readonly podeExecutarNesting: boolean;
 }
 
 const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
@@ -127,6 +129,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           }
         >
           Sugerir posição
+        </button>
+        <button
+          onClick={props.onNestingAutomatico}
+          disabled={!props.podeExecutarNesting}
+          title={
+            props.podeExecutarNesting
+              ? 'Automático: calcula o encaixe de todas as peças (respeitando quantidade, rotação e sentido do fio)'
+              : 'Configure o enfesto e adicione ao menos uma peça primeiro'
+          }
+        >
+          Nesting Automático
         </button>
       </div>
 

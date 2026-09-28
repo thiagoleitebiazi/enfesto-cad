@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { AreaDeDesenho, type ModoDeDesenho } from './ui/AreaDeDesenho';
 import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
@@ -21,8 +21,11 @@ import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
 import { sugerirPosicaoSemSobreposicao } from './domain/posicionamento';
+import type { ResultadoDeNesting } from './domain/nesting';
+import type { MensagemParaWorker } from './nesting.worker';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
+import { PainelDeNesting } from './ui/PainelDeNesting';
 import './App.css';
 
 function pecasDeDemonstracao(): Molde[] {
@@ -79,6 +82,12 @@ export default function App(): React.JSX.Element {
   const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(null);
   const [painelAberto, setPainelAberto] = useState<'tecido' | 'enfesto' | null>(null);
   const [mostrarValidacao, setMostrarValidacao] = useState(false);
+
+  const workerDeNestingRef = useRef<Worker | null>(null);
+  const [nestingExecutando, setNestingExecutando] = useState(false);
+  const [progressoNesting, setProgressoNesting] = useState<{ colocadas: number; total: number } | null>(null);
+  const [resultadoNesting, setResultadoNesting] = useState<ResultadoDeNesting | null>(null);
+  const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
 
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
@@ -242,6 +251,48 @@ export default function App(): React.JSX.Element {
     }
     aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? transladarMolde(p, delta, p.id) : p)));
   }, [pecas, selecionadoId, enfesto, aplicarMudanca]);
+
+  const iniciarNestingAutomatico = useCallback(() => {
+    if (!enfesto || pecas.length === 0) return;
+    setResultadoNesting(null);
+    setProgressoNesting({ colocadas: 0, total: pecas.reduce((soma, p) => soma + p.quantidade, 0) });
+    setNestingExecutando(true);
+    setMostrarPainelDeNesting(true);
+
+    const worker = new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
+    workerDeNestingRef.current = worker;
+    worker.onmessage = (evento: MessageEvent) => {
+      const mensagem = evento.data;
+      if (mensagem.tipo === 'progresso') {
+        setProgressoNesting({ colocadas: mensagem.colocadas, total: mensagem.total });
+      } else if (mensagem.tipo === 'concluido') {
+        setResultadoNesting(mensagem.resultado);
+        setNestingExecutando(false);
+        worker.terminate();
+        workerDeNestingRef.current = null;
+      }
+    };
+    const mensagemIniciar: MensagemParaWorker = { tipo: 'iniciar', pecas, enfesto };
+    worker.postMessage(mensagemIniciar);
+  }, [pecas, enfesto]);
+
+  const cancelarNestingAutomatico = useCallback(() => {
+    const mensagemCancelar: MensagemParaWorker = { tipo: 'cancelar' };
+    workerDeNestingRef.current?.postMessage(mensagemCancelar);
+  }, []);
+
+  const fecharPainelDeNesting = useCallback(() => {
+    setMostrarPainelDeNesting(false);
+    setResultadoNesting(null);
+  }, []);
+
+  const aplicarResultadoNesting = useCallback(() => {
+    if (!resultadoNesting) return;
+    aplicarMudanca(resultadoNesting.pecasColocadas.map((p) => p.molde));
+    setSelecionadoId(null);
+    setMostrarPainelDeNesting(false);
+    setResultadoNesting(null);
+  }, [resultadoNesting, aplicarMudanca]);
 
   const finalizarContornoEmEdicao = useCallback(() => {
     if (pontosEmEdicao.length < 3) return;
@@ -409,6 +460,8 @@ export default function App(): React.JSX.Element {
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
         onSugerirPosicao={sugerirPosicaoParaSelecionada}
         podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
+        onNestingAutomatico={iniciarNestingAutomatico}
+        podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -434,6 +487,16 @@ export default function App(): React.JSX.Element {
             setEnfesto(c);
             setPainelAberto(null);
           }}
+        />
+      )}
+      {mostrarPainelDeNesting && (
+        <PainelDeNesting
+          executando={nestingExecutando}
+          progresso={progressoNesting}
+          resultado={resultadoNesting}
+          onCancelar={cancelarNestingAutomatico}
+          onAplicar={aplicarResultadoNesting}
+          onFechar={fecharPainelDeNesting}
         />
       )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (

@@ -150,7 +150,38 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   variados/melhor aproveitamento global.
 
 ## Etapa 7 — Motor de NESTING automático
-**Não iniciado.**
+**Núcleo funcional entregue.**
+- [x] `domain/nesting.ts`: heurística "maior peça primeiro, primeiro
+  encaixe" usando contornos reais (não bounding box), reaproveitando a
+  primitiva de varredura da Etapa 6 (`encontrarPrimeiraPosicaoValida`).
+  Considera quantidade por peça, restrição de rotação (nunca tenta um
+  ângulo fora de `rotacoesPermitidas` — regra crítica da seção 5, testada
+  explicitamente), margens e distância mínima do enfesto, limites úteis.
+  Peças colocadas são reconstruídas via `rotacionarMolde`/`transladarMolde`
+  — furos, piques, marcas e margem de costura preservados.
+- [x] Não bloqueia a interface: cálculo roda em Web Worker
+  (`src/nesting.worker.ts`), com progresso peça a peça e cancelamento
+  cooperativo (resultado parcial honesto, não finge ter terminado).
+- [x] Métricas reais: peças colocadas/não colocadas, comprimento
+  utilizado, área ocupada, aproveitamento %, tempo de processamento.
+- [x] UI: botão "Nesting Automático" (grupo Encaixe), painel de progresso
+  + resultado (`PainelDeNesting`), lista peças que não couberam antes de
+  aplicar, "Aplicar ao projeto" substitui as peças pela disposição
+  calculada (uma única entrada no histórico de desfazer).
+- [x] Verificado numa sessão real do Electron: 5x "Frente" + 3x "Costas"
+  (8 peças) — todas as 8 colocadas, 0 não colocadas, 820mm de comprimento
+  utilizado, 78% de aproveitamento, 121ms; após aplicar, a validação da
+  Etapa 5 confirma "sem problemas" no layout resultante (sem sobreposição,
+  dentro dos limites, nenhuma rotação proibida).
+- [ ] Uma única estratégia heurística — não compara múltiplas tentativas/
+  ordenações nem usa busca local/algoritmos genéticos (ver ADR 0004).
+- [ ] Varredura por passo fixo (grade), não um algoritmo NFP contínuo —
+  limita a qualidade do encaixe; ajustável via `passoMm` mas não exposto
+  na UI ainda.
+- [ ] Tecidos direcionais/xadrez/listrado (`tecidoExigeRespeitoDeOrientacao`)
+  ainda não restringem as posições/rotações tentadas pelo motor
+  automático — ver risco R-4 em MATRIZ_DE_RISCOS.md.
+- [ ] Desempenho em escala grande (centenas de peças) não testado.
 
 ## Etapa 8 — PDF vetorial 1:1
 **Não iniciado.**
@@ -178,6 +209,13 @@ principal do Electron (decisão já tomada, implementação pendente).
 - `src/domain/posicionamento.test.ts` — sugestão em área vazia, desvio de
   peça existente respeitando distância mínima, `null` quando a peça não
   cabe ou a área está ocupada, margens respeitadas.
+- `src/domain/nesting.test.ts` — casos básicos (área vazia, sem
+  sobreposição no resultado, distância mínima, quantidade > 1, margens),
+  regra crítica do sentido do fio (nunca gira fora do permitido, mesmo
+  quando ajudaria a encaixar; usa 90° quando explicitamente permitido),
+  métricas (comprimento/área/aproveitamento coerentes, zero peças sem
+  NaN/erro, tempo via relógio injetado), interrupção cooperativa e
+  progresso, preservação de furos/piques/marcas/margem de costura.
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).

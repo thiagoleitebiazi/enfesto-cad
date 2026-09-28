@@ -284,6 +284,24 @@ body {
   color: #b45309;
 }
 
+.painel-de-nesting {
+  min-width: 320px;
+}
+
+.barra-de-progresso {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.barra-de-progresso-preenchimento {
+  height: 100%;
+  background: var(--cor-selecao);
+  transition: width 0.15s ease-out;
+}
+
 .faixa-de-instrucao {
   padding: 6px 12px;
   background: #e3f2fd;
