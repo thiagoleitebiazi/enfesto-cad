@@ -54,6 +54,11 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 - [ ] Importação AAMA/ASTM: tratada apenas como heurística de nome de camada
   sobre DXF comum, não uma implementação certificada — ver ADR 0002 e risco
   R-1 (nenhum arquivo real de terceiros disponível para testar).
+- [x] Bug real encontrado e corrigido numa análise posterior (2026-09-28):
+  `POLYLINE` clássica só lia a camada (código 8) de cada `VERTEX`, nunca do
+  cabeçalho da própria `POLYLINE` — arquivos que declaram a camada uma vez
+  só no cabeçalho perdiam a classificação silenciosamente. Teste de
+  regressão adicionado (`dxf-importacao.test.ts`).
 - [ ] Edição de pontos já existentes (arrastar vértice de um molde já criado)
   — hoje só é possível desenhar um contorno novo do zero, não editar um
   existente ponto a ponto.
@@ -325,7 +330,7 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 
 ## Testes automatizados existentes hoje
 
-185 testes em 14 arquivos:
+186 testes em 14 arquivos:
 - `src/domain/tecido.test.ts` — criação válida/inválida, `tecidoExigeRespeitoDeOrientacao`.
 - `src/domain/enfesto.test.ts` — validação comum aos 5 tipos, parâmetros
   próprios de Tubular e Ramado, espessuras físicas por camada, inversão de
@@ -361,8 +366,9 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 - `src/formats/dxf-importacao.test.ts` — unidades (mm/polegadas/ausente),
   contorno+fio básico, furos e linhas internas por camada, regra crítica
   (nunca inventar linha de fio), heurística de fallback de contorno, múltiplas
-  peças por arquivo, POLYLINE clássica, arquivo sem polilinha nenhuma. Todas
-  as fixtures são sintéticas — ver risco R-1.
+  peças por arquivo, POLYLINE clássica (camada repetida por VERTEX e camada
+  só no cabeçalho — regressão do bug real corrigido em 2026-09-28), arquivo
+  sem polilinha nenhuma. Todas as fixtures são sintéticas — ver risco R-1.
 - `src/domain/projeto.test.ts` — geração de código, criação com evento
   inicial, registro de eventos sem perder os anteriores, restauração de
   versão preservando todo o histórico, alterar status/renomear, filtro por

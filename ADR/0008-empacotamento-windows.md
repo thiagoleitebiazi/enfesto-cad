@@ -74,6 +74,54 @@ versão principal sem testes dedicados, no fim de uma sessão de trabalho já
 longa. É uma decisão que merece atenção própria do usuário antes de ser
 feita, não uma correção de rotina.
 
+### Atualização (2026-09-28): tentativa real de correção, bloqueada por dependência de sistema ausente
+
+Numa análise posterior pedida explicitamente pelo usuário ("resolver todos
+os erros"), a atualização foi de fato tentada: `electron@^44.4.5` (a
+`latest` publicada) instalada via `npm install`. O binário do Electron
+falhou ao carregar com:
+
+```
+Error: Cannot find native binding. npm has a bug related to optional
+dependencies (https://github.com/npm/cli/issues/4828). Please try `npm i`
+again after removing both package-lock.json and node_modules directory.
+```
+
+Uma reinstalação limpa (`node_modules` + `package-lock.json` removidos,
+`npm install` do zero) reproduziu o mesmo erro — descartando a explicação
+oficial do próprio pacote (bug de `optionalDependencies` do npm) como causa
+real. Inspecionando a cadeia de `cause` do erro diretamente
+(`e.cause.cause`, não só a mensagem de topo) revelou a causa verdadeira:
+`Não foi possível encontrar o módulo especificado` ao carregar
+`index.win32-x64-msvc.node` — um erro clássico do Windows (`ERROR_MOD_NOT_FOUND`)
+que quase sempre significa uma DLL da qual o binário nativo depende está
+faltando, não que o próprio arquivo `.node` esteja ausente ou corrompido
+(ele estava presente, com tamanho plausível). Confirmado: `vcruntime140.dll`,
+`vcruntime140_1.dll` e `msvcp140.dll` **não existem** em
+`C:\Windows\System32` nesta máquina — o Microsoft Visual C++ Redistributable
+(x64) não está instalado.
+
+**Causa raiz real**: a partir de uma versão recente, o próprio pacote
+`electron` passou a depender de `@electron-internal/extract-zip` — uma
+reescrita nativa (Rust/NAPI-RS) do `extract-zip` puro-JS antigo, usada só
+durante a instalação para descompactar o binário do Electron baixado — e
+essa reescrita nativa exige o runtime do Visual C++ para carregar no
+Windows, uma dependência que a versão antiga (JS puro) nunca teve. Isto **não
+é um bug do projeto nem do processo de upgrade** — é uma dependência de
+sistema genuinamente ausente nesta máquina específica, que só se manifestou
+porque o upgrade tentado troca justamente o componente que a introduz.
+
+**Decisão**: revertido para `electron@^33.4.11` (confirmado funcionando de
+novo: `electron.cmd --version` executa sem erro, suíte completa de 186
+testes verde) em vez de deixar o projeto num estado quebrado só para
+"tentar mesmo assim". Instalar software de sistema (o VC++ Redistributable)
+numa máquina de usuário sem confirmação explícita não é uma ação que este
+processo deveria tomar sozinho — é uma dependência externa ausente, uma das
+categorias explícitas para parar e perguntar em vez de contornar
+silenciosamente. Registrado como atualização do R-10 em
+MATRIZ_DE_RISCOS.md, com o link oficial da Microsoft para o instalador e os
+passos exatos para retomar depois que ele estiver instalado.
+
 `extract-zip@2.0.1` (dependência do próprio pacote `electron`, usada só
 durante `npm install` para descompactar o binário do Electron baixado) tem
 duas vulnerabilidades reais de severidade alta (travessia de symlink em

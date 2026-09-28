@@ -71,3 +71,20 @@ registrando os dois pesos: `registerStdFonts(Helvetica, HelveticaBold)`.
 - O relatório não tem preview embutido no app — só os dois botões de
   exportação (PDF/Excel), mesma limitação de "nenhuma visualização de PDF
   embutida" já registrada no ADR 0006.
+
+## Atualização (2026-09-28): risco R-8 (`uuid` via `exceljs`) fechado
+
+Numa análise de segurança posterior, em vez de só aceitar o risco moderado
+do R-8 (`uuid < 11.1.1`, transitivo de `exceljs@4.4.0` que fixa
+`uuid: ^8.3.0`), ele foi de fato eliminado: `exceljs` só chama `uuid.v4()`
+sem nenhum argumento (`node_modules/exceljs/lib/xlsx/xform/sheet/cf-ext/
+cf-rule-ext-xform.js`, usado apenas para IDs de regras de formatação
+condicional estendida — um recurso que este app nunca gera), e essa
+assinatura de `v4()` é idêntica em todas as versões relevantes de `uuid`.
+Isso tornava seguro forçar uma versão mais nova via
+`"overrides": { "uuid": "^11.1.1" }` em `package.json`, mesmo com `exceljs`
+continuando a declarar `^8.3.0` — sem esperar por uma nova versão do
+`exceljs` (que não é lançada há anos; `4.4.0` já é a mais recente estável).
+Verificado com a suíte completa (186 testes, incluindo o round-trip real do
+`.xlsx`) permanecendo verde e `npm audit` confirmando 0 vulnerabilidades
+moderadas depois da mudança.

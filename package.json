@@ -47,6 +47,9 @@
     "electron@33.4.11": true,
     "esbuild@0.25.12": true
   },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
   "build": {
     "appId": "com.enfestocad.app",
     "productName": "Enfesto CAD",

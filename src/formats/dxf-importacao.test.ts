@@ -247,6 +247,44 @@ describe('importarDxf — POLYLINE clássica (VERTEX/SEQEND)', () => {
     expect(resultado.pecas).toHaveLength(1);
     expect(area(resultado.pecas[0]!.contorno)).toBe(2500);
   });
+
+  it('lê a camada declarada só no cabeçalho da POLYLINE, sem repeti-la em cada VERTEX', () => {
+    // Convenção real também comum: a camada (código 8) é declarada uma vez
+    // no cabeçalho da POLYLINE e os VERTEX não a repetem (diferente do teste
+    // acima, que a repete em todo VERTEX) — bug real encontrado e corrigido:
+    // o parser pulava o cabeçalho inteiro sem ler o código 8 dele.
+    const doc = montar([
+      [0, 'SECTION'],
+      [2, 'HEADER'],
+      [9, '$INSUNITS'],
+      [70, 4],
+      [0, 'ENDSEC'],
+      [0, 'SECTION'],
+      [2, 'ENTITIES'],
+      [0, 'POLYLINE'],
+      [8, 'CONTORNO'],
+      [66, 1],
+      [0, 'VERTEX'],
+      [10, 0],
+      [20, 0],
+      [0, 'VERTEX'],
+      [10, 50],
+      [20, 0],
+      [0, 'VERTEX'],
+      [10, 50],
+      [20, 50],
+      [0, 'VERTEX'],
+      [10, 0],
+      [20, 50],
+      [0, 'SEQEND'],
+      [0, 'ENDSEC'],
+      [0, 'EOF'],
+    ]);
+    const resultado = importarDxf(doc, 'polyline-camada-no-cabecalho');
+    expect(resultado.pecas).toHaveLength(1);
+    expect(area(resultado.pecas[0]!.contorno)).toBe(2500);
+    expect(resultado.avisos.some((a) => /nenhuma camada de contorno reconhecida/i.test(a))).toBe(false);
+  });
 });
 
 describe('importarDxf — arquivo sem nenhuma polilinha', () => {

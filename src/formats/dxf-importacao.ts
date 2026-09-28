@@ -152,7 +152,14 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
       let fechada = false;
       const pontos: Ponto2D[] = [];
       i++;
-      while (i < pares.length && pares[i]!.codigo !== 0) i++; // cabeçalho da POLYLINE
+      // Cabeçalho da POLYLINE: muitos exportadores declaram a camada (código
+      // 8) só aqui, sem repeti-la em cada VERTEX — precisa ser lida, não só
+      // pulada, ou a peça inteira perde a classificação de camada quando os
+      // VERTEX não repetem o código 8.
+      while (i < pares.length && pares[i]!.codigo !== 0) {
+        if (pares[i]!.codigo === 8) camada = pares[i]!.valor;
+        i++;
+      }
       while (i < pares.length && pares[i]!.valor === 'VERTEX') {
         i++;
         let x = 0;
