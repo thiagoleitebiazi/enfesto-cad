@@ -15,6 +15,7 @@ import {
   type Molde,
 } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
+import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
 import type { Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -26,6 +27,7 @@ import type { MensagemParaWorker } from './nesting.worker';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import { PainelDeNesting } from './ui/PainelDeNesting';
+import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
 import './App.css';
 
 function pecasDeDemonstracao(): Molde[] {
@@ -88,6 +90,9 @@ export default function App(): React.JSX.Element {
   const [progressoNesting, setProgressoNesting] = useState<{ colocadas: number; total: number } | null>(null);
   const [resultadoNesting, setResultadoNesting] = useState<ResultadoDeNesting | null>(null);
   const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
+
+  const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
 
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
@@ -294,6 +299,43 @@ export default function App(): React.JSX.Element {
     setResultadoNesting(null);
   }, [resultadoNesting, aplicarMudanca]);
 
+  const exportarPdf = useCallback(
+    async (opcoesEscolhidas: OpcoesDeExportacaoEscolhidas) => {
+      const api = window.enfestoCad;
+      if (!api) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return;
+      }
+      setGerandoPdf(true);
+      try {
+        const opcoesDePagina = {
+          formato: opcoesEscolhidas.formato,
+          orientacao: opcoesEscolhidas.orientacao,
+          margemMm: opcoesEscolhidas.margemMm,
+        };
+        const blob =
+          opcoesEscolhidas.tipo === 'encaixe-completo' && enfesto
+            ? await gerarPdfDeEncaixe(pecas, enfesto, {
+                ...opcoesDePagina,
+                ...(tecido?.nome !== undefined ? { tecidoNome: tecido.nome } : {}),
+              })
+            : await gerarPdfDeMoldesIndividuais(pecas, opcoesDePagina);
+        const buffer = await blob.arrayBuffer();
+        const sugestaoDeNome =
+          opcoesEscolhidas.tipo === 'encaixe-completo' ? 'encaixe.pdf' : 'moldes.pdf';
+        const caminhoSalvo = await api.salvarArquivo(sugestaoDeNome, buffer);
+        if (caminhoSalvo) {
+          setMostrarExportacaoPdf(false);
+        }
+      } catch (e) {
+        window.alert(`Falha ao gerar o PDF: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setGerandoPdf(false);
+      }
+    },
+    [pecas, enfesto, tecido],
+  );
+
   const finalizarContornoEmEdicao = useCallback(() => {
     if (pontosEmEdicao.length < 3) return;
     if (area(pontosEmEdicao) <= 0) {
@@ -462,6 +504,8 @@ export default function App(): React.JSX.Element {
         podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
         onNestingAutomatico={iniciarNestingAutomatico}
         podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
+        onAbrirExportacaoPdf={() => setMostrarExportacaoPdf(true)}
+        podeExportarPdf={pecas.length > 0}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -497,6 +541,14 @@ export default function App(): React.JSX.Element {
           onCancelar={cancelarNestingAutomatico}
           onAplicar={aplicarResultadoNesting}
           onFechar={fecharPainelDeNesting}
+        />
+      )}
+      {mostrarExportacaoPdf && (
+        <PainelDeExportacaoPdf
+          podeExportarEncaixeCompleto={enfesto !== null}
+          gerando={gerandoPdf}
+          onExportar={(opcoes) => void exportarPdf(opcoes)}
+          onFechar={() => setMostrarExportacaoPdf(false)}
         />
       )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (

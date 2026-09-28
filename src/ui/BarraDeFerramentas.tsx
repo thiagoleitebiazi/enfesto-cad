@@ -25,11 +25,12 @@ interface BarraDeFerramentasProps {
   readonly podeSugerirPosicao: boolean;
   readonly onNestingAutomatico: () => void;
   readonly podeExecutarNesting: boolean;
+  readonly onAbrirExportacaoPdf: () => void;
+  readonly podeExportarPdf: boolean;
 }
 
 const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
-const NAO_IMPLEMENTADO_EXPORTAR = 'Ainda não implementado — exportação de PDF vetorial (Etapa 8)';
 const NAO_IMPLEMENTADO_COPIAR = 'Ainda não implementado — copiar/colar (use Duplicar por enquanto)';
 
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
@@ -110,7 +111,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
         <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF">
           Importar DXF
         </button>
-        <button disabled title={NAO_IMPLEMENTADO_EXPORTAR}>Exportar PDF</button>
+        <button
+          onClick={props.onAbrirExportacaoPdf}
+          disabled={!props.podeExportarPdf}
+          title={props.podeExportarPdf ? 'Exportar PDF vetorial em escala 1:1' : 'Adicione ao menos uma peça primeiro'}
+        >
+          Exportar PDF
+        </button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">

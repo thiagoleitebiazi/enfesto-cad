@@ -184,7 +184,46 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
 - [ ] Desempenho em escala grande (centenas de peças) não testado.
 
 ## Etapa 8 — PDF vetorial 1:1
-**Não iniciado.**
+**Núcleo funcional entregue.**
+- [x] `formats/pdf-exportacao.ts` (pdfkit + blob-stream): contornos viram
+  operações vetoriais reais (`moveTo`/`lineTo`), nunca imagem rasterizada.
+  Unidade mm convertida para pontos PDF só ao desenhar (`mmParaPontos`).
+- [x] Tipo A — `gerarPdfDeEncaixe`: tecido, moldes posicionados, dimensões,
+  comprimento, quantidade de camadas, ladrilhado (multi-página) quando a
+  área é maior que uma folha, etiqueta de posição por página para
+  remontagem.
+- [x] Tipo B — `gerarPdfDeMoldesIndividuais`: cada peça em escala real,
+  identificação (nome/referência/tamanho/quantidade), ladrilhado por peça
+  quando maior que uma folha.
+- [x] Cada peça desenhada com: contorno + furos (buraco real via regra
+  evenodd), linhas internas, linha de corte tracejada (quando há margem de
+  costura), piques, marcas, seta do sentido do fio.
+- [x] Régua de referência de 100mm em toda exportação, para conferir a
+  escala depois de imprimir.
+- [x] Formato de página (A4/A3/Letter), orientação (retrato/paisagem),
+  margem configuráveis via `PainelDeExportacaoPdf`. Salvamento real via IPC
+  do Electron (`salvar-arquivo`, diálogo nativo de salvar).
+- [x] Testes confirmam a GEOMETRIA real do PDF gerado, não só "não lançou
+  exceção": assinatura `%PDF-`, contagem de páginas via `/Count`, e uma
+  linha vetorial da régua de referência medida diretamente no fluxo de
+  conteúdo do PDF (`m`/`l`) batendo com `mmParaPontos(100)` — prova real de
+  escala 1:1, não presumida.
+- [x] Bug real encontrado e corrigido: a build do pdfkit para navegador não
+  registra fontes padrão automaticamente (precisa de `registerStdFonts()`)
+  — sem isso, `doc.text()` lançava exceção dentro do handler de clique,
+  manifestando como um `window.alert()` nativo que bloqueava toda a
+  interface (e travava scripts de automação). Ver ADR 0005.
+- [x] Verificado numa sessão real do Electron: os dois tipos de exportação
+  gerados e salvos em disco com sucesso, contagem de páginas conferida
+  batendo exatamente com o cálculo manual (9 páginas para um encaixe
+  500×700mm em A4 retrato margem 10mm; 8 páginas para 2 peças de 300×400mm
+  em moldes individuais).
+- [ ] Importação AAMA/ASTM real de PDF não se aplica (isso é da Etapa 3);
+  aqui a limitação é: não usa nenhuma biblioteca/verificador externo de
+  conformidade PDF/A ou similar — só a própria geração via pdfkit.
+- [ ] Impressão em múltiplas páginas testada só estruturalmente (contagem
+  de páginas, geometria); nunca impressa fisicamente para confirmar que a
+  régua de referência realmente mede 100mm no papel.
 
 ## Etapa 9 — Biblioteca, atalhos de trabalhos ripados, histórico
 **Não iniciado.** Ver ADR 0001 nota sobre persistência via `fs` do processo
@@ -216,6 +255,11 @@ principal do Electron (decisão já tomada, implementação pendente).
   métricas (comprimento/área/aproveitamento coerentes, zero peças sem
   NaN/erro, tempo via relógio injetado), interrupção cooperativa e
   progresso, preservação de furos/piques/marcas/margem de costura.
+- `src/formats/pdf-exportacao.test.ts` — conversão mm↔pontos, orientação de
+  página, estrutura real do PDF (assinatura, contagem de páginas via
+  ladrilhado, rótulo de texto decodificado dos glifos hex do pdfkit),
+  escala 1:1 verificada geometricamente (linha vetorial da régua de
+  referência medida no fluxo de conteúdo).
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).

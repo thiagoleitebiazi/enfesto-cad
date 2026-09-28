@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +39,20 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
   const conteudo = await readFile(caminho, 'utf-8');
   return { caminho, conteudo };
 });
+
+ipcMain.handle(
+  'salvar-arquivo',
+  async (_evento, opcoes: { sugestaoDeNome: string; conteudo: ArrayBuffer }) => {
+    const resultado = await dialog.showSaveDialog({
+      title: 'Salvar arquivo',
+      defaultPath: opcoes.sugestaoDeNome,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (resultado.canceled || !resultado.filePath) return null;
+    await writeFile(resultado.filePath, Buffer.from(opcoes.conteudo));
+    return resultado.filePath;
+  },
+);
 
 app.whenReady().then(() => {
   criarJanelaPrincipal();
