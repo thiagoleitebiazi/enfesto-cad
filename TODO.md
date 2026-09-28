@@ -314,17 +314,17 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   Ver ADR 0008.
 - [x] Risco real descoberto ao auditar a árvore completa de dependências
   pela primeira vez (`npm audit` após instalar `electron-builder`):
-  `electron@33.4.11` está várias versões principais atrás e acumula
-  vulnerabilidades reais conhecidas. Deliberadamente não corrigido nesta
-  etapa (upgrade de versão principal, risco real de quebra, merece etapa
-  própria) — registrado como risco R-10 em MATRIZ_DE_RISCOS.md, não
-  escondido.
+  `electron@33.4.11` estava várias versões principais atrás e acumulava
+  vulnerabilidades reais conhecidas. **Corrigido numa análise posterior**
+  (2026-09-28, com autorização explícita do usuário para instalar o VC++
+  Redistributable ausente nesta máquina): `electron@44.4.5`, `npm audit`
+  confirma 0 vulnerabilidades altas/moderadas, suíte completa + sessão real
+  do Electron + reempacotamento todos verificados. Risco R-10 fechado em
+  MATRIZ_DE_RISCOS.md. Ver ADR 0008.
 - [ ] Nenhuma assinatura de código real no instalador (sem certificado) —
   Windows SmartScreen vai avisar sobre executável não verificado. Ver ADR
   0008.
 - [ ] Sem ícone customizado — usa o ícone padrão do Electron.
-- [ ] `electron@33.4.11` não atualizado (risco R-10) — decisão deliberada,
-  não uma limitação técnica.
 
 ---
 

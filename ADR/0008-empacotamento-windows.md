@@ -129,6 +129,46 @@ arquivos zip). Risco aceito como as demais dependências de build (ADR 0005):
 não roda com entrada de usuário nem em produção, só durante instalação de
 dependências a partir do pacote oficial `electron` no registro npm.
 
+### Atualização final (2026-09-28): upgrade concluído com autorização explícita
+
+O usuário pediu explicitamente para instalar o VC++ Redistributable e
+concluir o upgrade. Processo seguido:
+
+1. Baixado `vc_redist.x64.exe` do link oficial da Microsoft
+   (`https://aka.ms/vs/17/release/vc_redist.x64.exe`) via
+   `Invoke-WebRequest`.
+2. **Assinatura Authenticode verificada antes de executar**
+   (`Get-AuthenticodeSignature`): `Status: Valid`, certificado emitido para
+   `CN=Microsoft Corporation` por `Microsoft Code Signing PCA 2011` — não
+   presumido só pelo nome do arquivo ou pela URL.
+3. Instalado silenciosamente (`/install /quiet /norestart`). Como o
+   terminal não roda elevado, isto exigiu aprovação de UAC — o processo
+   ficou bloqueado esperando até a aprovação (esperado e comunicado ao
+   usuário nesse meio-tempo, não presumido como concedida antes de o
+   processo de instalação realmente terminar com sucesso).
+4. Confirmado `vcruntime140.dll`/`vcruntime140_1.dll`/`msvcp140.dll`
+   presentes em `System32` depois da instalação.
+5. `electron@^44.4.5` reaplicado, `npm install` — desta vez o binário
+   carregou (`electron.cmd --version` → `v44.4.5`, sem o erro anterior).
+6. Suíte completa: typecheck/lint/testes (186 testes)/build, todos verdes.
+   `npm audit`: 0 vulnerabilidades altas/moderadas (restam só as 6 baixas
+   já aceitas do R-5, inalteradas por este upgrade).
+7. Sessão real do Electron 44 (não só a suíte automatizada): app carrega
+   (`process.versions.electron === '44.4.5'`, Chrome 152, Node 24.21), API
+   do `contextBridge` continua exposta (`window.enfestoCad`), canvas
+   renderiza, o painel de Relatórios abre com dados reais do projeto —
+   confirmado por captura de tela real (`capturePage()`), não só por texto
+   do DOM.
+8. Reempacotado (`npm run package:win`): `electron-builder` reconhece
+   `electronVersion=44.4.5`, gera um instalador NSIS novo (~115MB, maior
+   que o anterior de ~89MB — esperado, builds mais recentes do Chromium são
+   maiores). O executável empacotado (`release/win-unpacked/Enfesto CAD.exe`)
+   foi relançado diretamente (mesmo método do primeiro empacotamento — sem
+   rodar o instalador de verdade, sem gravar no Registro do Windows) e abriu
+   uma janela real com título "Enfesto CAD".
+
+R-10 fechado em MATRIZ_DE_RISCOS.md com esta evidência.
+
 ## Consequências
 
 - `release/` (instalador + build desempacotado) já está no `.gitignore` —
