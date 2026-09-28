@@ -226,8 +226,47 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   régua de referência realmente mede 100mm no papel.
 
 ## Etapa 9 — Biblioteca, atalhos de trabalhos ripados, histórico
-**Não iniciado.** Ver ADR 0001 nota sobre persistência via `fs` do processo
-principal do Electron (decisão já tomada, implementação pendente).
+**Núcleo funcional entregue.**
+- [x] `domain/projeto.ts`: entidade `Projeto` (id, nome, código gerado por
+  data+sequencial, datas de criação/modificação, status, estado atual,
+  histórico). Persistência real via IPC do Electron — um arquivo JSON por
+  projeto em `<userData>/projetos/`, sobrevive a fechar e reabrir o app
+  (`listar-projetos`/`salvar-projeto`/`excluir-projeto`).
+- [x] `PainelDeBiblioteca`: lista ordenada por mais recente primeiro, busca
+  por nome/código/tecido, filtro por status, Abrir/Duplicar/Renomear/
+  Arquivar/Excluir (excluir sempre pede confirmação). Seções 9 e 10 do
+  escopo unificadas neste único painel — "Abrir" já é o atalho persistente
+  que a seção 10 pede (aponta para o projeto real salvo em disco, não uma
+  imagem/link temporário). Ver ADR 0006.
+- [x] Botões "Novo"/"Abrir"/"Salvar"/"Salvar como" da barra de ferramentas,
+  antes desabilitados, agora reais. Atalhos de teclado Ctrl+S (salvar) e
+  Ctrl+O (abrir biblioteca).
+- [x] `PainelDeHistorico`: lista de eventos (criação, salvamento, mudança
+  de tecido/enfesto, execução de nesting, exportação de PDF), mais recente
+  primeiro, com "Restaurar esta versão" por evento — restaurar NUNCA apaga
+  histórico, sempre adiciona um novo evento de restauração.
+- [x] Salvamento automático a cada 60s quando algo mudou desde o último
+  evento registrado (cobre recuperação após queda/travamento — o estado
+  mais recente já fica na Biblioteca, sem precisar de um fluxo separado de
+  "restaurar rascunho").
+- [x] Verificado numa sessão real do Electron, incluindo um REINÍCIO
+  completo do processo (não só recarregar a página): salvar um projeto com
+  uma peça girada, encerrar o Electron por completo, abrir um processo
+  novo do zero, confirmar que a Biblioteca lista o projeto vindo do disco,
+  abrir e confirmar que a rotação salva volta corretamente; restaurar uma
+  versão anterior do histórico múltiplas vezes em sequência, confirmado
+  por inspeção direta do arquivo JSON persistido (não só pela tela) que
+  nenhum evento de histórico foi perdido.
+- [ ] Só os status `em-edicao`/`arquivado` estão ligados a uma ação real de
+  UI — `calculando`/`concluido`/`pronto-para-producao` existem no tipo mas
+  sem operação real que os justifique ainda (seção 9 pede status
+  "conforme as operações realmente implementadas").
+- [ ] `envio-para-producao` existe como tipo de evento de histórico mas
+  nenhuma ação de UI o dispara — nenhuma etapa do escopo define ainda o
+  que "enviar para produção" significa concretamente neste app.
+- [ ] Nenhum visualizador de PDF embutido na biblioteca (abre pelo SO).
+- [ ] Sem cópia de segurança automática nem otimização para bibliotecas
+  muito grandes/histórico muito extenso — ver riscos R-6/R-7.
 
 ## Etapa 10 — Relatórios, testes integrados, empacotamento Windows
 **Não iniciado.**
@@ -260,6 +299,11 @@ principal do Electron (decisão já tomada, implementação pendente).
   ladrilhado, rótulo de texto decodificado dos glifos hex do pdfkit),
   escala 1:1 verificada geometricamente (linha vetorial da régua de
   referência medida no fluxo de conteúdo).
+- `src/domain/projeto.test.ts` — geração de código, criação com evento
+  inicial, registro de eventos sem perder os anteriores, restauração de
+  versão preservando todo o histórico (incluindo erro para id inexistente),
+  alterar status/renomear, filtro por texto/status combinados, ordenação
+  por mais recente.
 - `src/core/geometria.test.ts` — vetores, bbox, área (shoelace), ponto-
   dentro-do-contorno, translação/rotação de contorno, ponto mais próximo de
   segmento/contorno, deslocamento de contorno para fora (margem de costura).

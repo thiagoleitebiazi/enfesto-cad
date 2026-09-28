@@ -503,3 +503,133 @@ body {
   font-size: 11px;
   color: #374151;
 }
+
+.painel-de-biblioteca {
+  min-width: 480px;
+  max-width: 70vw;
+}
+
+.filtros-da-biblioteca {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.filtros-da-biblioteca input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.filtros-da-biblioteca select {
+  padding: 6px 8px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.lista-da-biblioteca {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.lista-da-biblioteca li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-bottom: 1px solid var(--cor-borda);
+  font-size: 12px;
+}
+
+.lista-da-biblioteca li.item-selecionado {
+  background: #eef2f7;
+}
+
+.detalhes-do-projeto {
+  color: #6b7280;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.acoes-do-projeto {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.acoes-do-projeto button {
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+}
+
+.botao-perigo {
+  color: #b91c1c;
+  border-color: #f87171 !important;
+}
+
+.linha-de-renomear {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.linha-de-renomear input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 3px;
+}
+
+.lista-de-historico {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.lista-de-historico li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--cor-borda);
+  font-size: 12px;
+}
+
+.data-do-evento {
+  color: #6b7280;
+  font-weight: normal;
+}
+
+.descricao-do-evento {
+  font-size: 11px;
+  color: #4b5563;
+  margin-top: 2px;
+}
+
+.detalhes-do-evento {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.botao-restaurar {
+  margin-top: 6px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--cor-selecao);
+  color: var(--cor-selecao);
+  border-radius: 3px;
+  background: white;
+  cursor: pointer;
+}

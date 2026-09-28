@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +53,50 @@ ipcMain.handle(
     return resultado.filePath;
   },
 );
+
+/**
+ * Biblioteca permanente de trabalhos (seção 9): cada projeto vira um
+ * arquivo JSON em <userData>/projetos/<id>.json — sobrevive a fechar e
+ * reabrir o app (nenhum servidor, nenhum banco de dados, ADR 0010 do
+ * moda-cad continua valendo aqui: local-first).
+ */
+function diretorioDeProjetos(): string {
+  return path.join(app.getPath('userData'), 'projetos');
+}
+
+async function garantirDiretorioDeProjetos(): Promise<string> {
+  const dir = diretorioDeProjetos();
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+ipcMain.handle('listar-projetos', async () => {
+  const dir = await garantirDiretorioDeProjetos();
+  const arquivos = (await readdir(dir)).filter((f) => f.endsWith('.json'));
+  const projetos: unknown[] = [];
+  for (const arquivo of arquivos) {
+    try {
+      const conteudo = await readFile(path.join(dir, arquivo), 'utf-8');
+      projetos.push(JSON.parse(conteudo));
+    } catch {
+      // Arquivo corrompido/ilegível: ignora silenciosamente na listagem em
+      // vez de derrubar a biblioteca inteira — mas não apaga nada.
+    }
+  }
+  return projetos;
+});
+
+ipcMain.handle('salvar-projeto', async (_evento, projeto: { id: string }) => {
+  const dir = await garantirDiretorioDeProjetos();
+  await writeFile(path.join(dir, `${projeto.id}.json`), JSON.stringify(projeto, null, 2), 'utf-8');
+  return true;
+});
+
+ipcMain.handle('excluir-projeto', async (_evento, id: string) => {
+  const dir = await garantirDiretorioDeProjetos();
+  await unlink(path.join(dir, `${id}.json`));
+  return true;
+});
 
 app.whenReady().then(() => {
   criarJanelaPrincipal();

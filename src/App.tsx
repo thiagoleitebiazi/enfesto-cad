@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AreaDeDesenho, type ModoDeDesenho } from './ui/AreaDeDesenho';
 import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
@@ -28,6 +28,19 @@ import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import { PainelDeNesting } from './ui/PainelDeNesting';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
+import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
+import { PainelDeHistorico } from './ui/PainelDeHistorico';
+import {
+  criarProjeto,
+  registrarEvento,
+  restaurarVersao,
+  alterarStatus,
+  renomearProjeto,
+  gerarCodigoDeProjeto,
+  type Projeto,
+  type EstadoDoProjeto,
+  type TipoDeEvento,
+} from './domain/projeto';
 import './App.css';
 
 function pecasDeDemonstracao(): Molde[] {
@@ -62,6 +75,12 @@ function proximoId(): string {
   return `peca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function novoProjetoVazio(estadoInicial: EstadoDoProjeto): Projeto {
+  const agora = new Date().toISOString();
+  const id = `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return criarProjeto('Projeto sem título', id, gerarCodigoDeProjeto(agora, 1), agora, estadoInicial);
+}
+
 export default function App(): React.JSX.Element {
   const [pecas, setPecas] = useState<Molde[]>(pecasDeDemonstracao);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
@@ -94,6 +113,13 @@ export default function App(): React.JSX.Element {
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
 
+  const [projetoAtual, setProjetoAtual] = useState<Projeto>(() =>
+    novoProjetoVazio({ pecas: pecasDeDemonstracao(), tecido: null, enfesto: null }),
+  );
+  const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
+  const [mostrarBiblioteca, setMostrarBiblioteca] = useState(false);
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
     () =>
@@ -102,6 +128,31 @@ export default function App(): React.JSX.Element {
       ),
     [problemasDeValidacao],
   );
+
+  const persistirProjeto = useCallback((projeto: Projeto) => {
+    void window.enfestoCad?.salvarProjeto(projeto).catch(() => {
+      // Falha ao persistir (ex.: disco cheio) não deve travar a edição —
+      // o usuário ainda tem o estado em memória e pode tentar salvar de novo.
+    });
+  }, []);
+
+  const registrarEventoEPersistir = useCallback(
+    (tipo: TipoDeEvento, estado: EstadoDoProjeto, descricao?: string) => {
+      setProjetoAtual((atual) => {
+        const atualizado = registrarEvento(atual, tipo, estado, new Date().toISOString(), descricao);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+
+  const carregarListaDeProjetos = useCallback(() => {
+    void window.enfestoCad
+      ?.listarProjetos()
+      .then((lista) => setProjetos(lista))
+      .catch(() => setProjetos([]));
+  }, []);
 
   const aplicarMudanca = useCallback(
     (novasPecas: Molde[]) => {
@@ -143,12 +194,124 @@ export default function App(): React.JSX.Element {
   }, [pecas, selecionadoId, aplicarMudanca]);
 
   const novoProjeto = useCallback(() => {
-    if (pecas.length > 0 && !window.confirm('Começar um novo projeto descarta as peças atuais (não salvas). Continuar?')) {
+    if (pecas.length > 0 && !window.confirm('Começar um novo projeto descarta as peças atuais não salvas da tela (o projeto anterior continua na biblioteca, se já foi salvo). Continuar?')) {
       return;
     }
-    aplicarMudanca([]);
+    setPecas([]);
+    setTecido(null);
+    setEnfesto(null);
     setSelecionadoId(null);
-  }, [pecas, aplicarMudanca]);
+    setPassado([]);
+    setFuturo([]);
+    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
+  }, [pecas]);
+
+  const salvarProjetoAtual = useCallback(() => {
+    registrarEventoEPersistir('salvamento', { pecas, tecido, enfesto });
+  }, [pecas, tecido, enfesto, registrarEventoEPersistir]);
+
+  const salvarComo = useCallback(() => {
+    const nome = window.prompt('Nome do novo projeto:', `${projetoAtual.nome} (cópia)`);
+    if (!nome) return;
+    const novo = novoProjetoVazio({ pecas, tecido, enfesto });
+    const renomeado = renomearProjeto(novo, nome, new Date().toISOString());
+    setProjetoAtual(renomeado);
+    persistirProjeto(renomeado);
+  }, [pecas, tecido, enfesto, projetoAtual.nome, persistirProjeto]);
+
+  const abrirBiblioteca = useCallback(() => {
+    carregarListaDeProjetos();
+    setMostrarBiblioteca(true);
+  }, [carregarListaDeProjetos]);
+
+  const abrirProjeto = useCallback(
+    (id: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (!projeto) return;
+      setPecas([...projeto.estadoAtual.pecas]);
+      setTecido(projeto.estadoAtual.tecido);
+      setEnfesto(projeto.estadoAtual.enfesto);
+      setSelecionadoId(null);
+      setPassado([]);
+      setFuturo([]);
+      setProjetoAtual(projeto);
+      setMostrarBiblioteca(false);
+    },
+    [projetos],
+  );
+
+  const duplicarProjetoDaBiblioteca = useCallback(
+    (id: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (!projeto) return;
+      const agora = new Date().toISOString();
+      const copia = criarProjeto(`${projeto.nome} (cópia)`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, gerarCodigoDeProjeto(agora, 1), agora, projeto.estadoAtual);
+      persistirProjeto(copia);
+      carregarListaDeProjetos();
+    },
+    [projetos, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const renomearProjetoDaBiblioteca = useCallback(
+    (id: string, novoNome: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (!projeto || !novoNome.trim()) return;
+      const atualizado = renomearProjeto(projeto, novoNome.trim(), new Date().toISOString());
+      persistirProjeto(atualizado);
+      if (id === projetoAtual.id) setProjetoAtual(atualizado);
+      carregarListaDeProjetos();
+    },
+    [projetos, projetoAtual.id, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const arquivarProjetoDaBiblioteca = useCallback(
+    (id: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (!projeto) return;
+      const atualizado = alterarStatus(projeto, 'arquivado', new Date().toISOString());
+      persistirProjeto(atualizado);
+      if (id === projetoAtual.id) setProjetoAtual(atualizado);
+      carregarListaDeProjetos();
+    },
+    [projetos, projetoAtual.id, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const excluirProjetoDaBiblioteca = useCallback(
+    (id: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (!projeto) return;
+      if (!window.confirm(`Excluir permanentemente o projeto "${projeto.nome}"? Esta ação não pode ser desfeita.`)) {
+        return;
+      }
+      void window.enfestoCad
+        ?.excluirProjeto(id)
+        .then(() => {
+          carregarListaDeProjetos();
+          if (id === projetoAtual.id) {
+            setPecas([]);
+            setTecido(null);
+            setEnfesto(null);
+            setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
+          }
+        })
+        .catch(() => window.alert('Falha ao excluir o projeto.'));
+    },
+    [projetos, projetoAtual.id, carregarListaDeProjetos],
+  );
+
+  const restaurarVersaoDoHistorico = useCallback(
+    (idDoEvento: string) => {
+      const atualizado = restaurarVersao(projetoAtual, idDoEvento, new Date().toISOString());
+      setPecas([...atualizado.estadoAtual.pecas]);
+      setTecido(atualizado.estadoAtual.tecido);
+      setEnfesto(atualizado.estadoAtual.enfesto);
+      setPassado([]);
+      setFuturo([]);
+      setProjetoAtual(atualizado);
+      persistirProjeto(atualizado);
+    },
+    [projetoAtual, persistirProjeto],
+  );
 
   const zoom = useCallback((fator: number) => {
     setTransform((t) => aplicarZoom(t, fator, { x: 400, y: 300 }));
@@ -293,11 +456,17 @@ export default function App(): React.JSX.Element {
 
   const aplicarResultadoNesting = useCallback(() => {
     if (!resultadoNesting) return;
-    aplicarMudanca(resultadoNesting.pecasColocadas.map((p) => p.molde));
+    const novasPecas = resultadoNesting.pecasColocadas.map((p) => p.molde);
+    aplicarMudanca(novasPecas);
     setSelecionadoId(null);
     setMostrarPainelDeNesting(false);
     setResultadoNesting(null);
-  }, [resultadoNesting, aplicarMudanca]);
+    registrarEventoEPersistir(
+      'execucao-de-nesting',
+      { pecas: novasPecas, tecido, enfesto },
+      `${resultadoNesting.pecasColocadas.length} peça(s) colocada(s), ${resultadoNesting.aproveitamentoPercentual.toFixed(1)}% de aproveitamento`,
+    );
+  }, [resultadoNesting, aplicarMudanca, tecido, enfesto, registrarEventoEPersistir]);
 
   const exportarPdf = useCallback(
     async (opcoesEscolhidas: OpcoesDeExportacaoEscolhidas) => {
@@ -326,6 +495,7 @@ export default function App(): React.JSX.Element {
         const caminhoSalvo = await api.salvarArquivo(sugestaoDeNome, buffer);
         if (caminhoSalvo) {
           setMostrarExportacaoPdf(false);
+          registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Salvo em ${caminhoSalvo}`);
         }
       } catch (e) {
         window.alert(`Falha ao gerar o PDF: ${e instanceof Error ? e.message : String(e)}`);
@@ -333,8 +503,31 @@ export default function App(): React.JSX.Element {
         setGerandoPdf(false);
       }
     },
-    [pecas, enfesto, tecido],
+    [pecas, enfesto, tecido, registrarEventoEPersistir],
   );
+
+  const estadoAoVivoRef = useRef<EstadoDoProjeto>({ pecas, tecido, enfesto });
+  useEffect(() => {
+    estadoAoVivoRef.current = { pecas, tecido, enfesto };
+  }, [pecas, tecido, enfesto]);
+
+  // Salvamento automático (seção 11): a cada 60s, se algo mudou desde o
+  // último evento registrado, grava um novo "salvamento" — cobre queda de
+  // energia/travamento sem exigir um fluxo de "recuperar rascunho" à parte:
+  // o estado salvo mais recente já fica disponível na Biblioteca.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      setProjetoAtual((atual) => {
+        const mudou =
+          JSON.stringify(atual.estadoAtual) !== JSON.stringify(estadoAoVivoRef.current);
+        if (!mudou) return atual;
+        const atualizado = registrarEvento(atual, 'salvamento', estadoAoVivoRef.current, new Date().toISOString(), 'Salvamento automático');
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    }, 60000);
+    return () => clearInterval(intervalo);
+  }, [persistirProjeto]);
 
   const finalizarContornoEmEdicao = useCallback(() => {
     if (pontosEmEdicao.length < 3) return;
@@ -472,9 +665,27 @@ export default function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
         ajustarTela();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        salvarProjetoAtual();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        abrirBiblioteca();
       }
     },
-    [modo, cancelarModo, finalizarContornoEmEdicao, desfazer, refazer, duplicarSelecionado, excluirSelecionado, zoom, ajustarTela],
+    [
+      modo,
+      cancelarModo,
+      finalizarContornoEmEdicao,
+      desfazer,
+      refazer,
+      duplicarSelecionado,
+      excluirSelecionado,
+      zoom,
+      ajustarTela,
+      salvarProjetoAtual,
+      abrirBiblioteca,
+    ],
   );
 
   return (
@@ -506,6 +717,10 @@ export default function App(): React.JSX.Element {
         podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
         onAbrirExportacaoPdf={() => setMostrarExportacaoPdf(true)}
         podeExportarPdf={pecas.length > 0}
+        onSalvar={salvarProjetoAtual}
+        onSalvarComo={salvarComo}
+        onAbrirBiblioteca={abrirBiblioteca}
+        onAbrirHistorico={() => setMostrarHistorico(true)}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -520,6 +735,7 @@ export default function App(): React.JSX.Element {
           onSalvar={(t) => {
             setTecido(t);
             setPainelAberto(null);
+            registrarEventoEPersistir('mudanca-de-configuracao', { pecas, tecido: t, enfesto }, `Tecido: ${t.nome}`);
           }}
         />
       )}
@@ -530,6 +746,11 @@ export default function App(): React.JSX.Element {
           onSalvar={(c) => {
             setEnfesto(c);
             setPainelAberto(null);
+            registrarEventoEPersistir(
+              'mudanca-de-configuracao',
+              { pecas, tecido, enfesto: c },
+              `Enfesto: ${ROTULO_DO_TIPO[c.tipo]}`,
+            );
           }}
         />
       )}
@@ -549,6 +770,28 @@ export default function App(): React.JSX.Element {
           gerando={gerandoPdf}
           onExportar={(opcoes) => void exportarPdf(opcoes)}
           onFechar={() => setMostrarExportacaoPdf(false)}
+        />
+      )}
+      {mostrarBiblioteca && (
+        <PainelDeBiblioteca
+          projetos={projetos}
+          projetoAtualId={projetoAtual.id}
+          onAbrir={abrirProjeto}
+          onDuplicar={duplicarProjetoDaBiblioteca}
+          onRenomear={renomearProjetoDaBiblioteca}
+          onArquivar={arquivarProjetoDaBiblioteca}
+          onExcluir={excluirProjetoDaBiblioteca}
+          onFechar={() => setMostrarBiblioteca(false)}
+        />
+      )}
+      {mostrarHistorico && (
+        <PainelDeHistorico
+          projeto={projetoAtual}
+          onRestaurar={(idDoEvento) => {
+            restaurarVersaoDoHistorico(idDoEvento);
+            setMostrarHistorico(false);
+          }}
+          onFechar={() => setMostrarHistorico(false)}
         />
       )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (

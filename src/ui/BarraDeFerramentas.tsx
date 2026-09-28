@@ -27,9 +27,12 @@ interface BarraDeFerramentasProps {
   readonly podeExecutarNesting: boolean;
   readonly onAbrirExportacaoPdf: () => void;
   readonly podeExportarPdf: boolean;
+  readonly onSalvar: () => void;
+  readonly onSalvarComo: () => void;
+  readonly onAbrirBiblioteca: () => void;
+  readonly onAbrirHistorico: () => void;
 }
 
-const NAO_IMPLEMENTADO_ARQUIVO = 'Ainda não implementado — biblioteca de projetos (Etapa 9 do plano)';
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 const NAO_IMPLEMENTADO_COPIAR = 'Ainda não implementado — copiar/colar (use Duplicar por enquanto)';
 
@@ -38,9 +41,11 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
     <div className="barra-de-ferramentas" role="toolbar" aria-label="Barra de ferramentas principal">
       <div className="grupo-de-ferramentas" role="group" aria-label="Arquivo">
         <button onClick={props.onNovoProjeto}>Novo</button>
-        <button disabled title={NAO_IMPLEMENTADO_ARQUIVO}>Abrir</button>
-        <button disabled title={NAO_IMPLEMENTADO_ARQUIVO}>Salvar</button>
-        <button disabled title={NAO_IMPLEMENTADO_ARQUIVO}>Salvar como</button>
+        <button onClick={props.onAbrirBiblioteca} title="Abrir um projeto da biblioteca (Ctrl+O)">Abrir</button>
+        <button onClick={props.onSalvar} title="Salvar o projeto atual (Ctrl+S)">Salvar</button>
+        <button onClick={props.onSalvarComo} title="Salvar como um novo projeto">Salvar como</button>
+        <button onClick={props.onAbrirBiblioteca} title="Biblioteca de trabalhos">Biblioteca</button>
+        <button onClick={props.onAbrirHistorico} title="Histórico e versões deste projeto">Histórico</button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Edição">
