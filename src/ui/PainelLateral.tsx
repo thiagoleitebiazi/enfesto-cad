@@ -1,11 +1,25 @@
 import type { Molde, RestricaoDeRotacao } from '../domain/molde';
 import { dimensoesDoMolde, rotacoesPermitidas } from '../domain/molde';
+import { retanguloEnvolvente, type Contorno } from '../core/geometria';
 
 interface PainelDePecasProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
   readonly idsSelecionadosEmLote?: ReadonlySet<string>;
   readonly onSelecionar: (id: string) => void;
+}
+
+/** Miniatura do contorno da peça (só o formato, sem furos/piques) — mesma ideia das miniaturas de peça de um CAD de moldes profissional. */
+function MiniaturaDoMolde({ contorno }: { readonly contorno: Contorno }): React.JSX.Element {
+  const bbox = retanguloEnvolvente(contorno);
+  const margem = Math.max(bbox.largura, bbox.altura, 1) * 0.12;
+  const viewBox = `${bbox.minX - margem} ${bbox.minY - margem} ${bbox.largura + margem * 2 || 1} ${bbox.altura + margem * 2 || 1}`;
+  const pontos = contorno.map((p) => `${p.x},${p.y}`).join(' ');
+  return (
+    <svg className="miniatura-de-peca" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <polygon points={pontos} />
+    </svg>
+  );
 }
 
 export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
@@ -26,7 +40,10 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
                 }
                 onClick={() => props.onSelecionar(peca.id)}
               >
-                {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho})</span>
+                <MiniaturaDoMolde contorno={peca.contorno} />
+                <span className="texto-do-item-de-peca">
+                  {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho})</span>
+                </span>
               </button>
             </li>
           ))}

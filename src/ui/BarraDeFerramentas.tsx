@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
+import { Icone } from './Icone';
 
 interface BarraDeFerramentasProps {
   readonly modo: ModoDeDesenho;
@@ -72,7 +73,9 @@ const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
  * visível à direita) porque zoom é uma necessidade constante,
  * independente da aba/tarefa atual — mesmo padrão de programas de
  * desenho com barra de abas (a visualização nunca fica "escondida" atrás
- * de uma aba).
+ * de uma aba). Cada botão tem ícone + rótulo (acabamento de ribbon
+ * profissional), com ícones desenhados para este projeto — sem copiar o
+ * conjunto de ícones de nenhum software de referência.
  */
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
   const [abaAtiva, setAbaAtiva] = useState<Aba>('desenho');
@@ -97,40 +100,66 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
         <div className="ribbon-conteudo-abas" role="tabpanel">
           {abaAtiva === 'arquivo' && (
             <div className="grupo-de-ferramentas" role="group" aria-label="Arquivo">
-              <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">Novo</button>
-              <button onClick={props.onAbrirBiblioteca} title="Abrir um projeto da biblioteca (Ctrl+O)">Abrir</button>
-              <button onClick={props.onSalvar} title="Salvar o projeto atual (Ctrl+S)">Salvar</button>
-              <button onClick={props.onSalvarComo} title="Salvar como um novo projeto (Ctrl+Shift+S)">Salvar como</button>
-              <button onClick={props.onAbrirBiblioteca} title="Biblioteca de trabalhos (Ctrl+O)">Biblioteca</button>
-              <button onClick={props.onAbrirHistorico} title="Histórico e versões deste projeto (Ctrl+H)">Histórico</button>
+              <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">
+                <Icone nome="novo" />
+                <span>Novo</span>
+              </button>
+              <button onClick={props.onAbrirBiblioteca} title="Abrir um projeto da biblioteca (Ctrl+O)">
+                <Icone nome="abrir" />
+                <span>Abrir</span>
+              </button>
+              <button onClick={props.onSalvar} title="Salvar o projeto atual (Ctrl+S)">
+                <Icone nome="salvar" />
+                <span>Salvar</span>
+              </button>
+              <button onClick={props.onSalvarComo} title="Salvar como um novo projeto (Ctrl+Shift+S)">
+                <Icone nome="salvar-como" />
+                <span>Salvar como</span>
+              </button>
+              <button onClick={props.onAbrirBiblioteca} title="Biblioteca de trabalhos (Ctrl+O)">
+                <Icone nome="biblioteca" />
+                <span>Biblioteca</span>
+              </button>
+              <button onClick={props.onAbrirHistorico} title="Histórico e versões deste projeto (Ctrl+H)">
+                <Icone nome="historico" />
+                <span>Histórico</span>
+              </button>
             </div>
           )}
 
           {abaAtiva === 'edicao' && (
             <div className="grupo-de-ferramentas" role="group" aria-label="Edição">
               <button onClick={props.onDesfazer} disabled={!props.podeDesfazer} title="Desfazer (Ctrl+Z)">
-                Desfazer
+                <Icone nome="desfazer" />
+                <span>Desfazer</span>
               </button>
               <button onClick={props.onRefazer} disabled={!props.podeRefazer} title="Refazer (Ctrl+Y)">
-                Refazer
+                <Icone nome="refazer" />
+                <span>Refazer</span>
               </button>
               <button onClick={props.onCopiar} disabled={!props.temSelecaoUnica} title="Copiar (Ctrl+C) — uma peça por vez">
-                Copiar
+                <Icone nome="copiar" />
+                <span>Copiar</span>
               </button>
               <button onClick={props.onColar} disabled={!props.podeColar} title="Colar (Ctrl+V)">
-                Colar
+                <Icone nome="colar" />
+                <span>Colar</span>
               </button>
               <button onClick={props.onRecortar} disabled={!props.temSelecaoUnica} title="Recortar (Ctrl+X) — uma peça por vez">
-                Recortar
+                <Icone nome="recortar" />
+                <span>Recortar</span>
               </button>
               <button onClick={props.onDuplicar} disabled={!props.temSelecao} title="Duplicar (Ctrl+D)">
-                Duplicar
+                <Icone nome="duplicar" />
+                <span>Duplicar</span>
               </button>
               <button onClick={props.onExcluir} disabled={!props.temSelecao} title="Excluir (Delete)">
-                Excluir
+                <Icone nome="excluir" />
+                <span>Excluir</span>
               </button>
               <button onClick={props.onSelecionarTudo} disabled={!props.podeSelecionarTudo} title="Selecionar tudo (Ctrl+A)">
-                Selecionar tudo
+                <Icone nome="selecionar-tudo" />
+                <span>Selecionar tudo</span>
               </button>
             </div>
           )}
@@ -143,7 +172,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 onClick={props.onEntrarModoSelecionar}
                 title="Selecionar objetos (Esc)"
               >
-                Selecionar
+                <Icone nome="selecionar" />
+                <span>Selecionar</span>
               </button>
               <button
                 aria-pressed={props.modo === 'novo-molde'}
@@ -151,9 +181,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 onClick={props.onEntrarModoNovoMolde}
                 title="Novo molde: clique para adicionar pontos do contorno, Enter para fechar"
               >
-                Novo Molde
+                <Icone nome="novo-molde" />
+                <span>Novo Molde</span>
               </button>
-              <button disabled title={NAO_IMPLEMENTADO_CURVA}>Curva</button>
+              <button disabled title={NAO_IMPLEMENTADO_CURVA}>
+                <Icone nome="curva" />
+                <span>Curva</span>
+              </button>
               <button
                 aria-pressed={props.modo === 'novo-furo'}
                 className={props.modo === 'novo-furo' ? 'item-selecionado' : ''}
@@ -161,7 +195,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 disabled={!props.temSelecao}
                 title={props.temSelecao ? 'Novo furo na peça selecionada: clique os pontos, Enter para fechar' : 'Selecione uma peça primeiro'}
               >
-                Furo
+                <Icone nome="furo" />
+                <span>Furo</span>
               </button>
               <button
                 aria-pressed={props.modo === 'pique'}
@@ -170,7 +205,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 disabled={!props.temSelecao}
                 title={props.temSelecao ? 'Adicionar pique: clique perto da borda da peça selecionada' : 'Selecione uma peça primeiro'}
               >
-                Pique
+                <Icone nome="pique" />
+                <span>Pique</span>
               </button>
               <button
                 aria-pressed={props.modo === 'marca'}
@@ -179,7 +215,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 disabled={!props.temSelecao}
                 title={props.temSelecao ? 'Adicionar marca de referência na peça selecionada' : 'Selecione uma peça primeiro'}
               >
-                Marca
+                <Icone nome="marca" />
+                <span>Marca</span>
               </button>
             </div>
           )}
@@ -194,7 +231,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Mover ponto: arraste um vértice da peça selecionada' : 'Selecione uma peça primeiro'}
                 >
-                  Mover ponto
+                  <Icone nome="mover-ponto" />
+                  <span>Mover ponto</span>
                 </button>
                 <button
                   aria-pressed={props.modo === 'inserir-ponto'}
@@ -203,7 +241,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Inserir ponto: clique numa aresta da peça selecionada' : 'Selecione uma peça primeiro'}
                 >
-                  Inserir ponto
+                  <Icone nome="inserir-ponto" />
+                  <span>Inserir ponto</span>
                 </button>
                 <button
                   aria-pressed={props.modo === 'excluir-ponto'}
@@ -212,7 +251,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Excluir ponto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
                 >
-                  Excluir ponto
+                  <Icone nome="excluir-ponto" />
+                  <span>Excluir ponto</span>
                 </button>
               </div>
 
@@ -222,14 +262,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
                 >
-                  Dimensionar
+                  <Icone nome="dimensionar" />
+                  <span>Dimensionar</span>
                 </button>
                 <button
                   onClick={props.onEspelharManual}
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Espelhar: inverte a peça horizontalmente (ação manual, uma vez)' : 'Selecione uma peça primeiro'}
                 >
-                  Espelhar
+                  <Icone nome="espelhar" />
+                  <span>Espelhar</span>
                 </button>
                 <button
                   onClick={props.onGirarLivre}
@@ -240,7 +282,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       : 'Selecione uma peça primeiro'
                   }
                 >
-                  Girar (ângulo livre)
+                  <Icone nome="girar" />
+                  <span>Girar (ângulo livre)</span>
                 </button>
               </div>
 
@@ -250,7 +293,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.podeAlinhar}
                   title={props.podeAlinhar ? 'Alinha as peças selecionadas pela borda esquerda' : 'Selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'}
                 >
-                  Alinhar
+                  <Icone nome="alinhar" />
+                  <span>Alinhar</span>
                 </button>
                 <button
                   aria-pressed={props.modo === 'chanfrar-canto'}
@@ -259,7 +303,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Chanfrar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
                 >
-                  Chanfrar canto
+                  <Icone nome="chanfrar" />
+                  <span>Chanfrar canto</span>
                 </button>
                 <button
                   aria-pressed={props.modo === 'arredondar-canto'}
@@ -268,7 +313,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Arredondar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
                 >
-                  Arredondar canto
+                  <Icone nome="arredondar" />
+                  <span>Arredondar canto</span>
                 </button>
               </div>
             </>
@@ -278,7 +324,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Importação e exportação">
                 <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF (Ctrl+I)">
-                  Importar DXF
+                  <Icone nome="importar" />
+                  <span>Importar DXF</span>
                 </button>
                 <button
                   onClick={props.onAbrirExportacaoPdf}
@@ -289,16 +336,24 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       : 'Adicione ao menos uma peça primeiro'
                   }
                 >
-                  Exportar PDF
+                  <Icone nome="exportar" />
+                  <span>Exportar PDF</span>
                 </button>
                 <button onClick={props.onAbrirRelatorio} title="Relatório de produção (PDF/Excel)">
-                  Relatórios
+                  <Icone nome="relatorio" />
+                  <span>Relatórios</span>
                 </button>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">
-                <button onClick={props.onAbrirTecido} title="Configurar o tecido do projeto">Tecido</button>
-                <button onClick={props.onAbrirEnfesto} title="Configurar o tipo e os parâmetros do enfesto">Enfesto</button>
+                <button onClick={props.onAbrirTecido} title="Configurar o tecido do projeto">
+                  <Icone nome="tecido" />
+                  <span>Tecido</span>
+                </button>
+                <button onClick={props.onAbrirEnfesto} title="Configurar o tipo e os parâmetros do enfesto">
+                  <Icone nome="enfesto" />
+                  <span>Enfesto</span>
+                </button>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Encaixe">
@@ -311,7 +366,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       : 'Selecione uma peça e configure o enfesto primeiro'
                   }
                 >
-                  Sugerir posição
+                  <Icone nome="sugerir-posicao" />
+                  <span>Sugerir posição</span>
                 </button>
                 <button
                   onClick={props.onNestingAutomatico}
@@ -322,7 +378,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       : 'Configure o enfesto e adicione ao menos uma peça primeiro'
                   }
                 >
-                  Nesting Automático
+                  <Icone nome="nesting" />
+                  <span>Nesting Automático</span>
                 </button>
               </div>
             </>
@@ -330,9 +387,18 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
         </div>
 
         <div className="grupo-de-ferramentas ribbon-visualizacao" role="group" aria-label="Visualização">
-          <button onClick={props.onZoomOut} title="Diminuir zoom (-)">−</button>
-          <button onClick={props.onZoomIn} title="Aumentar zoom (+)">+</button>
-          <button onClick={props.onAjustarTela} title="Ajustar à tela (Ctrl+0)">Ajustar</button>
+          <button onClick={props.onZoomOut} title="Diminuir zoom (-)">
+            <Icone nome="zoom-out" />
+            <span>Menos</span>
+          </button>
+          <button onClick={props.onZoomIn} title="Aumentar zoom (+)">
+            <Icone nome="zoom-in" />
+            <span>Mais</span>
+          </button>
+          <button onClick={props.onAjustarTela} title="Ajustar à tela (Ctrl+0)">
+            <Icone nome="ajustar" />
+            <span>Ajustar</span>
+          </button>
         </div>
       </div>
     </div>
