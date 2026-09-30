@@ -103,6 +103,140 @@ export function transladarContorno(contorno: Contorno, deslocamento: Ponto2D): C
   return contorno.map((p) => somar(p, deslocamento));
 }
 
+/** Move o vértice no índice `indice` para `novaPosicao`; os demais pontos não mudam. */
+export function moverPontoDoContorno(contorno: Contorno, indice: number, novaPosicao: Ponto2D): Contorno {
+  if (indice < 0 || indice >= contorno.length) {
+    throw new Error(`Índice de vértice fora do contorno: ${indice}.`);
+  }
+  return contorno.map((p, i) => (i === indice ? novaPosicao : p));
+}
+
+/** Insere `novoPonto` logo depois do vértice `indiceAresta` (entre ele e o próximo). */
+export function inserirPontoNoContorno(contorno: Contorno, indiceAresta: number, novoPonto: Ponto2D): Contorno {
+  if (indiceAresta < 0 || indiceAresta >= contorno.length) {
+    throw new Error(`Índice de aresta fora do contorno: ${indiceAresta}.`);
+  }
+  const resultado = [...contorno];
+  resultado.splice(indiceAresta + 1, 0, novoPonto);
+  return resultado;
+}
+
+/** Remove o vértice no índice `indice`. O contorno resultante precisa ter ao menos 3 pontos — quem chama deve garantir isso. */
+export function removerPontoDoContorno(contorno: Contorno, indice: number): Contorno {
+  if (indice < 0 || indice >= contorno.length) {
+    throw new Error(`Índice de vértice fora do contorno: ${indice}.`);
+  }
+  return contorno.filter((_, i) => i !== indice);
+}
+
+/** Escala um ponto por `fatorX`/`fatorY`, mantendo `origem` fixa. */
+export function escalarPonto(p: Ponto2D, origem: Ponto2D, fatorX: number, fatorY: number): Ponto2D {
+  return {
+    x: origem.x + (p.x - origem.x) * fatorX,
+    y: origem.y + (p.y - origem.y) * fatorY,
+  };
+}
+
+/** Escala cada ponto do contorno por `fatorX`/`fatorY`, mantendo `origem` fixa (ex.: o canto do retângulo envolvente). */
+export function escalarContorno(contorno: Contorno, origem: Ponto2D, fatorX: number, fatorY: number): Contorno {
+  return contorno.map((p) => escalarPonto(p, origem, fatorX, fatorY));
+}
+
+/**
+ * Substitui o canto vivo no vértice `indice` por um chanfro (corte reto),
+ * cortando `distanciaMm` de cada aresta adjacente a partir do vértice. A
+ * distância é limitada a 99% do comprimento da aresta mais curta adjacente,
+ * para nunca ultrapassar o vértice vizinho.
+ */
+export function chanfrarCantoDoContorno(contorno: Contorno, indice: number, distanciaMm: number): Contorno {
+  const n = contorno.length;
+  if (n < 3) throw new Error('Contorno precisa de ao menos 3 pontos para chanfrar um canto.');
+  if (indice < 0 || indice >= n) throw new Error(`Índice de vértice fora do contorno: ${indice}.`);
+  if (distanciaMm <= 0) throw new Error('Distância do chanfro precisa ser maior que zero.');
+
+  const anterior = contorno[(indice - 1 + n) % n]!;
+  const atual = contorno[indice]!;
+  const proximo = contorno[(indice + 1) % n]!;
+
+  const distAnterior = distancia(atual, anterior);
+  const distProximo = distancia(atual, proximo);
+  const d = Math.min(distanciaMm, distAnterior * 0.99, distProximo * 0.99);
+
+  const a = somar(atual, escalar(subtrair(anterior, atual), d / distAnterior));
+  const b = somar(atual, escalar(subtrair(proximo, atual), d / distProximo));
+
+  const resultado = [...contorno];
+  resultado.splice(indice, 1, a, b);
+  return resultado;
+}
+
+/**
+ * Substitui o canto vivo no vértice `indice` por um arredondamento
+ * (arco tesselado em segmentos retos — este app ainda não tem curvas reais,
+ * ver `TODO.md`). O raio efetivo é limitado pelo comprimento das arestas
+ * adjacentes, assim como no chanfro. Limitação conhecida, documentada junto
+ * de `deslocarContornoParaFora`: cantos reflexos muito agudos podem produzir
+ * um resultado que autointersecciona — não há correção automática disso.
+ */
+export function arredondarCantoDoContorno(
+  contorno: Contorno,
+  indice: number,
+  raioMm: number,
+  segmentos: number = 8,
+): Contorno {
+  const n = contorno.length;
+  if (n < 3) throw new Error('Contorno precisa de ao menos 3 pontos para arredondar um canto.');
+  if (indice < 0 || indice >= n) throw new Error(`Índice de vértice fora do contorno: ${indice}.`);
+  if (raioMm <= 0) throw new Error('Raio do arredondamento precisa ser maior que zero.');
+
+  const anterior = contorno[(indice - 1 + n) % n]!;
+  const atual = contorno[indice]!;
+  const proximo = contorno[(indice + 1) % n]!;
+
+  const distAnterior = distancia(atual, anterior);
+  const distProximo = distancia(atual, proximo);
+  const uAnterior = escalar(subtrair(anterior, atual), 1 / distAnterior);
+  const uProximo = escalar(subtrair(proximo, atual), 1 / distProximo);
+
+  const cosTheta = Math.max(-1, Math.min(1, uAnterior.x * uProximo.x + uAnterior.y * uProximo.y));
+  const theta = Math.acos(cosTheta);
+  if (theta < EPSILON_GEOMETRICO || Math.abs(theta - Math.PI) < EPSILON_GEOMETRICO) {
+    // Aresta praticamente reta (colinear) no vértice — não há canto para arredondar.
+    return contorno;
+  }
+
+  const tangenteIdeal = raioMm / Math.tan(theta / 2);
+  const tangente = Math.min(tangenteIdeal, distAnterior * 0.99, distProximo * 0.99);
+  const raioEfetivo = tangente * Math.tan(theta / 2);
+
+  const a = somar(atual, escalar(uAnterior, tangente));
+  const b = somar(atual, escalar(uProximo, tangente));
+
+  const bissetriz = escalar(somar(uAnterior, uProximo), 1 / Math.hypot(uAnterior.x + uProximo.x, uAnterior.y + uProximo.y));
+  const distanciaAoCentro = raioEfetivo / Math.sin(theta / 2);
+  const centro = somar(atual, escalar(bissetriz, distanciaAoCentro));
+
+  const anguloA = Math.atan2(a.y - centro.y, a.x - centro.x);
+  const anguloB = Math.atan2(b.y - centro.y, b.x - centro.x);
+  // Escolhe o sentido do arco (curto) que passa do lado de fora do vértice
+  // original (não pelo lado do centro) — o arco correto nunca cruza o
+  // segmento a-b passando por `atual`.
+  let delta = anguloB - anguloA;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+
+  const arco: Ponto2D[] = [];
+  for (let i = 1; i < segmentos; i++) {
+    const t = i / segmentos;
+    const angulo = anguloA + delta * t;
+    arco.push({ x: centro.x + raioEfetivo * Math.cos(angulo), y: centro.y + raioEfetivo * Math.sin(angulo) });
+  }
+
+  const resultado = [...contorno];
+  resultado.splice(indice, 1, a, ...arco, b);
+  return resultado;
+}
+
 export function rotacionarContorno(contorno: Contorno, centro: Ponto2D, anguloGraus: number): Contorno {
   return contorno.map((p) => rotacionar(p, centro, anguloGraus));
 }

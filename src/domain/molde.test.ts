@@ -14,6 +14,12 @@ import {
   transladarMolde,
   rotacionarMolde,
   espelharMolde,
+  moverPontoDoMolde,
+  inserirPontoNoMolde,
+  removerPontoDoMolde,
+  chanfrarCantoDoMolde,
+  arredondarCantoDoMolde,
+  dimensionarMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -330,5 +336,104 @@ describe('espelharMolde', () => {
       expect(duasVezes.contorno[i]!.x).toBeCloseTo(molde.contorno[i]!.x, 6);
       expect(duasVezes.contorno[i]!.y).toBeCloseTo(molde.contorno[i]!.y, 6);
     }
+  });
+});
+
+describe('moverPontoDoMolde', () => {
+  it('move só o vértice indicado, resto do molde intacto', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const movido = moverPontoDoMolde(molde, 1, ponto(210, 10));
+    expect(movido.contorno[1]).toEqual(ponto(210, 10));
+    expect(movido.contorno[0]).toEqual(molde.contorno[0]);
+    expect(movido.linhaDeFio).toEqual(molde.linhaDeFio);
+  });
+});
+
+describe('inserirPontoNoMolde', () => {
+  it('insere o vértice e ajusta índice de pique em aresta depois do ponto de inserção', () => {
+    // pique na aresta 2 (de contorno[2]=(200,300) para contorno[3]=(0,300))
+    const comPique = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(100, 300), 'p1');
+    expect(comPique.piques[0]!.indiceAresta).toBe(2);
+    const editado = inserirPontoNoMolde(comPique, 0, ponto(100, 0)); // insere na aresta 0
+    expect(editado.contorno.length).toBe(5);
+    expect(editado.piques[0]!.indiceAresta).toBe(3); // deslocado +1
+  });
+
+  it('não desloca pique em aresta antes do ponto de inserção', () => {
+    const comPique = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(0, 150), 'p1'); // aresta 3
+    const editado = inserirPontoNoMolde(comPique, 3, ponto(0, 100));
+    // pique estava exatamente na aresta editada (3): não é > 3, então mantém o índice
+    expect(editado.piques[0]!.indiceAresta).toBe(3);
+  });
+});
+
+describe('removerPontoDoMolde', () => {
+  it('lança erro se o contorno ficaria com menos de 3 pontos', () => {
+    const triangulo = criarMolde(dadosBase({ contorno: [ponto(0, 0), ponto(10, 0), ponto(5, 10)] }), 'm1');
+    expect(() => removerPontoDoMolde(triangulo, 0)).toThrow();
+  });
+
+  it('remove o vértice e ajusta índice de pique em aresta distante', () => {
+    const pentagono = criarMolde(
+      dadosBase({ contorno: [ponto(0, 0), ponto(10, 0), ponto(15, 5), ponto(10, 10), ponto(0, 10)] }),
+      'm1',
+    );
+    const comPique = adicionarPique(pentagono, ponto(0, 5), 'p1'); // aresta 4 (de (0,10) a (0,0))
+    expect(comPique.piques[0]!.indiceAresta).toBe(4);
+    const editado = removerPontoDoMolde(comPique, 2); // remove o vértice do meio, longe do pique
+    expect(editado.contorno.length).toBe(4);
+    expect(editado.piques[0]!.indiceAresta).toBe(3); // deslocado -1 (estava depois do índice removido)
+  });
+
+  it('descarta pique cuja aresta foi diretamente afetada pela remoção', () => {
+    const pentagono = criarMolde(
+      dadosBase({ contorno: [ponto(0, 0), ponto(10, 0), ponto(15, 5), ponto(10, 10), ponto(0, 10)] }),
+      'm1',
+    );
+    const comPique = adicionarPique(pentagono, ponto(12, 2), 'p1'); // aresta 1 (de (10,0) a (15,5))
+    expect(comPique.piques[0]!.indiceAresta).toBe(1);
+    const editado = removerPontoDoMolde(comPique, 2); // remove (15,5): funde arestas 1 e 2
+    expect(editado.piques).toHaveLength(0);
+  });
+});
+
+describe('chanfrarCantoDoMolde / arredondarCantoDoMolde', () => {
+  it('chanfrar substitui o vértice por dois pontos, preservando piques distantes', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const comPique = adicionarPique(molde, ponto(0, 150), 'p1'); // aresta 3
+    const chanfrado = chanfrarCantoDoMolde(comPique, 1, 20); // chanfra o vértice (200,0)
+    expect(chanfrado.contorno.length).toBe(5);
+    expect(chanfrado.piques[0]!.indiceAresta).toBe(4); // deslocado +1
+  });
+
+  it('arredondar substitui o vértice por um arco, preservando piques distantes', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const comPique = adicionarPique(molde, ponto(0, 150), 'p1'); // aresta 3
+    const arredondado = arredondarCantoDoMolde(comPique, 1, 20); // arredonda o vértice (200,0)
+    expect(arredondado.contorno.length).toBeGreaterThan(molde.contorno.length);
+    expect(area(arredondado.contorno)).toBeLessThan(area(molde.contorno));
+    expect(arredondado.piques[0]!.indiceAresta).toBeGreaterThan(comPique.piques[0]!.indiceAresta);
+  });
+});
+
+describe('dimensionarMolde', () => {
+  it('escala o contorno mantendo o canto superior esquerdo do retângulo envolvente fixo', () => {
+    const molde = criarMolde(dadosBase(), 'm1'); // bbox: (0,0)-(200,300)
+    const escalado = dimensionarMolde(molde, 0.5, 2);
+    expect(escalado.contorno).toEqual([ponto(0, 0), ponto(100, 0), ponto(100, 600), ponto(0, 600)]);
+  });
+
+  it('escala a linha de fio e mantém quantidade/restrições intactas', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const escalado = dimensionarMolde(molde, 2, 1);
+    expect(escalado.linhaDeFio.inicio.x).toBeCloseTo(200, 9);
+    expect(escalado.quantidade).toBe(molde.quantidade);
+    expect(escalado.restricaoDeRotacao).toEqual(molde.restricaoDeRotacao);
+  });
+
+  it('rejeita fatores zero ou negativos', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => dimensionarMolde(molde, 0, 1)).toThrow();
+    expect(() => dimensionarMolde(molde, 1, -1)).toThrow();
   });
 });

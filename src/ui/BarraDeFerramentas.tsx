@@ -33,6 +33,16 @@ interface BarraDeFerramentasProps {
   readonly podeSugerirPosicao: boolean;
   readonly onNestingAutomatico: () => void;
   readonly podeExecutarNesting: boolean;
+  readonly onEntrarModoMoverPonto: () => void;
+  readonly onEntrarModoInserirPonto: () => void;
+  readonly onEntrarModoExcluirPonto: () => void;
+  readonly onEntrarModoChanfrarCanto: () => void;
+  readonly onEntrarModoArredondarCanto: () => void;
+  readonly onAbrirDimensionar: () => void;
+  readonly onEspelharManual: () => void;
+  readonly onGirarLivre: () => void;
+  readonly onAlinhar: () => void;
+  readonly podeAlinhar: boolean;
   readonly onAbrirExportacaoPdf: () => void;
   readonly podeExportarPdf: boolean;
   readonly onSalvar: () => void;
@@ -44,12 +54,13 @@ interface BarraDeFerramentasProps {
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 
-type Aba = 'arquivo' | 'edicao' | 'desenho' | 'encaixe';
+type Aba = 'arquivo' | 'edicao' | 'desenho' | 'manipulacao' | 'encaixe';
 
 const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
   { id: 'arquivo', rotulo: 'Arquivo' },
   { id: 'edicao', rotulo: 'Edição' },
   { id: 'desenho', rotulo: 'Desenho' },
+  { id: 'manipulacao', rotulo: 'Manipulação' },
   { id: 'encaixe', rotulo: 'Encaixe' },
 ];
 
@@ -171,6 +182,96 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 Marca
               </button>
             </div>
+          )}
+
+          {abaAtiva === 'manipulacao' && (
+            <>
+              <div className="grupo-de-ferramentas" role="group" aria-label="Pontos">
+                <button
+                  aria-pressed={props.modo === 'mover-ponto'}
+                  className={props.modo === 'mover-ponto' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoMoverPonto}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Mover ponto: arraste um vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                >
+                  Mover ponto
+                </button>
+                <button
+                  aria-pressed={props.modo === 'inserir-ponto'}
+                  className={props.modo === 'inserir-ponto' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoInserirPonto}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Inserir ponto: clique numa aresta da peça selecionada' : 'Selecione uma peça primeiro'}
+                >
+                  Inserir ponto
+                </button>
+                <button
+                  aria-pressed={props.modo === 'excluir-ponto'}
+                  className={props.modo === 'excluir-ponto' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoExcluirPonto}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Excluir ponto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                >
+                  Excluir ponto
+                </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Transformar">
+                <button
+                  onClick={props.onAbrirDimensionar}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
+                >
+                  Dimensionar
+                </button>
+                <button
+                  onClick={props.onEspelharManual}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Espelhar: inverte a peça horizontalmente (ação manual, uma vez)' : 'Selecione uma peça primeiro'}
+                >
+                  Espelhar
+                </button>
+                <button
+                  onClick={props.onGirarLivre}
+                  disabled={!props.temSelecaoUnica}
+                  title={
+                    props.temSelecaoUnica
+                      ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
+                      : 'Selecione uma peça primeiro'
+                  }
+                >
+                  Girar (ângulo livre)
+                </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Organizar">
+                <button
+                  onClick={props.onAlinhar}
+                  disabled={!props.podeAlinhar}
+                  title={props.podeAlinhar ? 'Alinha as peças selecionadas pela borda esquerda' : 'Selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'}
+                >
+                  Alinhar
+                </button>
+                <button
+                  aria-pressed={props.modo === 'chanfrar-canto'}
+                  className={props.modo === 'chanfrar-canto' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoChanfrarCanto}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Chanfrar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                >
+                  Chanfrar canto
+                </button>
+                <button
+                  aria-pressed={props.modo === 'arredondar-canto'}
+                  className={props.modo === 'arredondar-canto' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoArredondarCanto}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Arredondar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                >
+                  Arredondar canto
+                </button>
+              </div>
+            </>
           )}
 
           {abaAtiva === 'encaixe' && (

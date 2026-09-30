@@ -12,6 +12,14 @@ import {
   rotacionarMolde,
   rotacaoEhPermitida,
   rotacoesPermitidas,
+  espelharMolde,
+  moverPontoDoMolde,
+  inserirPontoNoMolde,
+  removerPontoDoMolde,
+  chanfrarCantoDoMolde,
+  arredondarCantoDoMolde,
+  dimensionarMolde,
+  dimensoesDoMolde,
   type Molde,
 } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
@@ -34,6 +42,7 @@ import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
 import { PainelDeRelatorio } from './ui/PainelDeRelatorio';
 import { PainelDeNovoProjeto, type DadosDeNovoProjeto } from './ui/PainelDeNovoProjeto';
+import { PainelDeDimensionar } from './ui/PainelDeDimensionar';
 import {
   criarProjeto,
   registrarEvento,
@@ -151,6 +160,7 @@ export default function App(): React.JSX.Element {
 
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
 
   const [projetoAtual, setProjetoAtual] = useState<Projeto>(() =>
     novoProjetoVazio({
@@ -517,6 +527,31 @@ export default function App(): React.JSX.Element {
     setModo('marca');
   }, [selecionadoId]);
 
+  const entrarModoMoverPonto = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('mover-ponto');
+  }, [selecionadoId]);
+
+  const entrarModoInserirPonto = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('inserir-ponto');
+  }, [selecionadoId]);
+
+  const entrarModoExcluirPonto = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('excluir-ponto');
+  }, [selecionadoId]);
+
+  const entrarModoChanfrarCanto = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('chanfrar-canto');
+  }, [selecionadoId]);
+
+  const entrarModoArredondarCanto = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('arredondar-canto');
+  }, [selecionadoId]);
+
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
@@ -545,6 +580,144 @@ export default function App(): React.JSX.Element {
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
+
+  // Ferramentas de edição de forma (aba "Manipulação", seção 5 continua
+  // valendo: nada aqui reordena automaticamente sentido do fio — são ações
+  // manuais e explícitas do usuário sobre a peça selecionada).
+  const moverPontoDaSelecionada = useCallback(
+    (indice: number, novaPosicao: Ponto2D) => {
+      if (!selecionadoId) return;
+      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? moverPontoDoMolde(p, indice, novaPosicao) : p)));
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const inserirPontoNaSelecionada = useCallback(
+    (indiceAresta: number, novoPonto: Ponto2D) => {
+      if (!selecionadoId) return;
+      aplicarMudanca(
+        pecas.map((p) => (p.id === selecionadoId ? inserirPontoNoMolde(p, indiceAresta, novoPonto) : p)),
+      );
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const excluirPontoDaSelecionada = useCallback(
+    (indice: number) => {
+      if (!selecionadoId) return;
+      try {
+        aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? removerPontoDoMolde(p, indice) : p)));
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const chanfrarVerticeDaSelecionada = useCallback(
+    (indice: number) => {
+      if (!selecionadoId) return;
+      const texto = window.prompt('Distância do chanfro (mm):', '10');
+      if (texto === null) return;
+      const distanciaMm = Number.parseFloat(texto);
+      if (!Number.isFinite(distanciaMm) || distanciaMm <= 0) {
+        window.alert('Distância inválida — informe um número maior que zero.');
+        return;
+      }
+      try {
+        aplicarMudanca(
+          pecas.map((p) => (p.id === selecionadoId ? chanfrarCantoDoMolde(p, indice, distanciaMm) : p)),
+        );
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const arredondarVerticeDaSelecionada = useCallback(
+    (indice: number) => {
+      if (!selecionadoId) return;
+      const texto = window.prompt('Raio do arredondamento (mm):', '10');
+      if (texto === null) return;
+      const raioMm = Number.parseFloat(texto);
+      if (!Number.isFinite(raioMm) || raioMm <= 0) {
+        window.alert('Raio inválido — informe um número maior que zero.');
+        return;
+      }
+      try {
+        aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? arredondarCantoDoMolde(p, indice, raioMm) : p)));
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const dimensionarSelecionada = useCallback(
+    (fatorX: number, fatorY: number, comoCopia: boolean) => {
+      const original = pecas.find((p) => p.id === selecionadoId);
+      if (!original) return;
+      if (comoCopia) {
+        const copia = dimensionarMolde({ ...original, id: proximoId() }, fatorX, fatorY);
+        aplicarMudanca([...pecas, copia]);
+        setSelecionadoId(copia.id);
+        return;
+      }
+      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? dimensionarMolde(p, fatorX, fatorY) : p)));
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const espelharSelecionadaManualmente = useCallback(() => {
+    if (!selecionadoId) return;
+    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? espelharMolde(p, p.id) : p)));
+  }, [pecas, selecionadoId, aplicarMudanca]);
+
+  /**
+   * Girar em ângulo livre (diferente dos botões 90°/180°/270°, que ficam
+   * bloqueados pela restrição de sentido do fio): é uma ferramenta de
+   * EDIÇÃO de forma, não uma decisão de encaixe — o usuário está ajustando
+   * como a peça foi desenhada, então não faz sentido validar contra
+   * `restricaoDeRotacao` (que é sobre quais orientações o MOTOR de nesting
+   * pode tentar a partir de como a peça já está). Por isso avisa
+   * explicitamente que isto redefine o ângulo de referência da peça, em vez
+   * de bloquear ou de aplicar silenciosamente.
+   */
+  const girarLivreSelecionada = useCallback(() => {
+    if (!selecionadoId) return;
+    const texto = window.prompt(
+      'Ângulo de rotação livre (graus, sentido anti-horário):\n' +
+        'Isto redefine a orientação de referência desta peça — confira se a linha de fio (seta vermelha) continua alinhada ao sentido correto do tecido depois de girar.',
+      '0',
+    );
+    if (texto === null) return;
+    const anguloGraus = Number.parseFloat(texto);
+    if (!Number.isFinite(anguloGraus) || anguloGraus === 0) {
+      if (texto.trim() !== '' && texto.trim() !== '0') window.alert('Ângulo inválido.');
+      return;
+    }
+    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? rotacionarMolde(p, anguloGraus) : p)));
+  }, [pecas, selecionadoId, aplicarMudanca]);
+
+  /**
+   * Alinha as peças selecionadas em lote pela borda esquerda (mínimo X do
+   * retângulo envolvente — largura da mesa, eixo vertical na tela) comum,
+   * útil para organizar peças manualmente antes do encaixe automático.
+   */
+  const alinharSelecionadas = useCallback(() => {
+    if (idsSelecionadosEmLote.size < 2) return;
+    const selecionadas = pecas.filter((p) => idsSelecionadosEmLote.has(p.id));
+    const minXComum = Math.min(...selecionadas.map((p) => retanguloEnvolvente(p.contorno).minX));
+    aplicarMudanca(
+      pecas.map((p) => {
+        if (!idsSelecionadosEmLote.has(p.id)) return p;
+        const minXAtual = retanguloEnvolvente(p.contorno).minX;
+        const deslocamento = { x: minXComum - minXAtual, y: 0 };
+        return transladarMolde(p, deslocamento, p.id);
+      }),
+    );
+  }, [pecas, idsSelecionadosEmLote, aplicarMudanca]);
 
   const moverPeca = useCallback(
     (id: string, deslocamento: Ponto2D) => {
@@ -964,6 +1137,16 @@ export default function App(): React.JSX.Element {
         onAbrirBiblioteca={abrirBiblioteca}
         onAbrirHistorico={() => setMostrarHistorico(true)}
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
+        onEntrarModoMoverPonto={entrarModoMoverPonto}
+        onEntrarModoInserirPonto={entrarModoInserirPonto}
+        onEntrarModoExcluirPonto={entrarModoExcluirPonto}
+        onEntrarModoChanfrarCanto={entrarModoChanfrarCanto}
+        onEntrarModoArredondarCanto={entrarModoArredondarCanto}
+        onAbrirDimensionar={() => setMostrarDimensionar(true)}
+        onEspelharManual={espelharSelecionadaManualmente}
+        onGirarLivre={girarLivreSelecionada}
+        onAlinhar={alinharSelecionadas}
+        podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
       <div className="faixa-de-configuracao">
         <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
@@ -1015,6 +1198,17 @@ export default function App(): React.JSX.Element {
           gerando={gerandoPdf}
           onExportar={(opcoes) => void exportarPdf(opcoes)}
           onFechar={() => setMostrarExportacaoPdf(false)}
+        />
+      )}
+      {mostrarDimensionar && pecaSelecionada && (
+        <PainelDeDimensionar
+          larguraAtualMm={dimensoesDoMolde(pecaSelecionada).larguraMm}
+          alturaAtualMm={dimensoesDoMolde(pecaSelecionada).alturaMm}
+          onAplicar={(fatorX, fatorY, comoCopia) => {
+            dimensionarSelecionada(fatorX, fatorY, comoCopia);
+            setMostrarDimensionar(false);
+          }}
+          onFechar={() => setMostrarDimensionar(false)}
         />
       )}
       {mostrarBiblioteca && (
@@ -1094,6 +1288,11 @@ export default function App(): React.JSX.Element {
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
           onMoverPeca={moverPeca}
+          onMoverPontoDoMolde={moverPontoDaSelecionada}
+          onInserirPontoNoMolde={inserirPontoNaSelecionada}
+          onExcluirPontoDoMolde={excluirPontoDaSelecionada}
+          onChanfrarCanto={chanfrarVerticeDaSelecionada}
+          onArredondarCanto={arredondarVerticeDaSelecionada}
         />
         <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
       </div>

@@ -10,6 +10,13 @@ import {
   espelharContornoHorizontal,
   espelharHorizontal,
   somar,
+  moverPontoDoContorno,
+  inserirPontoNoContorno,
+  removerPontoDoContorno,
+  escalarContorno,
+  escalarPonto,
+  chanfrarCantoDoContorno,
+  arredondarCantoDoContorno,
 } from '../core/geometria';
 
 /**
@@ -219,6 +226,104 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
     linhaDeFio: {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),
+    },
+  };
+}
+
+/**
+ * Ferramentas de edição de forma (seção "Manipulação", inspiradas no
+ * Audaces Moldes mas restritas ao que faz sentido no domínio deste app:
+ * edição de vértices e transformações manuais de uma peça já desenhada.
+ * Fora de escopo deliberadamente: graduação de tamanhos e curvas Bézier —
+ * ver ADR correspondente.
+ *
+ * Nota sobre piques nas funções de edição de contorno abaixo: um pique
+ * (`Pique.indiceAresta`) referencia a aresta do contorno pelo índice. Editar
+ * o contorno (inserir/remover/arredondar/chanfrar um vértice) muda quantas
+ * arestas existem e o que cada índice significa. Quando a edição é
+ * inequívoca (índice bem depois do ponto editado), o índice só é ajustado
+ * (+n ou -n); quando a aresta afetada é exatamente uma das que mudou de
+ * forma, o pique é descartado em vez de adivinhado — mais seguro que deixar
+ * um pique silenciosamente na posição errada.
+ */
+
+/** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques mantêm o índice de aresta. */
+export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Ponto2D): Molde {
+  return { ...molde, contorno: moverPontoDoContorno(molde.contorno, indice, novaPosicao) };
+}
+
+/** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */
+export function inserirPontoNoMolde(molde: Molde, indiceAresta: number, novoPonto: Ponto2D): Molde {
+  return {
+    ...molde,
+    contorno: inserirPontoNoContorno(molde.contorno, indiceAresta, novoPonto),
+    piques: molde.piques.map((p) => (p.indiceAresta > indiceAresta ? { ...p, indiceAresta: p.indiceAresta + 1 } : p)),
+  };
+}
+
+/** Remove o vértice `indice`. Lança erro se o contorno ficaria com menos de 3 pontos. */
+export function removerPontoDoMolde(molde: Molde, indice: number): Molde {
+  if (molde.contorno.length <= 3) {
+    throw new Error('O contorno precisa de ao menos 3 pontos — não é possível remover mais vértices.');
+  }
+  const arestaAnterior = (indice - 1 + molde.contorno.length) % molde.contorno.length;
+  return {
+    ...molde,
+    contorno: removerPontoDoContorno(molde.contorno, indice),
+    piques: molde.piques
+      .filter((p) => p.indiceAresta !== indice && p.indiceAresta !== arestaAnterior)
+      .map((p) => (p.indiceAresta > indice ? { ...p, indiceAresta: p.indiceAresta - 1 } : p)),
+  };
+}
+
+/** Corta o canto vivo do vértice `indice` (chanfro reto de `distanciaMm`). */
+export function chanfrarCantoDoMolde(molde: Molde, indice: number, distanciaMm: number): Molde {
+  const arestaAnterior = (indice - 1 + molde.contorno.length) % molde.contorno.length;
+  return {
+    ...molde,
+    contorno: chanfrarCantoDoContorno(molde.contorno, indice, distanciaMm),
+    piques: molde.piques
+      .filter((p) => p.indiceAresta !== indice && p.indiceAresta !== arestaAnterior)
+      .map((p) => (p.indiceAresta > indice ? { ...p, indiceAresta: p.indiceAresta + 1 } : p)),
+  };
+}
+
+/** Arredonda o canto do vértice `indice` (arco tesselado de raio `raioMm`). */
+export function arredondarCantoDoMolde(molde: Molde, indice: number, raioMm: number): Molde {
+  const arestaAnterior = (indice - 1 + molde.contorno.length) % molde.contorno.length;
+  const contornoAntes = molde.contorno.length;
+  const novoContorno = arredondarCantoDoContorno(molde.contorno, indice, raioMm);
+  const delta = novoContorno.length - contornoAntes;
+  return {
+    ...molde,
+    contorno: novoContorno,
+    piques: molde.piques
+      .filter((p) => p.indiceAresta !== indice && p.indiceAresta !== arestaAnterior)
+      .map((p) => (p.indiceAresta > indice ? { ...p, indiceAresta: p.indiceAresta + delta } : p)),
+  };
+}
+
+/**
+ * Escala a peça por `fatorX`/`fatorY` (independentes), mantendo o canto
+ * superior esquerdo do retângulo envolvente fixo — mesma referência visual
+ * do "Dimensionar" do Audaces (DX/DY mostram o novo tamanho resultante).
+ */
+export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): Molde {
+  if (!Number.isFinite(fatorX) || fatorX <= 0 || !Number.isFinite(fatorY) || fatorY <= 0) {
+    throw new Error('Fatores de dimensionamento precisam ser maiores que zero.');
+  }
+  const bbox = retanguloEnvolvente(molde.contorno);
+  const origem = { x: bbox.minX, y: bbox.minY };
+  return {
+    ...molde,
+    contorno: escalarContorno(molde.contorno, origem, fatorX, fatorY),
+    linhasInternas: molde.linhasInternas.map((l) => escalarContorno(l, origem, fatorX, fatorY)),
+    furos: molde.furos.map((f) => escalarContorno(f, origem, fatorX, fatorY)),
+    piques: molde.piques.map((p) => ({ ...p, posicao: escalarPonto(p.posicao, origem, fatorX, fatorY) })),
+    marcas: molde.marcas.map((m) => ({ ...m, posicao: escalarPonto(m.posicao, origem, fatorX, fatorY) })),
+    linhaDeFio: {
+      inicio: escalarPonto(molde.linhaDeFio.inicio, origem, fatorX, fatorY),
+      fim: escalarPonto(molde.linhaDeFio.fim, origem, fatorX, fatorY),
     },
   };
 }

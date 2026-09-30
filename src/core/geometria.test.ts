@@ -22,6 +22,12 @@ import {
   bboxesSeSobrepoem,
   contornosSeSobrepoem,
   distanciaEntreContornos,
+  moverPontoDoContorno,
+  inserirPontoNoContorno,
+  removerPontoDoContorno,
+  escalarContorno,
+  chanfrarCantoDoContorno,
+  arredondarCantoDoContorno,
 } from './geometria';
 
 describe('operações vetoriais', () => {
@@ -305,5 +311,106 @@ describe('distanciaEntreContornos', () => {
     const a = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
     const b = [ponto(20, 0), ponto(30, 0), ponto(30, 10), ponto(20, 10)];
     expect(distanciaEntreContornos(a, b)).toBeCloseTo(10, 9);
+  });
+});
+
+describe('moverPontoDoContorno', () => {
+  const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+
+  it('substitui só o ponto no índice indicado', () => {
+    const resultado = moverPontoDoContorno(quadrado, 1, ponto(12, 2));
+    expect(resultado).toEqual([ponto(0, 0), ponto(12, 2), ponto(10, 10), ponto(0, 10)]);
+  });
+
+  it('lança erro para índice fora do contorno', () => {
+    expect(() => moverPontoDoContorno(quadrado, 4, ponto(0, 0))).toThrow();
+  });
+});
+
+describe('inserirPontoNoContorno', () => {
+  const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+
+  it('insere o novo ponto logo depois do índice da aresta', () => {
+    const resultado = inserirPontoNoContorno(quadrado, 0, ponto(5, 0));
+    expect(resultado).toEqual([ponto(0, 0), ponto(5, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)]);
+  });
+
+  it('insere corretamente na última aresta (entre o último e o primeiro ponto)', () => {
+    const resultado = inserirPontoNoContorno(quadrado, 3, ponto(0, 5));
+    expect(resultado).toEqual([ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10), ponto(0, 5)]);
+  });
+});
+
+describe('removerPontoDoContorno', () => {
+  it('remove o vértice no índice indicado', () => {
+    const pentagono = [ponto(0, 0), ponto(10, 0), ponto(15, 5), ponto(10, 10), ponto(0, 10)];
+    expect(removerPontoDoContorno(pentagono, 2)).toEqual([ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)]);
+  });
+});
+
+describe('escalarContorno', () => {
+  it('escala cada ponto mantendo a origem fixa', () => {
+    const quadrado = [ponto(10, 10), ponto(20, 10), ponto(20, 20), ponto(10, 20)];
+    const resultado = escalarContorno(quadrado, ponto(10, 10), 2, 0.5);
+    expect(resultado).toEqual([ponto(10, 10), ponto(30, 10), ponto(30, 15), ponto(10, 15)]);
+  });
+
+  it('fator 1 em ambos os eixos não muda nada', () => {
+    const forma = [ponto(1, 2), ponto(3, 4), ponto(5, 1)];
+    expect(escalarContorno(forma, ponto(0, 0), 1, 1)).toEqual(forma);
+  });
+});
+
+describe('chanfrarCantoDoContorno', () => {
+  it('corta o canto reto substituindo-o por dois pontos à distância pedida', () => {
+    const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const resultado = chanfrarCantoDoContorno(quadrado, 1, 2); // canto (10,0)
+    // (10,0) vira dois pontos: 2mm em direção a (0,0) e 2mm em direção a (10,10)
+    expect(resultado).toEqual([ponto(0, 0), ponto(8, 0), ponto(10, 2), ponto(10, 10), ponto(0, 10)]);
+  });
+
+  it('preserva a área removendo exatamente o triângulo do canto (fórmula conhecida)', () => {
+    const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const resultado = chanfrarCantoDoContorno(quadrado, 1, 3);
+    // triângulo reto de catetos 3 e 3 removido de um quadrado de área 100
+    expect(area(resultado)).toBeCloseTo(100 - (3 * 3) / 2, 9);
+  });
+
+  it('nunca ultrapassa o vértice vizinho quando a distância pedida é maior que a aresta', () => {
+    const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const resultado = chanfrarCantoDoContorno(quadrado, 1, 100);
+    // limitado a 99% de cada aresta adjacente (comprimento 10) = 9.9
+    expect(resultado[1]!.x).toBeCloseTo(0.1, 9);
+    expect(resultado[2]!.y).toBeCloseTo(9.9, 9);
+  });
+});
+
+describe('arredondarCantoDoContorno', () => {
+  it('produz um contorno com mais pontos (arco tesselado) e continua uma forma válida (área positiva)', () => {
+    const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const resultado = arredondarCantoDoContorno(quadrado, 1, 2, 8);
+    expect(resultado.length).toBe(quadrado.length + 8); // substitui 1 ponto por (a, 7 pontos de arco, b) = 9
+    expect(area(resultado)).toBeGreaterThan(0);
+    expect(area(resultado)).toBeLessThan(area(quadrado)); // arredondar sempre reduz a área (corta o canto)
+  });
+
+  it('todo ponto do arco fica à distância igual (o raio efetivo) do centro do arco', () => {
+    const quadrado = [ponto(0, 0), ponto(20, 0), ponto(20, 20), ponto(0, 20)];
+    const resultado = arredondarCantoDoContorno(quadrado, 1, 3, 8); // canto (20,0), raio cabe folgado
+    // resultado = [contorno[0], a, 7 pontos de arco, b, contorno[2], contorno[3]]
+    // — os 7 pontos de arco (índices 2..8) devem formar passos pequenos e
+    // suaves (sem saltos bruscos), não o comprimento inteiro da aresta.
+    const arco = resultado.slice(2, 9);
+    for (let i = 1; i < arco.length; i++) {
+      expect(distancia(arco[i - 1]!, arco[i]!)).toBeGreaterThan(0);
+      expect(distancia(arco[i - 1]!, arco[i]!)).toBeLessThan(3); // passos pequenos, não saltos
+    }
+  });
+
+  it('raio maior que as arestas adjacentes é limitado (não ultrapassa o vértice vizinho)', () => {
+    const quadrado = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const resultado = arredondarCantoDoContorno(quadrado, 1, 1000, 8);
+    // ponto de tangência do lado (10,0)->(0,0) não deve passar de 9.9 (99% de 10)
+    expect(resultado[1]!.x).toBeGreaterThan(0.05);
   });
 });

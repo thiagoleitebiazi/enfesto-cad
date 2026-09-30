@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
-import { pontoDentroDoContorno, ponto, somar, type Ponto2D } from '../core/geometria';
+import {
+  pontoDentroDoContorno,
+  pontoMaisProximoNoContorno,
+  moverPontoDoContorno,
+  distancia,
+  ponto,
+  somar,
+  type Ponto2D,
+} from '../core/geometria';
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import {
   aplicarZoom,
@@ -26,8 +34,30 @@ const COR_MARCA = '#00838f';
 const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#dfe2e6';
 const COR_REGUA_TRACO = '#5a6270';
+const COR_ALCA_DE_VERTICE = '#e65100';
 
-export type ModoDeDesenho = 'selecionar' | 'novo-molde' | 'novo-furo' | 'definir-fio' | 'pique' | 'marca';
+export type ModoDeDesenho =
+  | 'selecionar'
+  | 'novo-molde'
+  | 'novo-furo'
+  | 'definir-fio'
+  | 'pique'
+  | 'marca'
+  | 'mover-ponto'
+  | 'inserir-ponto'
+  | 'excluir-ponto'
+  | 'chanfrar-canto'
+  | 'arredondar-canto';
+
+const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
+  'mover-ponto',
+  'inserir-ponto',
+  'excluir-ponto',
+  'chanfrar-canto',
+  'arredondar-canto',
+]);
+
+const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
 
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
@@ -44,6 +74,11 @@ interface AreaDeDesenhoProps {
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
   readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
+  readonly onMoverPontoDoMolde?: (indice: number, novaPosicao: Ponto2D) => void;
+  readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
+  readonly onExcluirPontoDoMolde?: (indice: number) => void;
+  readonly onChanfrarCanto?: (indice: number) => void;
+  readonly onArredondarCanto?: (indice: number) => void;
 }
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
@@ -71,7 +106,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onCursorMove,
     onCliqueNoCanvas,
     onMoverPeca,
+    onMoverPontoDoMolde,
+    onInserirPontoNoMolde,
+    onExcluirPontoDoMolde,
+    onChanfrarCanto,
+    onArredondarCanto,
   } = props;
+  const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
   const reguaVerticalRef = useRef<HTMLCanvasElement | null>(null);
@@ -86,6 +127,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const espacoPressionadoRef = useRef(false);
   const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
   const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
+  const arrastoDeVerticeRef = useRef<{ indice: number } | null>(null);
+  const [verticeEmArrasto, setVerticeEmArrasto] = useState<{ indice: number; posicao: Ponto2D } | null>(null);
 
   useEffect(() => {
     const alvo = containerRef.current;
@@ -199,10 +242,18 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       // Enquanto uma peça está sendo arrastada, desenha-se a versão já
       // deslocada (prévia em tempo real) sem tocar no estado real ainda —
       // o deslocamento só é confirmado (e entra no histórico) ao soltar o mouse.
-      const peca =
+      let peca =
         deltaDeArrasto && deltaDeArrasto.id === pecaOriginal.id
           ? transladarMolde(pecaOriginal, deltaDeArrasto.delta, pecaOriginal.id)
           : pecaOriginal;
+      // Mesma lógica de prévia ao vivo, mas para um vértice sendo arrastado
+      // (modo "mover ponto") em vez da peça inteira.
+      if (verticeEmArrasto && pecaOriginal.id === selecionadoId) {
+        peca = {
+          ...peca,
+          contorno: moverPontoDoContorno(peca.contorno, verticeEmArrasto.indice, verticeEmArrasto.posicao),
+        };
+      }
 
       // Contorno + furos num único path com regra evenodd: os furos aparecem
       // como buracos reais no preenchimento, não apenas linhas por cima.
@@ -285,6 +336,26 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, COR_FIO);
     }
 
+    // Alças nos vértices da peça selecionada, nos modos de edição de forma
+    // (mover/inserir/excluir ponto, chanfrar/arredondar canto) — a mesma
+    // prévia ao vivo do vértice em arrasto já foi aplicada acima.
+    if (MODOS_DE_EDICAO_DE_VERTICE.has(modo) && pecaSelecionada) {
+      const pecaParaAlcas =
+        verticeEmArrasto && pecaSelecionada.id === selecionadoId
+          ? { ...pecaSelecionada, contorno: moverPontoDoContorno(pecaSelecionada.contorno, verticeEmArrasto.indice, verticeEmArrasto.posicao) }
+          : pecaSelecionada;
+      for (const p of pecaParaAlcas.contorno) {
+        const tela = mundoParaTela(p, transform);
+        ctx.beginPath();
+        ctx.arc(tela.x, tela.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = COR_ALCA_DE_VERTICE;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
     // Contorno recém-fechado, aguardando a definição da linha de fio.
     if (contornoFinalizado && contornoFinalizado.length >= 3) {
       ctx.beginPath();
@@ -339,6 +410,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cursorLocal,
     modo,
     deltaDeArrasto,
+    verticeEmArrasto,
+    pecaSelecionada,
   ]);
 
   // Desenha a régua horizontal.
@@ -418,6 +491,40 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const tela = posicaoDoMouse(e);
     const mundo = telaParaMundo(tela, transform);
 
+    if (MODOS_DE_EDICAO_DE_VERTICE.has(modo)) {
+      if (!pecaSelecionada) return;
+
+      if (modo === 'inserir-ponto') {
+        const maisProximo = pontoMaisProximoNoContorno(mundo, pecaSelecionada.contorno);
+        onInserirPontoNoMolde?.(maisProximo.indiceAresta, maisProximo.ponto);
+        return;
+      }
+
+      const raioMm = RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm;
+      let indiceMaisProximo = -1;
+      let menorDistancia = Infinity;
+      pecaSelecionada.contorno.forEach((p, i) => {
+        const d = distancia(mundo, p);
+        if (d < menorDistancia) {
+          menorDistancia = d;
+          indiceMaisProximo = i;
+        }
+      });
+      if (indiceMaisProximo < 0 || menorDistancia > raioMm) return;
+
+      if (modo === 'mover-ponto') {
+        arrastoDeVerticeRef.current = { indice: indiceMaisProximo };
+        setVerticeEmArrasto({ indice: indiceMaisProximo, posicao: mundo });
+      } else if (modo === 'excluir-ponto') {
+        onExcluirPontoDoMolde?.(indiceMaisProximo);
+      } else if (modo === 'chanfrar-canto') {
+        onChanfrarCanto?.(indiceMaisProximo);
+      } else if (modo === 'arredondar-canto') {
+        onArredondarCanto?.(indiceMaisProximo);
+      }
+      return;
+    }
+
     if (modo === 'selecionar') {
       const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
       onSelecionar(encontrada ? encontrada.id : null);
@@ -447,6 +554,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setCursorLocal(mundo);
     onCursorMove(mundo);
 
+    if (arrastoDeVerticeRef.current) {
+      setVerticeEmArrasto({ indice: arrastoDeVerticeRef.current.indice, posicao: mundo });
+    }
+
     if (arrastoRef.current) {
       const deltaPasso = { x: mundo.x - arrastoRef.current.ultimoMundo.x, y: mundo.y - arrastoRef.current.ultimoMundo.y };
       arrastoRef.current.ultimoMundo = mundo;
@@ -467,14 +578,24 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setDeltaDeArrasto(null);
   }
 
+  function finalizarArrastoDeVertice(): void {
+    if (arrastoDeVerticeRef.current && verticeEmArrasto) {
+      onMoverPontoDoMolde?.(verticeEmArrasto.indice, verticeEmArrasto.posicao);
+    }
+    arrastoDeVerticeRef.current = null;
+    setVerticeEmArrasto(null);
+  }
+
   function aoSoltarMouse(): void {
     panRef.current.ativo = false;
     finalizarArrasto();
+    finalizarArrastoDeVertice();
   }
 
   function aoSairMouse(): void {
     panRef.current.ativo = false;
     finalizarArrasto();
+    finalizarArrastoDeVertice();
     setCursorLocal(null);
     onCursorMove(null);
   }
