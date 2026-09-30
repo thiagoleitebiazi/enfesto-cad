@@ -37,12 +37,12 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoMoverPonto: () => void;
   readonly onEntrarModoInserirPonto: () => void;
   readonly onEntrarModoExcluirPonto: () => void;
-  readonly onEntrarModoChanfrarCanto: () => void;
-  readonly onEntrarModoArredondarCanto: () => void;
+  readonly onEntrarModoArredondarOuChanfrar: () => void;
   readonly onAbrirDimensionar: () => void;
   readonly onEspelharManual: () => void;
   readonly onGirarLivre: () => void;
   readonly onElementoParalelo: () => void;
+  readonly onConverterEmCostura: () => void;
   readonly onAlinhar: () => void;
   readonly podeAlinhar: boolean;
   readonly onAbrirExportacaoPdf: () => void;
@@ -226,13 +226,23 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Redefinir">
                 <button
+                  aria-pressed={props.modo === 'selecionar'}
+                  className={props.modo === 'selecionar' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoSelecionar}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Mover: arraste a peça inteira (modo Selecionar)' : 'Selecione uma peça primeiro'}
+                >
+                  <Icone nome="selecionar" />
+                  <span>Mover</span>
+                </button>
+                <button
                   aria-pressed={props.modo === 'mover-ponto'}
                   className={props.modo === 'mover-ponto' ? 'item-selecionado' : ''}
                   onClick={props.onEntrarModoMoverPonto}
                   disabled={!props.temSelecaoUnica}
                   title={
                     props.temSelecaoUnica
-                      ? 'Mover ponto: arraste um vértice — Shift+clique para selecionar vários, ou desenhe uma cerca (clique e arraste num espaço vazio) para selecionar todos os vértices numa área e movê-los juntos'
+                      ? 'Mover ponto: arraste um vértice — Shift+clique para selecionar vários, ou desenhe uma cerca (clique e arraste num espaço vazio) para selecionar todos os vértices numa área e movê-los juntos (equivalente a Manipulação rápida/Definir cerca/Mover cerca)'
                       : 'Selecione uma peça primeiro'
                   }
                 >
@@ -261,6 +271,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 >
                   <Icone nome="girar" />
                   <span>Girar</span>
+                </button>
+                <button onClick={props.onDuplicar} disabled={!props.temSelecao} title="Copiar: duplica a peça selecionada (mesmo que Duplicar na aba Edição)">
+                  <Icone nome="copiar" />
+                  <span>Copiar</span>
                 </button>
                 <button
                   onClick={props.onAbrirDimensionar}
@@ -313,24 +327,22 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <span>Alinhar</span>
                 </button>
                 <button
-                  aria-pressed={props.modo === 'chanfrar-canto'}
-                  className={props.modo === 'chanfrar-canto' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoChanfrarCanto}
+                  aria-pressed={props.modo === 'arredondar-ou-chanfrar'}
+                  className={props.modo === 'arredondar-ou-chanfrar' ? 'item-selecionado' : ''}
+                  onClick={props.onEntrarModoArredondarOuChanfrar}
                   disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Chanfrar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="chanfrar" />
-                  <span>Chanfrar canto</span>
-                </button>
-                <button
-                  aria-pressed={props.modo === 'arredondar-canto'}
-                  className={props.modo === 'arredondar-canto' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoArredondarCanto}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Arredondar canto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                  title={props.temSelecaoUnica ? 'Arredondar ou chanfrar: clique num vértice da peça selecionada e escolha' : 'Selecione uma peça primeiro'}
                 >
                   <Icone nome="arredondar" />
-                  <span>Arredondar canto</span>
+                  <span>Arredondar ou chanfrar</span>
+                </button>
+                <button
+                  onClick={props.onConverterEmCostura}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Converter em costura: define a margem de costura da peça (mesmo campo das Propriedades)' : 'Selecione uma peça primeiro'}
+                >
+                  <Icone nome="converter-costura" />
+                  <span>Converter em costura</span>
                 </button>
               </div>
             </>

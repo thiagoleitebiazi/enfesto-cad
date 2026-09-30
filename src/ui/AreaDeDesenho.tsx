@@ -45,15 +45,13 @@ export type ModoDeDesenho =
   | 'mover-ponto'
   | 'inserir-ponto'
   | 'excluir-ponto'
-  | 'chanfrar-canto'
-  | 'arredondar-canto';
+  | 'arredondar-ou-chanfrar';
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'mover-ponto',
   'inserir-ponto',
   'excluir-ponto',
-  'chanfrar-canto',
-  'arredondar-canto',
+  'arredondar-ou-chanfrar',
 ]);
 
 const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
@@ -76,8 +74,7 @@ interface AreaDeDesenhoProps {
   readonly onMoverVariosPontos?: (indices: readonly number[], delta: Ponto2D) => void;
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
   readonly onExcluirPontoDoMolde?: (indice: number) => void;
-  readonly onChanfrarCanto?: (indice: number) => void;
-  readonly onArredondarCanto?: (indice: number) => void;
+  readonly onArredondarOuChanfrarCanto?: (indice: number) => void;
 }
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
@@ -108,8 +105,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onMoverVariosPontos,
     onInserirPontoNoMolde,
     onExcluirPontoDoMolde,
-    onChanfrarCanto,
-    onArredondarCanto,
+    onArredondarOuChanfrarCanto,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -586,10 +582,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       if (!achouVertice) return;
       if (modo === 'excluir-ponto') {
         onExcluirPontoDoMolde?.(indiceMaisProximo);
-      } else if (modo === 'chanfrar-canto') {
-        onChanfrarCanto?.(indiceMaisProximo);
-      } else if (modo === 'arredondar-canto') {
-        onArredondarCanto?.(indiceMaisProximo);
+      } else if (modo === 'arredondar-ou-chanfrar') {
+        onArredondarOuChanfrarCanto?.(indiceMaisProximo);
       }
       return;
     }

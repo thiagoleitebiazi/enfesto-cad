@@ -515,14 +515,9 @@ export default function App(): React.JSX.Element {
     setModo('excluir-ponto');
   }, [selecionadoId]);
 
-  const entrarModoChanfrarCanto = useCallback(() => {
+  const entrarModoArredondarOuChanfrar = useCallback(() => {
     if (!selecionadoId) return;
-    setModo('chanfrar-canto');
-  }, [selecionadoId]);
-
-  const entrarModoArredondarCanto = useCallback(() => {
-    if (!selecionadoId) return;
-    setModo('arredondar-canto');
+    setModo('arredondar-ou-chanfrar');
   }, [selecionadoId]);
 
   const alterarPecaSelecionada = useCallback(
@@ -532,6 +527,25 @@ export default function App(): React.JSX.Element {
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
+
+  /**
+   * "Converter em costura": atalho real para o mesmo campo "Margem de
+   * costura (mm)" das propriedades da peça (ADR 0005) — no Audaces é o
+   * mesmo conceito (a costura é derivada do molde base + a margem), só
+   * com outro nome/lugar na interface.
+   */
+  const converterEmCosturaDaSelecionada = useCallback(() => {
+    const peca = pecas.find((p) => p.id === selecionadoId);
+    if (!peca) return;
+    const texto = window.prompt('Margem de costura (mm):', String(peca.margemDeCosturaMm || 10));
+    if (texto === null) return;
+    const margemMm = Number.parseFloat(texto);
+    if (!Number.isFinite(margemMm) || margemMm < 0) {
+      window.alert('Margem inválida — informe um número maior ou igual a zero.');
+      return;
+    }
+    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? { ...p, margemDeCosturaMm: margemMm } : p)));
+  }, [pecas, selecionadoId, aplicarMudanca]);
 
   const girarPecaSelecionada = useCallback(
     (anguloGraus: number) => {
@@ -589,39 +603,35 @@ export default function App(): React.JSX.Element {
     [pecas, selecionadoId, aplicarMudanca],
   );
 
-  const chanfrarVerticeDaSelecionada = useCallback(
+  /** "Arredondar ou chanfrar" (um único botão, como no Audaces): pergunta qual das duas operações, depois o valor em mm. */
+  const arredondarOuChanfrarVerticeDaSelecionada = useCallback(
     (indice: number) => {
       if (!selecionadoId) return;
-      const texto = window.prompt('Distância do chanfro (mm):', '10');
+      const escolha = window.prompt('Arredondar ou chanfrar este canto? Digite "A" para arredondar ou "C" para chanfrar:', 'A');
+      if (escolha === null) return;
+      const normalizado = escolha.trim().toUpperCase();
+      if (normalizado !== 'A' && normalizado !== 'C') {
+        window.alert('Opção inválida — digite "A" (arredondar) ou "C" (chanfrar).');
+        return;
+      }
+      const arredondando = normalizado === 'A';
+      const texto = window.prompt(arredondando ? 'Raio do arredondamento (mm):' : 'Distância do chanfro (mm):', '10');
       if (texto === null) return;
-      const distanciaMm = Number.parseFloat(texto);
-      if (!Number.isFinite(distanciaMm) || distanciaMm <= 0) {
-        window.alert('Distância inválida — informe um número maior que zero.');
+      const valorMm = Number.parseFloat(texto);
+      if (!Number.isFinite(valorMm) || valorMm <= 0) {
+        window.alert('Valor inválido — informe um número maior que zero.');
         return;
       }
       try {
         aplicarMudanca(
-          pecas.map((p) => (p.id === selecionadoId ? chanfrarCantoDoMolde(p, indice, distanciaMm) : p)),
+          pecas.map((p) =>
+            p.id === selecionadoId
+              ? arredondando
+                ? arredondarCantoDoMolde(p, indice, valorMm)
+                : chanfrarCantoDoMolde(p, indice, valorMm)
+              : p,
+          ),
         );
-      } catch (e) {
-        window.alert(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [pecas, selecionadoId, aplicarMudanca],
-  );
-
-  const arredondarVerticeDaSelecionada = useCallback(
-    (indice: number) => {
-      if (!selecionadoId) return;
-      const texto = window.prompt('Raio do arredondamento (mm):', '10');
-      if (texto === null) return;
-      const raioMm = Number.parseFloat(texto);
-      if (!Number.isFinite(raioMm) || raioMm <= 0) {
-        window.alert('Raio inválido — informe um número maior que zero.');
-        return;
-      }
-      try {
-        aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? arredondarCantoDoMolde(p, indice, raioMm) : p)));
       } catch (e) {
         window.alert(e instanceof Error ? e.message : String(e));
       }
@@ -1158,12 +1168,12 @@ export default function App(): React.JSX.Element {
         onEntrarModoMoverPonto={entrarModoMoverPonto}
         onEntrarModoInserirPonto={entrarModoInserirPonto}
         onEntrarModoExcluirPonto={entrarModoExcluirPonto}
-        onEntrarModoChanfrarCanto={entrarModoChanfrarCanto}
-        onEntrarModoArredondarCanto={entrarModoArredondarCanto}
+        onEntrarModoArredondarOuChanfrar={entrarModoArredondarOuChanfrar}
         onAbrirDimensionar={() => setMostrarDimensionar(true)}
         onEspelharManual={espelharSelecionadaManualmente}
         onGirarLivre={girarLivreSelecionada}
         onElementoParalelo={criarElementoParaleloDaSelecionada}
+        onConverterEmCostura={converterEmCosturaDaSelecionada}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -1310,8 +1320,7 @@ export default function App(): React.JSX.Element {
           onMoverVariosPontos={moverVariosPontosDaSelecionada}
           onInserirPontoNoMolde={inserirPontoNaSelecionada}
           onExcluirPontoDoMolde={excluirPontoDaSelecionada}
-          onChanfrarCanto={chanfrarVerticeDaSelecionada}
-          onArredondarCanto={arredondarVerticeDaSelecionada}
+          onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
         />
         <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
       </div>

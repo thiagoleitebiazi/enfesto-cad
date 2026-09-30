@@ -36,6 +36,7 @@ export type NomeDoIcone =
   | 'alinhar'
   | 'chanfrar'
   | 'arredondar'
+  | 'converter-costura'
   | 'importar'
   | 'exportar'
   | 'relatorio'
@@ -211,6 +212,12 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   ),
   chanfrar: <path d="M4 4h8l4 4v8H4z" />,
   arredondar: <path d="M4 16V8a4 4 0 0 1 4-4h8" />,
+  'converter-costura': (
+    <>
+      <rect x="4" y="4" width="12" height="12" />
+      <rect x="6.5" y="6.5" width="7" height="7" strokeDasharray="2 1.6" />
+    </>
+  ),
   importar: (
     <>
       <path d="M10 3v9" />
