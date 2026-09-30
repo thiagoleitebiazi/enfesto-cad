@@ -18,6 +18,8 @@ function paraCampo(dados: DadosDeNovoTecido) {
     direcional: dados.direcional ?? false,
     temPelo: dados.temPelo ?? false,
     padrao: dados.padrao ?? ('liso' as PadraoDoTecido),
+    gramaturaGm2: dados.gramaturaGm2 !== undefined ? String(dados.gramaturaGm2) : '',
+    quantidadeDisponivelKg: dados.quantidadeDisponivelKg !== undefined ? String(dados.quantidadeDisponivelKg) : '',
     observacoes: dados.observacoes ?? '',
   };
 }
@@ -47,6 +49,10 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
           direcional: campos.direcional,
           temPelo: campos.temPelo,
           padrao: campos.padrao,
+          ...(campos.gramaturaGm2 ? { gramaturaGm2: Number.parseFloat(campos.gramaturaGm2) } : {}),
+          ...(campos.quantidadeDisponivelKg
+            ? { quantidadeDisponivelKg: Number.parseFloat(campos.quantidadeDisponivelKg) }
+            : {}),
           ...(campos.observacoes ? { observacoes: campos.observacoes } : {}),
         },
         props.tecidoAtual?.id ?? `tecido-${Date.now().toString(36)}`,
@@ -97,6 +103,24 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
             min={0}
             value={campos.larguraUtilMm}
             onChange={(e) => setCampos({ ...campos, larguraUtilMm: e.target.value })}
+          />
+        </label>
+        <label>
+          Gramatura (g/m², opcional)
+          <input
+            type="number"
+            min={0}
+            value={campos.gramaturaGm2}
+            onChange={(e) => setCampos({ ...campos, gramaturaGm2: e.target.value })}
+          />
+        </label>
+        <label>
+          Quantidade em estoque (kg, opcional)
+          <input
+            type="number"
+            min={0}
+            value={campos.quantidadeDisponivelKg}
+            onChange={(e) => setCampos({ ...campos, quantidadeDisponivelKg: e.target.value })}
           />
         </label>
         <label>

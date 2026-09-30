@@ -16,6 +16,10 @@ export interface Tecido {
   readonly direcional: boolean;
   readonly temPelo: boolean;
   readonly padrao: PadraoDoTecido;
+  /** Gramatura em g/m² — peso do tecido por área, usado para calcular o rendimento (quantas peças cabem no estoque). */
+  readonly gramaturaGm2?: number;
+  /** Quantidade em estoque para este projeto, em kg — usado junto com a gramatura para calcular o rendimento. */
+  readonly quantidadeDisponivelKg?: number;
   readonly observacoes?: string;
 }
 
@@ -28,6 +32,8 @@ export interface DadosDeNovoTecido {
   readonly direcional?: boolean;
   readonly temPelo?: boolean;
   readonly padrao?: PadraoDoTecido;
+  readonly gramaturaGm2?: number;
+  readonly quantidadeDisponivelKg?: number;
   readonly observacoes?: string;
 }
 
@@ -41,6 +47,15 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
   if (dados.larguraUtilMm > dados.larguraTotalMm) {
     throw new Error(`Tecido "${dados.nome}": largura útil não pode ser maior que a largura total.`);
   }
+  if (dados.gramaturaGm2 !== undefined && (!Number.isFinite(dados.gramaturaGm2) || dados.gramaturaGm2 <= 0)) {
+    throw new Error(`Tecido "${dados.nome}": gramatura precisa ser > 0 quando informada.`);
+  }
+  if (
+    dados.quantidadeDisponivelKg !== undefined &&
+    (!Number.isFinite(dados.quantidadeDisponivelKg) || dados.quantidadeDisponivelKg <= 0)
+  ) {
+    throw new Error(`Tecido "${dados.nome}": quantidade em estoque precisa ser > 0 quando informada.`);
+  }
   return {
     id,
     nome: dados.nome,
@@ -51,6 +66,8 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
     direcional: dados.direcional ?? false,
     temPelo: dados.temPelo ?? false,
     padrao: dados.padrao ?? 'liso',
+    ...(dados.gramaturaGm2 !== undefined ? { gramaturaGm2: dados.gramaturaGm2 } : {}),
+    ...(dados.quantidadeDisponivelKg !== undefined ? { quantidadeDisponivelKg: dados.quantidadeDisponivelKg } : {}),
     ...(dados.observacoes !== undefined ? { observacoes: dados.observacoes } : {}),
   };
 }

@@ -61,6 +61,83 @@ describe('gerarRelatorioDeProducao — campos básicos', () => {
     expect(relatorio.larguraTotalMm).toBeNull();
     expect(relatorio.aproveitamentoPercentual).toBeNull();
     expect(relatorio.desperdicioPercentual).toBeNull();
+    expect(relatorio.gramaturaGm2).toBeNull();
+    expect(relatorio.quantidadeDisponivelKg).toBeNull();
+    expect(relatorio.pesoTotalEstimadoKg).toBeNull();
+    expect(relatorio.rendimentoLotes).toBeNull();
+  });
+});
+
+describe('gerarRelatorioDeProducao — rendimento (gramatura e estoque de tecido)', () => {
+  it('sem gramatura configurada, peso e rendimento ficam null mesmo com peças', () => {
+    const pecas = [pecaRetangular('a', 'M', 1000, 1000, 1)];
+    const projeto = criarProjeto('P', 'p1', 'ENF-001', '2026-09-28T10:00:00.000Z', {
+      pecas,
+      tecido: tecidoDeTeste(),
+      enfesto: enfestoDeTeste(),
+    });
+    const relatorio = gerarRelatorioDeProducao(projeto, '2026-09-28T10:00:00.000Z');
+    expect(relatorio.gramaturaGm2).toBeNull();
+    expect(relatorio.pesoTotalEstimadoKg).toBeNull();
+    expect(relatorio.pecasPorTamanho[0]!.pesoEstimadoKg).toBeNull();
+  });
+
+  it('calcula peso estimado a partir da área real e da gramatura (1m² a 200g/m² = 0.2kg)', () => {
+    // Peça de exatamente 1000x1000mm = 1 m².
+    const pecas = [pecaRetangular('a', 'M', 1000, 1000, 1)];
+    const tecido = criarTecido(
+      { nome: 'Malha PV', referencia: 'TEC-1', larguraTotalMm: 1600, larguraUtilMm: 1500, gramaturaGm2: 200 },
+      't1',
+    );
+    const projeto = criarProjeto('P', 'p1', 'ENF-001', '2026-09-28T10:00:00.000Z', {
+      pecas,
+      tecido,
+      enfesto: enfestoDeTeste(),
+    });
+    const relatorio = gerarRelatorioDeProducao(projeto, '2026-09-28T10:00:00.000Z');
+    expect(relatorio.gramaturaGm2).toBe(200);
+    expect(relatorio.pesoTotalEstimadoKg).toBeCloseTo(0.2, 6);
+    expect(relatorio.pecasPorTamanho[0]!.pesoEstimadoKg).toBeCloseTo(0.2, 6);
+  });
+
+  it('rendimentoLotes: quantos conjuntos iguais cabem no estoque informado', () => {
+    // 2 peças de 1 m² cada = 2 m² no projeto; a 500 g/m² = 1kg total por lote.
+    const pecas = [pecaRetangular('a', 'M', 1000, 1000, 2)];
+    const tecido = criarTecido(
+      {
+        nome: 'Malha PV',
+        referencia: 'TEC-1',
+        larguraTotalMm: 1600,
+        larguraUtilMm: 1500,
+        gramaturaGm2: 500,
+        quantidadeDisponivelKg: 4.5,
+      },
+      't1',
+    );
+    const projeto = criarProjeto('P', 'p1', 'ENF-001', '2026-09-28T10:00:00.000Z', {
+      pecas,
+      tecido,
+      enfesto: enfestoDeTeste(),
+    });
+    const relatorio = gerarRelatorioDeProducao(projeto, '2026-09-28T10:00:00.000Z');
+    expect(relatorio.pesoTotalEstimadoKg).toBeCloseTo(1, 6);
+    expect(relatorio.quantidadeDisponivelKg).toBe(4.5);
+    // 4.5kg de estoque / 1kg por lote = 4 lotes completos (arredondado para baixo).
+    expect(relatorio.rendimentoLotes).toBe(4);
+  });
+
+  it('rendimentoLotes fica null se só a gramatura ou só o estoque estiver configurado', () => {
+    const pecas = [pecaRetangular('a', 'M', 1000, 1000, 1)];
+    const tecidoSoGramatura = criarTecido(
+      { nome: 'T', referencia: 'R', larguraTotalMm: 1600, larguraUtilMm: 1500, gramaturaGm2: 200 },
+      't1',
+    );
+    const projeto1 = criarProjeto('P', 'p1', 'ENF-001', '2026-09-28T10:00:00.000Z', {
+      pecas,
+      tecido: tecidoSoGramatura,
+      enfesto: enfestoDeTeste(),
+    });
+    expect(gerarRelatorioDeProducao(projeto1, '2026-09-28T10:00:00.000Z').rendimentoLotes).toBeNull();
   });
 });
 
@@ -79,8 +156,8 @@ describe('gerarRelatorioDeProducao — peças por tamanho', () => {
     const relatorio = gerarRelatorioDeProducao(projeto, '2026-09-28T10:00:00.000Z');
     const porM = relatorio.pecasPorTamanho.find((l) => l.tamanho === 'M');
     const porG = relatorio.pecasPorTamanho.find((l) => l.tamanho === 'G');
-    expect(porM).toEqual({ tamanho: 'M', quantidadeDeModelos: 2, quantidadeTotal: 5 });
-    expect(porG).toEqual({ tamanho: 'G', quantidadeDeModelos: 1, quantidadeTotal: 5 });
+    expect(porM).toEqual({ tamanho: 'M', quantidadeDeModelos: 2, quantidadeTotal: 5, pesoEstimadoKg: null });
+    expect(porG).toEqual({ tamanho: 'G', quantidadeDeModelos: 1, quantidadeTotal: 5, pesoEstimadoKg: null });
   });
 
   it('lista ordenada alfabeticamente por tamanho', () => {

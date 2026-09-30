@@ -21,7 +21,7 @@ import { gerarRelatorioDeProducao } from './domain/relatorio';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
 import type { Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { ROTULO_DO_TIPO } from './domain/enfesto';
+import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
 import { sugerirPosicaoSemSobreposicao } from './domain/posicionamento';
 import type { ResultadoDeNesting } from './domain/nesting';
@@ -33,6 +33,7 @@ import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/P
 import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
 import { PainelDeRelatorio } from './ui/PainelDeRelatorio';
+import { PainelDeNovoProjeto, type DadosDeNovoProjeto } from './ui/PainelDeNovoProjeto';
 import {
   criarProjeto,
   registrarEvento,
@@ -78,10 +79,10 @@ function proximoId(): string {
   return `peca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function novoProjetoVazio(estadoInicial: EstadoDoProjeto): Projeto {
+function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem título'): Projeto {
   const agora = new Date().toISOString();
   const id = `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  return criarProjeto('Projeto sem título', id, gerarCodigoDeProjeto(agora, 1), agora, estadoInicial);
+  return criarProjeto(nome, id, gerarCodigoDeProjeto(agora, 1), agora, estadoInicial);
 }
 
 export default function App(): React.JSX.Element {
@@ -124,6 +125,7 @@ export default function App(): React.JSX.Element {
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+  const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
@@ -202,14 +204,28 @@ export default function App(): React.JSX.Element {
     if (pecas.length > 0 && !window.confirm('Começar um novo projeto descarta as peças atuais não salvas da tela (o projeto anterior continua na biblioteca, se já foi salvo). Continuar?')) {
       return;
     }
+    setMostrarNovoProjeto(true);
+  }, [pecas]);
+
+  const criarNovoProjetoComDados = useCallback((dados: DadosDeNovoProjeto) => {
+    const enfestoInicial = criarConfiguracaoDeEnfesto({
+      tipo: 'impar',
+      larguraUtilMm: dados.larguraUtilMm,
+      comprimentoMm: dados.comprimentoMm,
+      quantidadeDeCamadas: 1,
+      margemLateralMm: 0,
+      margemDeExtremidadeMm: 0,
+      distanciaMinimaEntrePecasMm: 5,
+    } as ConfiguracaoDeEnfesto);
     setPecas([]);
     setTecido(null);
-    setEnfesto(null);
+    setEnfesto(enfestoInicial);
     setSelecionadoId(null);
     setPassado([]);
     setFuturo([]);
-    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
-  }, [pecas]);
+    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: enfestoInicial }, dados.nome));
+    setMostrarNovoProjeto(false);
+  }, []);
 
   const salvarProjetoAtual = useCallback(() => {
     registrarEventoEPersistir('salvamento', { pecas, tecido, enfesto });
@@ -704,12 +720,27 @@ export default function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault();
         ajustarTela();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        salvarComo();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         salvarProjetoAtual();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         abrirBiblioteca();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        novoProjeto();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        importarDxfHandler();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        if (pecas.length > 0) setMostrarExportacaoPdf(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        setMostrarHistorico(true);
       }
     },
     [
@@ -723,7 +754,11 @@ export default function App(): React.JSX.Element {
       zoom,
       ajustarTela,
       salvarProjetoAtual,
+      salvarComo,
       abrirBiblioteca,
+      novoProjeto,
+      importarDxfHandler,
+      pecas.length,
     ],
   );
 
@@ -842,6 +877,9 @@ export default function App(): React.JSX.Element {
           onExportarExcel={() => void exportarRelatorio('xlsx')}
           onFechar={() => setMostrarRelatorio(false)}
         />
+      )}
+      {mostrarNovoProjeto && (
+        <PainelDeNovoProjeto onCriar={criarNovoProjetoComDados} onFechar={() => setMostrarNovoProjeto(false)} />
       )}
       {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (
         <div className="faixa-de-instrucao" role="status">

@@ -41,12 +41,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
   return (
     <div className="barra-de-ferramentas" role="toolbar" aria-label="Barra de ferramentas principal">
       <div className="grupo-de-ferramentas" role="group" aria-label="Arquivo">
-        <button onClick={props.onNovoProjeto}>Novo</button>
+        <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">Novo</button>
         <button onClick={props.onAbrirBiblioteca} title="Abrir um projeto da biblioteca (Ctrl+O)">Abrir</button>
         <button onClick={props.onSalvar} title="Salvar o projeto atual (Ctrl+S)">Salvar</button>
-        <button onClick={props.onSalvarComo} title="Salvar como um novo projeto">Salvar como</button>
-        <button onClick={props.onAbrirBiblioteca} title="Biblioteca de trabalhos">Biblioteca</button>
-        <button onClick={props.onAbrirHistorico} title="Histórico e versões deste projeto">Histórico</button>
+        <button onClick={props.onSalvarComo} title="Salvar como um novo projeto (Ctrl+Shift+S)">Salvar como</button>
+        <button onClick={props.onAbrirBiblioteca} title="Biblioteca de trabalhos (Ctrl+O)">Biblioteca</button>
+        <button onClick={props.onAbrirHistorico} title="Histórico e versões deste projeto (Ctrl+H)">Histórico</button>
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Edição">
@@ -114,13 +114,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       </div>
 
       <div className="grupo-de-ferramentas" role="group" aria-label="Importação e exportação">
-        <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF">
+        <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF (Ctrl+I)">
           Importar DXF
         </button>
         <button
           onClick={props.onAbrirExportacaoPdf}
           disabled={!props.podeExportarPdf}
-          title={props.podeExportarPdf ? 'Exportar PDF vetorial em escala 1:1' : 'Adicione ao menos uma peça primeiro'}
+          title={
+            props.podeExportarPdf
+              ? 'Exportar PDF vetorial em escala 1:1 (Ctrl+E)'
+              : 'Adicione ao menos uma peça primeiro'
+          }
         >
           Exportar PDF
         </button>

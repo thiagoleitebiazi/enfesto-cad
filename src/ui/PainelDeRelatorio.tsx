@@ -41,6 +41,14 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
           </dd>
           <dt>Versão do encaixe</dt>
           <dd>{r.versaoDoEncaixe}</dd>
+          <dt>Gramatura</dt>
+          <dd>{r.gramaturaGm2 !== null ? `${r.gramaturaGm2} g/m²` : '— (configure no tecido)'}</dd>
+          <dt>Estoque disponível</dt>
+          <dd>{r.quantidadeDisponivelKg !== null ? `${r.quantidadeDisponivelKg} kg` : '—'}</dd>
+          <dt>Peso total estimado</dt>
+          <dd>{r.pesoTotalEstimadoKg !== null ? `${r.pesoTotalEstimadoKg.toFixed(3)} kg` : '—'}</dd>
+          <dt>Rendimento</dt>
+          <dd>{r.rendimentoLotes !== null ? `${r.rendimentoLotes} lote(s) igual(is) cabem no estoque` : '—'}</dd>
         </dl>
 
         <h3>Peças por tamanho</h3>
@@ -53,6 +61,7 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
                 <th>Tamanho</th>
                 <th>Modelos distintos</th>
                 <th>Quantidade total</th>
+                <th>Peso estimado</th>
               </tr>
             </thead>
             <tbody>
@@ -61,6 +70,7 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
                   <td>{linha.tamanho}</td>
                   <td>{linha.quantidadeDeModelos}</td>
                   <td>{linha.quantidadeTotal}</td>
+                  <td>{linha.pesoEstimadoKg !== null ? `${linha.pesoEstimadoKg.toFixed(3)} kg` : '—'}</td>
                 </tr>
               ))}
             </tbody>

@@ -17,6 +17,8 @@ export interface LinhaDePecasPorTamanho {
   readonly tamanho: string;
   readonly quantidadeDeModelos: number;
   readonly quantidadeTotal: number;
+  /** Peso estimado de tecido para cortar todas as peças deste tamanho (null sem gramatura configurada). */
+  readonly pesoEstimadoKg: number | null;
 }
 
 export interface RelatorioDeProducao {
@@ -34,22 +36,42 @@ export interface RelatorioDeProducao {
   readonly areaOcupadaMm2: number;
   readonly aproveitamentoPercentual: number | null;
   readonly desperdicioPercentual: number | null;
+  /** Gramatura do tecido configurado (g/m²), null se não informada. */
+  readonly gramaturaGm2: number | null;
+  /** Estoque de tecido disponível para o projeto (kg), null se não informado. */
+  readonly quantidadeDisponivelKg: number | null;
+  /** Peso estimado de tecido para cortar TODAS as peças do projeto (null sem gramatura configurada). */
+  readonly pesoTotalEstimadoKg: number | null;
+  /** Quantos conjuntos iguais ao projeto atual cabem no estoque informado (null sem gramatura e/ou estoque). */
+  readonly rendimentoLotes: number | null;
   readonly dataIso: string;
   readonly versaoDoEncaixe: number;
   readonly status: string;
 }
 
-function agruparPorTamanho(pecas: readonly Molde[]): LinhaDePecasPorTamanho[] {
-  const porTamanho = new Map<string, { modelos: number; total: number }>();
+/** Peso de tecido (kg) para uma área em mm², dada a gramatura em g/m². */
+function pesoEmKg(areaMm2: number, gramaturaGm2: number): number {
+  const areaM2 = areaMm2 / 1_000_000;
+  return (areaM2 * gramaturaGm2) / 1000;
+}
+
+function agruparPorTamanho(pecas: readonly Molde[], gramaturaGm2: number | null): LinhaDePecasPorTamanho[] {
+  const porTamanho = new Map<string, { modelos: number; total: number; areaTotalMm2: number }>();
   for (const peca of pecas) {
-    const atual = porTamanho.get(peca.tamanho) ?? { modelos: 0, total: 0 };
+    const atual = porTamanho.get(peca.tamanho) ?? { modelos: 0, total: 0, areaTotalMm2: 0 };
     atual.modelos += 1;
     atual.total += peca.quantidade;
+    atual.areaTotalMm2 += area(peca.contorno) * peca.quantidade;
     porTamanho.set(peca.tamanho, atual);
   }
   return [...porTamanho.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([tamanho, dados]) => ({ tamanho, quantidadeDeModelos: dados.modelos, quantidadeTotal: dados.total }));
+    .map(([tamanho, dados]) => ({
+      tamanho,
+      quantidadeDeModelos: dados.modelos,
+      quantidadeTotal: dados.total,
+      pesoEstimadoKg: gramaturaGm2 !== null ? pesoEmKg(dados.areaTotalMm2, gramaturaGm2) : null,
+    }));
 }
 
 export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): RelatorioDeProducao {
@@ -67,6 +89,14 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
   const referencias = [...new Set(pecas.map((p) => p.referencia).filter((r) => r.trim() !== ''))];
   const versaoDoEncaixe = projeto.historico.filter((e) => e.tipo === 'execucao-de-nesting').length;
 
+  const gramaturaGm2 = tecido?.gramaturaGm2 ?? null;
+  const quantidadeDisponivelKg = tecido?.quantidadeDisponivelKg ?? null;
+  const pesoTotalEstimadoKg = gramaturaGm2 !== null ? pesoEmKg(areaOcupadaMm2, gramaturaGm2) : null;
+  const rendimentoLotes =
+    pesoTotalEstimadoKg !== null && quantidadeDisponivelKg !== null && pesoTotalEstimadoKg > 0
+      ? Math.floor(quantidadeDisponivelKg / pesoTotalEstimadoKg)
+      : null;
+
   return {
     codigoDoProjeto: projeto.codigo,
     nomeDoProjeto: projeto.nome,
@@ -77,11 +107,15 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
     comprimentoConfiguradoMm: enfesto?.comprimentoMm ?? null,
     tipoDeEnfesto: enfesto ? ROTULO_DO_TIPO[enfesto.tipo] : null,
     quantidadeDeCamadas: enfesto?.quantidadeDeCamadas ?? null,
-    pecasPorTamanho: agruparPorTamanho(pecas),
+    pecasPorTamanho: agruparPorTamanho(pecas, gramaturaGm2),
     comprimentoUtilizadoMm,
     areaOcupadaMm2,
     aproveitamentoPercentual,
     desperdicioPercentual,
+    gramaturaGm2,
+    quantidadeDisponivelKg,
+    pesoTotalEstimadoKg,
+    rendimentoLotes,
     dataIso: agoraIso,
     versaoDoEncaixe,
     status: ROTULO_DO_STATUS[projeto.status],

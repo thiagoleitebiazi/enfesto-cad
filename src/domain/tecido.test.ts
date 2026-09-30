@@ -44,6 +44,28 @@ describe('criarTecido', () => {
       /maior que a largura total/,
     );
   });
+
+  it('gramatura e quantidade em estoque são opcionais (undefined por padrão)', () => {
+    const tecido = criarTecido(dadosBase(), 't6');
+    expect(tecido.gramaturaGm2).toBeUndefined();
+    expect(tecido.quantidadeDisponivelKg).toBeUndefined();
+  });
+
+  it('aceita gramatura e quantidade em estoque válidas', () => {
+    const tecido = criarTecido(dadosBase({ gramaturaGm2: 180, quantidadeDisponivelKg: 50 }), 't7');
+    expect(tecido.gramaturaGm2).toBe(180);
+    expect(tecido.quantidadeDisponivelKg).toBe(50);
+  });
+
+  it('rejeita gramatura <= 0 quando informada', () => {
+    expect(() => criarTecido(dadosBase({ gramaturaGm2: 0 }), 't8')).toThrow(/gramatura/);
+    expect(() => criarTecido(dadosBase({ gramaturaGm2: -5 }), 't9')).toThrow(/gramatura/);
+  });
+
+  it('rejeita quantidade em estoque <= 0 quando informada', () => {
+    expect(() => criarTecido(dadosBase({ quantidadeDisponivelKg: 0 }), 't10')).toThrow(/estoque/);
+    expect(() => criarTecido(dadosBase({ quantidadeDisponivelKg: -1 }), 't11')).toThrow(/estoque/);
+  });
 });
 
 describe('tecidoExigeRespeitoDeOrientacao', () => {

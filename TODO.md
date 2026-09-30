@@ -326,12 +326,36 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   0008.
 - [ ] Sem ícone customizado — usa o ícone padrão do Electron.
 
+## Melhorias de usabilidade (pós-Etapa 10, 2026-09-30)
+**Feito.** Cinco pedidos diretos do usuário sobre o app já em uso — ver ADR 0009.
+- [x] Gramatura (g/m²) e quantidade em estoque (kg) no cadastro de tecido;
+  relatório de produção calcula peso estimado por tamanho, peso total do
+  projeto e rendimento (quantos lotes cabem no estoque). Verificado com
+  contas exatas em teste unitário e numa sessão real do Electron (4 peças
+  de demonstração a 200g/m² = 0.096kg; 10kg de estoque = 104 lotes).
+- [x] Botão "Novo" abre diálogo de configuração (`PainelDeNovoProjeto`)
+  pedindo nome e medidas da mesa antes de criar o projeto, em vez de só
+  limpar a tela — as medidas viram um enfesto inicial real (Ímpar, 1
+  camada, sem margens).
+- [x] Bug real de CSS Grid corrigido: a área de desenho e as réguas
+  (elementos `<canvas>` com tamanho via atributo JS) não tinham
+  `min-width`/`min-height: 0` nos itens de grid, travando a mesa num
+  retângulo quase quadrado (800×600) fixo e, em janelas menores,
+  vazando ~18px sobre o painel direito. Corrigido; verificado por medição
+  real de `getBoundingClientRect()` antes/depois (800×600 sobrepondo →
+  782×436 exatamente do tamanho disponível).
+- [x] Atalhos de teclado novos: Ctrl+N (Novo), Ctrl+I (Importar DXF),
+  Ctrl+E (Exportar PDF), Ctrl+Shift+S (Salvar como), Ctrl+H (Histórico).
+  Tooltips dos botões atualizados. Verificado disparando os eventos de
+  teclado numa sessão real do Electron.
+
 ---
 
 ## Testes automatizados existentes hoje
 
-186 testes em 14 arquivos:
-- `src/domain/tecido.test.ts` — criação válida/inválida, `tecidoExigeRespeitoDeOrientacao`.
+195 testes em 14 arquivos:
+- `src/domain/tecido.test.ts` — criação válida/inválida, `tecidoExigeRespeitoDeOrientacao`,
+  gramatura/quantidade em estoque opcionais e suas validações (> 0 quando informadas).
 - `src/domain/enfesto.test.ts` — validação comum aos 5 tipos, parâmetros
   próprios de Tubular e Ramado, espessuras físicas por camada, inversão de
   face por camada no Zigue-zague, distância mínima entre peças.
@@ -378,11 +402,13 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   quantidade total), ordenação alfabética, comprimento utilizado como maior
   extensão em Y, aproveitamento+desperdício somando 100%, zero peças sem
   NaN, contagem de `versaoDoEncaixe` por eventos de nesting, referências
-  únicas ignorando vazias.
+  únicas ignorando vazias, peso estimado e rendimento (lotes no estoque) a
+  partir de gramatura real (1m² a 200g/m² = 0.2kg conferido exatamente).
 - `src/formats/relatorio-exportacao.test.ts` — PDF real (assinatura `%PDF-`,
   tamanho mínimo), Excel real com round-trip completo (escreve com
   `exceljs` e lê de volta com o mesmo `exceljs`, conferindo nomes de
-  planilha e valores de célula específicos — não só "não lançou exceção").
+  planilha e valores de célula específicos — não só "não lançou exceção"),
+  gramatura/estoque/peso/rendimento presentes nas duas exportações.
 - `src/integracao.test.ts` — encadeia DXF → Molde → nesting automático →
   PDF do encaixe → Projeto → relatório de produção → PDF/Excel do
   relatório, com dados reais e cruzando o aproveitamento calculado por duas

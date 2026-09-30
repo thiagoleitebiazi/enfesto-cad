@@ -125,7 +125,9 @@ describe('integração: DXF → molde → nesting → PDF → relatório', () =>
     // A explosão em instâncias do nesting (uma peça por cópia, quantidade 1
     // cada) vira o novo estadoAtual via registrarEvento — 4 "modelos"
     // distintos de tamanho M, não 1 modelo com quantidade 4.
-    expect(relatorio.pecasPorTamanho).toEqual([{ tamanho: 'M', quantidadeDeModelos: 4, quantidadeTotal: 4 }]);
+    expect(relatorio.pecasPorTamanho).toEqual([
+      { tamanho: 'M', quantidadeDeModelos: 4, quantidadeTotal: 4, pesoEstimadoKg: null },
+    ]);
     expect(relatorio.aproveitamentoPercentual).not.toBeNull();
     expect(relatorio.aproveitamentoPercentual).toBeCloseTo(resultadoNesting.aproveitamentoPercentual, 6);
     expect(relatorio.comprimentoUtilizadoMm).toBeCloseTo(resultadoNesting.comprimentoUtilizadoMm, 6);
