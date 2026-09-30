@@ -5,11 +5,18 @@ interface BarraDeFerramentasProps {
   readonly podeDesfazer: boolean;
   readonly podeRefazer: boolean;
   readonly temSelecao: boolean;
+  readonly temSelecaoUnica: boolean;
   readonly onNovoProjeto: () => void;
   readonly onDesfazer: () => void;
   readonly onRefazer: () => void;
   readonly onDuplicar: () => void;
   readonly onExcluir: () => void;
+  readonly onSelecionarTudo: () => void;
+  readonly podeSelecionarTudo: boolean;
+  readonly onCopiar: () => void;
+  readonly onRecortar: () => void;
+  readonly onColar: () => void;
+  readonly podeColar: boolean;
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onAjustarTela: () => void;
@@ -35,7 +42,6 @@ interface BarraDeFerramentasProps {
 }
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
-const NAO_IMPLEMENTADO_COPIAR = 'Ainda não implementado — copiar/colar (use Duplicar por enquanto)';
 
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
   return (
@@ -56,13 +62,23 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
         <button onClick={props.onRefazer} disabled={!props.podeRefazer} title="Refazer (Ctrl+Y)">
           Refazer
         </button>
-        <button disabled title={NAO_IMPLEMENTADO_COPIAR}>Copiar</button>
-        <button disabled title={NAO_IMPLEMENTADO_COPIAR}>Colar</button>
+        <button onClick={props.onCopiar} disabled={!props.temSelecaoUnica} title="Copiar (Ctrl+C) — uma peça por vez">
+          Copiar
+        </button>
+        <button onClick={props.onColar} disabled={!props.podeColar} title="Colar (Ctrl+V)">
+          Colar
+        </button>
+        <button onClick={props.onRecortar} disabled={!props.temSelecaoUnica} title="Recortar (Ctrl+X) — uma peça por vez">
+          Recortar
+        </button>
         <button onClick={props.onDuplicar} disabled={!props.temSelecao} title="Duplicar (Ctrl+D)">
           Duplicar
         </button>
         <button onClick={props.onExcluir} disabled={!props.temSelecao} title="Excluir (Delete)">
           Excluir
+        </button>
+        <button onClick={props.onSelecionarTudo} disabled={!props.podeSelecionarTudo} title="Selecionar tudo (Ctrl+A)">
+          Selecionar tudo
         </button>
       </div>
 

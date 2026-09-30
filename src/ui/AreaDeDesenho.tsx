@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
-import { pontoDentroDoContorno, somar, type Ponto2D } from '../core/geometria';
+import { pontoDentroDoContorno, ponto, somar, type Ponto2D } from '../core/geometria';
+import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import {
   aplicarZoom,
   mundoParaTela,
@@ -12,6 +13,9 @@ import {
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#c9cdd3';
 const COR_TECIDO = '#f4f5f7';
+const COR_MESA = '#ffffff';
+const COR_BORDA_MESA = '#8b93a1';
+const COR_MARGEM_MESA = '#eef0f3';
 const COR_CONTORNO = '#2b2f36';
 const COR_CONTORNO_SELECIONADO = '#1565c0';
 const COR_CONTORNO_COM_ERRO = '#c62828';
@@ -28,6 +32,8 @@ export type ModoDeDesenho = 'selecionar' | 'novo-molde' | 'novo-furo' | 'definir
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
+  readonly idsSelecionadosEmLote: ReadonlySet<string>;
+  readonly enfesto: ConfiguracaoDeEnfesto | null;
   readonly idsComErro: ReadonlySet<string>;
   readonly transform: TransformacaoDeTela;
   readonly modo: ModoDeDesenho;
@@ -53,6 +59,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const {
     pecas,
     selecionadoId,
+    idsSelecionadosEmLote,
+    enfesto,
     idsComErro,
     transform,
     modo,
@@ -149,6 +157,44 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ctx.fillStyle = COR_FUNDO;
     ctx.fillRect(0, 0, tamanho.largura, tamanho.altura);
 
+    // Mesa real do enfesto configurado: retângulo visível (não só números na
+    // régua) mostrando a área útil de verdade, sempre mais larga que alta
+    // quando a mesa é horizontal — é o que torna "retangular na horizontal"
+    // algo que se vê, não só se infere pelas réguas.
+    if (enfesto) {
+      // Retângulo externo = mesa inteira (0..larguraUtilMm x 0..comprimentoMm,
+      // mesma convenção de domain/posicionamento.ts e domain/nesting.ts).
+      // Preenchido com o tom "com margem"; a área de colocação de verdade
+      // (descontadas as margens) fica por cima, em branco puro — a margem
+      // aparece como uma faixa mais escura em volta, não uma linha invisível.
+      const cantoExterno = mundoParaTela(ponto(0, 0), transform);
+      const cantoExternoOposto = mundoParaTela(ponto(enfesto.larguraUtilMm, enfesto.comprimentoMm), transform);
+      ctx.fillStyle = COR_MARGEM_MESA;
+      ctx.fillRect(
+        cantoExterno.x,
+        cantoExterno.y,
+        cantoExternoOposto.x - cantoExterno.x,
+        cantoExternoOposto.y - cantoExterno.y,
+      );
+
+      const cantoUtil = mundoParaTela(ponto(enfesto.margemLateralMm, enfesto.margemDeExtremidadeMm), transform);
+      const cantoUtilOposto = mundoParaTela(
+        ponto(enfesto.larguraUtilMm - enfesto.margemLateralMm, enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm),
+        transform,
+      );
+      ctx.fillStyle = COR_MESA;
+      ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
+
+      ctx.strokeStyle = COR_BORDA_MESA;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(
+        cantoExterno.x,
+        cantoExterno.y,
+        cantoExternoOposto.x - cantoExterno.x,
+        cantoExternoOposto.y - cantoExterno.y,
+      );
+    }
+
     for (const pecaOriginal of pecas) {
       // Enquanto uma peça está sendo arrastada, desenha-se a versão já
       // deslocada (prévia em tempo real) sem tocar no estado real ainda —
@@ -168,8 +214,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fillStyle = COR_TECIDO;
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
-      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
-      ctx.lineWidth = peca.id === selecionadoId || temErro ? 2.5 : 1.5;
+      const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
+      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+      ctx.lineWidth = estaSelecionada || temErro ? 2.5 : 1.5;
       if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
@@ -177,7 +224,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       for (const furo of peca.furos) {
         ctx.beginPath();
         traçarContorno(ctx, furo, transform);
-        ctx.strokeStyle = peca.id === selecionadoId ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+        ctx.strokeStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -281,6 +328,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   }, [
     pecas,
     selecionadoId,
+    idsSelecionadosEmLote,
+    enfesto,
     idsComErro,
     transform,
     tamanho,

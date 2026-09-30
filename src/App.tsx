@@ -19,7 +19,7 @@ import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-ex
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
 import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
-import type { Tecido } from './domain/tecido';
+import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
@@ -88,6 +88,8 @@ function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem t�
 export default function App(): React.JSX.Element {
   const [pecas, setPecas] = useState<Molde[]>(pecasDeDemonstracao);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
+  const [idsSelecionadosEmLote, setIdsSelecionadosEmLote] = useState<ReadonlySet<string>>(new Set());
+  const [clipboard, setClipboard] = useState<Molde | null>(null);
   const [transform, setTransform] = useState<TransformacaoDeTela>({
     escalaPxPorMm: 1,
     offsetXPx: 80,
@@ -186,19 +188,70 @@ export default function App(): React.JSX.Element {
     setPecas(proximo);
   }, [pecas, futuro]);
 
+  // Seleção única "de verdade" (limpa qualquer seleção em lote ativa) — usada
+  // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
+  // na lista), para não deixar os dois modos de seleção coexistindo de forma
+  // confusa.
+  const selecionarUnico = useCallback((id: string | null) => {
+    setSelecionadoId(id);
+    setIdsSelecionadosEmLote(new Set());
+  }, []);
+
+  const selecionarTudo = useCallback(() => {
+    if (pecas.length === 0) return;
+    setIdsSelecionadosEmLote(new Set(pecas.map((p) => p.id)));
+    setSelecionadoId(null);
+  }, [pecas]);
+
   const excluirSelecionado = useCallback(() => {
+    if (idsSelecionadosEmLote.size > 0) {
+      aplicarMudanca(pecas.filter((p) => !idsSelecionadosEmLote.has(p.id)));
+      setIdsSelecionadosEmLote(new Set());
+      return;
+    }
     if (!selecionadoId) return;
     aplicarMudanca(pecas.filter((p) => p.id !== selecionadoId));
     setSelecionadoId(null);
-  }, [pecas, selecionadoId, aplicarMudanca]);
+  }, [pecas, selecionadoId, idsSelecionadosEmLote, aplicarMudanca]);
 
   const duplicarSelecionado = useCallback(() => {
+    if (idsSelecionadosEmLote.size > 0) {
+      const copias = pecas
+        .filter((p) => idsSelecionadosEmLote.has(p.id))
+        .map((p) => transladarMolde(p, ponto(30, 30), proximoId()));
+      if (copias.length === 0) return;
+      aplicarMudanca([...pecas, ...copias]);
+      setIdsSelecionadosEmLote(new Set(copias.map((c) => c.id)));
+      return;
+    }
     const original = pecas.find((p) => p.id === selecionadoId);
     if (!original) return;
     const copia = transladarMolde(original, ponto(30, 30), proximoId());
     aplicarMudanca([...pecas, copia]);
     setSelecionadoId(copia.id);
+  }, [pecas, selecionadoId, idsSelecionadosEmLote, aplicarMudanca]);
+
+  const copiarSelecionado = useCallback(() => {
+    const original = pecas.find((p) => p.id === selecionadoId);
+    if (!original) return;
+    setClipboard(original);
+  }, [pecas, selecionadoId]);
+
+  const recortarSelecionado = useCallback(() => {
+    const original = pecas.find((p) => p.id === selecionadoId);
+    if (!original) return;
+    setClipboard(original);
+    aplicarMudanca(pecas.filter((p) => p.id !== selecionadoId));
+    setSelecionadoId(null);
   }, [pecas, selecionadoId, aplicarMudanca]);
+
+  const colar = useCallback(() => {
+    if (!clipboard) return;
+    const copia = transladarMolde(clipboard, ponto(30, 30), proximoId());
+    aplicarMudanca([...pecas, copia]);
+    setSelecionadoId(copia.id);
+    setIdsSelecionadosEmLote(new Set());
+  }, [pecas, clipboard, aplicarMudanca]);
 
   const novoProjeto = useCallback(() => {
     if (pecas.length > 0 && !window.confirm('Começar um novo projeto descarta as peças atuais não salvas da tela (o projeto anterior continua na biblioteca, se já foi salvo). Continuar?')) {
@@ -217,14 +270,37 @@ export default function App(): React.JSX.Element {
       margemDeExtremidadeMm: 0,
       distanciaMinimaEntrePecasMm: 5,
     } as ConfiguracaoDeEnfesto);
+    const tecidoInicial = criarTecido(
+      {
+        nome: dados.tecidoNome,
+        referencia: '',
+        larguraTotalMm: dados.tecidoLarguraMm,
+        larguraUtilMm: dados.tecidoLarguraMm,
+        ...(dados.tecidoGramaturaGm2 !== undefined ? { gramaturaGm2: dados.tecidoGramaturaGm2 } : {}),
+        ...(dados.tecidoQuantidadeDisponivelKg !== undefined
+          ? { quantidadeDisponivelKg: dados.tecidoQuantidadeDisponivelKg }
+          : {}),
+        ...(dados.tecidoDescricao !== undefined ? { observacoes: dados.tecidoDescricao } : {}),
+      },
+      `tecido-${Date.now().toString(36)}`,
+    );
     setPecas([]);
-    setTecido(null);
+    setTecido(tecidoInicial);
     setEnfesto(enfestoInicial);
     setSelecionadoId(null);
     setPassado([]);
     setFuturo([]);
-    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: enfestoInicial }, dados.nome));
+    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome));
     setMostrarNovoProjeto(false);
+
+    // Enquadra a mesa nova inteira na tela (retangular, horizontal quando a
+    // mesa é mais larga que longa) — sem isso a visão continuaria no zoom/
+    // offset antigos, possivelmente mostrando só um canto da mesa nova.
+    const margemPx = 60;
+    const larguraDisponivel = 900 - margemPx * 2;
+    const alturaDisponivel = 600 - margemPx * 2;
+    const escala = Math.min(larguraDisponivel / enfestoInicial.larguraUtilMm, alturaDisponivel / enfestoInicial.comprimentoMm);
+    setTransform({ escalaPxPorMm: escala, offsetXPx: margemPx, offsetYPx: margemPx });
   }, []);
 
   const salvarProjetoAtual = useCallback(() => {
@@ -339,15 +415,25 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const ajustarTela = useCallback(() => {
-    if (pecas.length === 0) {
+    // Sem peças nem enfesto configurados, não há nada real para enquadrar —
+    // mantém o reset antigo. Com enfesto configurado, a mesa real (mesmo
+    // vazia) é o retângulo de referência, para aparecer inteira e retangular
+    // assim que o projeto é criado, sem precisar de "Ajustar" manual.
+    const bboxes = pecas.map((p) => retanguloEnvolvente(p.contorno));
+    let minX = enfesto ? 0 : Infinity;
+    let minY = enfesto ? 0 : Infinity;
+    let maxX = enfesto ? enfesto.larguraUtilMm : -Infinity;
+    let maxY = enfesto ? enfesto.comprimentoMm : -Infinity;
+    for (const b of bboxes) {
+      minX = Math.min(minX, b.minX);
+      minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX);
+      maxY = Math.max(maxY, b.maxY);
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
       setTransform({ escalaPxPorMm: 1, offsetXPx: 80, offsetYPx: 80 });
       return;
     }
-    const bboxes = pecas.map((p) => retanguloEnvolvente(p.contorno));
-    const minX = Math.min(...bboxes.map((b) => b.minX));
-    const minY = Math.min(...bboxes.map((b) => b.minY));
-    const maxX = Math.max(...bboxes.map((b) => b.maxX));
-    const maxY = Math.max(...bboxes.map((b) => b.maxY));
     const largura = Math.max(1, maxX - minX);
     const altura = Math.max(1, maxY - minY);
     const margemPx = 60;
@@ -359,7 +445,7 @@ export default function App(): React.JSX.Element {
       offsetXPx: margemPx - minX * escala,
       offsetYPx: margemPx - minY * escala,
     });
-  }, [pecas]);
+  }, [pecas, enfesto]);
 
   const pecaSelecionada = useMemo(() => pecas.find((p) => p.id === selecionadoId) ?? null, [pecas, selecionadoId]);
 
@@ -741,6 +827,18 @@ export default function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
         e.preventDefault();
         setMostrarHistorico(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        selecionarTudo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        copiarSelecionado();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        recortarSelecionado();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        colar();
       }
     },
     [
@@ -759,6 +857,10 @@ export default function App(): React.JSX.Element {
       novoProjeto,
       importarDxfHandler,
       pecas.length,
+      selecionarTudo,
+      copiarSelecionado,
+      recortarSelecionado,
+      colar,
     ],
   );
 
@@ -768,12 +870,19 @@ export default function App(): React.JSX.Element {
         modo={modo}
         podeDesfazer={passado.length > 0}
         podeRefazer={futuro.length > 0}
-        temSelecao={selecionadoId !== null}
+        temSelecao={selecionadoId !== null || idsSelecionadosEmLote.size > 0}
+        temSelecaoUnica={selecionadoId !== null}
         onNovoProjeto={novoProjeto}
         onDesfazer={desfazer}
         onRefazer={refazer}
         onDuplicar={duplicarSelecionado}
         onExcluir={excluirSelecionado}
+        onSelecionarTudo={selecionarTudo}
+        podeSelecionarTudo={pecas.length > 0}
+        onCopiar={copiarSelecionado}
+        onRecortar={recortarSelecionado}
+        onColar={colar}
+        podeColar={clipboard !== null}
         onZoomIn={() => zoom(1.15)}
         onZoomOut={() => zoom(1 / 1.15)}
         onAjustarTela={ajustarTela}
@@ -903,17 +1012,24 @@ export default function App(): React.JSX.Element {
         </div>
       )}
       <div className="corpo-principal">
-        <PainelDePecas pecas={pecas} selecionadoId={selecionadoId} onSelecionar={setSelecionadoId} />
+        <PainelDePecas
+          pecas={pecas}
+          selecionadoId={selecionadoId}
+          idsSelecionadosEmLote={idsSelecionadosEmLote}
+          onSelecionar={selecionarUnico}
+        />
         <AreaDeDesenho
           pecas={pecas}
           selecionadoId={selecionadoId}
+          idsSelecionadosEmLote={idsSelecionadosEmLote}
+          enfesto={enfesto}
           idsComErro={idsComErro}
           transform={transform}
           modo={modo}
           pontosEmEdicao={pontosEmEdicao}
           contornoFinalizado={contornoPendente}
           onTransformChange={setTransform}
-          onSelecionar={setSelecionadoId}
+          onSelecionar={selecionarUnico}
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
           onMoverPeca={moverPeca}

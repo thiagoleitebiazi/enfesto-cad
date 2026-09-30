@@ -349,6 +349,34 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   Tooltips dos botões atualizados. Verificado disparando os eventos de
   teclado numa sessão real do Electron.
 
+## Mesa visível, tecido no "Novo projeto", seleção múltipla (2026-09-30)
+**Feito.** Continuação direta do pedido acima — ver ADR 0010.
+- [x] Diálogo de "Novo projeto" agora também pede a configuração completa
+  do tecido (tipo, largura, gramatura opcional, estoque opcional,
+  descrição opcional) — cria o `Tecido` junto com o enfesto, não só a
+  mesa. Verificado numa sessão real: projeto criado com tecido "Malha Dry
+  Fit" aparece corretamente na faixa de configuração e no relatório.
+- [x] Causa raiz real de "não parece uma mesa retangular" encontrada:
+  `AreaDeDesenho` nunca desenhava nenhum retângulo representando a mesa
+  configurada — só fundo cinza uniforme. Corrigido desenhando a mesa de
+  verdade (retângulo da área útil do enfesto, com a faixa de margem num
+  tom mais escuro) e enquadrando-a automaticamente ao criar um projeto.
+  Verificado lendo o pixel do centro do canvas (`getImageData`) — branco
+  puro, confirmando que a mesa é desenhada de verdade, não só presumida.
+- [x] Seleção múltipla real: Ctrl+A seleciona todas as peças; Duplicar e
+  Excluir operam no lote inteiro quando há seleção múltipla. Estado
+  separado da seleção única (`idsSelecionadosEmLote`) para não arriscar
+  quebrar furo/pique/marca/rotação, que continuam exigindo uma peça só.
+- [x] Copiar/Recortar/Colar reais (Ctrl+C/X/V) — os botões "Copiar"/
+  "Colar" da barra, desabilitados desde a Etapa 2, agora funcionam.
+  Verificado com peças desenhadas na hora: 2→4 (duplicar em lote)→0
+  (excluir em lote)→1→2 (colar)→1 (recortar)→2 (colar de novo).
+- [x] Lista de atalhos padrão revisada uma por um: Ctrl+B/G/J/K/P/Q
+  deliberadamente não implementados (texto rico, agrupamento, opções e
+  impressão literal não existem no domínio deste app; curvas Bézier já
+  são uma limitação documentada desde a Etapa 3) — decisão registrada no
+  ADR 0010, não esquecimento.
+
 ---
 
 ## Testes automatizados existentes hoje

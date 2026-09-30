@@ -4,6 +4,7 @@ import { dimensoesDoMolde, rotacoesPermitidas } from '../domain/molde';
 interface PainelDePecasProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
+  readonly idsSelecionadosEmLote?: ReadonlySet<string>;
   readonly onSelecionar: (id: string) => void;
 }
 
@@ -18,7 +19,11 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
           {props.pecas.map((peca) => (
             <li key={peca.id}>
               <button
-                className={peca.id === props.selecionadoId ? 'item-selecionado' : ''}
+                className={
+                  peca.id === props.selecionadoId || props.idsSelecionadosEmLote?.has(peca.id)
+                    ? 'item-selecionado'
+                    : ''
+                }
                 onClick={() => props.onSelecionar(peca.id)}
               >
                 {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho})</span>
