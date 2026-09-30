@@ -79,6 +79,43 @@ function proximoId(): string {
   return `peca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Mesa e tecido de demonstração, junto com `pecasDeDemonstracao()` — sem
+ * eles o app abre com "Enfesto: não configurado" e nenhuma mesa desenhada
+ * (só um fundo cinza vazio), o que não mostra a mesa retangular horizontal
+ * que é uma característica constante do app, não algo que só aparece depois
+ * de configurar um projeto na mão.
+ */
+function enfestoDeDemonstracao(): ConfiguracaoDeEnfesto {
+  return criarConfiguracaoDeEnfesto({
+    tipo: 'impar',
+    larguraUtilMm: 1500,
+    comprimentoMm: 3000,
+    quantidadeDeCamadas: 1,
+    margemLateralMm: 0,
+    margemDeExtremidadeMm: 0,
+    distanciaMinimaEntrePecasMm: 5,
+  } as ConfiguracaoDeEnfesto);
+}
+
+function tecidoDeDemonstracao(): Tecido {
+  return criarTecido(
+    { nome: 'Tecido de demonstração', referencia: '', larguraTotalMm: 1500, larguraUtilMm: 1500 },
+    'tecido-demo',
+  );
+}
+
+function transformParaEnquadrarMesa(larguraUtilMm: number, comprimentoMm: number): TransformacaoDeTela {
+  // Mesmo cálculo de `ajustarTela`/`criarNovoProjetoComDados`: eixos
+  // trocados na tela (ver ui/transformacaoDeTela.ts), comprimento na
+  // horizontal, largura na vertical.
+  const margemPx = 60;
+  const larguraDisponivel = 900 - margemPx * 2;
+  const alturaDisponivel = 600 - margemPx * 2;
+  const escala = Math.min(larguraDisponivel / comprimentoMm, alturaDisponivel / larguraUtilMm);
+  return { escalaPxPorMm: escala, offsetXPx: margemPx, offsetYPx: margemPx };
+}
+
 function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem título'): Projeto {
   const agora = new Date().toISOString();
   const id = `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -90,11 +127,7 @@ export default function App(): React.JSX.Element {
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [idsSelecionadosEmLote, setIdsSelecionadosEmLote] = useState<ReadonlySet<string>>(new Set());
   const [clipboard, setClipboard] = useState<Molde | null>(null);
-  const [transform, setTransform] = useState<TransformacaoDeTela>({
-    escalaPxPorMm: 1,
-    offsetXPx: 80,
-    offsetYPx: 80,
-  });
+  const [transform, setTransform] = useState<TransformacaoDeTela>(() => transformParaEnquadrarMesa(1500, 3000));
   const [cursorMundo, setCursorMundo] = useState<Ponto2D | null>(null);
 
   const [passado, setPassado] = useState<Molde[][]>([]);
@@ -105,8 +138,8 @@ export default function App(): React.JSX.Element {
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
 
-  const [tecido, setTecido] = useState<Tecido | null>(null);
-  const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(null);
+  const [tecido, setTecido] = useState<Tecido | null>(tecidoDeDemonstracao);
+  const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(enfestoDeDemonstracao);
   const [painelAberto, setPainelAberto] = useState<'tecido' | 'enfesto' | null>(null);
   const [mostrarValidacao, setMostrarValidacao] = useState(false);
 
@@ -120,7 +153,11 @@ export default function App(): React.JSX.Element {
   const [gerandoPdf, setGerandoPdf] = useState(false);
 
   const [projetoAtual, setProjetoAtual] = useState<Projeto>(() =>
-    novoProjetoVazio({ pecas: pecasDeDemonstracao(), tecido: null, enfesto: null }),
+    novoProjetoVazio({
+      pecas: pecasDeDemonstracao(),
+      tecido: tecidoDeDemonstracao(),
+      enfesto: enfestoDeDemonstracao(),
+    }),
   );
   const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
   const [mostrarBiblioteca, setMostrarBiblioteca] = useState(false);
@@ -293,13 +330,14 @@ export default function App(): React.JSX.Element {
     setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome));
     setMostrarNovoProjeto(false);
 
-    // Enquadra a mesa nova inteira na tela (retangular, horizontal quando a
-    // mesa é mais larga que longa) — sem isso a visão continuaria no zoom/
-    // offset antigos, possivelmente mostrando só um canto da mesa nova.
+    // Enquadra a mesa nova inteira na tela. Eixos trocados na tela (ver
+    // comentário em ui/transformacaoDeTela.ts): comprimento ocupa a
+    // horizontal, largura a vertical — a mesa sempre aparece deitada, sem
+    // depender de qual das duas medidas o usuário informou maior.
     const margemPx = 60;
     const larguraDisponivel = 900 - margemPx * 2;
     const alturaDisponivel = 600 - margemPx * 2;
-    const escala = Math.min(larguraDisponivel / enfestoInicial.larguraUtilMm, alturaDisponivel / enfestoInicial.comprimentoMm);
+    const escala = Math.min(larguraDisponivel / enfestoInicial.comprimentoMm, alturaDisponivel / enfestoInicial.larguraUtilMm);
     setTransform({ escalaPxPorMm: escala, offsetXPx: margemPx, offsetYPx: margemPx });
   }, []);
 
@@ -434,16 +472,18 @@ export default function App(): React.JSX.Element {
       setTransform({ escalaPxPorMm: 1, offsetXPx: 80, offsetYPx: 80 });
       return;
     }
-    const largura = Math.max(1, maxX - minX);
-    const altura = Math.max(1, maxY - minY);
+    // Eixos trocados na tela (ver comentário em ui/transformacaoDeTela.ts):
+    // mundo.y (comprimento) ocupa a horizontal, mundo.x (largura) a vertical.
+    const larguraNaTela = Math.max(1, maxY - minY);
+    const alturaNaTela = Math.max(1, maxX - minX);
     const margemPx = 60;
     const larguraDisponivel = 900 - margemPx * 2;
     const alturaDisponivel = 600 - margemPx * 2;
-    const escala = Math.min(larguraDisponivel / largura, alturaDisponivel / altura);
+    const escala = Math.min(larguraDisponivel / larguraNaTela, alturaDisponivel / alturaNaTela);
     setTransform({
       escalaPxPorMm: escala,
-      offsetXPx: margemPx - minX * escala,
-      offsetYPx: margemPx - minY * escala,
+      offsetXPx: margemPx - minY * escala,
+      offsetYPx: margemPx - minX * escala,
     });
   }, [pecas, enfesto]);
 

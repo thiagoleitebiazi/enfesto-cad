@@ -10,17 +10,28 @@ export interface TransformacaoDeTela {
 export const ESCALA_MINIMA = 0.05;
 export const ESCALA_MAXIMA = 40;
 
+/**
+ * Eixos trocados de propósito: no domínio (`domain/enfesto.ts`,
+ * `domain/nesting.ts`), X é a largura útil da mesa (curta) e Y é o
+ * comprimento do enfesto (longo, o sentido em que o tecido é desenfestado).
+ * Numa mesa de corte real o operador vê o comprimento correndo na
+ * horizontal (anda ao longo dele) e a largura na vertical (mais estreita)
+ * — por isso a tela mostra mundo.y na horizontal e mundo.x na vertical,
+ * para a mesa aparecer sempre retangular deitada, nunca em pé, não importa
+ * a proporção largura×comprimento configurada. Esta troca fica só aqui
+ * (camada de apresentação); o domínio continua em X=largura/Y=comprimento.
+ */
 export function mundoParaTela(p: Ponto2D, t: TransformacaoDeTela): Ponto2D {
   return {
-    x: t.offsetXPx + p.x * t.escalaPxPorMm,
-    y: t.offsetYPx + p.y * t.escalaPxPorMm,
+    x: t.offsetXPx + p.y * t.escalaPxPorMm,
+    y: t.offsetYPx + p.x * t.escalaPxPorMm,
   };
 }
 
 export function telaParaMundo(p: Ponto2D, t: TransformacaoDeTela): Ponto2D {
   return {
-    x: (p.x - t.offsetXPx) / t.escalaPxPorMm,
-    y: (p.y - t.offsetYPx) / t.escalaPxPorMm,
+    x: (p.y - t.offsetYPx) / t.escalaPxPorMm,
+    y: (p.x - t.offsetXPx) / t.escalaPxPorMm,
   };
 }
 

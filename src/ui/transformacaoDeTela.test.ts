@@ -10,6 +10,16 @@ describe('mundoParaTela / telaParaMundo', () => {
     expect(voltaAoMundo.x).toBeCloseTo(mundo.x, 9);
     expect(voltaAoMundo.y).toBeCloseTo(mundo.y, 9);
   });
+
+  it('troca os eixos de propósito: mundo.y (comprimento do enfesto) vai para a horizontal da tela, mundo.x (largura) para a vertical — mesa sempre deitada', () => {
+    const t = { escalaPxPorMm: 2, offsetXPx: 10, offsetYPx: 5 };
+    // Um ponto bem mais longe no eixo comprimento (y) que no eixo largura (x)
+    // do domínio deve terminar mais longe na horizontal da tela (x), não na vertical.
+    const mundo = { x: 50, y: 500 };
+    const tela = mundoParaTela(mundo, t);
+    expect(tela.x).toBeCloseTo(t.offsetXPx + mundo.y * t.escalaPxPorMm, 9);
+    expect(tela.y).toBeCloseTo(t.offsetYPx + mundo.x * t.escalaPxPorMm, 9);
+  });
 });
 
 describe('aplicarZoom', () => {
