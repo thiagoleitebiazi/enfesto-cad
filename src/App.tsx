@@ -26,7 +26,7 @@ import { importarDxf } from './formats/dxf-importacao';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
-import { ponto, area, retanguloEnvolvente, type Ponto2D } from './core/geometria';
+import { ponto, area, retanguloEnvolvente, deslocarContornoParaFora, type Ponto2D } from './core/geometria';
 import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -56,44 +56,17 @@ import {
 } from './domain/projeto';
 import './App.css';
 
-function pecasDeDemonstracao(): Molde[] {
-  return [
-    criarMolde(
-      {
-        nome: 'Frente',
-        referencia: 'REF-001',
-        tamanho: 'M',
-        contorno: [ponto(0, 0), ponto(300, 0), ponto(300, 400), ponto(0, 400)],
-        linhaDeFio: { inicio: ponto(150, 50), fim: ponto(150, 350) },
-        quantidade: 2,
-      },
-      'demo-frente',
-    ),
-    criarMolde(
-      {
-        nome: 'Costas',
-        referencia: 'REF-002',
-        tamanho: 'M',
-        contorno: [ponto(400, 0), ponto(700, 0), ponto(700, 400), ponto(400, 400)],
-        linhaDeFio: { inicio: ponto(550, 50), fim: ponto(550, 350) },
-        quantidade: 2,
-        restricaoDeRotacao: { permite180: true, permite90e270: false },
-      },
-      'demo-costas',
-    ),
-  ];
-}
-
 function proximoId(): string {
   return `peca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /**
- * Mesa e tecido de demonstração, junto com `pecasDeDemonstracao()` — sem
- * eles o app abre com "Enfesto: não configurado" e nenhuma mesa desenhada
- * (só um fundo cinza vazio), o que não mostra a mesa retangular horizontal
- * que é uma característica constante do app, não algo que só aparece depois
- * de configurar um projeto na mão.
+ * Mesa e tecido de demonstração — sem eles o app abre com "Enfesto: não
+ * configurado" e nenhuma mesa desenhada (só um fundo cinza vazio), o que
+ * não mostra a mesa retangular horizontal que é uma característica
+ * constante do app, não algo que só aparece depois de configurar um
+ * projeto na mão. Nenhuma peça de demonstração — o projeto abre vazio,
+ * pronto para o usuário desenhar as próprias peças.
  */
 function enfestoDeDemonstracao(): ConfiguracaoDeEnfesto {
   return criarConfiguracaoDeEnfesto({
@@ -132,7 +105,7 @@ function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem t�
 }
 
 export default function App(): React.JSX.Element {
-  const [pecas, setPecas] = useState<Molde[]>(pecasDeDemonstracao);
+  const [pecas, setPecas] = useState<Molde[]>([]);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [idsSelecionadosEmLote, setIdsSelecionadosEmLote] = useState<ReadonlySet<string>>(new Set());
   const [clipboard, setClipboard] = useState<Molde | null>(null);
@@ -164,7 +137,7 @@ export default function App(): React.JSX.Element {
 
   const [projetoAtual, setProjetoAtual] = useState<Projeto>(() =>
     novoProjetoVazio({
-      pecas: pecasDeDemonstracao(),
+      pecas: [],
       tecido: tecidoDeDemonstracao(),
       enfesto: enfestoDeDemonstracao(),
     }),
@@ -719,6 +692,49 @@ export default function App(): React.JSX.Element {
     );
   }, [pecas, idsSelecionadosEmLote, aplicarMudanca]);
 
+  /**
+   * "Elemento paralelo": cria uma NOVA peça com o contorno deslocado
+   * uniformemente (reaproveita a mesma função de deslocamento da margem de
+   * costura, `deslocarContornoParaFora` — distância negativa desloca para
+   * dentro). Furos/piques/marcas não são copiados para a peça nova, porque
+   * suas posições absolutas ficariam incoerentes com o contorno deslocado
+   * (mesmo cuidado já documentado para `dimensionarMolde`/edição de pontos).
+   */
+  const criarElementoParaleloDaSelecionada = useCallback(() => {
+    const original = pecas.find((p) => p.id === selecionadoId);
+    if (!original) return;
+    const texto = window.prompt(
+      'Distância do elemento paralelo (mm; positivo = para fora, negativo = para dentro):',
+      '10',
+    );
+    if (texto === null) return;
+    const distanciaMm = Number.parseFloat(texto);
+    if (!Number.isFinite(distanciaMm) || distanciaMm === 0) {
+      window.alert('Distância inválida — informe um número diferente de zero.');
+      return;
+    }
+    try {
+      const novoContorno = deslocarContornoParaFora(original.contorno, distanciaMm);
+      const novaPeca = criarMolde(
+        {
+          nome: `${original.nome} (paralelo)`,
+          referencia: original.referencia,
+          tamanho: original.tamanho,
+          contorno: novoContorno,
+          linhaDeFio: original.linhaDeFio,
+          quantidade: original.quantidade,
+          margemDeCosturaMm: original.margemDeCosturaMm,
+          restricaoDeRotacao: original.restricaoDeRotacao,
+        },
+        proximoId(),
+      );
+      aplicarMudanca([...pecas, novaPeca]);
+      setSelecionadoId(novaPeca.id);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    }
+  }, [pecas, selecionadoId, aplicarMudanca]);
+
   const moverPeca = useCallback(
     (id: string, deslocamento: Ponto2D) => {
       aplicarMudanca(pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p)));
@@ -1145,6 +1161,7 @@ export default function App(): React.JSX.Element {
         onAbrirDimensionar={() => setMostrarDimensionar(true)}
         onEspelharManual={espelharSelecionadaManualmente}
         onGirarLivre={girarLivreSelecionada}
+        onElementoParalelo={criarElementoParaleloDaSelecionada}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />

@@ -29,6 +29,7 @@ export type NomeDoIcone =
   | 'mover-ponto'
   | 'inserir-ponto'
   | 'excluir-ponto'
+  | 'elemento-paralelo'
   | 'dimensionar'
   | 'espelhar'
   | 'girar'
@@ -178,6 +179,12 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <circle cx="14" cy="10" r="1.4" fill="currentColor" stroke="none" />
       <line x1="7.5" y1="10" x2="12.5" y2="10" stroke="white" strokeWidth="2.4" />
       <line x1="8" y1="15" x2="12" y2="15" />
+    </>
+  ),
+  'elemento-paralelo': (
+    <>
+      <path d="M3 6c2-2.5 5-2.5 8-1.5" />
+      <path d="M3 12c3.5-2.8 8-2.8 14-1" />
     </>
   ),
   dimensionar: (

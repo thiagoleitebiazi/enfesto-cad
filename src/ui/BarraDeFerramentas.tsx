@@ -42,6 +42,7 @@ interface BarraDeFerramentasProps {
   readonly onAbrirDimensionar: () => void;
   readonly onEspelharManual: () => void;
   readonly onGirarLivre: () => void;
+  readonly onElementoParalelo: () => void;
   readonly onAlinhar: () => void;
   readonly podeAlinhar: boolean;
   readonly onAbrirExportacaoPdf: () => void;
@@ -223,7 +224,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
           {abaAtiva === 'manipulacao' && (
             <>
-              <div className="grupo-de-ferramentas" role="group" aria-label="Pontos">
+              <div className="grupo-de-ferramentas" role="group" aria-label="Redefinir">
                 <button
                   aria-pressed={props.modo === 'mover-ponto'}
                   className={props.modo === 'mover-ponto' ? 'item-selecionado' : ''}
@@ -234,6 +235,48 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <Icone nome="mover-ponto" />
                   <span>Mover ponto</span>
                 </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Indicar">
+                <button
+                  onClick={props.onElementoParalelo}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Elemento paralelo: cria uma cópia com o contorno deslocado a uma distância uniforme' : 'Selecione uma peça primeiro'}
+                >
+                  <Icone nome="elemento-paralelo" />
+                  <span>Elemento paralelo</span>
+                </button>
+                <button
+                  onClick={props.onGirarLivre}
+                  disabled={!props.temSelecaoUnica}
+                  title={
+                    props.temSelecaoUnica
+                      ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
+                      : 'Selecione uma peça primeiro'
+                  }
+                >
+                  <Icone nome="girar" />
+                  <span>Girar</span>
+                </button>
+                <button
+                  onClick={props.onAbrirDimensionar}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
+                >
+                  <Icone nome="dimensionar" />
+                  <span>Dimensionar</span>
+                </button>
+                <button
+                  onClick={props.onEspelharManual}
+                  disabled={!props.temSelecaoUnica}
+                  title={props.temSelecaoUnica ? 'Espelhar: inverte a peça horizontalmente (ação manual, uma vez)' : 'Selecione uma peça primeiro'}
+                >
+                  <Icone nome="espelhar" />
+                  <span>Espelhar</span>
+                </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Definir curva">
                 <button
                   aria-pressed={props.modo === 'inserir-ponto'}
                   className={props.modo === 'inserir-ponto' ? 'item-selecionado' : ''}
@@ -256,38 +299,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 </button>
               </div>
 
-              <div className="grupo-de-ferramentas" role="group" aria-label="Transformar">
-                <button
-                  onClick={props.onAbrirDimensionar}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="dimensionar" />
-                  <span>Dimensionar</span>
-                </button>
-                <button
-                  onClick={props.onEspelharManual}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Espelhar: inverte a peça horizontalmente (ação manual, uma vez)' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="espelhar" />
-                  <span>Espelhar</span>
-                </button>
-                <button
-                  onClick={props.onGirarLivre}
-                  disabled={!props.temSelecaoUnica}
-                  title={
-                    props.temSelecaoUnica
-                      ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
-                      : 'Selecione uma peça primeiro'
-                  }
-                >
-                  <Icone nome="girar" />
-                  <span>Girar (ângulo livre)</span>
-                </button>
-              </div>
-
-              <div className="grupo-de-ferramentas" role="group" aria-label="Organizar">
+              <div className="grupo-de-ferramentas" role="group" aria-label="Manipular molde">
                 <button
                   onClick={props.onAlinhar}
                   disabled={!props.podeAlinhar}
