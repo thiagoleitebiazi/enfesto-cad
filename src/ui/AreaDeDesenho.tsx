@@ -3,7 +3,6 @@ import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
 import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
-  moverPontoDoContorno,
   distancia,
   ponto,
   somar,
@@ -74,7 +73,7 @@ interface AreaDeDesenhoProps {
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
   readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
-  readonly onMoverPontoDoMolde?: (indice: number, novaPosicao: Ponto2D) => void;
+  readonly onMoverVariosPontos?: (indices: readonly number[], delta: Ponto2D) => void;
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
   readonly onExcluirPontoDoMolde?: (indice: number) => void;
   readonly onChanfrarCanto?: (indice: number) => void;
@@ -106,7 +105,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onCursorMove,
     onCliqueNoCanvas,
     onMoverPeca,
-    onMoverPontoDoMolde,
+    onMoverVariosPontos,
     onInserirPontoNoMolde,
     onExcluirPontoDoMolde,
     onChanfrarCanto,
@@ -127,8 +126,30 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const espacoPressionadoRef = useRef(false);
   const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
   const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
-  const arrastoDeVerticeRef = useRef<{ indice: number } | null>(null);
-  const [verticeEmArrasto, setVerticeEmArrasto] = useState<{ indice: number; posicao: Ponto2D } | null>(null);
+  // Seleção de vértices no modo "Mover ponto": clique simples seleciona só um
+  // e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
+  // clique+arrasto num espaço vazio desenha uma "cerca" retangular que
+  // seleciona todos os vértices dentro dela ao soltar (Definir cerca/Mover
+  // cerca e Manipulação rápida do Audaces, unificados numa única interação:
+  // é a mesma operação de fundo — mover pontos — com métodos de seleção
+  // diferentes, não três ferramentas independentes).
+  const [verticesSelecionados, setVerticesSelecionados] = useState<ReadonlySet<number>>(new Set());
+  const arrastoDeGrupoRef = useRef<{ indices: readonly number[]; ultimoMundo: Ponto2D } | null>(null);
+  const [deltaDeGrupo, setDeltaDeGrupo] = useState<Ponto2D | null>(null);
+  const cercaRef = useRef<{ inicio: Ponto2D } | null>(null);
+  const [cercaEmDesenho, setCercaEmDesenho] = useState<{ inicio: Ponto2D; atual: Ponto2D } | null>(null);
+
+  // Limpa a seleção de vértices ao trocar de modo ou de peça selecionada —
+  // ajuste de estado durante a renderização (não num efeito, nem lendo
+  // ref — só state), padrão recomendado pelo React para "resetar estado
+  // quando uma prop muda".
+  const [modoAnterior, setModoAnterior] = useState(modo);
+  const [selecionadoIdAnterior, setSelecionadoIdAnterior] = useState(selecionadoId);
+  if (modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId) {
+    setModoAnterior(modo);
+    setSelecionadoIdAnterior(selecionadoId);
+    if (verticesSelecionados.size > 0) setVerticesSelecionados(new Set());
+  }
 
   useEffect(() => {
     const alvo = containerRef.current;
@@ -246,12 +267,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         deltaDeArrasto && deltaDeArrasto.id === pecaOriginal.id
           ? transladarMolde(pecaOriginal, deltaDeArrasto.delta, pecaOriginal.id)
           : pecaOriginal;
-      // Mesma lógica de prévia ao vivo, mas para um vértice sendo arrastado
-      // (modo "mover ponto") em vez da peça inteira.
-      if (verticeEmArrasto && pecaOriginal.id === selecionadoId) {
+      // Mesma lógica de prévia ao vivo, mas para um grupo de vértices sendo
+      // arrastados juntos (modo "mover ponto") em vez da peça inteira.
+      if (deltaDeGrupo && arrastoDeGrupoRef.current && pecaOriginal.id === selecionadoId) {
+        const indices = new Set(arrastoDeGrupoRef.current.indices);
         peca = {
           ...peca,
-          contorno: moverPontoDoContorno(peca.contorno, verticeEmArrasto.indice, verticeEmArrasto.posicao),
+          contorno: peca.contorno.map((p, i) => (indices.has(i) ? somar(p, deltaDeGrupo) : p)),
         };
       }
 
@@ -338,22 +360,40 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
     // Alças nos vértices da peça selecionada, nos modos de edição de forma
     // (mover/inserir/excluir ponto, chanfrar/arredondar canto) — a mesma
-    // prévia ao vivo do vértice em arrasto já foi aplicada acima.
+    // prévia ao vivo do grupo em arrasto já foi aplicada acima. No modo
+    // "mover ponto", vértices selecionados (clique com Shift ou dentro da
+    // cerca) ficam destacados numa cor diferente.
     if (MODOS_DE_EDICAO_DE_VERTICE.has(modo) && pecaSelecionada) {
+      const indicesEmArrasto = deltaDeGrupo && arrastoDeGrupoRef.current ? new Set(arrastoDeGrupoRef.current.indices) : null;
       const pecaParaAlcas =
-        verticeEmArrasto && pecaSelecionada.id === selecionadoId
-          ? { ...pecaSelecionada, contorno: moverPontoDoContorno(pecaSelecionada.contorno, verticeEmArrasto.indice, verticeEmArrasto.posicao) }
+        indicesEmArrasto && pecaSelecionada.id === selecionadoId
+          ? {
+              ...pecaSelecionada,
+              contorno: pecaSelecionada.contorno.map((p, i) => (indicesEmArrasto.has(i) ? somar(p, deltaDeGrupo!) : p)),
+            }
           : pecaSelecionada;
-      for (const p of pecaParaAlcas.contorno) {
+      pecaParaAlcas.contorno.forEach((p, i) => {
         const tela = mundoParaTela(p, transform);
+        const selecionado = modo === 'mover-ponto' && (verticesSelecionados.has(i) || indicesEmArrasto?.has(i));
         ctx.beginPath();
         ctx.arc(tela.x, tela.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = COR_ALCA_DE_VERTICE;
+        ctx.fillStyle = selecionado ? COR_CONTORNO_SELECIONADO : COR_ALCA_DE_VERTICE;
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1.5;
         ctx.stroke();
-      }
+      });
+    }
+
+    // Retângulo da "cerca" sendo desenhada (marquee de seleção de vértices).
+    if (cercaEmDesenho) {
+      const a = mundoParaTela(cercaEmDesenho.inicio, transform);
+      const b = mundoParaTela(cercaEmDesenho.atual, transform);
+      ctx.strokeStyle = COR_CONTORNO_SELECIONADO;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.setLineDash([]);
     }
 
     // Contorno recém-fechado, aguardando a definição da linha de fio.
@@ -410,7 +450,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cursorLocal,
     modo,
     deltaDeArrasto,
-    verticeEmArrasto,
+    deltaDeGrupo,
+    verticesSelecionados,
+    cercaEmDesenho,
     pecaSelecionada,
   ]);
 
@@ -510,12 +552,39 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           indiceMaisProximo = i;
         }
       });
-      if (indiceMaisProximo < 0 || menorDistancia > raioMm) return;
+      const achouVertice = indiceMaisProximo >= 0 && menorDistancia <= raioMm;
 
       if (modo === 'mover-ponto') {
-        arrastoDeVerticeRef.current = { indice: indiceMaisProximo };
-        setVerticeEmArrasto({ indice: indiceMaisProximo, posicao: mundo });
-      } else if (modo === 'excluir-ponto') {
+        if (e.shiftKey) {
+          // Shift+clique: acrescenta/remove da seleção, sem arrastar —
+          // monta um grupo de vértices para mover juntos depois.
+          if (achouVertice) {
+            setVerticesSelecionados((atual) => {
+              const novo = new Set(atual);
+              if (novo.has(indiceMaisProximo)) novo.delete(indiceMaisProximo);
+              else novo.add(indiceMaisProximo);
+              return novo;
+            });
+          }
+          return;
+        }
+        if (achouVertice) {
+          const jaFazParteDaSelecao = verticesSelecionados.has(indiceMaisProximo) && verticesSelecionados.size > 1;
+          const indices = jaFazParteDaSelecao ? [...verticesSelecionados] : [indiceMaisProximo];
+          if (!jaFazParteDaSelecao) setVerticesSelecionados(new Set([indiceMaisProximo]));
+          arrastoDeGrupoRef.current = { indices, ultimoMundo: mundo };
+          setDeltaDeGrupo({ x: 0, y: 0 });
+          return;
+        }
+        // Clique em espaço vazio: começa a desenhar a "cerca" de seleção.
+        setVerticesSelecionados(new Set());
+        cercaRef.current = { inicio: mundo };
+        setCercaEmDesenho({ inicio: mundo, atual: mundo });
+        return;
+      }
+
+      if (!achouVertice) return;
+      if (modo === 'excluir-ponto') {
         onExcluirPontoDoMolde?.(indiceMaisProximo);
       } else if (modo === 'chanfrar-canto') {
         onChanfrarCanto?.(indiceMaisProximo);
@@ -554,8 +623,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setCursorLocal(mundo);
     onCursorMove(mundo);
 
-    if (arrastoDeVerticeRef.current) {
-      setVerticeEmArrasto({ indice: arrastoDeVerticeRef.current.indice, posicao: mundo });
+    if (arrastoDeGrupoRef.current) {
+      const deltaPasso = {
+        x: mundo.x - arrastoDeGrupoRef.current.ultimoMundo.x,
+        y: mundo.y - arrastoDeGrupoRef.current.ultimoMundo.y,
+      };
+      arrastoDeGrupoRef.current.ultimoMundo = mundo;
+      setDeltaDeGrupo((atual) => (atual ? somar(atual, deltaPasso) : deltaPasso));
+    }
+
+    if (cercaRef.current) {
+      setCercaEmDesenho({ inicio: cercaRef.current.inicio, atual: mundo });
     }
 
     if (arrastoRef.current) {
@@ -578,24 +656,45 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setDeltaDeArrasto(null);
   }
 
-  function finalizarArrastoDeVertice(): void {
-    if (arrastoDeVerticeRef.current && verticeEmArrasto) {
-      onMoverPontoDoMolde?.(verticeEmArrasto.indice, verticeEmArrasto.posicao);
+  function finalizarArrastoDeGrupo(): void {
+    if (arrastoDeGrupoRef.current && deltaDeGrupo) {
+      const { indices } = arrastoDeGrupoRef.current;
+      if (Math.abs(deltaDeGrupo.x) > 1e-6 || Math.abs(deltaDeGrupo.y) > 1e-6) {
+        onMoverVariosPontos?.(indices, deltaDeGrupo);
+      }
     }
-    arrastoDeVerticeRef.current = null;
-    setVerticeEmArrasto(null);
+    arrastoDeGrupoRef.current = null;
+    setDeltaDeGrupo(null);
+  }
+
+  function finalizarCerca(): void {
+    if (cercaRef.current && cercaEmDesenho && pecaSelecionada) {
+      const minX = Math.min(cercaEmDesenho.inicio.x, cercaEmDesenho.atual.x);
+      const maxX = Math.max(cercaEmDesenho.inicio.x, cercaEmDesenho.atual.x);
+      const minY = Math.min(cercaEmDesenho.inicio.y, cercaEmDesenho.atual.y);
+      const maxY = Math.max(cercaEmDesenho.inicio.y, cercaEmDesenho.atual.y);
+      const dentro = new Set<number>();
+      pecaSelecionada.contorno.forEach((p, i) => {
+        if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) dentro.add(i);
+      });
+      setVerticesSelecionados(dentro);
+    }
+    cercaRef.current = null;
+    setCercaEmDesenho(null);
   }
 
   function aoSoltarMouse(): void {
     panRef.current.ativo = false;
     finalizarArrasto();
-    finalizarArrastoDeVertice();
+    finalizarArrastoDeGrupo();
+    finalizarCerca();
   }
 
   function aoSairMouse(): void {
     panRef.current.ativo = false;
     finalizarArrasto();
-    finalizarArrastoDeVertice();
+    finalizarArrastoDeGrupo();
+    finalizarCerca();
     setCursorLocal(null);
     onCursorMove(null);
   }

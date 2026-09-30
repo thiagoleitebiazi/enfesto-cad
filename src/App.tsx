@@ -13,7 +13,7 @@ import {
   rotacaoEhPermitida,
   rotacoesPermitidas,
   espelharMolde,
-  moverPontoDoMolde,
+  moverVariosPontosDoMolde,
   inserirPontoNoMolde,
   removerPontoDoMolde,
   chanfrarCantoDoMolde,
@@ -557,10 +557,12 @@ export default function App(): React.JSX.Element {
   // Ferramentas de edição de forma (aba "Manipulação", seção 5 continua
   // valendo: nada aqui reordena automaticamente sentido do fio — são ações
   // manuais e explícitas do usuário sobre a peça selecionada).
-  const moverPontoDaSelecionada = useCallback(
-    (indice: number, novaPosicao: Ponto2D) => {
+  const moverVariosPontosDaSelecionada = useCallback(
+    (indices: readonly number[], delta: Ponto2D) => {
       if (!selecionadoId) return;
-      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? moverPontoDoMolde(p, indice, novaPosicao) : p)));
+      aplicarMudanca(
+        pecas.map((p) => (p.id === selecionadoId ? moverVariosPontosDoMolde(p, indices, delta) : p)),
+      );
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
@@ -1305,7 +1307,7 @@ export default function App(): React.JSX.Element {
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
           onMoverPeca={moverPeca}
-          onMoverPontoDoMolde={moverPontoDaSelecionada}
+          onMoverVariosPontos={moverVariosPontosDaSelecionada}
           onInserirPontoNoMolde={inserirPontoNaSelecionada}
           onExcluirPontoDoMolde={excluirPontoDaSelecionada}
           onChanfrarCanto={chanfrarVerticeDaSelecionada}

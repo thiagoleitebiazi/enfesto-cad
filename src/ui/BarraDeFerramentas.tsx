@@ -230,7 +230,11 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   className={props.modo === 'mover-ponto' ? 'item-selecionado' : ''}
                   onClick={props.onEntrarModoMoverPonto}
                   disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Mover ponto: arraste um vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                  title={
+                    props.temSelecaoUnica
+                      ? 'Mover ponto: arraste um vértice — Shift+clique para selecionar vários, ou desenhe uma cerca (clique e arraste num espaço vazio) para selecionar todos os vértices numa área e movê-los juntos'
+                      : 'Selecione uma peça primeiro'
+                  }
                 >
                   <Icone nome="mover-ponto" />
                   <span>Mover ponto</span>

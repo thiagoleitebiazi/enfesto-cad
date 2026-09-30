@@ -15,6 +15,7 @@ import {
   rotacionarMolde,
   espelharMolde,
   moverPontoDoMolde,
+  moverVariosPontosDoMolde,
   inserirPontoNoMolde,
   removerPontoDoMolde,
   chanfrarCantoDoMolde,
@@ -346,6 +347,23 @@ describe('moverPontoDoMolde', () => {
     expect(movido.contorno[1]).toEqual(ponto(210, 10));
     expect(movido.contorno[0]).toEqual(molde.contorno[0]);
     expect(movido.linhaDeFio).toEqual(molde.linhaDeFio);
+  });
+});
+
+describe('moverVariosPontosDoMolde', () => {
+  it('move só os vértices indicados pelo mesmo deslocamento, resto intacto', () => {
+    const molde = criarMolde(dadosBase(), 'm1'); // (0,0),(200,0),(200,300),(0,300)
+    const movido = moverVariosPontosDoMolde(molde, [0, 1], ponto(10, -5));
+    expect(movido.contorno[0]).toEqual(ponto(10, -5));
+    expect(movido.contorno[1]).toEqual(ponto(210, -5));
+    expect(movido.contorno[2]).toEqual(molde.contorno[2]);
+    expect(movido.contorno[3]).toEqual(molde.contorno[3]);
+  });
+
+  it('lista vazia de índices não muda nada', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const movido = moverVariosPontosDoMolde(molde, [], ponto(100, 100));
+    expect(movido.contorno).toEqual(molde.contorno);
   });
 });
 

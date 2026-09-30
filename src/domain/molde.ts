@@ -252,6 +252,20 @@ export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Pon
   return { ...molde, contorno: moverPontoDoContorno(molde.contorno, indice, novaPosicao) };
 }
 
+/**
+ * Move vários vértices do contorno juntos, pelo mesmo deslocamento —
+ * seleção múltipla de pontos (Shift+clique ou "cerca" retangular na UI,
+ * equivalente ao "Manipulação rápida"/"Definir cerca"+"Mover cerca" do
+ * Audaces, unificados aqui numa única operação de domínio).
+ */
+export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
+  const indicesSet = new Set(indices);
+  return {
+    ...molde,
+    contorno: molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p)),
+  };
+}
+
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */
 export function inserirPontoNoMolde(molde: Molde, indiceAresta: number, novoPonto: Ponto2D): Molde {
   return {
