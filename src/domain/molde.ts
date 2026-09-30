@@ -7,22 +7,30 @@ import {
   transladarContorno,
   rotacionarContorno,
   rotacionar,
+  espelharContornoHorizontal,
+  espelharHorizontal,
   somar,
 } from '../core/geometria';
 
 /**
- * Regra crítica (seção 5 do escopo): por padrão nenhuma rotação que altere a
- * orientação em relação ao fio é permitida. 180° e 90°/270° são liberados
- * apenas quando o usuário autoriza explicitamente, por molde.
+ * Regra crítica (seção 5 do escopo): por padrão nenhuma rotação OU
+ * espelhamento que altere a orientação em relação ao fio é permitida. 180°,
+ * 90°/270° e espelhamento são liberados apenas quando o usuário autoriza
+ * explicitamente, por molde — espelhar uma peça cortada de tecido
+ * direcional/com pelo inverte o desenho/sentido do pelo fisicamente, exatamente
+ * o mesmo tipo de erro que a rotação proibida evita.
  */
 export interface RestricaoDeRotacao {
   readonly permite180: boolean;
   readonly permite90e270: boolean;
+  /** Permite usar a versão espelhada (imagem de espelho) da peça — nunca presumido, mesmo padrão da rotação. */
+  readonly permiteEspelhamento?: boolean;
 }
 
 export const RESTRICAO_PADRAO: RestricaoDeRotacao = {
   permite180: false,
   permite90e270: false,
+  permiteEspelhamento: false,
 };
 
 /** Seta do sentido do fio: de `inicio` para `fim`, em mm no espaço do molde. */
@@ -188,6 +196,30 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
       fim: rotacionar(molde.linhaDeFio.fim, pivo, anguloGraus),
     },
     anguloDeRotacaoGraus: normalizarAngulo(molde.anguloDeRotacaoGraus + anguloGraus),
+  };
+}
+
+/**
+ * Espelha um molde inteiro horizontalmente (imagem de espelho) em torno do
+ * centro do seu retângulo envolvente. Assim como `rotacionarMolde`, é pura
+ * geometria — NÃO verifica `restricaoDeRotacao.permiteEspelhamento`; quem
+ * chama deve checar antes (regra crítica da seção 5, nunca ignorada).
+ */
+export function espelharMolde(molde: Molde, novoId: string): Molde {
+  const centro = retanguloEnvolvente(molde.contorno);
+  const centroX = (centro.minX + centro.maxX) / 2;
+  return {
+    ...molde,
+    id: novoId,
+    contorno: espelharContornoHorizontal(molde.contorno, centroX),
+    linhasInternas: molde.linhasInternas.map((l) => espelharContornoHorizontal(l, centroX)),
+    furos: molde.furos.map((f) => espelharContornoHorizontal(f, centroX)),
+    piques: molde.piques.map((p) => ({ ...p, posicao: espelharHorizontal(p.posicao, centroX) })),
+    marcas: molde.marcas.map((m) => ({ ...m, posicao: espelharHorizontal(m.posicao, centroX) })),
+    linhaDeFio: {
+      inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
+      fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),
+    },
   };
 }
 

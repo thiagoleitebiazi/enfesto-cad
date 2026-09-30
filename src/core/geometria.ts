@@ -107,6 +107,15 @@ export function rotacionarContorno(contorno: Contorno, centro: Ponto2D, anguloGr
   return contorno.map((p) => rotacionar(p, centro, anguloGraus));
 }
 
+/** Espelha `p` horizontalmente (inverte X) em torno da reta vertical x = centroX; Y não muda. */
+export function espelharHorizontal(p: Ponto2D, centroX: number): Ponto2D {
+  return { x: 2 * centroX - p.x, y: p.y };
+}
+
+export function espelharContornoHorizontal(contorno: Contorno, centroX: number): Contorno {
+  return contorno.map((p) => espelharHorizontal(p, centroX));
+}
+
 /** Ponto mais próximo de `p` sobre o segmento [a, b] (projeção com grampo em [0,1]). */
 export function pontoMaisProximoNoSegmento(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
   const dx = b.x - a.x;

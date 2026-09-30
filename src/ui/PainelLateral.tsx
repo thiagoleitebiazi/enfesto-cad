@@ -138,6 +138,18 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             />
             Permitir 90°/270°
           </label>
+          <label className="opcao-em-linha">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.permiteEspelhamento ?? false}
+              onChange={(e) =>
+                props.onAlterar({
+                  restricaoDeRotacao: { ...peca.restricaoDeRotacao, permiteEspelhamento: e.target.checked },
+                })
+              }
+            />
+            Permitir espelhamento
+          </label>
         </fieldset>
 
         <div className="grupo-de-rotacao">
@@ -167,6 +179,8 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
         <dd>{(dim.areaMm2 / 100).toFixed(1)} cm²</dd>
         <dt>Rotações permitidas</dt>
         <dd>{rotacoes.map((r) => `${r}°`).join(', ')}</dd>
+        <dt>Espelhamento</dt>
+        <dd>{peca.restricaoDeRotacao.permiteEspelhamento ? 'Permitido' : 'Não permitido'}</dd>
         <dt>Piques</dt>
         <dd>{peca.piques.length}</dd>
         <dt>Furos</dt>

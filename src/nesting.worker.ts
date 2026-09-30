@@ -7,6 +7,8 @@ export interface MensagemIniciar {
   readonly pecas: readonly Molde[];
   readonly enfesto: ConfiguracaoDeEnfesto;
   readonly passoMm?: number;
+  readonly limiteDeTempoMs?: number;
+  readonly aproveitamentoDesejadoPercentual?: number;
 }
 
 export interface MensagemCancelar {
@@ -29,6 +31,10 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
     cancelado = false;
     const resultado = executarNestingAutomatico(mensagem.pecas, mensagem.enfesto, {
       ...(mensagem.passoMm !== undefined ? { passoMm: mensagem.passoMm } : {}),
+      ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
+      ...(mensagem.aproveitamentoDesejadoPercentual !== undefined
+        ? { aproveitamentoDesejadoPercentual: mensagem.aproveitamentoDesejadoPercentual }
+        : {}),
       deveContinuar: () => !cancelado,
       aoProgredir: (colocadas, total) => {
         self.postMessage({ tipo: 'progresso', colocadas, total });

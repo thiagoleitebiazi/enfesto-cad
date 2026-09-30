@@ -1,4 +1,4 @@
-import { rotacionarMolde, transladarMolde, rotacoesPermitidas, type Molde } from './molde';
+import { rotacionarMolde, espelharMolde, transladarMolde, rotacoesPermitidas, type Molde } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
@@ -43,6 +43,10 @@ export interface ResultadoDeNesting {
   readonly aproveitamentoPercentual: number;
   readonly tempoDeProcessamentoMs: number;
   readonly interrompido: boolean;
+  /** Verdadeiro se o cálculo parou por atingir `opcoes.limiteDeTempoMs` (peças restantes ficam em `pecasNaoColocadas`). */
+  readonly paradaPorTempoLimite: boolean;
+  /** Verdadeiro se o cálculo parou por já ter atingido `opcoes.aproveitamentoDesejadoPercentual` (peças restantes ficam em `pecasNaoColocadas`, não é uma falha). */
+  readonly paradaPorMetaDeAproveitamento: boolean;
 }
 
 export interface OpcoesDeNesting {
@@ -54,6 +58,10 @@ export interface OpcoesDeNesting {
   readonly aoProgredir?: (colocadas: number, total: number) => void;
   /** Relógio injetável (testes) — por padrão `Date.now`. */
   readonly agora?: () => number;
+  /** Limite de tempo total em ms — atingido, para o cálculo com resultado parcial (não é uma rejeição de peças, é uma parada honesta). */
+  readonly limiteDeTempoMs?: number;
+  /** Aproveitamento (%) desejado — atingido ou ultrapassado após colocar uma peça, o cálculo para (não tenta espremer mais peças além da meta pedida). */
+  readonly aproveitamentoDesejadoPercentual?: number;
 }
 
 interface InstanciaParaColocar {
@@ -105,6 +113,16 @@ export function executarNestingAutomatico(
   const naoColocadas: PecaNaoColocada[] = [];
   const contornosColocados: Contorno[] = [];
   let interrompido = false;
+  let paradaPorTempoLimite = false;
+  let paradaPorMetaDeAproveitamento = false;
+
+  function aproveitamentoAtual(): number {
+    const comprimento =
+      colocadas.length === 0 ? 0 : Math.max(...colocadas.map((p) => retanguloEnvolvente(p.molde.contorno).maxY));
+    const areaOcupada = colocadas.reduce((soma, p) => soma + area(p.molde.contorno), 0);
+    const areaDisponivel = enfesto.larguraUtilMm * comprimento;
+    return areaDisponivel > 0 ? (areaOcupada / areaDisponivel) * 100 : 0;
+  }
 
   for (const instancia of instancias) {
     if (opcoes.deveContinuar && !opcoes.deveContinuar()) {
@@ -117,11 +135,37 @@ export function executarNestingAutomatico(
       continue;
     }
 
+    if (
+      opcoes.limiteDeTempoMs !== undefined &&
+      (opcoes.agora ?? Date.now)() - inicio >= opcoes.limiteDeTempoMs
+    ) {
+      paradaPorTempoLimite = true;
+      naoColocadas.push({
+        idOriginal: instancia.idOriginal,
+        indiceCopia: instancia.indiceCopia,
+        nome: instancia.moldeNaOrigem.nome,
+      });
+      continue;
+    }
+
     const angulos = rotacoesPermitidas(instancia.moldeNaOrigem.restricaoDeRotacao);
+    // Para cada ângulo permitido, tenta a orientação normal e, só se o
+    // molde autorizar explicitamente (regra crítica da seção 5, nunca
+    // presumida), a versão espelhada nesse mesmo ângulo — nunca inventa
+    // uma orientação fora do que a peça permite, só combina as que já são
+    // permitidas com o espelhamento também permitido.
+    const candidatos: Molde[] = [];
+    for (const angulo of angulos) {
+      const base = angulo === 0 ? instancia.moldeNaOrigem : rotacionarMolde(instancia.moldeNaOrigem, angulo);
+      candidatos.push(base);
+      if (instancia.moldeNaOrigem.restricaoDeRotacao.permiteEspelhamento) {
+        candidatos.push(espelharMolde(base, `${base.id}-espelhado`));
+      }
+    }
+
     let posicionada = false;
 
-    for (const angulo of angulos) {
-      const candidato = angulo === 0 ? instancia.moldeNaOrigem : rotacionarMolde(instancia.moldeNaOrigem, angulo);
+    for (const candidato of candidatos) {
       const delta = encontrarPrimeiraPosicaoValida(
         candidato.contorno,
         contornosColocados,
@@ -148,6 +192,36 @@ export function executarNestingAutomatico(
     }
 
     opcoes.aoProgredir?.(colocadas.length + naoColocadas.length, instancias.length);
+
+    if (
+      posicionada &&
+      opcoes.aproveitamentoDesejadoPercentual !== undefined &&
+      aproveitamentoAtual() >= opcoes.aproveitamentoDesejadoPercentual
+    ) {
+      paradaPorMetaDeAproveitamento = true;
+      break;
+    }
+  }
+
+  // Instâncias que nunca chegaram a ser tentadas (parada por meta de
+  // aproveitamento interrompe o for antes de percorrer o resto) também
+  // entram em pecasNaoColocadas — resultado parcial honesto, igual à
+  // parada cooperativa (deveContinuar) e ao limite de tempo.
+  if (paradaPorMetaDeAproveitamento) {
+    const idsJaContabilizados = new Set([
+      ...colocadas.map((p) => `${p.idOriginal}#${p.indiceCopia}`),
+      ...naoColocadas.map((p) => `${p.idOriginal}#${p.indiceCopia}`),
+    ]);
+    for (const instancia of instancias) {
+      const chave = `${instancia.idOriginal}#${instancia.indiceCopia}`;
+      if (!idsJaContabilizados.has(chave)) {
+        naoColocadas.push({
+          idOriginal: instancia.idOriginal,
+          indiceCopia: instancia.indiceCopia,
+          nome: instancia.moldeNaOrigem.nome,
+        });
+      }
+    }
   }
 
   const comprimentoUtilizadoMm =
@@ -164,5 +238,7 @@ export function executarNestingAutomatico(
     aproveitamentoPercentual,
     tempoDeProcessamentoMs: (opcoes.agora ?? Date.now)() - inicio,
     interrompido,
+    paradaPorTempoLimite,
+    paradaPorMetaDeAproveitamento,
   };
 }

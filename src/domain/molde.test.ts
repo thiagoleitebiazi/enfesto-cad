@@ -13,6 +13,7 @@ import {
   contornoDeCorte,
   transladarMolde,
   rotacionarMolde,
+  espelharMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -263,6 +264,71 @@ describe('rotacionarMolde', () => {
     for (let i = 0; i < molde.contorno.length; i++) {
       expect(rotacionado.contorno[i]!.x).toBeCloseTo(molde.contorno[i]!.x, 6);
       expect(rotacionado.contorno[i]!.y).toBeCloseTo(molde.contorno[i]!.y, 6);
+    }
+  });
+});
+
+describe('permiteEspelhamento — regra crítica do sentido do fio (mesma família da rotação)', () => {
+  it('RESTRICAO_PADRAO não permite espelhamento', () => {
+    expect(RESTRICAO_PADRAO.permiteEspelhamento).toBe(false);
+  });
+
+  it('novo molde sem restrição explícita herda permiteEspelhamento: false', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(molde.restricaoDeRotacao.permiteEspelhamento).toBe(false);
+  });
+});
+
+describe('espelharMolde', () => {
+  it('preserva a área do contorno (espelhamento é uma isometria)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const espelhado = espelharMolde(molde, 'm1-esp');
+    expect(area(espelhado.contorno)).toBeCloseTo(area(molde.contorno), 6);
+  });
+
+  it('inverte X preservando Y, em torno do centro do retângulo envolvente', () => {
+    // Contorno 200x300 com origem em (0,0): centro X = 100.
+    const molde = criarMolde(dadosBase(), 'm1');
+    const espelhado = espelharMolde(molde, 'm1-esp');
+    // Ponto (0,0) -> (200,0); ponto (200,300) -> (0,300).
+    expect(espelhado.contorno).toContainEqual(ponto(200, 0));
+    expect(espelhado.contorno).toContainEqual(ponto(0, 300));
+    for (const p of espelhado.contorno) {
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(300);
+    }
+  });
+
+  it('espelha a linha de fio junto (inverte X, Y igual)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const espelhado = espelharMolde(molde, 'm1-esp');
+    // Fio original vertical em x=100 (centro) -> permanece em x=100 (ponto fixo do próprio eixo de espelhamento).
+    expect(espelhado.linhaDeFio.inicio.x).toBeCloseTo(100, 6);
+    expect(espelhado.linhaDeFio.inicio.y).toBeCloseTo(molde.linhaDeFio.inicio.y, 6);
+  });
+
+  it('espelha furos, piques e marcas junto com o contorno', () => {
+    const comExtras = adicionarMarca(
+      adicionarPique(
+        criarMolde(dadosBase({ furos: [[ponto(20, 140), ponto(40, 140), ponto(40, 160), ponto(20, 160)]] }), 'm1'),
+        ponto(-5, 150),
+        'p1',
+      ),
+      ponto(60, 90),
+      'ma1',
+    );
+    const espelhado = espelharMolde(comExtras, 'm1-esp');
+    expect(espelhado.furos[0]).not.toEqual(comExtras.furos[0]);
+    expect(espelhado.piques[0]!.posicao.x).not.toBeCloseTo(comExtras.piques[0]!.posicao.x, 3);
+    expect(espelhado.marcas[0]!.posicao.x).not.toBeCloseTo(comExtras.marcas[0]!.posicao.x, 3);
+  });
+
+  it('espelhar duas vezes restaura a peça original (é sua própria inversa)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const duasVezes = espelharMolde(espelharMolde(molde, 'm1-esp1'), 'm1-esp2');
+    for (let i = 0; i < molde.contorno.length; i++) {
+      expect(duasVezes.contorno[i]!.x).toBeCloseTo(molde.contorno[i]!.x, 6);
+      expect(duasVezes.contorno[i]!.y).toBeCloseTo(molde.contorno[i]!.y, 6);
     }
   });
 });

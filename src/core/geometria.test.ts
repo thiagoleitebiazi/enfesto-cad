@@ -6,6 +6,8 @@ import {
   escalar,
   distancia,
   rotacionar,
+  espelharHorizontal,
+  espelharContornoHorizontal,
   retanguloEnvolvente,
   area,
   areaAssinada,
@@ -50,6 +52,25 @@ describe('operações vetoriais', () => {
     const r = rotacionar(p, ponto(1, 1), 360);
     expect(r.x).toBeCloseTo(p.x, 10);
     expect(r.y).toBeCloseTo(p.y, 10);
+  });
+
+  it('espelha horizontalmente em torno de um eixo X, invertendo X e mantendo Y', () => {
+    expect(espelharHorizontal(ponto(10, 5), 0)).toEqual({ x: -10, y: 5 });
+    expect(espelharHorizontal(ponto(10, 5), 10)).toEqual({ x: 10, y: 5 });
+    expect(espelharHorizontal(ponto(0, 5), 10)).toEqual({ x: 20, y: 5 });
+  });
+
+  it('espelhar duas vezes é a identidade', () => {
+    const p = ponto(3, -7);
+    const duasVezes = espelharHorizontal(espelharHorizontal(p, 15), 15);
+    expect(duasVezes.x).toBeCloseTo(p.x, 10);
+    expect(duasVezes.y).toBeCloseTo(p.y, 10);
+  });
+
+  it('espelharContornoHorizontal aplica em todos os pontos do contorno', () => {
+    const contorno = [ponto(0, 0), ponto(10, 0), ponto(10, 5), ponto(0, 5)];
+    const espelhado = espelharContornoHorizontal(contorno, 5);
+    expect(espelhado).toEqual([ponto(10, 0), ponto(0, 0), ponto(0, 5), ponto(10, 5)]);
   });
 });
 

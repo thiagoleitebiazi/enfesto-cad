@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { ponto, area, retanguloEnvolvente, contornosSeSobrepoem, distanciaEntreContornos } from '../core/geometria';
+import {
+  ponto,
+  area,
+  retanguloEnvolvente,
+  contornosSeSobrepoem,
+  distanciaEntreContornos,
+  espelharContornoHorizontal,
+} from '../core/geometria';
 import { criarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { executarNestingAutomatico } from './nesting';
+import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
 
 function pecaRetangular(
   id: string,
@@ -199,5 +207,132 @@ describe('executarNestingAutomatico — preserva geometria auxiliar da peça', (
     expect(colocada.margemDeCosturaMm).toBe(10);
     // O furo preserva o tamanho original (área), só muda de posição/rotação.
     expect(area(colocada.furos[0]!)).toBeCloseTo(area(pecaComExtras.furos[0]!), 6);
+  });
+});
+
+// Peça em forma de "L" (perna de 20mm à esquerda + barra de largura total) —
+// assimétrica sob espelhamento horizontal (diferente de um retângulo, que é
+// seu próprio espelho). Usada nos testes de espelhamento abaixo.
+const PECA_EM_L = [ponto(0, 0), ponto(20, 0), ponto(20, 10), ponto(100, 10), ponto(100, 30), ponto(0, 30)];
+
+describe('encontrarPrimeiraPosicaoValida + espelhamento — prova geométrica de que o espelhamento muda o encaixe', () => {
+  it('a peça em L original não cabe numa área 100x30 com um obstáculo sob a perna esquerda', () => {
+    // Obstáculo ocupa x:[0,50] y:[0,9] — sob a perna esquerda (x:[0,20]) da
+    // peça original, que por isso se sobrepõe de verdade (não só encosta).
+    const obstaculo = [ponto(0, 0), ponto(50, 0), ponto(50, 9), ponto(0, 9)];
+    const limites: LimitesDeArea = { minX: 0, maxX: 100, minY: 0, maxY: 30 };
+    const delta = encontrarPrimeiraPosicaoValida(PECA_EM_L, [obstaculo], limites, 0, 5, 10000);
+    expect(delta).toBeNull();
+  });
+
+  it('a mesma peça espelhada cabe na mesma área com o mesmo obstáculo (a perna vai para o outro lado)', () => {
+    const obstaculo = [ponto(0, 0), ponto(50, 0), ponto(50, 9), ponto(0, 9)];
+    const limites: LimitesDeArea = { minX: 0, maxX: 100, minY: 0, maxY: 30 };
+    const centroX = (retanguloEnvolvente(PECA_EM_L).minX + retanguloEnvolvente(PECA_EM_L).maxX) / 2;
+    const pecaEspelhada = espelharContornoHorizontal(PECA_EM_L, centroX);
+    const delta = encontrarPrimeiraPosicaoValida(pecaEspelhada, [obstaculo], limites, 0, 5, 10000);
+    expect(delta).not.toBeNull();
+  });
+});
+
+describe('executarNestingAutomatico — espelhamento (regra crítica do sentido do fio, mesma família da rotação)', () => {
+  function pecaEmL(restricaoDeRotacao?: Molde['restricaoDeRotacao']): Molde {
+    return criarMolde(
+      {
+        nome: 'L',
+        referencia: '',
+        tamanho: 'M',
+        contorno: PECA_EM_L,
+        linhaDeFio: { inicio: ponto(50, 15), fim: ponto(50, 25) },
+        ...(restricaoDeRotacao ? { restricaoDeRotacao } : {}),
+      },
+      'L',
+    );
+  }
+
+  it('sem permiteEspelhamento (padrão), a peça colocada nunca é a versão espelhada — mesmo numa área vazia onde teria espaço de sobra', () => {
+    const areaGrande = enfestoBase({ larguraUtilMm: 500, comprimentoMm: 500 } as Partial<ConfiguracaoDeEnfesto>);
+    const resultado = executarNestingAutomatico([pecaEmL()], areaGrande);
+    expect(resultado.pecasColocadas).toHaveLength(1);
+    const colocada = resultado.pecasColocadas[0]!.molde;
+    const bbox = retanguloEnvolvente(colocada.contorno);
+    const normalizado = colocada.contorno.map((p) => ponto(p.x - bbox.minX, p.y - bbox.minY));
+    // O contorno recolocado na origem deve bater exatamente com o original —
+    // não com a versão espelhada (que teria a perna do outro lado).
+    for (let i = 0; i < normalizado.length; i++) {
+      expect(normalizado[i]!.x).toBeCloseTo(PECA_EM_L[i]!.x, 6);
+      expect(normalizado[i]!.y).toBeCloseTo(PECA_EM_L[i]!.y, 6);
+    }
+  });
+
+  it('com permiteEspelhamento: true mas sem necessidade real, ainda prefere a versão original (tenta espelhar só como último recurso)', () => {
+    const areaGrande = enfestoBase({ larguraUtilMm: 500, comprimentoMm: 500 } as Partial<ConfiguracaoDeEnfesto>);
+    const resultado = executarNestingAutomatico(
+      [pecaEmL({ permite180: false, permite90e270: false, permiteEspelhamento: true })],
+      areaGrande,
+    );
+    expect(resultado.pecasColocadas).toHaveLength(1);
+    const colocada = resultado.pecasColocadas[0]!.molde;
+    const bbox = retanguloEnvolvente(colocada.contorno);
+    const normalizado = colocada.contorno.map((p) => ponto(p.x - bbox.minX, p.y - bbox.minY));
+    for (let i = 0; i < normalizado.length; i++) {
+      expect(normalizado[i]!.x).toBeCloseTo(PECA_EM_L[i]!.x, 6);
+      expect(normalizado[i]!.y).toBeCloseTo(PECA_EM_L[i]!.y, 6);
+    }
+  });
+
+  it('nunca permite espelhamento automaticamente só para caber melhor (sem a flag, mesmo padrão da rotação)', () => {
+    const restricaoFechada = { permite180: false, permite90e270: false, permiteEspelhamento: false };
+    const peca = pecaEmL(restricaoFechada);
+    expect(peca.restricaoDeRotacao.permiteEspelhamento).toBe(false);
+  });
+});
+
+describe('executarNestingAutomatico — limite de tempo', () => {
+  it('para de tentar colocar peças assim que o tempo decorrido atinge limiteDeTempoMs (relógio injetado)', () => {
+    const pecas = [pecaRetangular('a', 100, 100, { quantidade: 5 })];
+    let chamadas = 0;
+    const resultado = executarNestingAutomatico(pecas, enfestoBase(), {
+      limiteDeTempoMs: 100,
+      agora: () => {
+        chamadas++;
+        // Primeira chamada = "início" (0ms); a partir da 2ª chamada, o
+        // tempo já "passou" do limite — simula um cálculo lento.
+        return chamadas <= 1 ? 0 : 150;
+      },
+    });
+    expect(resultado.paradaPorTempoLimite).toBe(true);
+    expect(resultado.pecasColocadas.length).toBeLessThan(5);
+    expect(resultado.pecasColocadas.length + resultado.pecasNaoColocadas.length).toBe(5);
+  });
+
+  it('sem limiteDeTempoMs, paradaPorTempoLimite fica false mesmo com relógio lento', () => {
+    const resultado = executarNestingAutomatico([pecaRetangular('a', 100, 100)], enfestoBase(), {
+      agora: () => 999999,
+    });
+    expect(resultado.paradaPorTempoLimite).toBe(false);
+  });
+});
+
+describe('executarNestingAutomatico — meta de aproveitamento', () => {
+  it('para assim que o aproveitamento atinge a meta, deixando peças restantes em pecasNaoColocadas (não é uma falha)', () => {
+    // Peças grandes o bastante para que uma única colocação já ultrapasse
+    // uma meta bem baixa (1%), garantindo parada imediata após a primeira.
+    const pecas = [pecaRetangular('a', 300, 300, { quantidade: 5 })];
+    const resultado = executarNestingAutomatico(pecas, enfestoBase({ larguraUtilMm: 1000, comprimentoMm: 1000 } as Partial<ConfiguracaoDeEnfesto>), {
+      aproveitamentoDesejadoPercentual: 1,
+    });
+    expect(resultado.paradaPorMetaDeAproveitamento).toBe(true);
+    expect(resultado.pecasColocadas.length).toBeGreaterThan(0);
+    expect(resultado.pecasColocadas.length).toBeLessThan(5);
+    expect(resultado.pecasColocadas.length + resultado.pecasNaoColocadas.length).toBe(5);
+    expect(resultado.aproveitamentoPercentual).toBeGreaterThanOrEqual(1);
+  });
+
+  it('sem aproveitamentoDesejadoPercentual, coloca todas as peças que couberem normalmente (comportamento padrão inalterado)', () => {
+    const pecas = [pecaRetangular('a', 100, 100, { quantidade: 3 })];
+    const resultado = executarNestingAutomatico(pecas, enfestoBase());
+    expect(resultado.paradaPorMetaDeAproveitamento).toBe(false);
+    expect(resultado.pecasColocadas).toHaveLength(3);
   });
 });

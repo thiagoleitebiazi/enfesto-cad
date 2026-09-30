@@ -1,19 +1,82 @@
+import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import type { ResultadoDeNesting } from '../domain/nesting';
+
+export interface OpcoesAvancadasDeNesting {
+  readonly limiteDeTempoMinutos?: number;
+  readonly aproveitamentoDesejadoPercentual?: number;
+}
 
 interface PainelDeNestingProps {
   readonly executando: boolean;
   readonly progresso: { readonly colocadas: number; readonly total: number } | null;
   readonly resultado: ResultadoDeNesting | null;
+  readonly onCalcular: (opcoesAvancadas: OpcoesAvancadasDeNesting) => void;
   readonly onCancelar: () => void;
   readonly onAplicar: () => void;
   readonly onFechar: () => void;
 }
 
 export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element {
+  const [limiteDeTempoMinutos, setLimiteDeTempoMinutos] = useState('');
+  const [aproveitamentoDesejadoPercentual, setAproveitamentoDesejadoPercentual] = useState('');
+
+  function aoCalcular(): void {
+    const minutos = Number(limiteDeTempoMinutos);
+    const aproveitamento = Number(aproveitamentoDesejadoPercentual);
+    props.onCalcular({
+      ...(limiteDeTempoMinutos.trim() !== '' && minutos > 0 ? { limiteDeTempoMinutos: minutos } : {}),
+      ...(aproveitamentoDesejadoPercentual.trim() !== '' && aproveitamento > 0
+        ? { aproveitamentoDesejadoPercentual: aproveitamento }
+        : {}),
+    });
+  }
+
   return (
     <Sobreposicao titulo="Nesting automático" onFechar={props.onFechar}>
       <div className="painel-de-nesting">
+        {!props.executando && !props.resultado && (
+          <form className="formulario-de-sobreposicao" onSubmit={(e) => e.preventDefault()}>
+            <p className="legenda-inline">
+              Parâmetros avançados (opcionais). Deixe em branco para usar o comportamento padrão.
+            </p>
+            <label>
+              Limite de tempo (minutos)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={limiteDeTempoMinutos}
+                onChange={(e) => setLimiteDeTempoMinutos(e.target.value)}
+                placeholder="Sem limite"
+              />
+            </label>
+            <label>
+              Aproveitamento desejado (%)
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={aproveitamentoDesejadoPercentual}
+                onChange={(e) => setAproveitamentoDesejadoPercentual(e.target.value)}
+                placeholder="Máximo possível"
+              />
+            </label>
+            <p className="legenda-inline">
+              O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por posicionar.
+            </p>
+            <div className="acoes-da-sobreposicao">
+              <button type="button" onClick={props.onFechar}>
+                Cancelar
+              </button>
+              <button type="button" onClick={aoCalcular} className="botao-primario">
+                Calcular encaixe
+              </button>
+            </div>
+          </form>
+        )}
+
         {props.executando && (
           <>
             <p>
@@ -52,6 +115,18 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 <>
                   <dt>Status</dt>
                   <dd>Interrompido pelo usuário (resultado parcial)</dd>
+                </>
+              )}
+              {props.resultado.paradaPorTempoLimite && (
+                <>
+                  <dt>Status</dt>
+                  <dd>Parou por limite de tempo (resultado parcial)</dd>
+                </>
+              )}
+              {props.resultado.paradaPorMetaDeAproveitamento && (
+                <>
+                  <dt>Status</dt>
+                  <dd>Parou ao atingir o aproveitamento desejado</dd>
                 </>
               )}
             </dl>

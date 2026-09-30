@@ -527,29 +527,48 @@ export default function App(): React.JSX.Element {
     aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? transladarMolde(p, delta, p.id) : p)));
   }, [pecas, selecionadoId, enfesto, aplicarMudanca]);
 
-  const iniciarNestingAutomatico = useCallback(() => {
+  const abrirConfiguracaoDeNesting = useCallback(() => {
     if (!enfesto || pecas.length === 0) return;
     setResultadoNesting(null);
-    setProgressoNesting({ colocadas: 0, total: pecas.reduce((soma, p) => soma + p.quantidade, 0) });
-    setNestingExecutando(true);
+    setNestingExecutando(false);
     setMostrarPainelDeNesting(true);
+  }, [enfesto, pecas.length]);
 
-    const worker = new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
-    workerDeNestingRef.current = worker;
-    worker.onmessage = (evento: MessageEvent) => {
-      const mensagem = evento.data;
-      if (mensagem.tipo === 'progresso') {
-        setProgressoNesting({ colocadas: mensagem.colocadas, total: mensagem.total });
-      } else if (mensagem.tipo === 'concluido') {
-        setResultadoNesting(mensagem.resultado);
-        setNestingExecutando(false);
-        worker.terminate();
-        workerDeNestingRef.current = null;
-      }
-    };
-    const mensagemIniciar: MensagemParaWorker = { tipo: 'iniciar', pecas, enfesto };
-    worker.postMessage(mensagemIniciar);
-  }, [pecas, enfesto]);
+  const calcularNestingAutomatico = useCallback(
+    (opcoesAvancadas: { limiteDeTempoMinutos?: number; aproveitamentoDesejadoPercentual?: number }) => {
+      if (!enfesto || pecas.length === 0) return;
+      setResultadoNesting(null);
+      setProgressoNesting({ colocadas: 0, total: pecas.reduce((soma, p) => soma + p.quantidade, 0) });
+      setNestingExecutando(true);
+
+      const worker = new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
+      workerDeNestingRef.current = worker;
+      worker.onmessage = (evento: MessageEvent) => {
+        const mensagem = evento.data;
+        if (mensagem.tipo === 'progresso') {
+          setProgressoNesting({ colocadas: mensagem.colocadas, total: mensagem.total });
+        } else if (mensagem.tipo === 'concluido') {
+          setResultadoNesting(mensagem.resultado);
+          setNestingExecutando(false);
+          worker.terminate();
+          workerDeNestingRef.current = null;
+        }
+      };
+      const mensagemIniciar: MensagemParaWorker = {
+        tipo: 'iniciar',
+        pecas,
+        enfesto,
+        ...(opcoesAvancadas.limiteDeTempoMinutos !== undefined
+          ? { limiteDeTempoMs: opcoesAvancadas.limiteDeTempoMinutos * 60_000 }
+          : {}),
+        ...(opcoesAvancadas.aproveitamentoDesejadoPercentual !== undefined
+          ? { aproveitamentoDesejadoPercentual: opcoesAvancadas.aproveitamentoDesejadoPercentual }
+          : {}),
+      };
+      worker.postMessage(mensagemIniciar);
+    },
+    [pecas, enfesto],
+  );
 
   const cancelarNestingAutomatico = useCallback(() => {
     const mensagemCancelar: MensagemParaWorker = { tipo: 'cancelar' };
@@ -896,7 +915,7 @@ export default function App(): React.JSX.Element {
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
         onSugerirPosicao={sugerirPosicaoParaSelecionada}
         podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
-        onNestingAutomatico={iniciarNestingAutomatico}
+        onNestingAutomatico={abrirConfiguracaoDeNesting}
         podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
         onAbrirExportacaoPdf={() => setMostrarExportacaoPdf(true)}
         podeExportarPdf={pecas.length > 0}
@@ -943,6 +962,7 @@ export default function App(): React.JSX.Element {
           executando={nestingExecutando}
           progresso={progressoNesting}
           resultado={resultadoNesting}
+          onCalcular={calcularNestingAutomatico}
           onCancelar={cancelarNestingAutomatico}
           onAplicar={aplicarResultadoNesting}
           onFechar={fecharPainelDeNesting}

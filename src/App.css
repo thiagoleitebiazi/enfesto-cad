@@ -37,6 +37,61 @@ body {
   border-bottom: 1px solid var(--cor-borda);
 }
 
+.barra-de-ferramentas-ribbon {
+  background: var(--cor-barra);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.ribbon-abas {
+  display: flex;
+  gap: 2px;
+  padding: 4px 10px 0;
+}
+
+.ribbon-aba {
+  font-size: 12px;
+  padding: 6px 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ribbon-aba:hover {
+  background: #e4e7ec;
+}
+
+.ribbon-aba-ativa,
+.ribbon-aba-ativa:hover {
+  background: #fff;
+  border-color: var(--cor-borda);
+  color: var(--cor-texto);
+  font-weight: 600;
+}
+
+.ribbon-conteudo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fff;
+  border-top: 1px solid var(--cor-borda);
+  flex-wrap: wrap;
+}
+
+.ribbon-conteudo-abas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ribbon-visualizacao {
+  flex-shrink: 0;
+}
+
 .grupo-de-ferramentas {
   display: flex;
   gap: 4px;
