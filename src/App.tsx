@@ -959,6 +959,7 @@ export default function App(): React.JSX.Element {
       )}
       {mostrarPainelDeNesting && (
         <PainelDeNesting
+          pecas={pecas}
           executando={nestingExecutando}
           progresso={progressoNesting}
           resultado={resultadoNesting}
