@@ -42,6 +42,51 @@ body {
   border-bottom: 1px solid var(--cor-borda);
 }
 
+.barra-de-acesso-rapido {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px;
+  background: #e4e7ec;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.barra-de-acesso-rapido button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #45505e;
+  cursor: pointer;
+}
+
+.barra-de-acesso-rapido button:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--cor-borda);
+}
+
+.barra-de-acesso-rapido button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.barra-de-acesso-rapido .icone-de-ferramenta {
+  width: 14px;
+  height: 14px;
+}
+
+.separador-de-acesso-rapido {
+  width: 1px;
+  height: 16px;
+  background: var(--cor-borda);
+  margin: 0 3px;
+}
+
 .ribbon-abas {
   display: flex;
   gap: 2px;
@@ -161,6 +206,41 @@ body {
 
 .ribbon-visualizacao button {
   min-width: 40px;
+}
+
+/* Grade densa (linhas/colunas) dentro de um grupo do ribbon — usada na aba
+   Manipulação para caber mais itens no mesmo espaço, um botão "grande"
+   (ação principal da coluna) ou até dois "pequenos" empilhados. */
+.coluna-de-ferramenta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.grupo-de-ferramentas button.botao-pequeno {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.botao-pequeno .icone-de-ferramenta {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.grupo-de-ferramentas button.botao-grande .icone-de-ferramenta {
+  width: 24px;
+  height: 24px;
+}
+
+.grupo-de-ferramentas button.botao-grande {
+  justify-content: center;
+  height: 100%;
 }
 
 .corpo-principal {
@@ -640,6 +720,11 @@ body {
   background: #dfe2e6;
   border-right: 1px solid var(--cor-borda);
   border-bottom: 1px solid var(--cor-borda);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #5a6270;
 }
 
 .regua-horizontal {

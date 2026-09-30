@@ -477,7 +477,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.moveTo(x, ESPESSURA_REGUA_PX);
       ctx.lineTo(x, ESPESSURA_REGUA_PX - 8);
       ctx.stroke();
-      ctx.fillText(String(Math.round(mm)), x + 2, 10);
+      ctx.fillText(String(Math.round(mm / 10)), x + 2, 10);
     }
   }, [transform, tamanho]);
 
@@ -509,7 +509,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.save();
       ctx.translate(10, y - 2);
       ctx.rotate(-Math.PI / 2);
-      ctx.fillText(String(Math.round(mm)), 0, 0);
+      ctx.fillText(String(Math.round(mm / 10)), 0, 0);
       ctx.restore();
     }
   }, [transform, tamanho]);
@@ -702,7 +702,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
   return (
     <div className="area-de-desenho-grade">
-      <div className="regua-canto" />
+      <div className="regua-canto">cm</div>
       <canvas ref={reguaHorizontalRef} className="regua-horizontal" />
       <canvas ref={reguaVerticalRef} className="regua-vertical" />
       <div ref={containerRef} className="area-de-desenho-container">

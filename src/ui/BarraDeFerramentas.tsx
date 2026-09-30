@@ -83,6 +83,40 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
   return (
     <div className="barra-de-ferramentas-ribbon" role="toolbar" aria-label="Barra de ferramentas principal">
+      <div className="barra-de-acesso-rapido" role="group" aria-label="Acesso rápido">
+        <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">
+          <Icone nome="novo" />
+        </button>
+        <button onClick={props.onAbrirBiblioteca} title="Abrir (Ctrl+O)">
+          <Icone nome="abrir" />
+        </button>
+        <button onClick={props.onSalvar} title="Salvar (Ctrl+S)">
+          <Icone nome="salvar" />
+        </button>
+        <button onClick={props.onAbrirExportacaoPdf} disabled={!props.podeExportarPdf} title="Exportar PDF (Ctrl+E)">
+          <Icone nome="exportar" />
+        </button>
+        <span className="separador-de-acesso-rapido" />
+        <button onClick={props.onDesfazer} disabled={!props.podeDesfazer} title="Desfazer (Ctrl+Z)">
+          <Icone nome="desfazer" />
+        </button>
+        <button onClick={props.onRefazer} disabled={!props.podeRefazer} title="Refazer (Ctrl+Y)">
+          <Icone nome="refazer" />
+        </button>
+        <span className="separador-de-acesso-rapido" />
+        <button onClick={props.onRecortar} disabled={!props.temSelecaoUnica} title="Recortar (Ctrl+X)">
+          <Icone nome="recortar" />
+        </button>
+        <button onClick={props.onCopiar} disabled={!props.temSelecaoUnica} title="Copiar (Ctrl+C)">
+          <Icone nome="copiar" />
+        </button>
+        <button onClick={props.onColar} disabled={!props.podeColar} title="Colar (Ctrl+V)">
+          <Icone nome="colar" />
+        </button>
+        <button onClick={props.onExcluir} disabled={!props.temSelecao} title="Excluir (Delete)">
+          <Icone nome="excluir" />
+        </button>
+      </div>
       <div className="ribbon-abas" role="tablist" aria-label="Categorias de ferramentas">
         {ABAS.map((aba) => (
           <button
@@ -253,6 +287,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Indicar">
                 <button
+                  className="botao-grande"
                   onClick={props.onElementoParalelo}
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Elemento paralelo: cria uma cópia com o contorno deslocado a uma distância uniforme' : 'Selecione uma peça primeiro'}
@@ -260,23 +295,32 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <Icone nome="elemento-paralelo" />
                   <span>Elemento paralelo</span>
                 </button>
+                <div className="coluna-de-ferramenta">
+                  <button
+                    className="botao-pequeno"
+                    onClick={props.onGirarLivre}
+                    disabled={!props.temSelecaoUnica}
+                    title={
+                      props.temSelecaoUnica
+                        ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
+                        : 'Selecione uma peça primeiro'
+                    }
+                  >
+                    <Icone nome="girar" />
+                    <span>Girar</span>
+                  </button>
+                  <button
+                    className="botao-pequeno"
+                    onClick={props.onDuplicar}
+                    disabled={!props.temSelecao}
+                    title="Copiar: duplica a peça selecionada (mesmo que Duplicar na aba Edição)"
+                  >
+                    <Icone nome="copiar" />
+                    <span>Copiar</span>
+                  </button>
+                </div>
                 <button
-                  onClick={props.onGirarLivre}
-                  disabled={!props.temSelecaoUnica}
-                  title={
-                    props.temSelecaoUnica
-                      ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
-                      : 'Selecione uma peça primeiro'
-                  }
-                >
-                  <Icone nome="girar" />
-                  <span>Girar</span>
-                </button>
-                <button onClick={props.onDuplicar} disabled={!props.temSelecao} title="Copiar: duplica a peça selecionada (mesmo que Duplicar na aba Edição)">
-                  <Icone nome="copiar" />
-                  <span>Copiar</span>
-                </button>
-                <button
+                  className="botao-grande"
                   onClick={props.onAbrirDimensionar}
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
@@ -285,6 +329,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <span>Dimensionar</span>
                 </button>
                 <button
+                  className="botao-grande"
                   onClick={props.onEspelharManual}
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Espelhar: inverte a peça horizontalmente (ação manual, uma vez)' : 'Selecione uma peça primeiro'}
@@ -318,25 +363,29 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Manipular molde">
+                <div className="coluna-de-ferramenta">
+                  <button
+                    className="botao-pequeno"
+                    onClick={props.onAlinhar}
+                    disabled={!props.podeAlinhar}
+                    title={props.podeAlinhar ? 'Alinha as peças selecionadas pela borda esquerda' : 'Selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'}
+                  >
+                    <Icone nome="alinhar" />
+                    <span>Alinhar</span>
+                  </button>
+                  <button
+                    aria-pressed={props.modo === 'arredondar-ou-chanfrar'}
+                    className={`botao-pequeno${props.modo === 'arredondar-ou-chanfrar' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoArredondarOuChanfrar}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Arredondar ou chanfrar: clique num vértice da peça selecionada e escolha' : 'Selecione uma peça primeiro'}
+                  >
+                    <Icone nome="arredondar" />
+                    <span>Arredondar/chanfrar</span>
+                  </button>
+                </div>
                 <button
-                  onClick={props.onAlinhar}
-                  disabled={!props.podeAlinhar}
-                  title={props.podeAlinhar ? 'Alinha as peças selecionadas pela borda esquerda' : 'Selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'}
-                >
-                  <Icone nome="alinhar" />
-                  <span>Alinhar</span>
-                </button>
-                <button
-                  aria-pressed={props.modo === 'arredondar-ou-chanfrar'}
-                  className={props.modo === 'arredondar-ou-chanfrar' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoArredondarOuChanfrar}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Arredondar ou chanfrar: clique num vértice da peça selecionada e escolha' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="arredondar" />
-                  <span>Arredondar ou chanfrar</span>
-                </button>
-                <button
+                  className="botao-grande"
                   onClick={props.onConverterEmCostura}
                   disabled={!props.temSelecaoUnica}
                   title={props.temSelecaoUnica ? 'Converter em costura: define a margem de costura da peça (mesmo campo das Propriedades)' : 'Selecione uma peça primeiro'}
