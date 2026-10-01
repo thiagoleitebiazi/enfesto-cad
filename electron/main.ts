@@ -40,6 +40,21 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
   return { caminho, conteudo };
 });
 
+ipcMain.handle('abrir-arquivo-pdf', async () => {
+  const resultado = await dialog.showOpenDialog({
+    title: 'Importar PDF',
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    properties: ['openFile'],
+  });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  const caminho = resultado.filePaths[0]!;
+  // PDF é binário — lido como Buffer e convertido para latin1 (1 byte = 1
+  // char code), igual ao texto do PDF quando `compress:false` na exportação
+  // (ver formats/pdf-importacao.ts). Nunca 'utf-8' aqui: corromperia bytes >127.
+  const bytes = await readFile(caminho);
+  return { caminho, conteudo: bytes.toString('latin1') };
+});
+
 ipcMain.handle(
   'salvar-arquivo',
   async (_evento, opcoes: { sugestaoDeNome: string; conteudo: ArrayBuffer }) => {

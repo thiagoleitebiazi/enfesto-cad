@@ -23,6 +23,7 @@ import {
   type Molde,
 } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
+import { importarPdf } from './formats/pdf-importacao';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
@@ -1036,6 +1037,53 @@ export default function App(): React.JSX.Element {
     });
   }, [pecas, aplicarMudanca]);
 
+  const importarPdfHandler = useCallback(() => {
+    const api = window.enfestoCad;
+    if (!api) {
+      window.alert('Importação de arquivo só está disponível rodando dentro do aplicativo Electron (npm run dev / build), não num navegador comum.');
+      return;
+    }
+    void api.abrirArquivoPdf().then((arquivo) => {
+      if (!arquivo) return;
+      const resultado = importarPdf(arquivo.conteudo);
+      const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
+      const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
+
+      const novosMoldes = prontas.map((p) =>
+        criarMolde(
+          {
+            nome: p.nome,
+            referencia: p.referencia,
+            tamanho: p.tamanho,
+            contorno: p.contorno,
+            furos: p.furos,
+            linhasInternas: p.linhasInternas,
+            linhaDeFio: p.linhaDeFio!,
+            margemDeCosturaMm: p.margemDeCosturaMm,
+            quantidade: p.quantidade,
+            piques: p.piques.map((piq) => ({ id: proximoId(), posicao: piq.posicao, indiceAresta: piq.indiceAresta })),
+            marcas: p.marcas.map((m) => ({ id: proximoId(), posicao: m })),
+          },
+          proximoId(),
+        ),
+      );
+
+      if (novosMoldes.length > 0) {
+        aplicarMudanca([...pecas, ...novosMoldes]);
+      }
+
+      const mensagens = [...resultado.avisos];
+      if (semFio.length > 0) {
+        mensagens.push(
+          `${semFio.length} peça(s) do arquivo não foram adicionadas por não terem linha de fio reconhecível: ${semFio
+            .map((p) => p.nome)
+            .join(', ')}. Desenhe-as manualmente com "Novo Molde" definindo o fio correto.`,
+        );
+      }
+      setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
+    });
+  }, [pecas, aplicarMudanca]);
+
   const aoTeclar = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const alvoEhCampoDeTexto = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
@@ -1152,6 +1200,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoPique={entrarModoPique}
         onEntrarModoMarca={entrarModoMarca}
         onImportarDxf={importarDxfHandler}
+        onImportarPdf={importarPdfHandler}
         onAbrirTecido={() => setPainelAberto('tecido')}
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
         onSugerirPosicao={sugerirPosicaoParaSelecionada}

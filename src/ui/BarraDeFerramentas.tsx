@@ -28,6 +28,7 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoPique: () => void;
   readonly onEntrarModoMarca: () => void;
   readonly onImportarDxf: () => void;
+  readonly onImportarPdf: () => void;
   readonly onAbrirTecido: () => void;
   readonly onAbrirEnfesto: () => void;
   readonly onSugerirPosicao: () => void;
@@ -403,6 +404,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF (Ctrl+I)">
                   <Icone nome="importar" />
                   <span>Importar DXF</span>
+                </button>
+                <button onClick={props.onImportarPdf} title="Importar peças de um PDF exportado por este app (moldes individuais)">
+                  <Icone nome="importar" />
+                  <span>Importar PDF</span>
                 </button>
                 <button
                   onClick={props.onAbrirExportacaoPdf}
