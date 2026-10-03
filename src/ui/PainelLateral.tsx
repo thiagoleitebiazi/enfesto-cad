@@ -7,6 +7,10 @@ interface PainelDePecasProps {
   readonly selecionadoId: string | null;
   readonly idsSelecionadosEmLote?: ReadonlySet<string>;
   readonly onSelecionar: (id: string) => void;
+  /** Caixa de seleção de cada item: inclui/remove a peça da seleção em lote (Ctrl+A/Duplicar/Excluir/Alinhar em lote) — independente do clique na linha, que seleciona só aquela peça. */
+  readonly onAlternarSelecaoEmLote?: (id: string) => void;
+  /** Duplo-clique num item abre o diálogo de Propriedades da peça. */
+  readonly onAbrirPropriedades?: (id: string) => void;
 }
 
 /** Miniatura do contorno da peça (só o formato, sem furos/piques) — mesma ideia das miniaturas de peça de um CAD de moldes profissional. */
@@ -32,6 +36,14 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
         <ul className="lista-de-pecas">
           {props.pecas.map((peca) => (
             <li key={peca.id}>
+              <input
+                type="checkbox"
+                className="caixa-de-selecao-em-lote"
+                checked={props.idsSelecionadosEmLote?.has(peca.id) ?? false}
+                onChange={() => props.onAlternarSelecaoEmLote?.(peca.id)}
+                aria-label={`Incluir "${peca.nome}" na seleção em lote`}
+                title="Incluir/remover da seleção em lote (Ctrl+A, Duplicar, Excluir, Alinhar...)"
+              />
               <button
                 className={
                   peca.id === props.selecionadoId || props.idsSelecionadosEmLote?.has(peca.id)
@@ -39,6 +51,8 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
                     : ''
                 }
                 onClick={() => props.onSelecionar(peca.id)}
+                onDoubleClick={() => props.onAbrirPropriedades?.(peca.id)}
+                title="Clique para selecionar — duplo-clique para abrir as propriedades"
               >
                 <MiniaturaDoMolde contorno={peca.contorno} />
                 <span className="texto-do-item-de-peca">
@@ -70,12 +84,7 @@ interface PainelDePropriedadesProps {
 
 export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JSX.Element {
   if (!props.peca) {
-    return (
-      <section className="painel-lateral" aria-label="Propriedades da peça selecionada">
-        <h2>Propriedades</h2>
-        <p className="texto-vazio">Selecione uma peça para ver seus dados.</p>
-      </section>
-    );
+    return <p className="texto-vazio">Selecione uma peça para ver seus dados.</p>;
   }
 
   const peca = props.peca;
@@ -83,8 +92,7 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
   const rotacoes = rotacoesPermitidas(peca.restricaoDeRotacao);
 
   return (
-    <section className="painel-lateral" aria-label="Propriedades da peça selecionada">
-      <h2>Propriedades</h2>
+    <div aria-label="Propriedades da peça selecionada">
       <form className="formulario-de-propriedades" onSubmit={(e) => e.preventDefault()}>
         <label>
           Nome
@@ -205,6 +213,6 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
         <dt>Marcas</dt>
         <dd>{peca.marcas.length}</dd>
       </dl>
-    </section>
+    </div>
   );
 }

@@ -245,7 +245,7 @@ body {
 
 .corpo-principal {
   display: grid;
-  grid-template-columns: 220px 1fr 240px;
+  grid-template-columns: 220px 1fr;
   grid-template-rows: 1fr;
   min-height: 0;
   overflow: hidden;
@@ -281,8 +281,20 @@ body {
   gap: 4px;
 }
 
+.lista-de-pecas li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.caixa-de-selecao-em-lote {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .lista-de-pecas button {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;

@@ -3,6 +3,7 @@ import { AreaDeDesenho, type ModoDeDesenho } from './ui/AreaDeDesenho';
 import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
 import { BarraDeStatus } from './ui/BarraDeStatus';
+import { Sobreposicao } from './ui/Sobreposicao';
 import { aplicarZoom, type TransformacaoDeTela } from './ui/transformacaoDeTela';
 import {
   criarMolde,
@@ -135,6 +136,7 @@ export default function App(): React.JSX.Element {
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
+  const [mostrarPropriedadesDaPeca, setMostrarPropriedadesDaPeca] = useState(false);
 
   const [projetoAtual, setProjetoAtual] = useState<Projeto>(() =>
     novoProjetoVazio({
@@ -218,11 +220,30 @@ export default function App(): React.JSX.Element {
     setIdsSelecionadosEmLote(new Set());
   }, []);
 
+  /** Duplo-clique numa peça (lista ou canvas): seleciona e abre o diálogo de Propriedades. */
+  const abrirPropriedadesDaPeca = useCallback(
+    (id: string) => {
+      selecionarUnico(id);
+      setMostrarPropriedadesDaPeca(true);
+    },
+    [selecionarUnico],
+  );
+
   const selecionarTudo = useCallback(() => {
     if (pecas.length === 0) return;
     setIdsSelecionadosEmLote(new Set(pecas.map((p) => p.id)));
     setSelecionadoId(null);
   }, [pecas]);
+
+  /** Caixa de seleção de cada item da lista: inclui/remove da seleção em lote, sem mexer na seleção única (`selecionadoId`). */
+  const alternarSelecaoEmLote = useCallback((id: string) => {
+    setIdsSelecionadosEmLote((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }, []);
 
   const excluirSelecionado = useCallback(() => {
     if (idsSelecionadosEmLote.size > 0) {
@@ -1350,6 +1371,8 @@ export default function App(): React.JSX.Element {
           selecionadoId={selecionadoId}
           idsSelecionadosEmLote={idsSelecionadosEmLote}
           onSelecionar={selecionarUnico}
+          onAlternarSelecaoEmLote={alternarSelecaoEmLote}
+          onAbrirPropriedades={abrirPropriedadesDaPeca}
         />
         <AreaDeDesenho
           pecas={pecas}
@@ -1366,13 +1389,18 @@ export default function App(): React.JSX.Element {
           onCursorMove={setCursorMundo}
           onCliqueNoCanvas={onCliqueNoCanvas}
           onMoverPeca={moverPeca}
+          onAbrirPropriedades={abrirPropriedadesDaPeca}
           onMoverVariosPontos={moverVariosPontosDaSelecionada}
           onInserirPontoNoMolde={inserirPontoNaSelecionada}
           onExcluirPontoDoMolde={excluirPontoDaSelecionada}
           onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
         />
-        <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
       </div>
+      {mostrarPropriedadesDaPeca && pecaSelecionada && (
+        <Sobreposicao titulo="Propriedades da peça" onFechar={() => setMostrarPropriedadesDaPeca(false)}>
+          <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
+        </Sobreposicao>
+      )}
       {mostrarValidacao && (
         <div className="faixa-de-validacao" role="alert">
           <strong>Validação do projeto:</strong>

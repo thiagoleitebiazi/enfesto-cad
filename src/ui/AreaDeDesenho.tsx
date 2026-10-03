@@ -71,6 +71,7 @@ interface AreaDeDesenhoProps {
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
   readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
+  readonly onAbrirPropriedades?: (id: string) => void;
   readonly onMoverVariosPontos?: (indices: readonly number[], delta: Ponto2D) => void;
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
   readonly onExcluirPontoDoMolde?: (indice: number) => void;
@@ -102,6 +103,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onCursorMove,
     onCliqueNoCanvas,
     onMoverPeca,
+    onAbrirPropriedades,
     onMoverVariosPontos,
     onInserirPontoNoMolde,
     onExcluirPontoDoMolde,
@@ -352,6 +354,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
 
       desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, COR_FIO);
+
+      // Numeração dos vértices do contorno — visível sempre, não só nos
+      // modos de edição de ponto (mesmo padrão de referência de um CAD de
+      // moldes profissional). Usa os índices reais do contorno, a mesma
+      // numeração que "Mover ponto"/"Inserir ponto"/"Excluir ponto" operam.
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+      peca.contorno.forEach((p, i) => {
+        const tela = mundoParaTela(p, transform);
+        ctx.fillText(String(i + 1), tela.x + 4, tela.y - 4);
+      });
     }
 
     // Alças nos vértices da peça selecionada, nos modos de edição de forma
@@ -700,6 +713,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onTransformChange(aplicarZoom(transform, fator, tela));
   }
 
+  function aoClicarDuasVezes(e: React.MouseEvent<HTMLCanvasElement>): void {
+    if (modo !== 'selecionar') return;
+    const mundo = telaParaMundo(posicaoDoMouse(e), transform);
+    const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
+    if (encontrada) onAbrirPropriedades?.(encontrada.id);
+  }
+
   return (
     <div className="area-de-desenho-grade">
       <div className="regua-canto">cm</div>
@@ -712,6 +732,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           onMouseMove={aoMoverMouse}
           onMouseUp={aoSoltarMouse}
           onMouseLeave={aoSairMouse}
+          onDoubleClick={aoClicarDuasVezes}
           onWheel={aoRolarMouse}
           onContextMenu={(e) => e.preventDefault()}
           style={{ cursor: modo === 'selecionar' ? 'default' : 'crosshair' }}
