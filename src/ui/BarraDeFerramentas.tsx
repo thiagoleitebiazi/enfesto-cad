@@ -57,12 +57,13 @@ interface BarraDeFerramentasProps {
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 
-type Aba = 'arquivo' | 'edicao' | 'desenho' | 'manipulacao' | 'encaixe';
+type Aba = 'arquivo' | 'edicao' | 'desenho' | 'marcacoes' | 'manipulacao' | 'encaixe';
 
 const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
   { id: 'arquivo', rotulo: 'Arquivo' },
   { id: 'edicao', rotulo: 'Edição' },
-  { id: 'desenho', rotulo: 'Desenho' },
+  { id: 'desenho', rotulo: 'Construção' },
+  { id: 'marcacoes', rotulo: 'Marcações' },
   { id: 'manipulacao', rotulo: 'Manipulação' },
   { id: 'encaixe', rotulo: 'Encaixe' },
 ];
@@ -201,7 +202,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           )}
 
           {abaAtiva === 'desenho' && (
-            <div className="grupo-de-ferramentas" role="group" aria-label="Desenho">
+            <div className="grupo-de-ferramentas" role="group" aria-label="Construção">
               <button
                 aria-pressed={props.modo === 'selecionar'}
                 className={props.modo === 'selecionar' ? 'item-selecionado' : ''}
@@ -234,6 +235,11 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 <Icone nome="furo" />
                 <span>Furo</span>
               </button>
+            </div>
+          )}
+
+          {abaAtiva === 'marcacoes' && (
+            <div className="grupo-de-ferramentas" role="group" aria-label="Marcações">
               <button
                 aria-pressed={props.modo === 'pique'}
                 className={props.modo === 'pique' ? 'item-selecionado' : ''}

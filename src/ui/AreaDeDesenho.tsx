@@ -3,6 +3,7 @@ import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
 import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
+  retanguloEnvolvente,
   distancia,
   ponto,
   somar,
@@ -365,6 +366,31 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         const tela = mundoParaTela(p, transform);
         ctx.fillText(String(i + 1), tela.x + 4, tela.y - 4);
       });
+
+      // Rótulo do nome da peça (acima) + seta de medida da largura visual
+      // (abaixo) — mesmo padrão de referência de um CAD de moldes
+      // profissional. Nome já existe em peca.nome; a medida usa o mesmo
+      // retângulo envolvente que o resto do app já usa (dimensoesDoMolde),
+      // nada inventado.
+      const bboxPeca = retanguloEnvolvente(peca.contorno);
+      const margemMedidaMm = 18 / transform.escalaPxPorMm;
+      const centroYMm = (bboxPeca.minY + bboxPeca.maxY) / 2;
+      const posNome = mundoParaTela(ponto(bboxPeca.minX - margemMedidaMm, centroYMm), transform);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+      ctx.fillText(peca.nome, posNome.x, posNome.y);
+
+      const linhaMedidaMm = bboxPeca.maxX + margemMedidaMm;
+      const pontaEsquerda = ponto(linhaMedidaMm, bboxPeca.minY);
+      const pontaDireita = ponto(linhaMedidaMm, bboxPeca.maxY);
+      desenharSeta(ctx, pontaEsquerda, pontaDireita, COR_REGUA_TRACO);
+      desenharSeta(ctx, pontaDireita, pontaEsquerda, COR_REGUA_TRACO);
+      const posMedida = mundoParaTela(ponto(linhaMedidaMm, centroYMm), transform);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = COR_REGUA_TRACO;
+      ctx.fillText(`${(bboxPeca.maxY - bboxPeca.minY).toFixed(0)} mm`, posMedida.x, posMedida.y + 13);
+      ctx.textAlign = 'left';
     }
 
     // Alças nos vértices da peça selecionada, nos modos de edição de forma
