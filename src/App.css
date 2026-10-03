@@ -802,13 +802,22 @@ button:focus-visible {
 
 .regua-canto {
   background: #dfe2e6;
+  border: none;
   border-right: 1px solid var(--cor-borda);
   border-bottom: 1px solid var(--cor-borda);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   font-size: 9px;
-  color: #5a6270;
+  font-weight: 600;
+  color: var(--cor-texto-secundario);
+  cursor: pointer;
+}
+
+.regua-canto:hover {
+  background: #eef2f7;
+  color: var(--cor-selecao);
 }
 
 .regua-horizontal {

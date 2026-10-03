@@ -50,6 +50,14 @@ export function aplicarZoom(
   };
 }
 
+/** Unidade de exibição da régua — o valor interno continua sempre em mm; isto só afeta o que é desenhado/lido. */
+export type UnidadeDeRegua = 'cm' | 'mm';
+
+/** Converte um valor em mm para a unidade de exibição da régua (cm = mm/10, mm = identidade). */
+export function valorDaReguaEmUnidade(mm: number, unidade: UnidadeDeRegua): number {
+  return unidade === 'cm' ? mm / 10 : mm;
+}
+
 /** Escolhe um espaçamento "redondo" em mm (1, 2, 5, 10, 20, 50, ...) cujo espaçamento em tela fique perto de `alvoPx`. */
 export function passoDeReguaEmMm(escalaPxPorMm: number, alvoPx: number = 60): number {
   const passosBase = [1, 2, 5];

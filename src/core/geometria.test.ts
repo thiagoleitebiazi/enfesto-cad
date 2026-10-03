@@ -5,6 +5,7 @@ import {
   subtrair,
   escalar,
   distancia,
+  anguloEmGraus,
   rotacionar,
   espelharHorizontal,
   espelharContornoHorizontal,
@@ -45,6 +46,20 @@ describe('operações vetoriais', () => {
 
   it('calcula distância euclidiana', () => {
     expect(distancia(ponto(0, 0), ponto(3, 4))).toBe(5);
+  });
+
+  it('anguloEmGraus: 0° para +x, 90° para +y, sentido anti-horário', () => {
+    expect(anguloEmGraus(ponto(0, 0), ponto(5, 0))).toBeCloseTo(0, 9);
+    expect(anguloEmGraus(ponto(0, 0), ponto(0, 5))).toBeCloseTo(90, 9);
+    expect(anguloEmGraus(ponto(0, 0), ponto(-5, 0))).toBeCloseTo(180, 9);
+    expect(anguloEmGraus(ponto(0, 0), ponto(0, -5))).toBeCloseTo(-90, 9);
+  });
+
+  it('anguloEmGraus não depende da origem, só da direção', () => {
+    expect(anguloEmGraus(ponto(10, 10), ponto(13, 14))).toBeCloseTo(
+      anguloEmGraus(ponto(0, 0), ponto(3, 4)),
+      9,
+    );
   });
 
   it('rotaciona 90 graus em torno da origem', () => {

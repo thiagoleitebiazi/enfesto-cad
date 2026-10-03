@@ -26,6 +26,11 @@ export function distancia(a: Ponto2D, b: Ponto2D): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
+/** Ângulo de `a` para `b` em graus, 0° = +x, sentido anti-horário positivo — mesma convenção de `anguloDaLinhaDeFio`. */
+export function anguloEmGraus(a: Ponto2D, b: Ponto2D): number {
+  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+}
+
 /** Rotaciona `p` em torno de `centro` por `anguloGraus` (sentido anti-horário). */
 export function rotacionar(p: Ponto2D, centro: Ponto2D, anguloGraus: number): Ponto2D {
   const rad = (anguloGraus * Math.PI) / 180;

@@ -1428,6 +1428,11 @@ export default function App(): React.JSX.Element {
         temSelecao={selecionadoId !== null}
         problemas={problemasDeValidacao}
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
+        pontoReferencia={
+          (modo === 'novo-molde' || modo === 'novo-furo') && pontosEmEdicao.length > 0
+            ? pontosEmEdicao[pontosEmEdicao.length - 1]!
+            : null
+        }
       />
     </div>
   );

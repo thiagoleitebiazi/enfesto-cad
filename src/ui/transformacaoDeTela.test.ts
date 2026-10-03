@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mundoParaTela, telaParaMundo, aplicarZoom, passoDeReguaEmMm } from './transformacaoDeTela';
+import { mundoParaTela, telaParaMundo, aplicarZoom, passoDeReguaEmMm, valorDaReguaEmUnidade } from './transformacaoDeTela';
 
 describe('mundoParaTela / telaParaMundo', () => {
   it('são inversas uma da outra', () => {
@@ -42,6 +42,16 @@ describe('aplicarZoom', () => {
     const zoomInExtremo = aplicarZoom(t, 100000, { x: 0, y: 0 });
     expect(zoomOutExtremo.escalaPxPorMm).toBeGreaterThan(0);
     expect(zoomInExtremo.escalaPxPorMm).toBeLessThan(1000);
+  });
+});
+
+describe('valorDaReguaEmUnidade', () => {
+  it('cm divide por 10, preservando o valor interno em mm', () => {
+    expect(valorDaReguaEmUnidade(125, 'cm')).toBeCloseTo(12.5, 9);
+  });
+
+  it('mm é a identidade', () => {
+    expect(valorDaReguaEmUnidade(125, 'mm')).toBe(125);
   });
 });
 

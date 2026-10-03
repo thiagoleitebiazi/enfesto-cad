@@ -15,7 +15,9 @@ import {
   mundoParaTela,
   telaParaMundo,
   passoDeReguaEmMm,
+  valorDaReguaEmUnidade,
   type TransformacaoDeTela,
+  type UnidadeDeRegua,
 } from './transformacaoDeTela';
 
 const ESPESSURA_REGUA_PX = 24;
@@ -117,6 +119,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tamanho, setTamanho] = useState({ largura: 800, altura: 600 });
   const [cursorLocal, setCursorLocal] = useState<Ponto2D | null>(null);
+  const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
   const panRef = useRef<{ ativo: boolean; ultimoX: number; ultimoY: number }>({
     ativo: false,
     ultimoX: 0,
@@ -533,19 +536,22 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ctx.font = '10px sans-serif';
     ctx.lineWidth = 1;
 
+    // mundo.y mapeia para tela.x (troca de eixos de transformacaoDeTela.ts) —
+    // por isso a régua horizontal varre mundo.y, lendo/escrevendo o campo
+    // .y de telaParaMundo/mundoParaTela, não o .x.
     const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
-    const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).x;
-    const mmFinal = telaParaMundo({ x: tamanho.largura, y: 0 }, transform).x;
+    const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).y;
+    const mmFinal = telaParaMundo({ x: tamanho.largura, y: 0 }, transform).y;
     const primeiraMarca = Math.floor(mmInicial / passoMm) * passoMm;
     for (let mm = primeiraMarca; mm <= mmFinal; mm += passoMm) {
-      const x = mundoParaTela({ x: mm, y: 0 }, transform).x;
+      const x = mundoParaTela({ x: 0, y: mm }, transform).x;
       ctx.beginPath();
       ctx.moveTo(x, ESPESSURA_REGUA_PX);
       ctx.lineTo(x, ESPESSURA_REGUA_PX - 8);
       ctx.stroke();
-      ctx.fillText(String(Math.round(mm / 10)), x + 2, 10);
+      ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), x + 2, 10);
     }
-  }, [transform, tamanho]);
+  }, [transform, tamanho, unidadeDaRegua]);
 
   // Desenha a régua vertical.
   useEffect(() => {
@@ -562,12 +568,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ctx.font = '10px sans-serif';
     ctx.lineWidth = 1;
 
+    // mundo.x mapeia para tela.y (troca de eixos de transformacaoDeTela.ts) —
+    // por isso a régua vertical varre mundo.x, lendo/escrevendo o campo .x
+    // de telaParaMundo/mundoParaTela, não o .y.
     const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
-    const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).y;
-    const mmFinal = telaParaMundo({ x: 0, y: tamanho.altura }, transform).y;
+    const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).x;
+    const mmFinal = telaParaMundo({ x: 0, y: tamanho.altura }, transform).x;
     const primeiraMarca = Math.floor(mmInicial / passoMm) * passoMm;
     for (let mm = primeiraMarca; mm <= mmFinal; mm += passoMm) {
-      const y = mundoParaTela({ x: 0, y: mm }, transform).y;
+      const y = mundoParaTela({ x: mm, y: 0 }, transform).y;
       ctx.beginPath();
       ctx.moveTo(ESPESSURA_REGUA_PX, y);
       ctx.lineTo(ESPESSURA_REGUA_PX - 8, y);
@@ -575,10 +584,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.save();
       ctx.translate(10, y - 2);
       ctx.rotate(-Math.PI / 2);
-      ctx.fillText(String(Math.round(mm / 10)), 0, 0);
+      ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), 0, 0);
       ctx.restore();
     }
-  }, [transform, tamanho]);
+  }, [transform, tamanho, unidadeDaRegua]);
 
   function posicaoDoMouse(e: React.MouseEvent<HTMLCanvasElement>): Ponto2D {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -775,7 +784,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
   return (
     <div className="area-de-desenho-grade">
-      <div className="regua-canto">cm</div>
+      <button
+        className="regua-canto"
+        onClick={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
+        title="Clique para alternar a unidade da régua (cm/mm) — a geometria interna continua em mm"
+      >
+        {unidadeDaRegua}
+      </button>
       <canvas ref={reguaHorizontalRef} className="regua-horizontal" />
       <canvas ref={reguaVerticalRef} className="regua-vertical" />
       <div ref={containerRef} className="area-de-desenho-container">
