@@ -7,6 +7,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
+// Desliga a aceleração por GPU. Sem isso, em máquinas com driver de vídeo
+// incompatível/desatualizado, GPU virtualizada (VM) ou acesso via área de
+// trabalho remota, o compositor do Chromium falha silenciosamente e a
+// janela abre completamente preta (sem nem o fundo padrão da página) —
+// sintoma relatado por um usuário real após instalar em outro computador.
+// Renderização por software é mais lenta, mas esta é uma aplicação 2D
+// (Canvas, sem WebGL/3D), então o custo é baixo frente ao ganho de
+// compatibilidade. Precisa ser chamado antes de `app.whenReady()`.
+app.disableHardwareAcceleration();
+
 function criarJanelaPrincipal(): void {
   const janela = new BrowserWindow({
     width: 1400,
