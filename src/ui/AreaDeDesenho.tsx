@@ -184,10 +184,12 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.strokeStyle = cor;
       ctx.fillStyle = cor;
       ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(i.x, i.y);
       ctx.lineTo(f.x, f.y);
       ctx.stroke();
+      ctx.lineCap = 'butt';
 
       const angulo = Math.atan2(f.y - i.y, f.x - i.x);
       const tamanhoPonta = 10;
@@ -205,6 +207,29 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fill();
     },
     [transform],
+  );
+
+  // Rótulo com um pequeno fundo branco semi-opaco atrás do texto — mesmo
+  // padrão de cotas de um CAD profissional, para o texto continuar legível
+  // sobre o contorno/linhas da peça em vez de flutuar "pelado" sobre elas.
+  const desenharRotuloComFundo = useCallback(
+    (ctx: CanvasRenderingContext2D, texto: string, x: number, y: number, cor: string): void => {
+      const metrica = ctx.measureText(texto);
+      const subida = metrica.actualBoundingBoxAscent || 8;
+      const descida = metrica.actualBoundingBoxDescent || 2;
+      const paddingX = 4;
+      const paddingY = 2;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+      ctx.fillRect(
+        x - metrica.width / 2 - paddingX,
+        y - subida - paddingY,
+        metrica.width + paddingX * 2,
+        subida + descida + paddingY * 2,
+      );
+      ctx.fillStyle = cor;
+      ctx.fillText(texto, x, y);
+    },
+    [],
   );
 
   // Desenha o canvas principal.
@@ -360,10 +385,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       // modos de edição de ponto (mesmo padrão de referência de um CAD de
       // moldes profissional). Usa os índices reais do contorno, a mesma
       // numeração que "Mover ponto"/"Inserir ponto"/"Excluir ponto" operam.
-      ctx.font = '9px sans-serif';
+      ctx.font = 'bold 9px sans-serif';
       ctx.fillStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
       peca.contorno.forEach((p, i) => {
         const tela = mundoParaTela(p, transform);
+        ctx.beginPath();
+        ctx.arc(tela.x, tela.y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
         ctx.fillText(String(i + 1), tela.x + 4, tela.y - 4);
       });
 
@@ -378,8 +406,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const posNome = mundoParaTela(ponto(bboxPeca.minX - margemMedidaMm, centroYMm), transform);
       ctx.textAlign = 'center';
       ctx.font = 'bold 11px sans-serif';
-      ctx.fillStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
-      ctx.fillText(peca.nome, posNome.x, posNome.y);
+      desenharRotuloComFundo(ctx, peca.nome, posNome.x, posNome.y, estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO);
 
       const linhaMedidaMm = bboxPeca.maxX + margemMedidaMm;
       const pontaEsquerda = ponto(linhaMedidaMm, bboxPeca.minY);
@@ -388,8 +415,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       desenharSeta(ctx, pontaDireita, pontaEsquerda, COR_REGUA_TRACO);
       const posMedida = mundoParaTela(ponto(linhaMedidaMm, centroYMm), transform);
       ctx.font = '10px sans-serif';
-      ctx.fillStyle = COR_REGUA_TRACO;
-      ctx.fillText(`${(bboxPeca.maxY - bboxPeca.minY).toFixed(0)} mm`, posMedida.x, posMedida.y + 13);
+      desenharRotuloComFundo(ctx, `${(bboxPeca.maxY - bboxPeca.minY).toFixed(0)} mm`, posMedida.x, posMedida.y + 13, COR_REGUA_TRACO);
       ctx.textAlign = 'left';
     }
 
@@ -480,6 +506,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     transform,
     tamanho,
     desenharSeta,
+    desenharRotuloComFundo,
     pontosEmEdicao,
     contornoFinalizado,
     cursorLocal,
