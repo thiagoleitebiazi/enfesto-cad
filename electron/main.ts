@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,21 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 // compatibilidade. Precisa ser chamado antes de `app.whenReady()`.
 app.disableHardwareAcceleration();
 
+/**
+ * Diagnóstico local: quando a janela não renderiza na máquina de alguém, o
+ * dev não tem como reproduzir — grava em <userData>/diagnostico.log o estado
+ * da GPU e os eventos de carregamento/falha, para a pessoa poder enviar o
+ * arquivo. Nunca sai da máquina sozinho.
+ */
+function registrarDiagnostico(mensagem: string): void {
+  try {
+    const arquivo = path.join(app.getPath('userData'), 'diagnostico.log');
+    appendFileSync(arquivo, `${new Date().toISOString()} ${mensagem}\n`, 'utf-8');
+  } catch {
+    // Diagnóstico nunca pode derrubar o app.
+  }
+}
+
 function criarJanelaPrincipal(): void {
   const janela = new BrowserWindow({
     width: 1400,
@@ -29,6 +45,21 @@ function criarJanelaPrincipal(): void {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  registrarDiagnostico(
+    `inicio versao=${app.getVersion()} plataforma=${process.platform} arch=${process.arch} ` +
+      `exe=${process.execPath} gpu=${JSON.stringify(app.getGPUFeatureStatus())}`,
+  );
+  janela.webContents.on('did-finish-load', () => registrarDiagnostico('did-finish-load'));
+  janela.webContents.on('did-fail-load', (_e, codigo, descricao, url) =>
+    registrarDiagnostico(`did-fail-load codigo=${codigo} descricao=${descricao} url=${url}`),
+  );
+  janela.webContents.on('render-process-gone', (_e, detalhes) =>
+    registrarDiagnostico(`render-process-gone motivo=${detalhes.reason} codigo=${detalhes.exitCode}`),
+  );
+  janela.webContents.on('console-message', (evento) => {
+    if (evento.level === 'error') registrarDiagnostico(`console-erro ${evento.message}`);
   });
 
   if (VITE_DEV_SERVER_URL) {
