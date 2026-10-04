@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
@@ -7,6 +7,49 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+
+// A interface é servida por um esquema próprio (app://) em vez de file://.
+// Com file:// o Chromium trata a página como origem opaca e falha em
+// carregamentos de módulos/CORS em algumas máquinas, deixando a janela
+// vazia. Com um esquema privilegiado a página tem origem normal.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
+
+const DIST_DO_APP = path.join(__dirname, '../dist');
+const URL_DA_INTERFACE = 'app://enfesto/index.html';
+const TIPOS_DE_ARQUIVO: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+const TEMPO_LIMITE_DE_CARREGAMENTO_MS = 20000;
+const MAXIMO_DE_TENTATIVAS_DE_RECUPERACAO = 2;
+
+function registrarProtocoloDoApp(): void {
+  protocol.handle('app', async (requisicao) => {
+    const caminhoPedido = decodeURIComponent(new URL(requisicao.url).pathname);
+    const relativo = caminhoPedido === '/' ? 'index.html' : caminhoPedido.replace(/^\/+/, '');
+    const absoluto = path.resolve(DIST_DO_APP, relativo);
+    if (absoluto !== DIST_DO_APP && !absoluto.startsWith(DIST_DO_APP + path.sep)) {
+      return new Response('Não encontrado', { status: 404 });
+    }
+    try {
+      const conteudo = await readFile(absoluto);
+      return new Response(conteudo, {
+        headers: { 'content-type': TIPOS_DE_ARQUIVO[path.extname(absoluto)] ?? 'application/octet-stream' },
+      });
+    } catch {
+      return new Response('Não encontrado', { status: 404 });
+    }
+  });
+}
 
 // Desliga a aceleração por GPU. Sem isso, em máquinas com driver de vídeo
 // incompatível/desatualizado, GPU virtualizada (VM) ou acesso via área de
@@ -51,22 +94,57 @@ function criarJanelaPrincipal(): void {
     `inicio versao=${app.getVersion()} plataforma=${process.platform} arch=${process.arch} ` +
       `exe=${process.execPath} gpu=${JSON.stringify(app.getGPUFeatureStatus())}`,
   );
-  janela.webContents.on('did-finish-load', () => registrarDiagnostico('did-finish-load'));
-  janela.webContents.on('did-fail-load', (_e, codigo, descricao, url) =>
-    registrarDiagnostico(`did-fail-load codigo=${codigo} descricao=${descricao} url=${url}`),
-  );
-  janela.webContents.on('render-process-gone', (_e, detalhes) =>
-    registrarDiagnostico(`render-process-gone motivo=${detalhes.reason} codigo=${detalhes.exitCode}`),
-  );
+
+  let carregou = false;
+  let tentativas = 0;
+  let vigia: NodeJS.Timeout | undefined;
+
+  const armarVigia = (): void => {
+    clearTimeout(vigia);
+    vigia = setTimeout(() => {
+      if (!carregou) recuperar('sem did-finish-load no tempo limite');
+    }, TEMPO_LIMITE_DE_CARREGAMENTO_MS);
+  };
+
+  const recuperar = (motivo: string): void => {
+    if (janela.isDestroyed()) return;
+    registrarDiagnostico(`recuperacao motivo=${motivo} tentativa=${tentativas + 1}`);
+    if (tentativas >= MAXIMO_DE_TENTATIVAS_DE_RECUPERACAO) {
+      dialog.showErrorBox(
+        'Enfesto CAD não conseguiu mostrar a tela',
+        `A interface não carregou depois de ${tentativas + 1} tentativas.\n\n` +
+          `Envie este arquivo para o suporte:\n${path.join(app.getPath('userData'), 'diagnostico.log')}`,
+      );
+      return;
+    }
+    tentativas += 1;
+    carregou = false;
+    janela.webContents.reload();
+    armarVigia();
+  };
+
+  janela.webContents.on('did-finish-load', () => {
+    carregou = true;
+    clearTimeout(vigia);
+    registrarDiagnostico('did-finish-load');
+  });
+  janela.webContents.on('did-fail-load', (_e, codigo, descricao, url) => {
+    registrarDiagnostico(`did-fail-load codigo=${codigo} descricao=${descricao} url=${url}`);
+  });
+  janela.webContents.on('render-process-gone', (_e, detalhes) => {
+    registrarDiagnostico(`render-process-gone motivo=${detalhes.reason} codigo=${detalhes.exitCode}`);
+    recuperar(`render-process-gone ${detalhes.reason}`);
+  });
   janela.webContents.on('console-message', (evento) => {
     if (evento.level === 'error') registrarDiagnostico(`console-erro ${evento.message}`);
   });
+  janela.once('closed', () => clearTimeout(vigia));
 
-  if (VITE_DEV_SERVER_URL) {
-    janela.loadURL(VITE_DEV_SERVER_URL);
-  } else {
-    janela.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
+  armarVigia();
+  const destino = VITE_DEV_SERVER_URL ?? URL_DA_INTERFACE;
+  janela.loadURL(destino).catch((erro: Error) => {
+    recuperar(`loadURL falhou: ${erro.message}`);
+  });
 }
 
 ipcMain.handle('abrir-arquivo-dxf', async () => {
@@ -160,6 +238,7 @@ ipcMain.handle('excluir-projeto', async (_evento, id: string) => {
 });
 
 app.whenReady().then(() => {
+  registrarProtocoloDoApp();
   criarJanelaPrincipal();
 
   app.on('activate', () => {
