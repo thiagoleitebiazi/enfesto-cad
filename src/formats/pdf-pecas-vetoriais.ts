@@ -1,30 +1,41 @@
 /**
  * Extrai contornos fechados de um PDF de desenho vetorial qualquer, como
- * candidatos a peças. Não lê texto (os nomes costumam estar desenhados como
- * vetor) e não sabe a escala real: as medidas saem na escala do papel, em mm
- * (1 pt = 1/72 in), e quem importa decide a escala depois.
+ * candidatos a peças, mantendo as coordenadas reais da página (em pontos,
+ * origem no canto inferior esquerdo). Não lê texto (os nomes costumam estar
+ * desenhados como vetor), não sabe a escala real e não sabe a direção do
+ * fio: tudo isso é definido por quem importa.
  */
 import type { Ponto2D } from '../core/geometria';
 import { lerConteudosDeDesenho } from './pdf-fluxos';
 
-export interface PecaVetorialExtraida {
-  readonly contorno: readonly Ponto2D[];
-  readonly larguraMm: number;
-  readonly alturaMm: number;
-  readonly vertices: number;
-}
+export const PT_PARA_MM = 25.4 / 72;
 
-export interface ResultadoPecasVetoriais {
-  readonly pecas: readonly PecaVetorialExtraida[];
-  readonly descartadas: number;
-  readonly curvasAproximadas: number;
-}
-
-const PT_PARA_MM = 25.4 / 72;
 const MINIMO_DE_VERTICES = 8;
 const AREA_MINIMA_MM2 = 500;
 const FRACAO_DA_FOLHA_QUE_E_BORDA = 0.9;
 const TOLERANCIA_DE_FECHAMENTO_PT = 0.5;
+
+export interface ContornoCandidatoPdf {
+  readonly id: string;
+  readonly contornoPt: readonly Ponto2D[];
+  readonly vertices: number;
+  readonly larguraPt: number;
+  readonly alturaPt: number;
+}
+
+export interface DescartesDePdf {
+  readonly borda: number;
+  readonly poucosVertices: number;
+  readonly areaPequena: number;
+  readonly abertos: number;
+}
+
+export interface ResultadoContornosPdf {
+  readonly candidatos: readonly ContornoCandidatoPdf[];
+  readonly descartados: DescartesDePdf;
+  readonly curvasAproximadas: number;
+  readonly alturaPaginaPt: number | null;
+}
 
 type Matriz = readonly [number, number, number, number, number, number];
 const IDENTIDADE: Matriz = [1, 0, 0, 1, 0, 0];
@@ -94,7 +105,9 @@ function subcaminhosDoConteudo(conteudo: string): { subcaminhos: Subcaminho[]; c
     numeros = [];
     switch (token) {
       case 'cm':
-        if (n.length >= 6) ctm = multiplicar([n[n.length - 6]!, n[n.length - 5]!, n[n.length - 4]!, n[n.length - 3]!, n[n.length - 2]!, n[n.length - 1]!], ctm);
+        if (n.length >= 6) {
+          ctm = multiplicar([n[n.length - 6]!, n[n.length - 5]!, n[n.length - 4]!, n[n.length - 3]!, n[n.length - 2]!, n[n.length - 1]!], ctm);
+        }
         break;
       case 'q':
         pilhaDeMatrizes.push(ctm);
@@ -159,53 +172,97 @@ function ehFechado(sub: Subcaminho): boolean {
   return Math.hypot(primeiro.x - ultimo.x, primeiro.y - ultimo.y) <= TOLERANCIA_DE_FECHAMENTO_PT;
 }
 
-export async function extrairPecasVetoriais(bytesComoLatin1: string): Promise<ResultadoPecasVetoriais> {
+export async function extrairContornosDoPdf(bytesComoLatin1: string): Promise<ResultadoContornosPdf> {
   const bytes = Uint8Array.from(bytesComoLatin1, (c) => c.charCodeAt(0) & 0xff);
   const folha = lerCaixaDaPagina(bytesComoLatin1);
-  const pecas: PecaVetorialExtraida[] = [];
-  let descartadas = 0;
+  const candidatos: ContornoCandidatoPdf[] = [];
+  const descartados = { borda: 0, poucosVertices: 0, areaPequena: 0, abertos: 0 };
   let curvasAproximadas = 0;
+
+  if (folha === null) {
+    return { candidatos, descartados, curvasAproximadas, alturaPaginaPt: null };
+  }
+
+  const areaMinimaPt2 = AREA_MINIMA_MM2 / (PT_PARA_MM * PT_PARA_MM);
+  let indice = 0;
 
   for (const conteudo of await lerConteudosDeDesenho(bytes)) {
     const { subcaminhos, curvas } = subcaminhosDoConteudo(conteudo);
     curvasAproximadas += curvas;
 
     for (const sub of subcaminhos) {
-      if (!ehFechado(sub)) continue;
+      if (!ehFechado(sub)) {
+        descartados.abertos++;
+        continue;
+      }
       let pontos = sub.pontos;
       const primeiro = pontos[0]!;
       const ultimo = pontos[pontos.length - 1]!;
       if (pontos.length > 1 && Math.hypot(primeiro.x - ultimo.x, primeiro.y - ultimo.y) <= TOLERANCIA_DE_FECHAMENTO_PT) {
         pontos = pontos.slice(0, -1);
       }
-      if (pontos.length < MINIMO_DE_VERTICES) {
-        descartadas++;
-        continue;
-      }
 
       const xs = pontos.map((p) => p.x);
       const ys = pontos.map((p) => p.y);
       const larguraPt = Math.max(...xs) - Math.min(...xs);
       const alturaPt = Math.max(...ys) - Math.min(...ys);
-      const ehBordaDaFolha =
-        folha !== null && larguraPt >= folha.largura * FRACAO_DA_FOLHA_QUE_E_BORDA && alturaPt >= folha.altura * FRACAO_DA_FOLHA_QUE_E_BORDA;
-      const areaMm2 = areaDoPoligono(pontos) * PT_PARA_MM * PT_PARA_MM;
-      if (ehBordaDaFolha || areaMm2 < AREA_MINIMA_MM2) {
-        descartadas++;
+      if (larguraPt >= folha.largura * FRACAO_DA_FOLHA_QUE_E_BORDA && alturaPt >= folha.altura * FRACAO_DA_FOLHA_QUE_E_BORDA) {
+        descartados.borda++;
+        continue;
+      }
+      if (pontos.length < MINIMO_DE_VERTICES) {
+        descartados.poucosVertices++;
+        continue;
+      }
+      if (areaDoPoligono(pontos) < areaMinimaPt2) {
+        descartados.areaPequena++;
         continue;
       }
 
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const contorno = pontos.map((p) => ({ x: (p.x - minX) * PT_PARA_MM, y: (p.y - minY) * PT_PARA_MM }));
-      pecas.push({
-        contorno,
-        larguraMm: larguraPt * PT_PARA_MM,
-        alturaMm: alturaPt * PT_PARA_MM,
-        vertices: contorno.length,
+      indice++;
+      candidatos.push({
+        id: `contorno-${indice}`,
+        contornoPt: pontos,
+        vertices: pontos.length,
+        larguraPt,
+        alturaPt,
       });
     }
   }
 
-  return { pecas, descartadas, curvasAproximadas };
+  return { candidatos, descartados, curvasAproximadas, alturaPaginaPt: folha.altura };
+}
+
+/**
+ * Converte um contorno do PDF para milímetros do mesmo modo que ele aparece
+ * na página: a escala do usuário multiplica o tamanho do papel, e o eixo
+ * vertical é invertido porque o PDF tem y para cima e a tela tem y para baixo.
+ */
+export function contornoEmMundo(candidato: ContornoCandidatoPdf, alturaPaginaPt: number, fatorDeEscala: number): Ponto2D[] {
+  const k = PT_PARA_MM * fatorDeEscala;
+  return candidato.contornoPt.map((p) => ({ x: (alturaPaginaPt - p.y) * k, y: p.x * k }));
+}
+
+/**
+ * Linha de fio representando a direção escolhida pelo usuário, centrada na
+ * caixa do contorno. Na tela, "vertical" varia o eixo x do domínio.
+ */
+export function linhaDeFioSobreContorno(
+  contorno: readonly Ponto2D[],
+  direcao: 'vertical' | 'horizontal',
+): { inicio: Ponto2D; fim: Ponto2D } {
+  const xs = contorno.map((p) => p.x);
+  const ys = contorno.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  if (direcao === 'vertical') {
+    const h = maxX - minX;
+    return { inicio: { x: minX + h * 0.1, y: cy }, fim: { x: minX + h * 0.9, y: cy } };
+  }
+  const w = maxY - minY;
+  return { inicio: { x: cx, y: minY + w * 0.1 }, fim: { x: cx, y: minY + w * 0.9 } };
 }
