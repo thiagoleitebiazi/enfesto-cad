@@ -26,6 +26,10 @@ import {
 import { importarDxf } from './formats/dxf-importacao';
 import { importarPdf } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
+import { extrairPecasVetoriais } from './formats/pdf-pecas-vetoriais';
+
+const LARGURA_DA_GRADE_DO_DESENHO_MM = 1400;
+const FOLGA_DA_GRADE_DO_DESENHO_MM = 50;
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
@@ -1103,12 +1107,54 @@ export default function App(): React.JSX.Element {
         );
       }
       if (resultado.pecas.length === 0) {
-        const diagnostico = await diagnosticarVetorPdf(arquivo.conteudo);
-        if (diagnostico.subcaminhos > 0) {
+        const vetorial = await extrairPecasVetoriais(arquivo.conteudo);
+        if (vetorial.pecas.length > 0) {
+          const alturaDaLinhaDeFio = 0.6;
+          let cursorX = 0;
+          let cursorY = 0;
+          let linhaDaGrade = 0;
+          const moldesDoDesenho = vetorial.pecas.map((p, indice) => {
+            if (cursorX > 0 && cursorX + p.larguraMm > LARGURA_DA_GRADE_DO_DESENHO_MM) {
+              cursorX = 0;
+              cursorY += linhaDaGrade + FOLGA_DA_GRADE_DO_DESENHO_MM;
+              linhaDaGrade = 0;
+            }
+            const deslocamento = { x: cursorX, y: cursorY };
+            const contorno = p.contorno.map((q) => ({ x: q.x + deslocamento.x, y: q.y + deslocamento.y }));
+            const centroX = deslocamento.x + p.larguraMm / 2;
+            cursorX += p.larguraMm + FOLGA_DA_GRADE_DO_DESENHO_MM;
+            linhaDaGrade = Math.max(linhaDaGrade, p.alturaMm);
+            return criarMolde(
+              {
+                nome: `Peça ${indice + 1}`,
+                referencia: '',
+                tamanho: 'M',
+                contorno,
+                linhaDeFio: {
+                  inicio: { x: centroX, y: deslocamento.y + p.alturaMm * (1 - alturaDaLinhaDeFio) / 2 },
+                  fim: { x: centroX, y: deslocamento.y + p.alturaMm * (1 + alturaDaLinhaDeFio) / 2 },
+                },
+              },
+              proximoId(),
+            );
+          });
+          aplicarMudanca([...pecas, ...moldesDoDesenho]);
           const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
-          const textoDoDiagnostico = descreverDiagnosticoVetorial(diagnostico);
-          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, textoDoDiagnostico);
-          else mensagens.push(textoDoDiagnostico);
+          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1);
+          const descartadasTexto = vetorial.descartadas > 0 ? ` ${vetorial.descartadas} forma(s) descartada(s) (borda da folha, caixas de nota ou linhas soltas).` : '';
+          mensagens.push(
+            `${moldesDoDesenho.length} peça(s) extraída(s) de contornos fechados do desenho, na escala do papel (1 pt = 1/72 in). ` +
+              `Escala assumida 1:1 — confirme pelo tamanho real e use Dimensionar se for outra. ` +
+              `Linha de fio presumida na vertical e nomes genéricos (renomeie em Propriedades).${descartadasTexto}`,
+          );
+        } else {
+          const diagnostico = await diagnosticarVetorPdf(arquivo.conteudo);
+          if (diagnostico.subcaminhos > 0) {
+            const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
+            const textoDoDiagnostico = descreverDiagnosticoVetorial(diagnostico);
+            if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, textoDoDiagnostico);
+            else mensagens.push(textoDoDiagnostico);
+          }
         }
       }
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
