@@ -5,6 +5,7 @@ import { Sobreposicao } from './Sobreposicao';
 export interface ItemConfirmadoDoPdf {
   readonly candidato: ContornoCandidatoPdf;
   readonly nome: string;
+  readonly tamanho: string;
   readonly direcaoDoFio: 'vertical' | 'horizontal';
   readonly fatorDeEscala: number;
 }
@@ -20,13 +21,14 @@ interface DialogoDeImportacaoPdfProps {
 interface EstadoDoItem {
   readonly selecionado: boolean;
   readonly nome: string;
+  readonly tamanho: string;
   readonly direcao: '' | 'vertical' | 'horizontal';
 }
 
 export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): React.JSX.Element {
   const [fatorTexto, setFatorTexto] = useState('1');
   const [itens, setItens] = useState<Record<string, EstadoDoItem>>(() =>
-    Object.fromEntries(props.candidatos.map((c) => [c.id, { selecionado: true, nome: '', direcao: '' as const }])),
+    Object.fromEntries(props.candidatos.map((c) => [c.id, { selecionado: true, nome: '', tamanho: '', direcao: '' as const }])),
   );
 
   const fator = Number(fatorTexto.replace(',', '.'));
@@ -46,6 +48,7 @@ export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): Reac
       selecionados.map((c) => ({
         candidato: c,
         nome: itens[c.id]!.nome.trim(),
+        tamanho: itens[c.id]!.tamanho.trim(),
         direcaoDoFio: itens[c.id]!.direcao as 'vertical' | 'horizontal',
         fatorDeEscala: fator,
       })),
@@ -92,6 +95,15 @@ export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): Reac
                   value={estado?.nome ?? ''}
                   onChange={(e) => atualizar(c.id, { nome: e.target.value })}
                   placeholder="obrigatório"
+                />
+              </label>
+              <label>
+                Tamanho (opcional)
+                <input
+                  type="text"
+                  value={estado?.tamanho ?? ''}
+                  onChange={(e) => atualizar(c.id, { tamanho: e.target.value })}
+                  placeholder="não está no arquivo"
                 />
               </label>
               <label>

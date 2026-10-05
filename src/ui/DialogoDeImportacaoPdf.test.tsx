@@ -51,6 +51,7 @@ describe('DialogoDeImportacaoPdf', () => {
     expect(itens.map((i: { nome: string }) => i.nome)).toEqual(['Frente', 'Manga']);
     expect(itens.map((i: { direcaoDoFio: string }) => i.direcaoDoFio)).toEqual(['vertical', 'horizontal']);
     expect(itens[0].fatorDeEscala).toBe(1);
+    expect(itens[0].tamanho).toBe('');
   });
 
   it('desmarcar um contorno o tira da importação sem exigir nome nem fio', () => {

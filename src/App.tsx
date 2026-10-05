@@ -1141,7 +1141,7 @@ export default function App(): React.JSX.Element {
             {
               nome: item.nome,
               referencia: '',
-              tamanho: 'M',
+              tamanho: item.tamanho,
               contorno,
               linhaDeFio: linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
             },

@@ -56,7 +56,7 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
               >
                 <MiniaturaDoMolde contorno={peca.contorno} />
                 <span className="texto-do-item-de-peca">
-                  {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho})</span>
+                  {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho || '—'})</span>
                 </span>
               </button>
             </li>

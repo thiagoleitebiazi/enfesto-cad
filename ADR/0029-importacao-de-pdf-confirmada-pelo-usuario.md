@@ -60,3 +60,12 @@ usuário pediu que a importação ficasse fiel ao arquivo.
 - Não publicado: aguardando pedido explícito.
 - Os nomes de teste (Frente, Costas, Manga, Gola) foram escolhidos pelo
   teste e não correspondem necessariamente às formas do desenho.
+
+## Atualização
+
+- O tamanho ("M") deixou de ser um valor fixo: não está no arquivo. Agora é um
+  campo opcional no diálogo, vazio por padrão, e as listas mostram um traço
+  quando ele está vazio.
+- Escala, nomes e direção do fio continuam sendo definidos pelo usuário: o
+  arquivo não os traz em forma legível (o "1:5" e os nomes são contornos
+  desenhados, sem texto). Automatizar isso exigiria chutar.
