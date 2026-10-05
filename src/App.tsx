@@ -25,6 +25,7 @@ import {
 } from './domain/molde';
 import { importarDxf } from './formats/dxf-importacao';
 import { importarPdf } from './formats/pdf-importacao';
+import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
@@ -1064,7 +1065,7 @@ export default function App(): React.JSX.Element {
       window.alert('Importação de arquivo só está disponível rodando dentro do aplicativo Electron (npm run dev / build), não num navegador comum.');
       return;
     }
-    void api.abrirArquivoPdf().then((arquivo) => {
+    void api.abrirArquivoPdf().then(async (arquivo) => {
       if (!arquivo) return;
       const resultado = importarPdf(arquivo.conteudo);
       const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
@@ -1100,6 +1101,15 @@ export default function App(): React.JSX.Element {
             .map((p) => p.nome)
             .join(', ')}. Desenhe-as manualmente com "Novo Molde" definindo o fio correto.`,
         );
+      }
+      if (resultado.pecas.length === 0) {
+        const diagnostico = await diagnosticarVetorPdf(arquivo.conteudo);
+        if (diagnostico.subcaminhos > 0) {
+          const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
+          const textoDoDiagnostico = descreverDiagnosticoVetorial(diagnostico);
+          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, textoDoDiagnostico);
+          else mensagens.push(textoDoDiagnostico);
+        }
       }
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
     });
