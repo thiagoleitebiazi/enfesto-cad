@@ -1133,15 +1133,27 @@ export default function App(): React.JSX.Element {
             proximoId(),
           );
         });
-        aplicarMudanca([...pecas, ...novosMoldes]);
+        // A origem do DXF é arbitrária (pode estar no meio do desenho): o
+        // conjunto inteiro é deslocado para o canto útil da mesa, com o
+        // mesmo deslocamento para todas as peças, sem mudar a posição
+        // relativa entre elas.
+        const todos = novosMoldes.flatMap((m) => m.contorno);
+        const delta = ponto(
+          (enfesto?.margemLateralMm ?? 0) - Math.min(...todos.map((p) => p.x)),
+          (enfesto?.margemDeExtremidadeMm ?? 0) - Math.min(...todos.map((p) => p.y)),
+        );
+        const posicionados = novosMoldes.map((m) => transladarMolde(m, delta, m.id));
+        aplicarMudanca([...pecas, ...posicionados]);
         setImportacaoDxfPendente(null);
-        setMensagensImportacao([`${novosMoldes.length} peça(s) importada(s) do DXF, em ${pendente.unidadeDetectada}.`]);
+        setMensagensImportacao([
+          `${posicionados.length} peça(s) importada(s) do DXF, em ${pendente.unidadeDetectada}. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
+        ]);
       } catch (erro) {
         const motivo = erro instanceof Error ? erro.message : String(erro);
         setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
       }
     },
-    [importacaoDxfPendente, pecas, aplicarMudanca],
+    [importacaoDxfPendente, pecas, aplicarMudanca, enfesto],
   );
 
   const confirmarImportacaoPdf = useCallback(
