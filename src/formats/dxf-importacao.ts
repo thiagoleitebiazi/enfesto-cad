@@ -59,6 +59,57 @@ interface EntidadeBruta {
   readonly raio?: number;
 }
 
+const AMOSTRAS_POR_VAO_DA_SPLINE = 12;
+// Formas menores que isto são textos/letras desenhados como contorno, não peças.
+const AREA_MINIMA_DE_CONTORNO_MM2 = 500;
+
+function deBoor(grau: number, nos: readonly number[], ctrl: readonly Ponto2D[], pesos: readonly number[], vao: number, t: number): Ponto2D {
+  const d: { x: number; y: number; w: number }[] = [];
+  for (let j = 0; j <= grau; j++) {
+    const indice = j + vao - grau;
+    const w = pesos[indice]!;
+    d.push({ x: ctrl[indice]!.x * w, y: ctrl[indice]!.y * w, w });
+  }
+  for (let r = 1; r <= grau; r++) {
+    for (let j = grau; j >= r; j--) {
+      const inicio = nos[j + vao - grau]!;
+      const denominador = nos[j + 1 + vao - r]! - inicio;
+      const alpha = denominador === 0 ? 0 : (t - inicio) / denominador;
+      const anterior = d[j - 1]!;
+      const atual = d[j]!;
+      d[j] = {
+        x: (1 - alpha) * anterior.x + alpha * atual.x,
+        y: (1 - alpha) * anterior.y + alpha * atual.y,
+        w: (1 - alpha) * anterior.w + alpha * atual.w,
+      };
+    }
+  }
+  const resultado = d[grau]!;
+  return ponto(resultado.x / resultado.w, resultado.y / resultado.w);
+}
+
+/**
+ * Amostra a curva NURBS da entidade SPLINE do próprio arquivo: pontos de
+ * controle, nós e pesos, sem trocar a curva por uma aproximação. Devolve null
+ * quando os dados não são consistentes (nós a menos, poucos pontos etc.).
+ */
+function amostrarSpline(grau: number, nos: readonly number[], ctrl: readonly Ponto2D[], pesosLidos: readonly number[]): Ponto2D[] | null {
+  const n = ctrl.length - 1;
+  if (grau < 1 || n < grau || nos.length !== n + grau + 2) return null;
+  const pesos = pesosLidos.length === ctrl.length ? pesosLidos : ctrl.map(() => 1);
+  const pontos: Ponto2D[] = [];
+  for (let vao = grau; vao <= n; vao++) {
+    const t0 = nos[vao]!;
+    const t1 = nos[vao + 1]!;
+    if (!(t1 > t0)) continue;
+    for (let s = 0; s < AMOSTRAS_POR_VAO_DA_SPLINE; s++) {
+      pontos.push(deBoor(grau, nos, ctrl, pesos, vao, t0 + ((t1 - t0) * s) / AMOSTRAS_POR_VAO_DA_SPLINE));
+    }
+  }
+  pontos.push(deBoor(grau, nos, ctrl, pesos, n, nos[n + 1]!));
+  return pontos;
+}
+
 function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
   const entidades: EntidadeBruta[] = [];
   let dentroDeEntities = false;
@@ -182,6 +233,35 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
       continue;
     }
 
+    if (tipo === 'SPLINE') {
+      let camada = '0';
+      let flags = 0;
+      let grau = 3;
+      const nos: number[] = [];
+      const pesos: number[] = [];
+      const controle: Ponto2D[] = [];
+      let xControle: number | null = null;
+      i++;
+      while (i < pares.length && pares[i]!.codigo !== 0) {
+        const p = pares[i]!;
+        if (p.codigo === 8) camada = p.valor;
+        else if (p.codigo === 70) flags = Number.parseInt(p.valor, 10);
+        else if (p.codigo === 71) grau = Number.parseInt(p.valor, 10);
+        else if (p.codigo === 40) nos.push(Number.parseFloat(p.valor));
+        else if (p.codigo === 41) pesos.push(Number.parseFloat(p.valor));
+        else if (p.codigo === 10) xControle = Number.parseFloat(p.valor);
+        else if (p.codigo === 20 && xControle !== null) {
+          controle.push(ponto(xControle, Number.parseFloat(p.valor)));
+          xControle = null;
+        }
+        i++;
+      }
+      const amostra = amostrarSpline(grau, nos, controle, pesos);
+      const fechada = (flags & 1) === 1;
+      entidades.push({ tipo: 'SPLINE', camada, pontos: amostra ?? [], fechada });
+      continue;
+    }
+
     i++;
   }
 
@@ -226,6 +306,48 @@ export interface ResultadoImportacaoDxf {
   readonly avisos: string[];
 }
 
+interface CaixaDeDelimitacao {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+function caixaDe(pontos: readonly Ponto2D[]): CaixaDeDelimitacao {
+  const xs = pontos.map((p) => p.x);
+  const ys = pontos.map((p) => p.y);
+  return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
+}
+
+/**
+ * Borda da folha: um retângulo de 4 vértices que cobre quase todo o desenho e
+ * contém outras formas fechadas. Só é reconhecido se houver de fato formas
+ * dentro dele, para não descartar uma peça única.
+ */
+/** Forma inteira dentro de outra: caixa contida e primeiro ponto dentro do contorno externo. */
+function estaDentroDe(forma: EntidadeBruta, externa: EntidadeBruta): boolean {
+  const a = caixaDe(forma.pontos);
+  const b = caixaDe(externa.pontos);
+  const dentroDaCaixa = a.minX >= b.minX && a.maxX <= b.maxX && a.minY >= b.minY && a.maxY <= b.maxY;
+  return dentroDaCaixa && pontoDentroDoContorno(forma.pontos[0]!, externa.pontos);
+}
+
+function ehBordaDaFolha(entidade: EntidadeBruta, formasFechadas: readonly EntidadeBruta[]): boolean {
+  if (formasFechadas.length < 3) return false;
+  if (nomeDeCamadaContem(entidade.camada, 'CONTORNO', 'OUTLINE', 'BOUNDARY', 'CORTE', 'CUT')) return false;
+  const caixa = caixaDe(entidade.pontos);
+  const todas = formasFechadas.map((e) => caixaDe(e.pontos));
+  const alcanceX = Math.max(...todas.map((c) => c.maxX)) - Math.min(...todas.map((c) => c.minX));
+  const alcanceY = Math.max(...todas.map((c) => c.maxY)) - Math.min(...todas.map((c) => c.minY));
+  const cobreODesenho =
+    caixa.maxX - caixa.minX >= alcanceX * 0.9 && caixa.maxY - caixa.minY >= alcanceY * 0.9;
+  if (!cobreODesenho) return false;
+  const contidasNaoFuros = formasFechadas.filter(
+    (outra) => outra !== entidade && !nomeDeCamadaContem(outra.camada, 'FURO', 'HOLE') && estaDentroDe(outra, entidade),
+  );
+  return contidasNaoFuros.length >= 2;
+}
+
 export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): ResultadoImportacaoDxf {
   const pares = tokenizar(conteudo);
   const unidade = lerUnidade(pares);
@@ -237,19 +359,31 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
   const avisos: string[] = [];
 
   const poligonosFechados = entidadesMm.filter((e) => e.tipo !== 'LINE' && e.pontos.length >= 3);
-  const contornosCandidatos = poligonosFechados.filter((e) =>
+  const formasFechadas = poligonosFechados.filter((e) => e.fechada);
+  const bordas = formasFechadas.filter((e) => ehBordaDaFolha(e, formasFechadas));
+  const contornosFechados = formasFechadas.filter((e) => !bordas.includes(e));
+  if (bordas.length > 0) {
+    avisos.push(
+      `${bordas.length} retângulo(s) que envolve(m) o desenho inteiro foi(ram) ignorado(s) como borda da folha, não como peça.`,
+    );
+  }
+  const contornosCandidatos = contornosFechados.filter((e) =>
     nomeDeCamadaContem(e.camada, 'CONTORNO', 'OUTLINE', 'BOUNDARY', 'CORTE', 'CUT'),
   );
 
   let contornos = contornosCandidatos;
-  if (contornos.length === 0 && poligonosFechados.length > 0) {
-    const maiorArea = poligonosFechados.reduce((maior, atual) =>
-      area(atual.pontos) > area(maior.pontos) ? atual : maior,
+  if (contornos.length === 0 && contornosFechados.length > 0) {
+    contornos = contornosFechados.filter(
+      (e) =>
+        !nomeDeCamadaContem(e.camada, 'FURO', 'HOLE') &&
+        area(e.pontos) >= AREA_MINIMA_DE_CONTORNO_MM2 &&
+        !contornosFechados.some((outra) => outra !== e && estaDentroDe(e, outra)),
     );
-    contornos = [maiorArea];
-    avisos.push(
-      `Nenhuma camada de contorno reconhecida (ex.: "CONTORNO"/"OUTLINE"); usando a polilinha de maior área ("${maiorArea.camada}") como contorno principal.`,
-    );
+    if (contornos.length > 0) {
+      avisos.push(
+        `Nenhuma camada de contorno reconhecida (ex.: "CONTORNO"/"OUTLINE"); ${contornos.length} forma(s) fechada(s) de fora foram tratadas como contornos candidatos. Confirme cada uma antes de importar.`,
+      );
+    }
   }
 
   if (contornos.length === 0) {

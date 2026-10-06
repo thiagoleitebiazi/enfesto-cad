@@ -171,7 +171,7 @@ describe('importarDxf — regra crítica do sentido do fio (nunca presumir)', ()
 });
 
 describe('importarDxf — camada de contorno ausente (heurística de fallback)', () => {
-  it('usa a polilinha de maior área como contorno e avisa sobre a heurística', () => {
+  it('usa só as formas de fora como contornos e avisa sobre a heurística', () => {
     const doc = documento(
       [
         ...lwpolyline('CAMADA_QUALQUER', RETANGULO_300X400),
@@ -182,7 +182,7 @@ describe('importarDxf — camada de contorno ausente (heurística de fallback)',
     const resultado = importarDxf(doc, 'sem-camada-contorno');
     expect(resultado.pecas).toHaveLength(1);
     expect(area(resultado.pecas[0]!.contorno)).toBe(300 * 400);
-    expect(resultado.avisos.some((a) => /maior área/i.test(a))).toBe(true);
+    expect(resultado.avisos.some((a) => /contornos candidatos/i.test(a))).toBe(true);
   });
 });
 

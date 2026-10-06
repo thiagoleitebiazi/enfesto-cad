@@ -1,20 +1,29 @@
 import { useState } from 'react';
-import type { ContornoCandidatoPdf, DescartesDePdf } from '../formats/pdf-pecas-vetoriais';
 import { Sobreposicao } from './Sobreposicao';
 
-export interface ItemConfirmadoDoPdf {
-  readonly candidato: ContornoCandidatoPdf;
+/** Um contorno candidato a peça, vindo de PDF ou DXF. `direcaoSugerida` só existe quando o próprio arquivo traz a linha de fio. */
+export interface CandidatoDeContorno {
+  readonly id: string;
+  readonly vertices: number;
+  readonly direcaoSugerida?: 'vertical' | 'horizontal' | undefined;
+}
+
+export interface ItemConfirmadoDeContorno {
+  readonly candidatoId: string;
   readonly nome: string;
   readonly tamanho: string;
   readonly direcaoDoFio: 'vertical' | 'horizontal';
   readonly fatorDeEscala: number;
 }
 
-interface DialogoDeImportacaoPdfProps {
-  readonly candidatos: readonly ContornoCandidatoPdf[];
-  readonly descartados: DescartesDePdf;
-  readonly curvasAproximadas: number;
-  readonly onConfirmar: (itens: readonly ItemConfirmadoDoPdf[]) => void;
+interface DialogoDeImportacaoDeContornosProps {
+  readonly titulo: string;
+  readonly descricao: string;
+  readonly resumoDeDescartes: string;
+  readonly candidatos: readonly CandidatoDeContorno[];
+  /** PDF não traz unidade confiável, então o usuário escolhe a escala. DXF já declara a unidade. */
+  readonly mostrarEscala: boolean;
+  readonly onConfirmar: (itens: readonly ItemConfirmadoDeContorno[]) => void;
   readonly onCancelar: () => void;
 }
 
@@ -25,13 +34,18 @@ interface EstadoDoItem {
   readonly direcao: '' | 'vertical' | 'horizontal';
 }
 
-export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): React.JSX.Element {
+export function DialogoDeImportacaoDeContornos(props: DialogoDeImportacaoDeContornosProps): React.JSX.Element {
   const [fatorTexto, setFatorTexto] = useState('1');
   const [itens, setItens] = useState<Record<string, EstadoDoItem>>(() =>
-    Object.fromEntries(props.candidatos.map((c) => [c.id, { selecionado: true, nome: '', tamanho: '', direcao: '' as const }])),
+    Object.fromEntries(
+      props.candidatos.map((c) => [
+        c.id,
+        { selecionado: true, nome: '', tamanho: '', direcao: c.direcaoSugerida ?? ('' as const) },
+      ]),
+    ),
   );
 
-  const fator = Number(fatorTexto.replace(',', '.'));
+  const fator = props.mostrarEscala ? Number(fatorTexto.replace(',', '.')) : 1;
   const fatorValido = Number.isFinite(fator) && fator > 0;
   const selecionados = props.candidatos.filter((c) => itens[c.id]?.selecionado);
   const podeConfirmar =
@@ -46,7 +60,7 @@ export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): Reac
     if (!podeConfirmar) return;
     props.onConfirmar(
       selecionados.map((c) => ({
-        candidato: c,
+        candidatoId: c.id,
         nome: itens[c.id]!.nome.trim(),
         tamanho: itens[c.id]!.tamanho.trim(),
         direcaoDoFio: itens[c.id]!.direcao as 'vertical' | 'horizontal',
@@ -55,25 +69,24 @@ export function DialogoDeImportacaoPdf(props: DialogoDeImportacaoPdfProps): Reac
     );
   };
 
-  const d = props.descartados;
-  const resumoDosDescartes = `Descartados: ${d.borda} de borda da folha, ${d.poucosVertices} com poucos vértices, ${d.areaPequena} de área pequena, ${d.abertos} abertos (não fechados).`;
-
   return (
-    <Sobreposicao titulo="Importar contornos do PDF" onFechar={props.onCancelar}>
+    <Sobreposicao titulo={props.titulo} onFechar={props.onCancelar}>
       <div className="formulario-de-sobreposicao">
         <p className="legenda-do-diagrama">
-          {props.candidatos.length} contorno(s) fechado(s) encontrado(s) no desenho. Nenhum nome, escala ou direção do fio é
-          assumido pelo app: defina cada um abaixo antes de importar.
+          {props.candidatos.length} contorno(s) fechado(s) encontrado(s). {props.descricao} Nenhum nome ou direção do fio é
+          assumido pelo app: defina cada um abaixo antes de importar. Desmarque o que não for peça.
         </p>
-        <p className="legenda-do-diagrama">
-          {resumoDosDescartes} Curvas aproximadas por segmentos retos no arquivo: {props.curvasAproximadas}.
-        </p>
+        <p className="legenda-do-diagrama">{props.resumoDeDescartes}</p>
 
-        <label>
-          Fator de escala (1 = tamanho do papel, em mm)
-          <input type="text" inputMode="decimal" value={fatorTexto} onChange={(e) => setFatorTexto(e.target.value)} />
-        </label>
-        {!fatorValido && <p className="mensagem-de-erro">Informe um número maior que zero.</p>}
+        {props.mostrarEscala && (
+          <>
+            <label>
+              Fator de escala (1 = tamanho do papel, em mm)
+              <input type="text" inputMode="decimal" value={fatorTexto} onChange={(e) => setFatorTexto(e.target.value)} />
+            </label>
+            {!fatorValido && <p className="mensagem-de-erro">Informe um número maior que zero.</p>}
+          </>
+        )}
 
         {props.candidatos.map((c, indice) => {
           const estado = itens[c.id];

@@ -1,21 +1,21 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
-import { DialogoDeImportacaoPdf } from './DialogoDeImportacaoPdf';
-import type { ContornoCandidatoPdf } from '../formats/pdf-pecas-vetoriais';
+import { DialogoDeImportacaoDeContornos, type CandidatoDeContorno } from './DialogoDeImportacaoDeContornos';
 
-const candidatos: ContornoCandidatoPdf[] = [
-  { id: 'c1', contornoPt: [], vertices: 16, larguraPt: 200, alturaPt: 200 },
-  { id: 'c2', contornoPt: [], vertices: 12, larguraPt: 120, alturaPt: 120 },
+const candidatos: CandidatoDeContorno[] = [
+  { id: 'c1', vertices: 16 },
+  { id: 'c2', vertices: 12 },
 ];
 
-const descartados = { borda: 1, poucosVertices: 2, areaPequena: 0, abertos: 0 };
-
-function renderizar(onConfirmar = vi.fn()) {
+function renderizar(options: { mostrarEscala?: boolean; candidatos?: CandidatoDeContorno[] } = {}) {
+  const onConfirmar = vi.fn();
   render(
-    <DialogoDeImportacaoPdf
-      candidatos={candidatos}
-      descartados={descartados}
-      curvasAproximadas={0}
+    <DialogoDeImportacaoDeContornos
+      titulo="Importar contornos"
+      descricao="teste"
+      resumoDeDescartes="resumo"
+      candidatos={options.candidatos ?? candidatos}
+      mostrarEscala={options.mostrarEscala ?? true}
       onConfirmar={onConfirmar}
       onCancelar={() => {}}
     />,
@@ -23,14 +23,13 @@ function renderizar(onConfirmar = vi.fn()) {
   return onConfirmar;
 }
 
-describe('DialogoDeImportacaoPdf', () => {
+describe('DialogoDeImportacaoDeContornos', () => {
   afterEach(() => cleanup());
 
   it('não permite importar sem nome e direção do fio definidos pelo usuário', () => {
     renderizar();
-    const botao = screen.getByRole('button', { name: /Importar 2 contorno/ });
 
-    expect(botao).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Importar 2 contorno/ })).toBeDisabled();
   });
 
   it('libera a importação só quando cada contorno selecionado tem nome e direção do fio', () => {
@@ -50,8 +49,22 @@ describe('DialogoDeImportacaoPdf', () => {
     const itens = onConfirmar.mock.calls[0]![0];
     expect(itens.map((i: { nome: string }) => i.nome)).toEqual(['Frente', 'Manga']);
     expect(itens.map((i: { direcaoDoFio: string }) => i.direcaoDoFio)).toEqual(['vertical', 'horizontal']);
+    expect(itens.map((i: { candidatoId: string }) => i.candidatoId)).toEqual(['c1', 'c2']);
     expect(itens[0].fatorDeEscala).toBe(1);
     expect(itens[0].tamanho).toBe('');
+  });
+
+  it('usa a direção do fio sugerida pelo arquivo, mas ainda deixa o usuário alterá-la', () => {
+    renderizar({ candidatos: [{ id: 'c1', vertices: 8, direcaoSugerida: 'horizontal' }] });
+    const direcoes = screen.getAllByLabelText('Direção do fio') as HTMLSelectElement[];
+
+    expect(direcoes[0]!.value).toBe('horizontal');
+  });
+
+  it('esconde o fator de escala quando a unidade já vem do arquivo', () => {
+    renderizar({ mostrarEscala: false });
+
+    expect(screen.queryByLabelText(/Fator de escala/)).toBeNull();
   });
 
   it('desmarcar um contorno o tira da importação sem exigir nome nem fio', () => {

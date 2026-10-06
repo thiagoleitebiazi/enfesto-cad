@@ -23,7 +23,7 @@ import {
   dimensoesDoMolde,
   type Molde,
 } from './domain/molde';
-import { importarDxf } from './formats/dxf-importacao';
+import { importarDxf, type ResultadoImportacaoDxf } from './formats/dxf-importacao';
 import { importarPdf } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import {
@@ -32,7 +32,7 @@ import {
   linhaDeFioSobreContorno,
   type ResultadoContornosPdf,
 } from './formats/pdf-pecas-vetoriais';
-import { DialogoDeImportacaoPdf, type ItemConfirmadoDoPdf } from './ui/DialogoDeImportacaoPdf';
+import { DialogoDeImportacaoDeContornos, type ItemConfirmadoDeContorno } from './ui/DialogoDeImportacaoDeContornos';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { gerarRelatorioDeProducao } from './domain/relatorio';
@@ -130,6 +130,7 @@ export default function App(): React.JSX.Element {
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
   const [importacaoPdfPendente, setImportacaoPdfPendente] = useState<ResultadoContornosPdf | null>(null);
+  const [importacaoDxfPendente, setImportacaoDxfPendente] = useState<ResultadoImportacaoDxf | null>(null);
 
   const [tecido, setTecido] = useState<Tecido | null>(tecidoDeDemonstracao);
   const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(enfestoDeDemonstracao);
@@ -1030,42 +1031,18 @@ export default function App(): React.JSX.Element {
       if (!arquivo) return;
       const nomeBase = (arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho).replace(/\.dxf$/i, '');
       const resultado = importarDxf(arquivo.conteudo, nomeBase);
-      const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
-      const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
-
-      const novosMoldes = prontas.map((p) =>
-        criarMolde(
-          {
-            nome: p.nome,
-            referencia: '',
-            tamanho: 'M',
-            contorno: p.contorno,
-            furos: p.furos,
-            linhasInternas: p.linhasInternas,
-            linhaDeFio: p.linhaDeFio!,
-          },
-          proximoId(),
-        ),
-      );
-
-      if (novosMoldes.length > 0) {
-        aplicarMudanca([...pecas, ...novosMoldes]);
-      }
-
       const mensagens = [...resultado.avisos];
-      if (semFio.length > 0) {
-        mensagens.push(
-          `${semFio.length} peça(s) do arquivo não foram adicionadas por não terem linha de fio reconhecível: ${semFio
-            .map((p) => p.nome)
-            .join(', ')}. Desenhe-as manualmente com "Novo Molde" definindo o fio correto.`,
-        );
-      }
       if (resultado.unidadeAssumida) {
-        mensagens.push(`Unidade do arquivo: ${resultado.unidadeDetectada}.`);
+        mensagens.push(`Unidade do arquivo não declarada: ${resultado.unidadeDetectada}.`);
       }
+      if (resultado.pecas.length === 0) {
+        setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
+        return;
+      }
+      setImportacaoDxfPendente(resultado);
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
     });
-  }, [pecas, aplicarMudanca]);
+  }, []);
 
   const importarPdfHandler = useCallback(() => {
     const api = window.enfestoCad;
@@ -1130,13 +1107,46 @@ export default function App(): React.JSX.Element {
     });
   }, [pecas, aplicarMudanca]);
 
+  const confirmarImportacaoDxf = useCallback(
+    (itens: readonly ItemConfirmadoDeContorno[]) => {
+      const pendente = importacaoDxfPendente;
+      if (!pendente) return;
+      try {
+        const novosMoldes = itens.map((item) => {
+          const peca = pendente.pecas[Number(item.candidatoId)]!;
+          return criarMolde(
+            {
+              nome: item.nome,
+              referencia: '',
+              tamanho: item.tamanho,
+              contorno: peca.contorno,
+              furos: peca.furos,
+              linhasInternas: peca.linhasInternas,
+              linhaDeFio: peca.linhaDeFio ?? linhaDeFioSobreContorno(peca.contorno, item.direcaoDoFio),
+            },
+            proximoId(),
+          );
+        });
+        aplicarMudanca([...pecas, ...novosMoldes]);
+        setImportacaoDxfPendente(null);
+        setMensagensImportacao([`${novosMoldes.length} peça(s) importada(s) do DXF, em ${pendente.unidadeDetectada}.`]);
+      } catch (erro) {
+        const motivo = erro instanceof Error ? erro.message : String(erro);
+        setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
+      }
+    },
+    [importacaoDxfPendente, pecas, aplicarMudanca],
+  );
+
   const confirmarImportacaoPdf = useCallback(
-    (itens: readonly ItemConfirmadoDoPdf[]) => {
+    (itens: readonly ItemConfirmadoDeContorno[]) => {
       const pendente = importacaoPdfPendente;
       if (!pendente || pendente.alturaPaginaPt === null) return;
       try {
         const novosMoldes = itens.map((item) => {
-          const contorno = contornoEmMundo(item.candidato, pendente.alturaPaginaPt!, item.fatorDeEscala);
+          const candidato = pendente.candidatos.find((c) => c.id === item.candidatoId);
+          if (!candidato) throw new Error(`contorno ${item.candidatoId} não encontrado`);
+          const contorno = contornoEmMundo(candidato, pendente.alturaPaginaPt!, item.fatorDeEscala);
           return criarMolde(
             {
               nome: item.nome,
@@ -1453,12 +1463,33 @@ export default function App(): React.JSX.Element {
         />
       </div>
       {importacaoPdfPendente && (
-        <DialogoDeImportacaoPdf
-          candidatos={importacaoPdfPendente.candidatos}
-          descartados={importacaoPdfPendente.descartados}
-          curvasAproximadas={importacaoPdfPendente.curvasAproximadas}
+        <DialogoDeImportacaoDeContornos
+          titulo="Importar contornos do PDF"
+          descricao="A escala é a do papel: escolha o fator abaixo."
+          resumoDeDescartes={`Descartados: ${importacaoPdfPendente.descartados.borda} de borda da folha, ${importacaoPdfPendente.descartados.poucosVertices} com poucos vértices, ${importacaoPdfPendente.descartados.areaPequena} de área pequena, ${importacaoPdfPendente.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${importacaoPdfPendente.curvasAproximadas}.`}
+          candidatos={importacaoPdfPendente.candidatos.map((c) => ({ id: c.id, vertices: c.vertices }))}
+          mostrarEscala
           onConfirmar={confirmarImportacaoPdf}
           onCancelar={() => setImportacaoPdfPendente(null)}
+        />
+      )}
+      {importacaoDxfPendente && (
+        <DialogoDeImportacaoDeContornos
+          titulo="Importar contornos do DXF"
+          descricao={`Unidade do arquivo: ${importacaoDxfPendente.unidadeDetectada}.`}
+          resumoDeDescartes="Linhas abertas do arquivo ficam como linhas internas das peças."
+          candidatos={importacaoDxfPendente.pecas.map((p, indice) => ({
+            id: String(indice),
+            vertices: p.contorno.length,
+            direcaoSugerida: p.linhaDeFio
+              ? Math.abs(p.linhaDeFio.fim.x - p.linhaDeFio.inicio.x) >= Math.abs(p.linhaDeFio.fim.y - p.linhaDeFio.inicio.y)
+                ? 'vertical'
+                : 'horizontal'
+              : undefined,
+          }))}
+          mostrarEscala={false}
+          onConfirmar={confirmarImportacaoDxf}
+          onCancelar={() => setImportacaoDxfPendente(null)}
         />
       )}
       {mostrarPropriedadesDaPeca && pecaSelecionada && (
