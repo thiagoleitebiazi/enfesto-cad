@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { importarDxf } from './dxf-importacao';
+import { dxfParaMundo, importarDxf } from './dxf-importacao';
 
 // Quadrado de 10 cm por 10 cm desenhado como SPLINE fechada de grau 1 com nós
 // "clamped": pontos de controle (0,0), (10,0), (10,10), (0,10), (0,0). Nós:
@@ -51,5 +51,12 @@ describe('importarDxf com SPLINE', () => {
 
     expect(resultado.pecas).toHaveLength(0);
     expect(resultado.avisos.join(' ')).toContain('Nenhuma polilinha fechada');
+  });
+});
+
+describe('dxfParaMundo', () => {
+  it('põe o eixo x do DXF na horizontal e inverte o y, como a página do PDF', () => {
+    expect(dxfParaMundo({ x: 10, y: 0 }, 50)).toEqual({ x: 50, y: 10 });
+    expect(dxfParaMundo({ x: 0, y: 50 }, 50)).toEqual({ x: 0, y: 0 });
   });
 });

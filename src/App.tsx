@@ -23,7 +23,7 @@ import {
   dimensoesDoMolde,
   type Molde,
 } from './domain/molde';
-import { importarDxf, type ResultadoImportacaoDxf } from './formats/dxf-importacao';
+import { alturaDoDesenho, dxfParaMundo, importarDxf, type ResultadoImportacaoDxf } from './formats/dxf-importacao';
 import { importarPdf } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import {
@@ -1112,17 +1112,23 @@ export default function App(): React.JSX.Element {
       const pendente = importacaoDxfPendente;
       if (!pendente) return;
       try {
+        const altura = alturaDoDesenho(pendente);
+        const paraTela = (pontos: readonly Ponto2D[]) => pontos.map((p) => dxfParaMundo(p, altura));
         const novosMoldes = itens.map((item) => {
           const peca = pendente.pecas[Number(item.candidatoId)]!;
+          const contorno = paraTela(peca.contorno);
+          const fioDoArquivo = peca.linhaDeFio;
           return criarMolde(
             {
               nome: item.nome,
               referencia: '',
               tamanho: item.tamanho,
-              contorno: peca.contorno,
-              furos: peca.furos,
-              linhasInternas: peca.linhasInternas,
-              linhaDeFio: peca.linhaDeFio ?? linhaDeFioSobreContorno(peca.contorno, item.direcaoDoFio),
+              contorno,
+              furos: peca.furos.map(paraTela),
+              linhasInternas: peca.linhasInternas.map(paraTela),
+              linhaDeFio: fioDoArquivo
+                ? { inicio: dxfParaMundo(fioDoArquivo.inicio, altura), fim: dxfParaMundo(fioDoArquivo.fim, altura) }
+                : linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
             },
             proximoId(),
           );

@@ -438,3 +438,25 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
 
   return { pecas, unidadeDetectada: unidade.rotulo, unidadeAssumida: unidade.assumida, avisos };
 }
+
+/**
+ * Altura do desenho em coordenadas do DXF (y para cima), usada para virar o
+ * eixo vertical como na página do PDF.
+ */
+export function alturaDoDesenho(resultado: ResultadoImportacaoDxf): number {
+  let maximo = Number.NEGATIVE_INFINITY;
+  for (const peca of resultado.pecas) {
+    const todos = [peca.contorno, ...peca.furos, ...peca.linhasInternas];
+    for (const contorno of todos) for (const p of contorno) maximo = Math.max(maximo, p.y);
+    if (peca.linhaDeFio) maximo = Math.max(maximo, peca.linhaDeFio.inicio.y, peca.linhaDeFio.fim.y);
+  }
+  return Number.isFinite(maximo) ? maximo : 0;
+}
+
+/**
+ * Converte um ponto do DXF para a tela do app, do mesmo modo que o PDF:
+ * o eixo x do arquivo vai para a horizontal, e o y (invertido) para a vertical.
+ */
+export function dxfParaMundo(p: Ponto2D, alturaDoDesenhoDxf: number): Ponto2D {
+  return ponto(alturaDoDesenhoDxf - p.y, p.x);
+}
