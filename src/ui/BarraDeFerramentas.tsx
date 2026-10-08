@@ -125,7 +125,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             key={aba.id}
             role="tab"
             aria-selected={abaAtiva === aba.id}
-            className={abaAtiva === aba.id ? 'ribbon-aba ribbon-aba-ativa' : 'ribbon-aba'}
+            className={[
+              'ribbon-aba',
+              abaAtiva === aba.id ? 'ribbon-aba-ativa' : '',
+              aba.id === 'arquivo' ? 'ribbon-aba-arquivo' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             onClick={() => setAbaAtiva(aba.id)}
           >
             {aba.rotulo}

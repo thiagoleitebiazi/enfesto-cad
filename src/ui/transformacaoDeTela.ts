@@ -78,3 +78,14 @@ export function passoDeReguaEmMm(escalaPxPorMm: number, alvoPx: number = 60): nu
   }
   return melhor;
 }
+
+/**
+ * Quantas subdivisões desenhar entre duas marcas numeradas da régua: 10, 5, 2
+ * ou nenhuma (1), a maior que ainda deixe pelo menos `minimoPx` entre traços.
+ */
+export function subdivisoesDaRegua(passoMm: number, escalaPxPorMm: number, minimoPx = 5): number {
+  for (const divisoes of [10, 5, 2]) {
+    if ((passoMm / divisoes) * escalaPxPorMm >= minimoPx) return divisoes;
+  }
+  return 1;
+}

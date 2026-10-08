@@ -4,7 +4,7 @@ import { criarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarTecido, type Tecido } from './tecido';
 import { criarProjeto, registrarEvento } from './projeto';
-import { gerarRelatorioDeProducao } from './relatorio';
+import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './relatorio';
 
 function pecaRetangular(nome: string, tamanho: string, largura: number, altura: number, quantidade = 1, referencia = ''): Molde {
   return criarMolde(
@@ -238,5 +238,19 @@ describe('gerarRelatorioDeProducao — versão do encaixe e referências', () =>
     });
     const relatorio = gerarRelatorioDeProducao(projeto, '2026-09-28T10:00:00.000Z');
     expect([...relatorio.referencias].sort()).toEqual(['REF-1', 'REF-2']);
+  });
+});
+
+describe('aproveitamentoDaMesa', () => {
+  it('é a área das peças sobre largura útil × comprimento usado, contando cada peça uma vez', () => {
+    // 100 × 200 mm = 20 000 mm²; mesa de 1000 mm úteis, comprimento usado 200 mm.
+    const pecas = [pecaRetangular('A', 'M', 100, 200, 3)];
+
+    expect(aproveitamentoDaMesa(pecas, enfestoDeTeste())).toBeCloseTo(10, 9);
+  });
+
+  it('é null sem enfesto ou sem peças', () => {
+    expect(aproveitamentoDaMesa([], enfestoDeTeste())).toBeNull();
+    expect(aproveitamentoDaMesa([pecaRetangular('A', 'M', 100, 200)], null)).toBeNull();
   });
 });

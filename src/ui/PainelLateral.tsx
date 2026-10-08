@@ -13,12 +13,16 @@ interface PainelDePecasProps {
   readonly onAbrirPropriedades?: (id: string) => void;
 }
 
-/** Miniatura do contorno da peça (só o formato, sem furos/piques) — mesma ideia das miniaturas de peça de um CAD de moldes profissional. */
+/**
+ * Miniatura do contorno da peça (só o formato, sem furos/piques), na mesma
+ * orientação do canvas: a tela põe mundo.y na horizontal e mundo.x na
+ * vertical (ver transformacaoDeTela.ts), então a miniatura também.
+ */
 function MiniaturaDoMolde({ contorno }: { readonly contorno: Contorno }): React.JSX.Element {
   const bbox = retanguloEnvolvente(contorno);
-  const margem = Math.max(bbox.largura, bbox.altura, 1) * 0.12;
-  const viewBox = `${bbox.minX - margem} ${bbox.minY - margem} ${bbox.largura + margem * 2 || 1} ${bbox.altura + margem * 2 || 1}`;
-  const pontos = contorno.map((p) => `${p.x},${p.y}`).join(' ');
+  const margem = Math.max(bbox.largura, bbox.altura, 1) * 0.08;
+  const viewBox = `${bbox.minY - margem} ${bbox.minX - margem} ${bbox.altura + margem * 2 || 1} ${bbox.largura + margem * 2 || 1}`;
+  const pontos = contorno.map((p) => `${p.y},${p.x}`).join(' ');
   return (
     <svg className="miniatura-de-peca" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
       <polygon points={pontos} />
@@ -54,10 +58,10 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
                 onDoubleClick={() => props.onAbrirPropriedades?.(peca.id)}
                 title="Clique para selecionar — duplo-clique para abrir as propriedades"
               >
-                <MiniaturaDoMolde contorno={peca.contorno} />
                 <span className="texto-do-item-de-peca">
                   {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho || '—'})</span>
                 </span>
+                <MiniaturaDoMolde contorno={peca.contorno} />
               </button>
             </li>
           ))}

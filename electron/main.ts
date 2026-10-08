@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol } from 'electron';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
@@ -83,12 +83,14 @@ function criarJanelaPrincipal(): void {
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: '#e8e9eb',
+    title: 'Enfesto CAD',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  janela.maximize();
 
   registrarDiagnostico(
     `inicio versao=${app.getVersion()} plataforma=${process.platform} arch=${process.arch} ` +
@@ -238,6 +240,10 @@ ipcMain.handle('excluir-projeto', async (_evento, id: string) => {
 });
 
 app.whenReady().then(() => {
+  // Sem a barra de menu padrão do Electron (File/Edit/View/Window, em inglês):
+  // os comandos do app ficam todos na faixa de abas. No Windows, copiar/colar
+  // em campos de texto continua funcionando, porque é tratado pelo Chromium.
+  Menu.setApplicationMenu(null);
   registrarProtocoloDoApp();
   criarJanelaPrincipal();
 

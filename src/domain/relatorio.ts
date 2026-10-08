@@ -1,7 +1,7 @@
 import type { Molde } from './molde';
 import type { Projeto } from './projeto';
 import { area, retanguloEnvolvente } from '../core/geometria';
-import { ROTULO_DO_TIPO } from './enfesto';
+import { ROTULO_DO_TIPO, type ConfiguracaoDeEnfesto } from './enfesto';
 import { ROTULO_DO_STATUS } from './projeto';
 
 /**
@@ -120,4 +120,20 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
     versaoDoEncaixe,
     status: ROTULO_DO_STATUS[projeto.status],
   };
+}
+
+/**
+ * Aproveitamento físico da mesa, em %: área das peças que estão na mesa (cada
+ * uma contada uma vez) sobre largura útil × comprimento usado. Diferente do
+ * relatório, não multiplica pela quantidade de cada peça: mede o que está
+ * desenhado. Depois do encaixe automático (cópias com quantidade 1), os dois
+ * coincidem. Null sem enfesto configurado ou sem peças.
+ */
+export function aproveitamentoDaMesa(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto | null): number | null {
+  if (!enfesto || pecas.length === 0) return null;
+  const comprimentoUsadoMm = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
+  const areaDisponivelMm2 = enfesto.larguraUtilMm * comprimentoUsadoMm;
+  if (!(areaDisponivelMm2 > 0)) return null;
+  const areaDasPecasMm2 = pecas.reduce((soma, p) => soma + area(p.contorno), 0);
+  return (areaDasPecasMm2 / areaDisponivelMm2) * 100;
 }

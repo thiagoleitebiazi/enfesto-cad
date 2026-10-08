@@ -35,7 +35,7 @@ import {
 import { DialogoDeImportacaoDeContornos, type ItemConfirmadoDeContorno } from './ui/DialogoDeImportacaoDeContornos';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
-import { gerarRelatorioDeProducao } from './domain/relatorio';
+import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import { ponto, area, retanguloEnvolvente, deslocarContornoParaFora, type Ponto2D } from './core/geometria';
 import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -163,6 +163,7 @@ export default function App(): React.JSX.Element {
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
   const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
+  const aproveitamentoAtualDaMesa = useMemo(() => aproveitamentoDaMesa(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
     () =>
       new Set(
@@ -1331,12 +1332,6 @@ export default function App(): React.JSX.Element {
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
-      <div className="faixa-de-configuracao">
-        <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
-        <span>
-          Enfesto: {enfesto ? `${ROTULO_DO_TIPO[enfesto.tipo]}, ${enfesto.quantidadeDeCamadas} camadas` : 'não configurado'}
-        </span>
-      </div>
       {painelAberto === 'tecido' && (
         <PainelDeTecido
           tecidoAtual={tecido}
@@ -1458,33 +1453,47 @@ export default function App(): React.JSX.Element {
           onAlternarSelecaoEmLote={alternarSelecaoEmLote}
           onAbrirPropriedades={abrirPropriedadesDaPeca}
         />
-        <AreaDeDesenho
-          pecas={pecas}
-          selecionadoId={selecionadoId}
-          idsSelecionadosEmLote={idsSelecionadosEmLote}
-          enfesto={enfesto}
-          idsComErro={idsComErro}
-          transform={transform}
-          modo={modo}
-          pontosEmEdicao={pontosEmEdicao}
-          contornoFinalizado={contornoPendente}
-          onTransformChange={setTransform}
-          onSelecionar={selecionarUnico}
-          onCursorMove={setCursorMundo}
-          onCliqueNoCanvas={onCliqueNoCanvas}
-          onMoverPeca={moverPeca}
-          onAbrirPropriedades={abrirPropriedadesDaPeca}
-          onMoverVariosPontos={moverVariosPontosDaSelecionada}
-          onInserirPontoNoMolde={inserirPontoNaSelecionada}
-          onExcluirPontoDoMolde={excluirPontoDaSelecionada}
-          onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
-        />
+        <div className="coluna-do-desenho">
+          <div className="barra-de-documento">
+            <span className="aba-de-documento" title="Projeto aberto">
+              {projetoAtual.nome || 'Projeto sem nome'}
+            </span>
+            <span className="contexto-do-documento">
+              <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
+              <span>
+                Enfesto:{' '}
+                {enfesto ? `${ROTULO_DO_TIPO[enfesto.tipo]}, ${enfesto.quantidadeDeCamadas} camada(s)` : 'não configurado'}
+              </span>
+            </span>
+          </div>
+          <AreaDeDesenho
+            pecas={pecas}
+            selecionadoId={selecionadoId}
+            idsSelecionadosEmLote={idsSelecionadosEmLote}
+            enfesto={enfesto}
+            idsComErro={idsComErro}
+            transform={transform}
+            modo={modo}
+            pontosEmEdicao={pontosEmEdicao}
+            contornoFinalizado={contornoPendente}
+            onTransformChange={setTransform}
+            onSelecionar={selecionarUnico}
+            onCursorMove={setCursorMundo}
+            onCliqueNoCanvas={onCliqueNoCanvas}
+            onMoverPeca={moverPeca}
+            onAbrirPropriedades={abrirPropriedadesDaPeca}
+            onMoverVariosPontos={moverVariosPontosDaSelecionada}
+            onInserirPontoNoMolde={inserirPontoNaSelecionada}
+            onExcluirPontoDoMolde={excluirPontoDaSelecionada}
+            onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
+          />
+        </div>
       </div>
       {importacaoPdfPendente && (
         <DialogoDeImportacaoDeContornos
           titulo="Importar contornos do PDF"
           descricao="A escala é a do papel: escolha o fator abaixo."
-          resumoDeDescartes={`Descartados: ${importacaoPdfPendente.descartados.borda} de borda da folha, ${importacaoPdfPendente.descartados.poucosVertices} com poucos vértices, ${importacaoPdfPendente.descartados.areaPequena} de área pequena, ${importacaoPdfPendente.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${importacaoPdfPendente.curvasAproximadas}.`}
+          resumoDeDescartes={`Descartados: ${importacaoPdfPendente.descartados.borda} de borda da folha, ${importacaoPdfPendente.descartados.areaPequena} de área pequena (letras e marcas), ${importacaoPdfPendente.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${importacaoPdfPendente.curvasAproximadas}.`}
           candidatos={importacaoPdfPendente.candidatos.map((c) => ({ id: c.id, vertices: c.vertices }))}
           mostrarEscala
           onConfirmar={confirmarImportacaoPdf}
@@ -1542,6 +1551,7 @@ export default function App(): React.JSX.Element {
         temSelecao={selecionadoId !== null}
         problemas={problemasDeValidacao}
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
+        aproveitamentoPercentual={aproveitamentoAtualDaMesa}
         pontoReferencia={
           (modo === 'novo-molde' || modo === 'novo-furo') && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!

@@ -5,11 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PT_PARA_MM, contornoEmMundo, extrairContornosDoPdf, linhaDeFioSobreContorno } from './pdf-pecas-vetoriais';
 
-// Fixture gerada com pdfkit (Node): moldura da folha (A4), dois retângulos
-// de 4 vértices (descartados como caixas), um polígono de 16 vértices
-// centrado em (300, 400) de raio 100 e um de 12 vértices centrado em
-// (450, 200) de raio 60. O pdfkit usa topo-esquerda; no PDF o y vira
-// altura - y, por isso as coordenadas esperadas abaixo estão em PDF.
+// Fixture gerada com pdfkit (Node): moldura da folha (A4), um retângulo de
+// 200 × 80 pt (70,6 × 28,2 mm, uma peça retangular como um cós ou viés), um
+// retângulo de 40 × 10 pt (14 × 3,5 mm, pequeno demais para ser peça), um
+// polígono de 16 vértices centrado em (300, 400) de raio 100 e um de 12
+// vértices centrado em (450, 200) de raio 60. O pdfkit usa topo-esquerda; no
+// PDF o y vira altura - y, por isso as coordenadas esperadas estão em PDF.
 const DIRETORIO = path.dirname(fileURLToPath(import.meta.url));
 const ALTURA_A4_PT = 841.89;
 
@@ -18,14 +19,13 @@ function lerFixture(nome: string): string {
 }
 
 describe('extrairContornosDoPdf', () => {
-  it('aceita só os contornos fechados com vértices suficientes e conta cada descarte pelo motivo', async () => {
+  it('aceita contornos fechados de tamanho de peça, inclusive retângulos, e conta cada descarte pelo motivo', async () => {
     const resultado = await extrairContornosDoPdf(lerFixture('pdf-pecas-vetoriais.pdf'));
 
-    expect(resultado.candidatos).toHaveLength(2);
-    expect(resultado.candidatos.map((c) => c.vertices).sort((a, b) => a - b)).toEqual([12, 16]);
+    expect(resultado.candidatos).toHaveLength(3);
+    expect(resultado.candidatos.map((c) => c.vertices).sort((a, b) => a - b)).toEqual([4, 12, 16]);
     expect(resultado.descartados.borda).toBe(1);
-    expect(resultado.descartados.poucosVertices).toBe(2);
-    expect(resultado.descartados.areaPequena).toBe(0);
+    expect(resultado.descartados.areaPequena).toBe(1);
     expect(resultado.descartados.abertos).toBe(0);
   });
 

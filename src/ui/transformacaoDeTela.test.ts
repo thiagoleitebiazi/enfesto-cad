@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mundoParaTela, telaParaMundo, aplicarZoom, passoDeReguaEmMm, valorDaReguaEmUnidade } from './transformacaoDeTela';
+import { mundoParaTela, telaParaMundo, aplicarZoom, passoDeReguaEmMm, subdivisoesDaRegua, valorDaReguaEmUnidade } from './transformacaoDeTela';
 
 describe('mundoParaTela / telaParaMundo', () => {
   it('são inversas uma da outra', () => {
@@ -70,5 +70,14 @@ describe('passoDeReguaEmMm', () => {
       expect(espacoPx).toBeGreaterThan(20);
       expect(espacoPx).toBeLessThan(200);
     }
+  });
+});
+
+describe('subdivisoesDaRegua', () => {
+  it('usa 10 subdivisões quando há espaço, e menos quando os traços ficariam colados', () => {
+    expect(subdivisoesDaRegua(100, 1)).toBe(10); // 10 px entre traços
+    expect(subdivisoesDaRegua(100, 0.3)).toBe(5); // 20 mm × 0,3 = 6 px; 10 mm × 0,3 = 3 px
+    expect(subdivisoesDaRegua(100, 0.12)).toBe(2); // 50 mm × 0,12 = 6 px
+    expect(subdivisoesDaRegua(100, 0.05)).toBe(1); // nem 2 cabem
   });
 });

@@ -15,13 +15,14 @@ import {
   mundoParaTela,
   telaParaMundo,
   passoDeReguaEmMm,
+  subdivisoesDaRegua,
   valorDaReguaEmUnidade,
   type TransformacaoDeTela,
   type UnidadeDeRegua,
 } from './transformacaoDeTela';
 
 const ESPESSURA_REGUA_PX = 24;
-const COR_FUNDO = '#c9cdd3';
+const COR_FUNDO = '#dde1e6';
 const COR_TECIDO = '#f4f5f7';
 const COR_MESA = '#ffffff';
 const COR_BORDA_MESA = '#8b93a1';
@@ -34,9 +35,28 @@ const COR_LINHA_DE_CORTE = '#6b7280';
 const COR_PIQUE = '#8e24aa';
 const COR_MARCA = '#00838f';
 const COR_EM_EDICAO = '#2e7d32';
-const COR_REGUA_FUNDO = '#dfe2e6';
+const COR_REGUA_FUNDO = '#f7f8fa';
 const COR_REGUA_TRACO = '#5a6270';
 const COR_ALCA_DE_VERTICE = '#e65100';
+
+// Numeração de vértices: peças simples numeram todos; contornos com muitos
+// pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
+const LIMITE_DE_VERTICES_SEMPRE_NUMERADOS = 40;
+const GIRO_MINIMO_DE_CANTO_GRAUS = 15;
+const ESPACO_MINIMO_ENTRE_NUMEROS_PX = 16;
+
+/** Quanto a direção muda (graus) ao passar pelo vértice b, de a para c. */
+function giroEmGraus(a: Ponto2D, b: Ponto2D, c: Ponto2D): number {
+  const ux = b.x - a.x;
+  const uy = b.y - a.y;
+  const vx = c.x - b.x;
+  const vy = c.y - b.y;
+  const nu = Math.hypot(ux, uy);
+  const nv = Math.hypot(vx, vy);
+  if (nu === 0 || nv === 0) return 0;
+  const cosseno = Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (nu * nv)));
+  return (Math.acos(cosseno) * 180) / Math.PI;
+}
 
 export type ModoDeDesenho =
   | 'selecionar'
@@ -382,44 +402,93 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.fill();
       }
 
-      desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, COR_FIO);
+      const corDaPeca = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
 
-      // Numeração dos vértices do contorno — visível sempre, não só nos
-      // modos de edição de ponto (mesmo padrão de referência de um CAD de
-      // moldes profissional). Usa os índices reais do contorno, a mesma
-      // numeração que "Mover ponto"/"Inserir ponto"/"Excluir ponto" operam.
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
-      peca.contorno.forEach((p, i) => {
-        const tela = mundoParaTela(p, transform);
-        ctx.beginPath();
-        ctx.arc(tela.x, tela.y, 1.6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillText(String(i + 1), tela.x + 4, tela.y - 4);
-      });
+      // Linha de fio na cor da peça: seta nas duas pontas quando a peça pode
+      // girar 180° (fio sem sentido, convenção de modelagem) e numa ponta só
+      // quando não pode (fio com sentido).
+      desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, corDaPeca);
+      if (peca.restricaoDeRotacao.permite180) {
+        desenharSeta(ctx, peca.linhaDeFio.fim, peca.linhaDeFio.inicio, corDaPeca);
+      }
 
-      // Rótulo do nome da peça (acima) + seta de medida da largura visual
-      // (abaixo) — mesmo padrão de referência de um CAD de moldes
-      // profissional. Nome já existe em peca.nome; a medida usa o mesmo
-      // retângulo envolvente que o resto do app já usa (dimensoesDoMolde),
-      // nada inventado.
-      const bboxPeca = retanguloEnvolvente(peca.contorno);
-      const margemMedidaMm = 18 / transform.escalaPxPorMm;
-      const centroYMm = (bboxPeca.minY + bboxPeca.maxY) / 2;
-      const posNome = mundoParaTela(ponto(bboxPeca.minX - margemMedidaMm, centroYMm), transform);
+      // Nome da peça escrito sobre a linha de fio, girado com ela e sempre de
+      // pé para leitura.
+      const inicioDoFio = mundoParaTela(peca.linhaDeFio.inicio, transform);
+      const fimDoFio = mundoParaTela(peca.linhaDeFio.fim, transform);
+      let anguloDoFio = Math.atan2(fimDoFio.y - inicioDoFio.y, fimDoFio.x - inicioDoFio.x);
+      if (anguloDoFio > Math.PI / 2) anguloDoFio -= Math.PI;
+      if (anguloDoFio < -Math.PI / 2) anguloDoFio += Math.PI;
+      ctx.save();
+      ctx.translate((inicioDoFio.x + fimDoFio.x) / 2, (inicioDoFio.y + fimDoFio.y) / 2);
+      ctx.rotate(anguloDoFio);
       ctx.textAlign = 'center';
-      ctx.font = 'bold 11px sans-serif';
-      desenharRotuloComFundo(ctx, peca.nome, posNome.x, posNome.y, estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO);
+      ctx.font = 'bold 12px sans-serif';
+      desenharRotuloComFundo(ctx, peca.nome, 0, -7, corDaPeca);
+      ctx.restore();
 
-      const linhaMedidaMm = bboxPeca.maxX + margemMedidaMm;
-      const pontaEsquerda = ponto(linhaMedidaMm, bboxPeca.minY);
-      const pontaDireita = ponto(linhaMedidaMm, bboxPeca.maxY);
-      desenharSeta(ctx, pontaEsquerda, pontaDireita, COR_REGUA_TRACO);
-      desenharSeta(ctx, pontaDireita, pontaEsquerda, COR_REGUA_TRACO);
-      const posMedida = mundoParaTela(ponto(linhaMedidaMm, centroYMm), transform);
+      // Vértices: marcador quadrado e o número real do vértice (o mesmo que
+      // "Mover ponto"/"Excluir ponto" usam). Em curvas amostradas (centenas de
+      // pontos), só os cantos e os pontos afastados entre si recebem número,
+      // para a curva não virar uma mancha de texto. Nos modos de edição, as
+      // alças de todos os vértices continuam aparecendo.
       ctx.font = '10px sans-serif';
-      desenharRotuloComFundo(ctx, `${(bboxPeca.maxY - bboxPeca.minY).toFixed(0)} mm`, posMedida.x, posMedida.y + 13, COR_REGUA_TRACO);
       ctx.textAlign = 'left';
+      ctx.fillStyle = corDaPeca;
+      const totalDeVertices = peca.contorno.length;
+      let ultimoNumerado: Ponto2D | null = null;
+      for (let i = 0; i < totalDeVertices; i++) {
+        const atual = peca.contorno[i]!;
+        const anterior = peca.contorno[(i - 1 + totalDeVertices) % totalDeVertices]!;
+        const proximo = peca.contorno[(i + 1) % totalDeVertices]!;
+        const ehCanto =
+          totalDeVertices <= LIMITE_DE_VERTICES_SEMPRE_NUMERADOS ||
+          giroEmGraus(anterior, atual, proximo) >= GIRO_MINIMO_DE_CANTO_GRAUS;
+        if (!ehCanto) continue;
+        const tela = mundoParaTela(atual, transform);
+        if (ultimoNumerado && Math.hypot(tela.x - ultimoNumerado.x, tela.y - ultimoNumerado.y) < ESPACO_MINIMO_ENTRE_NUMEROS_PX) {
+          continue;
+        }
+        ultimoNumerado = tela;
+        ctx.fillRect(tela.x - 2, tela.y - 2, 4, 4);
+        ctx.fillText(String(i + 1), tela.x + 5, tela.y - 5);
+      }
+
+      // Medida da largura na tela: só na peça selecionada, para não poluir o
+      // desenho com uma cota em cada peça.
+      if (estaSelecionada) {
+        const bboxPeca = retanguloEnvolvente(peca.contorno);
+        const margemMedidaMm = 22 / transform.escalaPxPorMm;
+        const centroYMm = (bboxPeca.minY + bboxPeca.maxY) / 2;
+        const linhaMedidaMm = bboxPeca.maxX + margemMedidaMm;
+        const pontaEsquerda = ponto(linhaMedidaMm, bboxPeca.minY);
+        const pontaDireita = ponto(linhaMedidaMm, bboxPeca.maxY);
+        desenharSeta(ctx, pontaEsquerda, pontaDireita, COR_REGUA_TRACO);
+        desenharSeta(ctx, pontaDireita, pontaEsquerda, COR_REGUA_TRACO);
+        const posMedida = mundoParaTela(ponto(linhaMedidaMm, centroYMm), transform);
+        ctx.textAlign = 'center';
+        ctx.font = '10px sans-serif';
+        desenharRotuloComFundo(ctx, `${(bboxPeca.maxY - bboxPeca.minY).toFixed(0)} mm`, posMedida.x, posMedida.y + 13, COR_REGUA_TRACO);
+        ctx.textAlign = 'left';
+      }
+
+      // Caixa tracejada em volta da peça selecionada.
+      if (peca.id === selecionadoId) {
+        const caixa = retanguloEnvolvente(peca.contorno);
+        const cantoA = mundoParaTela(ponto(caixa.minX, caixa.minY), transform);
+        const cantoB = mundoParaTela(ponto(caixa.maxX, caixa.maxY), transform);
+        const folga = 8;
+        ctx.strokeStyle = COR_CONTORNO_SELECIONADO;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(
+          Math.min(cantoA.x, cantoB.x) - folga,
+          Math.min(cantoA.y, cantoB.y) - folga,
+          Math.abs(cantoB.x - cantoA.x) + folga * 2,
+          Math.abs(cantoB.y - cantoA.y) + folga * 2,
+        );
+        ctx.setLineDash([]);
+      }
     }
 
     // Alças nos vértices da peça selecionada, nos modos de edição de forma
@@ -542,14 +611,22 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
     const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).y;
     const mmFinal = telaParaMundo({ x: tamanho.largura, y: 0 }, transform).y;
-    const primeiraMarca = Math.floor(mmInicial / passoMm) * passoMm;
-    for (let mm = primeiraMarca; mm <= mmFinal; mm += passoMm) {
-      const x = mundoParaTela({ x: 0, y: mm }, transform).x;
+    // Traço maior numerado em cada passo, médio na metade e pequenos nas
+    // subdivisões que couberem sem encostar uns nos outros.
+    const divisoes = subdivisoesDaRegua(passoMm, transform.escalaPxPorMm);
+    const subpassoMm = passoMm / divisoes;
+    for (let k = Math.floor(mmInicial / subpassoMm); k * subpassoMm <= mmFinal; k++) {
+      const mm = k * subpassoMm;
+      const resto = ((k % divisoes) + divisoes) % divisoes;
+      const ehMarca = resto === 0;
+      const ehMeio = !ehMarca && divisoes % 2 === 0 && resto === divisoes / 2;
+      const altura = ehMarca ? 10 : ehMeio ? 6 : 3;
+      const x = Math.round(mundoParaTela({ x: 0, y: mm }, transform).x) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, ESPESSURA_REGUA_PX);
-      ctx.lineTo(x, ESPESSURA_REGUA_PX - 8);
+      ctx.lineTo(x, ESPESSURA_REGUA_PX - altura);
       ctx.stroke();
-      ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), x + 2, 10);
+      if (ehMarca) ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), x + 2, 10);
     }
   }, [transform, tamanho, unidadeDaRegua]);
 
@@ -574,18 +651,26 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
     const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).x;
     const mmFinal = telaParaMundo({ x: 0, y: tamanho.altura }, transform).x;
-    const primeiraMarca = Math.floor(mmInicial / passoMm) * passoMm;
-    for (let mm = primeiraMarca; mm <= mmFinal; mm += passoMm) {
-      const y = mundoParaTela({ x: mm, y: 0 }, transform).y;
+    const divisoes = subdivisoesDaRegua(passoMm, transform.escalaPxPorMm);
+    const subpassoMm = passoMm / divisoes;
+    for (let k = Math.floor(mmInicial / subpassoMm); k * subpassoMm <= mmFinal; k++) {
+      const mm = k * subpassoMm;
+      const resto = ((k % divisoes) + divisoes) % divisoes;
+      const ehMarca = resto === 0;
+      const ehMeio = !ehMarca && divisoes % 2 === 0 && resto === divisoes / 2;
+      const comprimento = ehMarca ? 10 : ehMeio ? 6 : 3;
+      const y = Math.round(mundoParaTela({ x: mm, y: 0 }, transform).y) + 0.5;
       ctx.beginPath();
       ctx.moveTo(ESPESSURA_REGUA_PX, y);
-      ctx.lineTo(ESPESSURA_REGUA_PX - 8, y);
+      ctx.lineTo(ESPESSURA_REGUA_PX - comprimento, y);
       ctx.stroke();
-      ctx.save();
-      ctx.translate(10, y - 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), 0, 0);
-      ctx.restore();
+      if (ehMarca) {
+        ctx.save();
+        ctx.translate(10, y - 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), 0, 0);
+        ctx.restore();
+      }
     }
   }, [transform, tamanho, unidadeDaRegua]);
 

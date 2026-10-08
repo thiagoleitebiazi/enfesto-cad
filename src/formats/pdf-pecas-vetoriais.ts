@@ -10,7 +10,6 @@ import { lerConteudosDeDesenho } from './pdf-fluxos';
 
 export const PT_PARA_MM = 25.4 / 72;
 
-const MINIMO_DE_VERTICES = 8;
 const AREA_MINIMA_MM2 = 500;
 const FRACAO_DA_FOLHA_QUE_E_BORDA = 0.9;
 const TOLERANCIA_DE_FECHAMENTO_PT = 0.5;
@@ -25,7 +24,6 @@ export interface ContornoCandidatoPdf {
 
 export interface DescartesDePdf {
   readonly borda: number;
-  readonly poucosVertices: number;
   readonly areaPequena: number;
   readonly abertos: number;
 }
@@ -176,7 +174,7 @@ export async function extrairContornosDoPdf(bytesComoLatin1: string): Promise<Re
   const bytes = Uint8Array.from(bytesComoLatin1, (c) => c.charCodeAt(0) & 0xff);
   const folha = lerCaixaDaPagina(bytesComoLatin1);
   const candidatos: ContornoCandidatoPdf[] = [];
-  const descartados = { borda: 0, poucosVertices: 0, areaPequena: 0, abertos: 0 };
+  const descartados = { borda: 0, areaPequena: 0, abertos: 0 };
   let curvasAproximadas = 0;
 
   if (folha === null) {
@@ -210,11 +208,9 @@ export async function extrairContornosDoPdf(bytesComoLatin1: string): Promise<Re
         descartados.borda++;
         continue;
       }
-      if (pontos.length < MINIMO_DE_VERTICES) {
-        descartados.poucosVertices++;
-        continue;
-      }
-      if (areaDoPoligono(pontos) < areaMinimaPt2) {
+      // Peças retangulares (cós, viés, acabamentos) têm 4 vértices: o filtro é
+      // só pela área, que elimina as letras desenhadas como contorno.
+      if (pontos.length < 3 || areaDoPoligono(pontos) < areaMinimaPt2) {
         descartados.areaPequena++;
         continue;
       }

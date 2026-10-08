@@ -11,6 +11,8 @@ interface BarraDeStatusProps {
   readonly onAlternarValidacao: () => void;
   /** Último ponto confirmado durante uma construção em andamento (Novo Molde/Furo) — habilita a leitura de DX/DY/distância/ângulo relativa a ele. */
   readonly pontoReferencia?: Ponto2D | null;
+  /** Aproveitamento físico da mesa em %, ou null quando não há enfesto ou peças. */
+  readonly aproveitamentoPercentual?: number | null;
 }
 
 export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
@@ -43,7 +45,10 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
       <span>Zoom: {zoomPercentual}%</span>
       <span>Peças: {props.totalDePecas}</span>
       <span>Seleção: {props.temSelecao ? '1 peça' : 'nenhuma'}</span>
-      <span>Aproveitamento: — (encaixe ainda não implementado)</span>
+      <span title="Área das peças na mesa ÷ (largura útil × comprimento usado)">
+        Aproveitamento da mesa:{' '}
+        {props.aproveitamentoPercentual != null ? `${props.aproveitamentoPercentual.toFixed(1)}%` : '—'}
+      </span>
       <button
         className={`indicador-de-validacao ${erros > 0 ? 'tem-erro' : avisos > 0 ? 'tem-aviso' : ''}`}
         onClick={props.onAlternarValidacao}
