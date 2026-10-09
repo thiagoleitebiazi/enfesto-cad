@@ -186,6 +186,24 @@ describe('importarDxf — camada de contorno ausente (heurística de fallback)',
   });
 });
 
+describe('importarDxf — borda da folha', () => {
+  it('ignora o retângulo que envolve o desenho: não vira peça nem linha interna da peça que encosta no canto dele', () => {
+    const doc = documento(
+      [
+        // Borda começando no mesmo canto da peça A — o primeiro ponto dela cai "dentro" de A.
+        ...lwpolyline('0', [[0, 0], [1000, 0], [1000, 500], [0, 500]]),
+        ...lwpolyline('0', RETANGULO_300X400),
+        ...lwpolyline('0', [[400, 50], [700, 50], [700, 450], [400, 450]]),
+      ],
+      4,
+    );
+    const resultado = importarDxf(doc, 'com-borda');
+    expect(resultado.pecas).toHaveLength(2);
+    expect(resultado.pecas.map((p) => p.linhasInternas)).toEqual([[], []]);
+    expect(resultado.avisos.some((a) => /borda da folha/.test(a))).toBe(true);
+  });
+});
+
 describe('importarDxf — múltiplas peças no mesmo arquivo', () => {
   it('separa duas peças em camadas de contorno reconhecidas, cada uma com seu próprio furo', () => {
     const doc = documento(

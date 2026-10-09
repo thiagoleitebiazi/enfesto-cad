@@ -319,11 +319,6 @@ function caixaDe(pontos: readonly Ponto2D[]): CaixaDeDelimitacao {
   return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
 }
 
-/**
- * Borda da folha: um retângulo de 4 vértices que cobre quase todo o desenho e
- * contém outras formas fechadas. Só é reconhecido se houver de fato formas
- * dentro dele, para não descartar uma peça única.
- */
 /** Forma inteira dentro de outra: caixa contida e primeiro ponto dentro do contorno externo. */
 function estaDentroDe(forma: EntidadeBruta, externa: EntidadeBruta): boolean {
   const a = caixaDe(forma.pontos);
@@ -332,6 +327,12 @@ function estaDentroDe(forma: EntidadeBruta, externa: EntidadeBruta): boolean {
   return dentroDaCaixa && pontoDentroDoContorno(forma.pontos[0]!, externa.pontos);
 }
 
+/**
+ * Borda da folha: uma forma fechada, fora das camadas de contorno, que cobre
+ * quase todo o desenho e contém outras formas fechadas (no arquivo de teste,
+ * uma SPLINE fechada em volta de todas as peças). Só é reconhecida se houver
+ * de fato formas dentro dela, para não descartar uma peça única.
+ */
 function ehBordaDaFolha(entidade: EntidadeBruta, formasFechadas: readonly EntidadeBruta[]): boolean {
   if (formasFechadas.length < 3) return false;
   if (nomeDeCamadaContem(entidade.camada, 'CONTORNO', 'OUTLINE', 'BOUNDARY', 'CORTE', 'CUT')) return false;
@@ -391,11 +392,14 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
     return { pecas: [], unidadeDetectada: unidade.rotulo, unidadeAssumida: unidade.assumida, avisos };
   }
 
+  // A borda da folha fica fora de tudo: sem isso ela virava linha interna da
+  // peça que encosta no canto dela (o primeiro ponto da borda cai "dentro"
+  // dessa peça), apesar do aviso de que foi ignorada.
   const furosCandidatos = poligonosFechados.filter(
-    (e) => !contornos.includes(e) && nomeDeCamadaContem(e.camada, 'FURO', 'HOLE'),
+    (e) => !contornos.includes(e) && !bordas.includes(e) && nomeDeCamadaContem(e.camada, 'FURO', 'HOLE'),
   );
   const internasCandidatas = poligonosFechados.filter(
-    (e) => !contornos.includes(e) && !furosCandidatos.includes(e),
+    (e) => !contornos.includes(e) && !bordas.includes(e) && !furosCandidatos.includes(e),
   );
   const linhasDeFioCandidatas = entidadesMm.filter(
     (e) => e.tipo === 'LINE' && nomeDeCamadaContem(e.camada, 'FIO', 'GRAIN'),
