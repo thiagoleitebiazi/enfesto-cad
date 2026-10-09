@@ -28,6 +28,9 @@ import {
   removerPontoDoContorno,
   escalarContorno,
   chanfrarCantoDoContorno,
+  comprimentoDaLinha,
+  perimetro,
+  trechoDoContorno,
   arredondarCantoDoContorno,
 } from './geometria';
 
@@ -427,5 +430,76 @@ describe('arredondarCantoDoContorno', () => {
     const resultado = arredondarCantoDoContorno(quadrado, 1, 1000, 8);
     // ponto de tangência do lado (10,0)->(0,0) não deve passar de 9.9 (99% de 10)
     expect(resultado[1]!.x).toBeGreaterThan(0.05);
+  });
+});
+
+describe('perimetro e comprimentoDaLinha', () => {
+  const retangulo = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+
+  it('o perímetro conta a aresta que fecha o contorno', () => {
+    expect(perimetro(retangulo)).toBe(1000);
+    expect(comprimentoDaLinha(retangulo)).toBe(700);
+  });
+
+  it('triângulo 3-4-5', () => {
+    expect(perimetro([ponto(0, 0), ponto(30, 0), ponto(0, 40)])).toBeCloseTo(120, 9);
+  });
+
+  it('menos de dois pontos não têm comprimento', () => {
+    expect(perimetro([ponto(5, 5)])).toBe(0);
+    expect(comprimentoDaLinha([])).toBe(0);
+  });
+});
+
+describe('trechoDoContorno', () => {
+  // Arestas: 0 de (0,0) a (200,0); 1 até (200,300); 2 até (0,300); 3 fecha em (0,0).
+  const retangulo = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+  const vertice = (i: number) => ({ indiceAresta: i, ponto: retangulo[i]! });
+
+  it('de um vértice a outro, segue a numeração dos pontos', () => {
+    const caminho = trechoDoContorno(retangulo, vertice(1), vertice(3));
+    expect(caminho).toEqual([ponto(200, 0), ponto(200, 300), ponto(0, 300)]);
+    expect(comprimentoDaLinha(caminho)).toBe(500);
+  });
+
+  it('na ordem inversa, dá o outro lado: os dois somam o perímetro', () => {
+    const ida = comprimentoDaLinha(trechoDoContorno(retangulo, vertice(1), vertice(3)));
+    const volta = comprimentoDaLinha(trechoDoContorno(retangulo, vertice(3), vertice(1)));
+    expect(volta).toBe(500);
+    expect(ida + volta).toBe(perimetro(retangulo));
+  });
+
+  it('passa pela aresta que fecha o contorno', () => {
+    const caminho = trechoDoContorno(retangulo, vertice(2), vertice(1));
+    expect(caminho).toEqual([ponto(200, 300), ponto(0, 300), ponto(0, 0), ponto(200, 0)]);
+    expect(comprimentoDaLinha(caminho)).toBe(700);
+  });
+
+  it('entre dois pontos no meio de arestas diferentes', () => {
+    const de = { indiceAresta: 0, ponto: ponto(150, 0) };
+    const ate = { indiceAresta: 1, ponto: ponto(200, 100) };
+    expect(trechoDoContorno(retangulo, de, ate)).toEqual([ponto(150, 0), ponto(200, 0), ponto(200, 100)]);
+    expect(comprimentoDaLinha(trechoDoContorno(retangulo, de, ate))).toBe(150);
+    expect(comprimentoDaLinha(trechoDoContorno(retangulo, ate, de))).toBe(850);
+  });
+
+  it('na mesma aresta: adiante é o pedaço entre os dois; para trás dá a volta inteira', () => {
+    const perto = { indiceAresta: 1, ponto: ponto(200, 50) };
+    const longe = { indiceAresta: 1, ponto: ponto(200, 250) };
+    expect(trechoDoContorno(retangulo, perto, longe)).toEqual([ponto(200, 50), ponto(200, 250)]);
+    expect(comprimentoDaLinha(trechoDoContorno(retangulo, longe, perto))).toBe(800);
+  });
+
+  it('o mesmo ponto duas vezes não tem comprimento', () => {
+    expect(comprimentoDaLinha(trechoDoContorno(retangulo, vertice(2), vertice(2)))).toBe(0);
+  });
+
+  it('recusa aresta que não existe no contorno', () => {
+    expect(() => trechoDoContorno(retangulo, vertice(0), { indiceAresta: 4, ponto: ponto(0, 0) })).toThrow(
+      'Posição fora do contorno.',
+    );
+    expect(() => trechoDoContorno(retangulo, { indiceAresta: -1, ponto: ponto(0, 0) }, vertice(0))).toThrow(
+      'Posição fora do contorno.',
+    );
   });
 });

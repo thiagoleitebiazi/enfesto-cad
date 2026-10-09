@@ -61,7 +61,83 @@ export type NomeDoIcone =
   | 'redefinir-perimetro'
   | 'dividir'
   | 'transformar-elementos'
-  | 'trocar-elemento';
+  | 'trocar-elemento'
+  | 'cor'
+  | 'inverter-selecao'
+  | 'inverter-moldes'
+  | 'selecionar-moldes'
+  | 'ponto-de-restauracao'
+  | 'restaurar'
+  | 'reta'
+  | 'retangulo'
+  | 'por-angulo'
+  | 'estender-reta'
+  | 'estender-ate-elemento'
+  | 'estender-duas-retas'
+  | 'dividir-curva'
+  | 'curva-predefinida'
+  | 'espiral'
+  | 'cadastrar-curva'
+  | 'editar-pontos-de-curva'
+  | 'ponto-por-coordenada'
+  | 'ponto-por-intersecao'
+  | 'ponto-no-centro'
+  | 'ponto-no-perimetro'
+  | 'ponto-por-distancia'
+  | 'arco-por-raio'
+  | 'inserir-texto'
+  | 'editar-texto'
+  | 'extrair-molde'
+  | 'digitalizar'
+  | 'sentido-do-fio'
+  | 'linha-de-simetria'
+  | 'bainha'
+  | 'dobrar'
+  | 'desdobrar'
+  | 'costura'
+  | 'remover-costura'
+  | 'converter-contorno'
+  | 'pregas'
+  | 'pence-no-contorno'
+  | 'pence-interna'
+  | 'fechar-pence'
+  | 'transferir-pence'
+  | 'multiplas-pences'
+  | 'cortar-molde'
+  | 'unir-moldes'
+  | 'remover-regiao'
+  | 'tabela-de-graduacao'
+  | 'graduar-automatico'
+  | 'graduar-mouse'
+  | 'graduar-tangente'
+  | 'regras'
+  | 'criar-regra'
+  | 'remover-graduacao'
+  | 'separar-graduacao'
+  | 'unir-graduacao'
+  | 'agrupar-graduacao'
+  | 'deduzir-graduacao'
+  | 'copiar-graduacao'
+  | 'ajustar-graduacao'
+  | 'graduar-curva'
+  | 'conferir'
+  | 'cota-perimetro'
+  | 'perimetro'
+  | 'comparar-perimetros'
+  | 'cota-distancia'
+  | 'distancia'
+  | 'comparar-distancia'
+  | 'cota-horizontal-vertical'
+  | 'angulo'
+  | 'raio'
+  | 'propriedades'
+  | 'informacoes'
+  | 'autor'
+  | 'informacoes-dos-moldes'
+  | 'variantes'
+  | 'relacionamento-piques'
+  | 'imagens'
+  | 'localizar-modelos';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -395,6 +471,482 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <path d="M4 7h11M12 4l3 3-3 3" />
       <path d="M16 13H5M8 10l-3 3 3 3" />
+    </>
+  ),
+  cor: <rect x="4" y="4" width="12" height="12" rx="1.5" fill="currentColor" />,
+  'inverter-selecao': (
+    <>
+      <rect x="2.5" y="2.5" width="8.5" height="8.5" strokeDasharray="2.2 1.8" />
+      <rect x="9" y="9" width="8.5" height="8.5" fill="currentColor" fillOpacity="0.22" />
+    </>
+  ),
+  'inverter-moldes': (
+    <>
+      <path d="M3.5 2.5h6l1 8h-8z" strokeDasharray="2.2 1.8" />
+      <path d="M10.5 9.5h6l1 8h-8z" fill="currentColor" fillOpacity="0.22" />
+    </>
+  ),
+  'selecionar-moldes': (
+    <>
+      <path d="M12.5 7V3h-10v10H6" strokeDasharray="2.2 1.8" />
+      <path d="M8.5 8.5 17 12l-3.6 1.3L12 17z" />
+    </>
+  ),
+  'ponto-de-restauracao': (
+    <>
+      <path d="M5 2.5h10v15l-5-3.6-5 3.6z" />
+      <path d="M10 6v5M7.5 8.5h5" />
+    </>
+  ),
+  restaurar: (
+    <>
+      <path d="M4.3 7.5A6.3 6.3 0 1 1 3.8 11" />
+      <path d="M3.5 3.5v4h4" />
+      <path d="M8 7.5h4V13l-2-1.5L8 13z" />
+    </>
+  ),
+  reta: (
+    <>
+      <line x1="4" y1="16" x2="16" y2="4" />
+      <circle cx="4" cy="16" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="4" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  retangulo: (
+    <>
+      <rect x="3" y="5" width="14" height="10" />
+      <circle cx="3" cy="5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="15" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'por-angulo': (
+    <>
+      <path d="M3 16h14" />
+      <path d="M3 16 14 4.5" />
+      <path d="M9.5 16a6.5 6.5 0 0 0-2.3-5" />
+      <circle cx="14" cy="4.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'estender-reta': (
+    <>
+      <line x1="3" y1="15.5" x2="9.5" y2="9.5" />
+      <line x1="9.5" y1="9.5" x2="15.5" y2="4" strokeDasharray="2.2 1.8" />
+      <path d="M12.5 3.5H16V7" />
+    </>
+  ),
+  'estender-ate-elemento': (
+    <>
+      <line x1="16" y1="2.5" x2="16" y2="17.5" />
+      <line x1="3" y1="13.5" x2="9" y2="11.3" />
+      <line x1="9" y1="11.3" x2="16" y2="8.7" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  'estender-duas-retas': (
+    <>
+      <path d="M3 16.5 7 11" />
+      <path d="M17 16.5 13 11" />
+      <path d="M7 11 10 6.8 13 11" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  'dividir-curva': (
+    <>
+      <path d="M3 15.5c3-9 8-11.5 14-10.5" />
+      <line x1="6.2" y1="6" x2="9.8" y2="10.6" />
+    </>
+  ),
+  'curva-predefinida': <path d="M4 16.5c0-7.5 3-12.5 8-12.5 3 0 4.6 2 4.6 4.2S15 12 12.8 12c-1.5 0-2.4-.9-2.4-2.1" />,
+  espiral: <path d="M10 10.6a1.2 1.2 0 1 0-1.2-1.2c0 1.8 1.5 3.2 3.3 3.2a4.3 4.3 0 0 0 4.3-4.3 5.9 5.9 0 0 0-5.9-5.8A7.2 7.2 0 0 0 3.3 9.7" />,
+  'cadastrar-curva': (
+    <>
+      <path d="M3 15.5c2-7.5 5-10.5 9-10.5" />
+      <path d="M14.5 11v6M11.5 14h6" />
+    </>
+  ),
+  'editar-pontos-de-curva': (
+    <>
+      <path d="M3.5 15c3-9 7.5-10.8 13-10" />
+      <rect x="2.1" y="13.6" width="2.8" height="2.8" fill="currentColor" stroke="none" />
+      <rect x="15.1" y="3.6" width="2.8" height="2.8" fill="currentColor" stroke="none" />
+      <rect x="6.8" y="6.2" width="2.8" height="2.8" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'ponto-por-coordenada': (
+    <>
+      <path d="M4 3v13h13" />
+      <path d="M12 8v8M12 8H4" strokeDasharray="1.8 1.6" />
+      <circle cx="12" cy="8" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'ponto-por-intersecao': (
+    <>
+      <path d="M4 4l12 12M16 4 4 16" />
+      <circle cx="10" cy="10" r="2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'ponto-no-centro': (
+    <>
+      <circle cx="10" cy="10" r="6.8" strokeDasharray="2.6 2" />
+      <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'ponto-no-perimetro': (
+    <>
+      <path d="M3 14.5 8 6.5l5 7 4-8.5" />
+      <circle cx="5.5" cy="10.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="9.2" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'ponto-por-distancia': (
+    <>
+      <line x1="3" y1="14" x2="17" y2="14" />
+      <circle cx="13" cy="14" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M3 8.5h10M5 6.8 3 8.5l2 1.7M11 6.8l2 1.7-2 1.7" />
+    </>
+  ),
+  'arco-por-raio': (
+    <>
+      <path d="M4 15.5A11.5 11.5 0 0 1 15.5 4" />
+      <path d="M15.5 15.5 7.4 7.4" strokeDasharray="2.2 1.8" />
+      <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'inserir-texto': <path d="M5 16.5 10 3.5l5 13M6.9 11.5h6.2" />,
+  'editar-texto': (
+    <>
+      <path d="M2.5 16.5 7 5l4.5 11.5M4.2 12h5.6" />
+      <path d="M13 17v-2.3l3.6-3.6 2.3 2.3L15.3 17z" />
+    </>
+  ),
+  'extrair-molde': (
+    <>
+      <path d="M3 3h8v9H3z" strokeDasharray="2.2 1.8" />
+      <path d="M9 8h8v9H9z" fill="currentColor" fillOpacity="0.18" />
+    </>
+  ),
+  digitalizar: (
+    <>
+      <rect x="2.5" y="4" width="15" height="12" rx="1.2" />
+      <circle cx="11.5" cy="10" r="2.2" />
+      <path d="M11.5 6.2v1.6M11.5 12.2v1.6M7.7 10h1.6M13.7 10h1.6" />
+    </>
+  ),
+  'sentido-do-fio': (
+    <>
+      <path d="M4.5 2.5h11v15h-11z" />
+      <path d="M10 5.5v9M8.3 7.2 10 5.5l1.7 1.7M8.3 12.8l1.7 1.7 1.7-1.7" />
+    </>
+  ),
+  'linha-de-simetria': (
+    <>
+      <line x1="10" y1="2" x2="10" y2="18" strokeDasharray="3.2 1.5 0.8 1.5" />
+      <path d="M10 4H5.5L3.5 9l2 7H10" />
+      <path d="M10 4h4.5l2 5-2 7H10" strokeOpacity="0.4" />
+    </>
+  ),
+  bainha: (
+    <>
+      <path d="M4 3v14h12V3" />
+      <line x1="4" y1="13" x2="16" y2="13" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  dobrar: (
+    <>
+      <path d="M3 6h7v11H3z" />
+      <path d="M10 6h7v11h-7" strokeDasharray="2.2 1.8" />
+      <path d="M14.5 4.2c-2.5-1.6-5-1.6-7.5 0M7 2v2.4h2.4" />
+    </>
+  ),
+  desdobrar: (
+    <>
+      <path d="M3 6h7v11H3z" />
+      <path d="M10 6h7v11h-7" />
+      <path d="M5.5 4.2c2.5-1.6 5-1.6 7.5 0M13 2v2.4h-2.4" />
+    </>
+  ),
+  costura: (
+    <>
+      <path d="M6.5 6.5h7v7h-7z" />
+      <path d="M3 3h14v14H3z" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  'remover-costura': (
+    <>
+      <path d="M6.5 6.5h7v7h-7z" />
+      <path d="M3 3h14v14H3z" strokeDasharray="2.2 1.8" strokeOpacity="0.5" />
+      <path d="M3.5 16.5 16.5 3.5" />
+    </>
+  ),
+  'converter-contorno': (
+    <>
+      <path d="M3 3h14v14H3z" />
+      <path d="M6.5 6.5h7v7h-7z" strokeDasharray="2.2 1.8" strokeOpacity="0.6" />
+      <path d="M8.5 8.5 13 13M13 10.2V13h-2.8" />
+    </>
+  ),
+  pregas: <path d="M2.5 5.5 5 14.5l2.5-9 2.5 9 2.5-9 2.5 9 2.5-9" />,
+  'pence-no-contorno': (
+    <>
+      <path d="M3 5h5l2 9.5L12 5h5" />
+      <path d="M3 5v11.5h14V5" strokeOpacity="0.45" />
+    </>
+  ),
+  'pence-interna': (
+    <>
+      <rect x="3" y="3" width="14" height="14" />
+      <path d="M10 5.5 12 10l-2 4.5L8 10z" />
+    </>
+  ),
+  'fechar-pence': (
+    <>
+      <path d="M6.5 4 10 16l3.5-12" />
+      <path d="M2.5 8.5h3.2M4.4 7.2l1.3 1.3-1.3 1.3M17.5 8.5h-3.2M15.6 7.2l-1.3 1.3 1.3 1.3" />
+    </>
+  ),
+  'transferir-pence': (
+    <>
+      <path d="M2.5 4 5 12.5 7.5 4" />
+      <path d="M12.5 16 15 7.5l2.5 8.5" strokeDasharray="2.2 1.8" />
+      <path d="M7.5 14.5c1.6 1.8 3.2 1.8 4.6.2M12.3 12.2v2.6H9.7" />
+    </>
+  ),
+  'multiplas-pences': <path d="M2.5 5l2 10 2-10M8 5l2 10 2-10M13.5 5l2 10 2-10" />,
+  'cortar-molde': (
+    <>
+      <path d="M3 5h14v11H3z" />
+      <path d="M6.5 2 13.5 19" strokeDasharray="2.4 1.8" />
+    </>
+  ),
+  'unir-moldes': (
+    <>
+      <rect x="2" y="5.5" width="6" height="9.5" />
+      <rect x="12" y="5.5" width="6" height="9.5" />
+      <path d="M8.6 10.2h2.8M10.2 9l1.2 1.2-1.2 1.2" />
+    </>
+  ),
+  'remover-regiao': (
+    <>
+      <path d="M3 3h14v14H3z" />
+      <path d="M8 8h6.5v6.5H8z" strokeDasharray="2.2 1.8" />
+      <path d="M9.8 9.8l3 3M12.8 9.8l-3 3" />
+    </>
+  ),
+  'tabela-de-graduacao': (
+    <>
+      <rect x="3" y="4" width="14" height="12" rx="0.8" />
+      <path d="M3 8h14M3 12h14M8 4v12M12.5 4v12" />
+    </>
+  ),
+  'graduar-automatico': (
+    <>
+      <path d="M3 16.5V8l4.5-4.5H12" />
+      <path d="M6.5 16.5V10L10 6.5h4.5" />
+      <path d="M10 16.5V12l2.5-2.5H17" />
+    </>
+  ),
+  'graduar-mouse': (
+    <>
+      <path d="M3 15.5V7l4-4" />
+      <path d="M6.5 15.5V9l3-3" />
+      <path d="M10 9.5l7.5 3-3.2 1.2L13 17z" />
+    </>
+  ),
+  'graduar-tangente': (
+    <>
+      <path d="M3 16c2-7.5 6-10.5 11-10.5" />
+      <line x1="3.5" y1="7.6" x2="17" y2="4" />
+      <circle cx="10.3" cy="5.8" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  regras: (
+    <>
+      <path d="M7.5 5H17M7.5 10H17M7.5 15H17" />
+      <circle cx="4" cy="5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="10" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="15" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'criar-regra': (
+    <>
+      <path d="M3 5h9M3 10h6M3 15h6" />
+      <path d="M14 10v7M10.5 13.5h7" />
+    </>
+  ),
+  'remover-graduacao': (
+    <>
+      <path d="M3 15.5V7l4-4" />
+      <path d="M6.5 15.5V9l3-3" />
+      <path d="M12 11.5l5 5M17 11.5l-5 5" />
+    </>
+  ),
+  'separar-graduacao': (
+    <>
+      <path d="M3 4h4.5v12H3z" />
+      <path d="M12.5 4H17v12h-4.5z" />
+      <path d="M8.4 10h3.2M9.4 9l-1 1 1 1M10.6 9l1 1-1 1" />
+    </>
+  ),
+  'unir-graduacao': (
+    <>
+      <path d="M3 16.5V6.5L6.5 3h7L17 6.5v10z" />
+      <path d="M6.5 16.5V9l1.8-2h3.4l1.8 2v7.5" />
+    </>
+  ),
+  'agrupar-graduacao': (
+    <>
+      <rect x="2.5" y="2.5" width="15" height="15" strokeDasharray="2.2 1.8" />
+      <rect x="5" y="5" width="4.5" height="6" />
+      <rect x="10.5" y="9" width="4.5" height="6" />
+    </>
+  ),
+  'deduzir-graduacao': (
+    <>
+      <path d="M3 15.5V7l4-4" />
+      <path d="M6.5 15.5V9l3-3" strokeDasharray="2.2 1.8" />
+      <path d="M10 15.5V11l2-2" />
+    </>
+  ),
+  'copiar-graduacao': (
+    <>
+      <path d="M2.5 13V6l3-3M5 13V8l2-2" />
+      <path d="M12.5 17.5v-7l3-3M15 17.5v-5l2-2" />
+      <path d="M7.8 11.5H11M9.8 10.2l1.2 1.3-1.2 1.3" />
+    </>
+  ),
+  'ajustar-graduacao': (
+    <>
+      <path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13" />
+      <circle cx="8" cy="5.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="13" cy="10" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="7" cy="14.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'graduar-curva': (
+    <>
+      <path d="M3 14.5c2-7 5-10 9-10" />
+      <path d="M5.5 16c2-6.2 5-8.8 9-8.8" />
+      <path d="M8 17.5c2-5.4 4.6-7.6 8.5-7.6" />
+    </>
+  ),
+  conferir: (
+    <>
+      <path d="M3 3.5h6v9H3z" />
+      <path d="M11 5.5h6v9h-6z" />
+      <path d="M4.5 16l1.8 1.8 3.2-3.6" />
+    </>
+  ),
+  'cota-perimetro': (
+    <>
+      <path d="M4 4h8.5v7.5H4z" />
+      <path d="M4 15.5h8.5M5.5 14.2 4 15.5l1.5 1.3M11 14.2l1.5 1.3-1.5 1.3" />
+      <path d="M16 4v7.5M14.7 5.5 16 4l1.3 1.5M14.7 10l1.3 1.5 1.3-1.5" />
+    </>
+  ),
+  perimetro: (
+    <>
+      <path d="M5 4h8l4 6-4 6.5H5L2.5 10z" />
+      <path d="M7.5 2.2v3.6M10.5 2.2v3.6" />
+    </>
+  ),
+  'comparar-perimetros': (
+    <>
+      <path d="M2.5 3.5h6V10h-6z" />
+      <path d="M11.5 3.5h6V10h-6z" />
+      <path d="M6 14h8M6 17h8" />
+    </>
+  ),
+  'cota-distancia': (
+    <>
+      <path d="M3 3.5v9M17 3.5v9" />
+      <path d="M3 8.5h14M5 6.8 3 8.5l2 1.7M15 6.8l2 1.7-2 1.7" />
+      <path d="M7 16.5h6" />
+    </>
+  ),
+  distancia: (
+    <>
+      <path d="M4.5 15.5 15.5 4.5" strokeDasharray="2.6 2" />
+      <circle cx="4.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="4.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'comparar-distancia': (
+    <>
+      <path d="M3 5h14M3 3.5v3M17 3.5v3" />
+      <path d="M3 10h9M3 8.5v3M12 8.5v3" />
+      <path d="M6 14.5h8M6 17.2h8" />
+    </>
+  ),
+  'cota-horizontal-vertical': (
+    <>
+      <path d="M6.5 16H17M8 14.6 6.5 16 8 17.4M15.5 14.6 17 16l-1.5 1.4" />
+      <path d="M3.5 3v10.5M2.1 4.5 3.5 3l1.4 1.5M2.1 12l1.4 1.5 1.4-1.5" />
+    </>
+  ),
+  angulo: (
+    <>
+      <path d="M3 16.5h14" />
+      <path d="M3 16.5 12.5 4" />
+      <path d="M10 16.5a7 7 0 0 0-2.7-5.5" />
+    </>
+  ),
+  raio: (
+    <>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 10l4.9-4.9" />
+      <circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  propriedades: (
+    <>
+      <path d="M5 2.5h7l3.5 3.5v11.5H5z" />
+      <path d="M12 2.5V6h3.5" />
+      <path d="M7.5 9.5h5M7.5 12h5M7.5 14.5h3" />
+    </>
+  ),
+  informacoes: (
+    <>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M10 9v5.2" />
+      <circle cx="10" cy="6.2" r="0.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  autor: (
+    <>
+      <circle cx="10" cy="7" r="3.3" />
+      <path d="M3.5 17.5c.6-3.8 3.2-5.8 6.5-5.8s5.9 2 6.5 5.8" />
+    </>
+  ),
+  'informacoes-dos-moldes': (
+    <>
+      <path d="M3 4h6.5L11 8l-1.5 8.5H3z" />
+      <path d="M13.5 6h4M13.5 10h4M13.5 14h4" />
+    </>
+  ),
+  variantes: (
+    <>
+      <rect x="9.5" y="2.5" width="8" height="10" />
+      <path d="M9.5 5.2H6v10.3h8v-3" />
+      <path d="M6 8H2.5v9.5h8v-2" />
+    </>
+  ),
+  'relacionamento-piques': (
+    <>
+      <path d="M3.5 3v14M16.5 3v14" />
+      <path d="M3.5 7H6M16.5 7H14M3.5 13H6M16.5 13H14" />
+      <path d="M7 7h6M7 13h6" strokeDasharray="1.8 1.6" />
+    </>
+  ),
+  imagens: (
+    <>
+      <rect x="2.5" y="4" width="15" height="12" rx="1.2" />
+      <path d="M2.5 13.5 7 9.5l3.5 3 2.5-2 4.5 3.5" />
+      <circle cx="13.5" cy="7.5" r="1.2" />
+    </>
+  ),
+  'localizar-modelos': (
+    <>
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <path d="M12.6 12.6 17.5 17.5" />
+      <path d="M6.5 6.8h4v3.4h-4z" />
     </>
   ),
 };

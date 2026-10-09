@@ -1,0 +1,478 @@
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
+import { BarraDeFerramentas } from './BarraDeFerramentas';
+
+type Props = React.ComponentProps<typeof BarraDeFerramentas>;
+
+/** Um projeto com peças e uma delas selecionada, sem nada mais ligado. */
+function propsBase(): Props {
+  return {
+    modo: 'selecionar',
+    podeDesfazer: false,
+    podeRefazer: false,
+    temSelecao: true,
+    temSelecaoUnica: true,
+    onNovoProjeto: vi.fn(),
+    onDesfazer: vi.fn(),
+    onRefazer: vi.fn(),
+    onDuplicar: vi.fn(),
+    onExcluir: vi.fn(),
+    onSelecionarTudo: vi.fn(),
+    podeSelecionarTudo: true,
+    onCopiar: vi.fn(),
+    onRecortar: vi.fn(),
+    onColar: vi.fn(),
+    podeColar: true,
+    onZoomIn: vi.fn(),
+    onZoomOut: vi.fn(),
+    onAjustarTela: vi.fn(),
+    onVistaAnterior: vi.fn(),
+    onProximaVista: vi.fn(),
+    podeVistaAnterior: false,
+    podeProximaVista: false,
+    mostrarGrade: false,
+    onAlternarGrade: vi.fn(),
+    imaAtivo: false,
+    onAlternarIma: vi.fn(),
+    unidadeDaRegua: 'cm',
+    onDefinirUnidadeDaRegua: vi.fn(),
+    onAbrirAtalhos: vi.fn(),
+    onAbrirSobre: vi.fn(),
+    mostrarListaDePecas: true,
+    onAlternarListaDePecas: vi.fn(),
+    mostrarBarraDeVisualizacao: true,
+    onAlternarBarraDeVisualizacao: vi.fn(),
+    mostrarValidacao: false,
+    onAlternarValidacao: vi.fn(),
+    onAbrirPropriedadesDaPeca: vi.fn(),
+    temCerca: false,
+    onAlternarDefinirCerca: vi.fn(),
+    onMoverCerca: vi.fn(),
+    onEntrarModoSelecionar: vi.fn(),
+    onEntrarModoNovoMolde: vi.fn(),
+    onEntrarModoNovoFuro: vi.fn(),
+    onEntrarModoPique: vi.fn(),
+    onEntrarModoMarca: vi.fn(),
+    onImportarDxf: vi.fn(),
+    onImportarPdf: vi.fn(),
+    onAbrirTecido: vi.fn(),
+    onAbrirEnfesto: vi.fn(),
+    onSugerirPosicao: vi.fn(),
+    podeSugerirPosicao: true,
+    onNestingAutomatico: vi.fn(),
+    podeExecutarNesting: true,
+    onEntrarModoMoverPonto: vi.fn(),
+    onEntrarModoModificar: vi.fn(),
+    onEntrarModoRedefinirPerimetro: vi.fn(),
+    onEntrarModoInserirPonto: vi.fn(),
+    onEntrarModoExcluirPonto: vi.fn(),
+    onEntrarModoArredondarOuChanfrar: vi.fn(),
+    onAbrirDimensionar: vi.fn(),
+    onEspelharManual: vi.fn(),
+    onGirarLivre: vi.fn(),
+    onElementoParalelo: vi.fn(),
+    onConverterEmCostura: vi.fn(),
+    onAlinhar: vi.fn(),
+    podeAlinhar: false,
+    onAbrirExportacaoPdf: vi.fn(),
+    podeExportarPdf: true,
+    onSalvar: vi.fn(),
+    onSalvarComo: vi.fn(),
+    onAbrirBiblioteca: vi.fn(),
+    onAbrirHistorico: vi.fn(),
+    onAbrirRelatorio: vi.fn(),
+    onInverterSelecao: vi.fn(),
+    onCriarPontoDeRestauracao: vi.fn(),
+    onRestaurar: vi.fn(),
+    temPontoDeRestauracao: true,
+    onEntrarModoRetangulo: vi.fn(),
+    onEntrarModoSentidoDoFio: vi.fn(),
+    onAbrirCostura: vi.fn(),
+    onRemoverCostura: vi.fn(),
+    podeRemoverCostura: true,
+    onEntrarModoMedirDistancia: vi.fn(),
+    onEntrarModoMedirPerimetro: vi.fn(),
+    onEntrarModoCompararPerimetros: vi.fn(),
+    onAbrirInformacoesDosMoldes: vi.fn(),
+  };
+}
+
+function renderizar(aba: string, sobrescrever: Partial<Props> = {}): Props {
+  const props = { ...propsBase(), ...sobrescrever };
+  render(<BarraDeFerramentas {...props} />);
+  fireEvent.click(screen.getByRole('tab', { name: aba }));
+  return props;
+}
+
+const painel = (): HTMLElement => screen.getByRole('tabpanel');
+const botao = (nome: string): HTMLButtonElement => within(painel()).getByRole<HTMLButtonElement>('button', { name: nome });
+
+/** Os grupos da aba aberta, cada um com os nomes dos seus botões, na ordem da tela. */
+function gruposDaAba(): Record<string, string[]> {
+  return Object.fromEntries(
+    within(painel())
+      .getAllByRole('group')
+      .map((grupo) => [
+        grupo.getAttribute('aria-label') ?? '',
+        within(grupo)
+          .getAllByRole('button')
+          .map((b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+      ]),
+  );
+}
+
+const botoesDesligados = (): HTMLButtonElement[] =>
+  within(painel())
+    .getAllByRole<HTMLButtonElement>('button')
+    .filter((b) => b.disabled);
+
+describe('BarraDeFerramentas: abas', () => {
+  afterEach(() => cleanup());
+
+  it('mostra as abas na ordem de um CAD de moldes, com a de Encaixe no fim, e abre em Início', () => {
+    render(<BarraDeFerramentas {...propsBase()} />);
+
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Arquivo',
+      'Início',
+      'Construção',
+      'Produção',
+      'Marcações',
+      'Graduação',
+      'Manipulação',
+      'Conferência',
+      'Modelo',
+      'Encaixe',
+    ]);
+    expect(screen.getByRole('tab', { name: 'Início' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Início: Desenho, Editar, Selecionar e Restauração', () => {
+    renderizar('Início');
+
+    expect(gruposDaAba()).toEqual({
+      Desenho: ['Cor'],
+      Editar: ['Colar', 'Recortar', 'Copiar', 'Excluir'],
+      Selecionar: ['Selecionar', 'Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes'],
+      Restauração: ['Ponto de restauração', 'Restaurar'],
+    });
+  });
+
+  it('Construção: Retas, Curvas, Pontos, Arcos e Texto', () => {
+    renderizar('Construção');
+
+    expect(gruposDaAba()).toEqual({
+      Retas: ['Reta', 'Retângulo', 'Por ângulo', 'Estender reta', 'Estender até elemento', 'Estender duas retas'],
+      Curvas: ['Curva', 'Dividir curva', 'Pré-definida', 'Espiral e curvas', 'Cadastrar curva', 'Editar pontos de curva'],
+      Pontos: ['Por coordenada', 'Por interseção', 'No centro do arco', 'No perímetro', 'Por distância'],
+      Arcos: ['Por raio'],
+      Texto: ['Inserir texto', 'Editar texto'],
+    });
+  });
+
+  it('Produção: Definir moldes, Complementar moldes, Costura, Pregas e Pences, Cortar e Unir', () => {
+    renderizar('Produção');
+
+    expect(gruposDaAba()).toEqual({
+      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio'],
+      'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar'],
+      Costura: ['Costura', 'Remover costura', 'Converter em contorno', 'Converter em costura'],
+      'Pregas e Pences': ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences'],
+      'Cortar e Unir': ['Cortar', 'Unir', 'Remover região'],
+    });
+  });
+
+  it('Graduação: Graduar e Manipular graduação', () => {
+    renderizar('Graduação');
+
+    expect(gruposDaAba()).toEqual({
+      Graduar: ['Tabela', 'Automático', 'Mouse', 'Tangente', 'Regras', 'Criar regra'],
+      'Manipular graduação': [
+        'Remover graduação',
+        'Separar',
+        'Unir',
+        'Agrupar',
+        'Deduzir',
+        'Copiar graduação',
+        'Ajustar',
+        'Graduar curva',
+      ],
+    });
+  });
+
+  it('Conferência: Perímetro e Distância', () => {
+    renderizar('Conferência');
+
+    expect(gruposDaAba()).toEqual({
+      Perímetro: ['Conferir', 'Cota perímetro', 'Perímetro', 'Comparar perímetros'],
+      Distância: ['Cota distância', 'Distância', 'Comparar distância', 'Horizontal / Vertical', 'Ângulo', 'Raio'],
+    });
+  });
+
+  it('Modelo: Informações e Operações', () => {
+    renderizar('Modelo');
+
+    expect(gruposDaAba()).toEqual({
+      Informações: ['Propriedades', 'Informações', 'Tecidos', 'Autor', 'Informações dos moldes'],
+      Operações: ['Variantes', 'Relacionamento piques', 'Imagens', 'Localizar modelos'],
+    });
+  });
+
+  it('Marcações ganhou o Furo, que saiu da Construção', () => {
+    const props = renderizar('Marcações');
+
+    expect(gruposDaAba()).toEqual({ Marcações: ['Pique', 'Marca', 'Furo'] });
+    fireEvent.click(botao('Furo'));
+    expect(props.onEntrarModoNovoFuro).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BarraDeFerramentas: ferramentas que não existem neste programa', () => {
+  afterEach(() => cleanup());
+
+  it.each(['Início', 'Construção', 'Produção', 'Graduação', 'Conferência', 'Modelo'])(
+    '%s: todo botão desligado diz na dica o nome da ferramenta e o motivo',
+    (aba) => {
+      renderizar(aba);
+
+      const desligados = botoesDesligados();
+      expect(desligados.length).toBeGreaterThan(0);
+      for (const b of desligados) {
+        const nome = b.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+        expect(b.title.startsWith(`${nome} — `), `dica de "${nome}": ${b.title}`).toBe(true);
+        expect(b.title.length).toBeGreaterThan(nome.length + 20);
+      }
+    },
+  );
+
+  it('os motivos são os de cada família de ferramenta', () => {
+    renderizar('Construção');
+    expect(botao('Estender reta').title).toContain('trabalha sobre elementos de modelagem');
+    expect(botao('Dividir curva').title).toContain('sem curvas nem arcos');
+    expect(botao('Inserir texto').title).toContain('não há textos soltos no desenho');
+    cleanup();
+
+    renderizar('Produção');
+    expect(botao('Pence interna').title).toContain('são feitas na modelagem');
+    expect(botao('Unir').title).toContain('cortar e unir moldes são operações de modelagem');
+    expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
+    expect(botao('Converter em contorno').title).toContain('ainda não foi confirmado');
+    cleanup();
+
+    renderizar('Conferência');
+    expect(botao('Cota distância').title).toContain('cota fixa no desenho');
+    expect(botao('Ângulo').title).toContain('use Distância ou Perímetro');
+    expect(botao('Raio').title).toContain('sem curvas nem arcos');
+  });
+
+  it('Graduação: nenhuma ferramenta está disponível, e a aba diz por quê sem precisar do mouse', () => {
+    renderizar('Graduação');
+
+    expect(botoesDesligados()).toHaveLength(14);
+    expect(botao('Tabela').title).toContain('não há graduação');
+    expect(screen.getByText(/Este programa não faz graduação/)).toBeInTheDocument();
+  });
+
+  it('a nota da Graduação não aparece nas outras abas', () => {
+    renderizar('Produção');
+
+    expect(screen.queryByText(/Este programa não faz graduação/)).not.toBeInTheDocument();
+  });
+});
+
+describe('BarraDeFerramentas: ferramentas ligadas', () => {
+  afterEach(() => cleanup());
+
+  it('Início: cada botão chama a sua ação', () => {
+    const props = renderizar('Início');
+
+    fireEvent.click(botao('Colar'));
+    fireEvent.click(botao('Recortar'));
+    fireEvent.click(botao('Copiar'));
+    fireEvent.click(botao('Excluir'));
+    fireEvent.click(botao('Selecionar'));
+    fireEvent.click(botao('Inverter seleção'));
+    fireEvent.click(botao('Ponto de restauração'));
+    fireEvent.click(botao('Restaurar'));
+
+    for (const acao of [
+      props.onColar,
+      props.onRecortar,
+      props.onCopiar,
+      props.onExcluir,
+      props.onEntrarModoSelecionar,
+      props.onInverterSelecao,
+      props.onCriarPontoDeRestauracao,
+      props.onRestaurar,
+    ]) {
+      expect(acao).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('Início: "Selecionar tudo" e "Selecionar moldes" selecionam todas as peças (aqui todo objeto é um molde)', () => {
+    const props = renderizar('Início');
+
+    fireEvent.click(botao('Selecionar tudo'));
+    fireEvent.click(botao('Selecionar moldes'));
+
+    expect(props.onSelecionarTudo).toHaveBeenCalledTimes(2);
+  });
+
+  it('Construção: Reta desenha um molde novo e Retângulo liga a ferramenta de retângulo', () => {
+    const props = renderizar('Construção');
+
+    fireEvent.click(botao('Reta'));
+    fireEvent.click(botao('Retângulo'));
+
+    expect(props.onEntrarModoNovoMolde).toHaveBeenCalledTimes(1);
+    expect(props.onEntrarModoRetangulo).toHaveBeenCalledTimes(1);
+  });
+
+  it('Produção: Criar molde, Sentido do fio e as três ações de costura', () => {
+    const props = renderizar('Produção');
+
+    fireEvent.click(botao('Criar molde'));
+    fireEvent.click(botao('Sentido do fio'));
+    fireEvent.click(botao('Costura'));
+    fireEvent.click(botao('Converter em costura'));
+    fireEvent.click(botao('Remover costura'));
+
+    expect(props.onEntrarModoNovoMolde).toHaveBeenCalledTimes(1);
+    expect(props.onEntrarModoSentidoDoFio).toHaveBeenCalledTimes(1);
+    expect(props.onAbrirCostura).toHaveBeenCalledTimes(2);
+    expect(props.onRemoverCostura).toHaveBeenCalledTimes(1);
+  });
+
+  it('Conferência: Distância, Perímetro e Comparar perímetros', () => {
+    const props = renderizar('Conferência');
+
+    fireEvent.click(botao('Distância'));
+    fireEvent.click(botao('Perímetro'));
+    fireEvent.click(botao('Comparar perímetros'));
+
+    expect(props.onEntrarModoMedirDistancia).toHaveBeenCalledTimes(1);
+    expect(props.onEntrarModoMedirPerimetro).toHaveBeenCalledTimes(1);
+    expect(props.onEntrarModoCompararPerimetros).toHaveBeenCalledTimes(1);
+  });
+
+  it('Modelo: Propriedades, Informações, Tecidos, Informações dos moldes e Localizar modelos', () => {
+    const props = renderizar('Modelo');
+
+    fireEvent.click(botao('Propriedades'));
+    fireEvent.click(botao('Informações'));
+    fireEvent.click(botao('Tecidos'));
+    fireEvent.click(botao('Informações dos moldes'));
+    fireEvent.click(botao('Localizar modelos'));
+
+    expect(props.onAbrirPropriedadesDaPeca).toHaveBeenCalledTimes(1);
+    expect(props.onAbrirRelatorio).toHaveBeenCalledTimes(1);
+    expect(props.onAbrirTecido).toHaveBeenCalledTimes(1);
+    expect(props.onAbrirInformacoesDosMoldes).toHaveBeenCalledTimes(1);
+    expect(props.onAbrirBiblioteca).toHaveBeenCalledTimes(1);
+  });
+
+  it('a ferramenta ligada aparece pressionada na aba dela', () => {
+    renderizar('Construção', { modo: 'retangulo' });
+    expect(botao('Retângulo')).toHaveAttribute('aria-pressed', 'true');
+    expect(botao('Reta')).toHaveAttribute('aria-pressed', 'false');
+    cleanup();
+
+    renderizar('Produção', { modo: 'novo-molde' });
+    expect(botao('Criar molde')).toHaveAttribute('aria-pressed', 'true');
+    expect(botao('Sentido do fio')).toHaveAttribute('aria-pressed', 'false');
+    cleanup();
+
+    renderizar('Conferência', { modo: 'medir-distancia' });
+    expect(botao('Distância')).toHaveAttribute('aria-pressed', 'true');
+    expect(botao('Perímetro')).toHaveAttribute('aria-pressed', 'false');
+    cleanup();
+
+    renderizar('Início', { modo: 'medir-distancia' });
+    expect(botao('Selecionar')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('um botão de ação (que não é ferramenta de modo) não tem estado de pressionado', () => {
+    renderizar('Início');
+
+    expect(botao('Colar')).not.toHaveAttribute('aria-pressed');
+    expect(botao('Restaurar')).not.toHaveAttribute('aria-pressed');
+  });
+});
+
+describe('BarraDeFerramentas: o que falta para usar', () => {
+  afterEach(() => cleanup());
+
+  it('sem peça selecionada, as ferramentas que agem numa peça ficam desligadas e dizem o que falta', () => {
+    const semSelecao = { temSelecao: false, temSelecaoUnica: false, temPontoDeRestauracao: false, podeRemoverCostura: false };
+
+    renderizar('Início', semSelecao);
+    for (const nome of ['Recortar', 'Copiar', 'Excluir', 'Ponto de restauração', 'Restaurar']) {
+      expect(botao(nome)).toBeDisabled();
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
+    cleanup();
+
+    renderizar('Produção', semSelecao);
+    for (const nome of ['Sentido do fio', 'Costura', 'Remover costura', 'Converter em costura']) {
+      expect(botao(nome)).toBeDisabled();
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
+    expect(botao('Criar molde')).toBeEnabled();
+    cleanup();
+
+    renderizar('Modelo', semSelecao);
+    expect(botao('Propriedades').title).toBe('Propriedades — selecione uma peça primeiro');
+    expect(botao('Informações dos moldes')).toBeEnabled();
+  });
+
+  it('com um lote marcado (sem peça única), a costura e o Excluir valem; o que edita uma peça só, não', () => {
+    renderizar('Produção', { temSelecao: true, temSelecaoUnica: false });
+    expect(botao('Costura')).toBeEnabled();
+    expect(botao('Remover costura')).toBeEnabled();
+    expect(botao('Sentido do fio')).toBeDisabled();
+    cleanup();
+
+    renderizar('Início', { temSelecao: true, temSelecaoUnica: false });
+    expect(botao('Excluir')).toBeEnabled();
+    expect(botao('Copiar')).toBeDisabled();
+  });
+
+  it('Restaurar pede antes um ponto de restauração para a peça', () => {
+    const props = renderizar('Início', { temPontoDeRestauracao: false });
+
+    expect(botao('Restaurar')).toBeDisabled();
+    expect(botao('Restaurar').title).toBe('Restaurar — crie antes um ponto de restauração para esta peça');
+    expect(botao('Ponto de restauração')).toBeEnabled();
+    fireEvent.click(botao('Restaurar'));
+    expect(props.onRestaurar).not.toHaveBeenCalled();
+  });
+
+  it('Remover costura fica desligado quando a seleção não tem costura', () => {
+    renderizar('Produção', { podeRemoverCostura: false });
+
+    expect(botao('Remover costura')).toBeDisabled();
+    expect(botao('Remover costura').title).toBe('Remover costura — a seleção não tem costura para remover');
+    expect(botao('Costura')).toBeEnabled();
+  });
+
+  it('Colar pede antes uma peça copiada ou recortada', () => {
+    renderizar('Início', { podeColar: false });
+
+    expect(botao('Colar').title).toBe('Colar — copie ou recorte uma peça primeiro');
+  });
+
+  it('sem peças no projeto, não há o que selecionar nem perímetro para medir; a Distância continua valendo', () => {
+    const semPecas = { podeSelecionarTudo: false, temSelecao: false, temSelecaoUnica: false };
+
+    renderizar('Início', semPecas);
+    for (const nome of ['Inverter seleção', 'Selecionar tudo', 'Selecionar moldes']) {
+      expect(botao(nome).title).toBe(`${nome} — não há peças no projeto`);
+    }
+    cleanup();
+
+    renderizar('Conferência', semPecas);
+    expect(botao('Perímetro').title).toBe('Perímetro — não há peças no projeto');
+    expect(botao('Comparar perímetros')).toBeDisabled();
+    expect(botao('Distância')).toBeEnabled();
+  });
+});

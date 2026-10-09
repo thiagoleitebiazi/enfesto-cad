@@ -4,14 +4,14 @@ import { BarraDeStatus } from './BarraDeStatus';
 import { ponto } from '../core/geometria';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
 
-function renderizar(unidade: UnidadeDeRegua): void {
+function renderizar(unidade: UnidadeDeRegua, pecasSelecionadas = 0): void {
   render(
     <BarraDeStatus
       cursorMundo={ponto(123.4, 600)}
       pontoReferencia={ponto(100, 600)}
       transform={{ escalaPxPorMm: 0.18, offsetXPx: 0, offsetYPx: 0 }}
       totalDePecas={0}
-      temSelecao={false}
+      pecasSelecionadas={pecasSelecionadas}
       problemas={[]}
       onAlternarValidacao={() => {}}
       unidade={unidade}
@@ -32,5 +32,14 @@ describe('BarraDeStatus', () => {
     renderizar('mm');
     expect(screen.getByText(/X: 123\.4 mm\s+Y: 600\.0 mm/)).toBeInTheDocument();
     expect(screen.getByText(/DX: 23\.4 mm/)).toBeInTheDocument();
+  });
+
+  it.each([
+    [0, 'Seleção: nenhuma'],
+    [1, 'Seleção: 1 peça'],
+    [3, 'Seleção: 3 peças'],
+  ])('com %i peça(s) selecionada(s), diz "%s"', (quantidade, esperado) => {
+    renderizar('cm', quantidade);
+    expect(screen.getByText(esperado)).toBeInTheDocument();
   });
 });

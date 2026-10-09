@@ -9,6 +9,19 @@ import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
 import { PainelDeModificar } from './ui/PainelDeModificar';
 import { PainelDeRedefinirPerimetro, type RedefinicaoDePerimetro } from './ui/PainelDeRedefinirPerimetro';
 import { PainelDeAjuda, type ConteudoDaAjuda } from './ui/PainelDeAjuda';
+import { PainelDeCostura } from './ui/PainelDeCostura';
+import { PainelDeInformacoesDosMoldes } from './ui/PainelDeInformacoesDosMoldes';
+import {
+  alvoDaMedicao,
+  cliqueDePerimetro,
+  descreverComparacao,
+  descreverMedicao,
+  resolverMedicao,
+  SEM_MEDICAO,
+  type EstadoDeMedicao,
+  type MedicaoResolvida,
+} from './ui/medicao';
+import { inverterSelecao } from './domain/selecao';
 import {
   aplicarZoom,
   enquadrarRetanguloDoMundo,
@@ -43,6 +56,9 @@ import {
   arredondarCantoDoMolde,
   dimensionarMolde,
   dimensoesDoMolde,
+  redefinirLinhaDeFio,
+  definirMargemDeCostura,
+  restaurarFormaDoMolde,
   type Molde,
   type PontaDaAresta,
 } from './domain/molde';
@@ -168,6 +184,20 @@ function mesmaCerca(a: Cerca | null, b: Cerca): boolean {
   return a !== null && a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY;
 }
 
+/** Raio (px) em que um clique de medida acerta o contorno de uma peça — o mesmo raio de captura de vértices do desenho. */
+const RAIO_DE_MEDICAO_PX = 10;
+/** Um retângulo com menos disso (mm) de largura ou de altura não tem área: o segundo clique é ignorado. */
+const LADO_MINIMO_DO_RETANGULO_MM = 1e-6;
+
+/** Modos em que a barra de status mostra DX, DY, distância e ângulo a partir do último ponto clicado. */
+const MODOS_COM_PONTO_DE_REFERENCIA: ReadonlySet<ModoDeDesenho> = new Set([
+  'novo-molde',
+  'novo-furo',
+  'retangulo',
+  'sentido-do-fio',
+  'medir-distancia',
+]);
+
 function mesmoPonto(a: Ponto2D, b: Ponto2D): boolean {
   return a.x === b.x && a.y === b.y;
 }
@@ -220,13 +250,31 @@ export default function App(): React.JSX.Element {
   // O modo usado no último "Redefinir perímetro" vem marcado no próximo.
   const ultimoModoDeRedefinirRef = useRef<RedefinicaoDePerimetro['modo']>('uni-direcional');
   const [painelDeAjuda, setPainelDeAjuda] = useState<ConteudoDaAjuda | null>(null);
+  // Pontos de restauração (aba Início): a forma guardada de cada peça, pelo
+  // id. Valem enquanto o projeto está aberto; não vão para o arquivo.
+  const [pontosDeRestauracao, setPontosDeRestauracao] = useState<ReadonlyMap<string, Molde>>(new Map());
+  const [mostrarCostura, setMostrarCostura] = useState(false);
+  const [mostrarInformacoesDosMoldes, setMostrarInformacoesDosMoldes] = useState(false);
+  // Medidas da aba Conferência: só leitura, somem ao sair da ferramenta.
+  const [medicao, setMedicao] = useState<EstadoDeMedicao>(SEM_MEDICAO);
+  // Confirmação de uma ação que não muda nada visível no desenho (guardar um
+  // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
+  // forem as mesmas de quando foi dada.
+  const [aviso, setAviso] = useState<{
+    readonly texto: string;
+    readonly pecas: readonly Molde[];
+    readonly selecionadoId: string | null;
+  } | null>(null);
 
   const [modo, setModo] = useState<ModoDeDesenho>('selecionar');
-  // Trocar de ferramenta desliga a Mão/Zoom por janela — o próximo clique é da ferramenta nova.
+  // Trocar de ferramenta desliga a Mão/Zoom por janela — o próximo clique é da
+  // ferramenta nova — e dispensa o aviso da ação anterior, que senão voltaria
+  // a aparecer ao sair da ferramenta.
   const [modoDaFerramentaDeVista, setModoDaFerramentaDeVista] = useState<ModoDeDesenho>(modo);
   if (modo !== modoDaFerramentaDeVista) {
     setModoDaFerramentaDeVista(modo);
     setFerramentaDeVista(null);
+    if (aviso) setAviso(null);
   }
   const [pontosEmEdicao, setPontosEmEdicao] = useState<Ponto2D[]>([]);
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
@@ -456,6 +504,9 @@ export default function App(): React.JSX.Element {
     setContornoPendente(null);
     setPassado([]);
     setFuturo([]);
+    setPontosDeRestauracao(new Map());
+    setMedicao(SEM_MEDICAO);
+    setAviso(null);
     setCerca(null);
     setMostrarMoverCerca(false);
     setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome));
@@ -509,6 +560,9 @@ export default function App(): React.JSX.Element {
       setContornoPendente(null);
       setPassado([]);
       setFuturo([]);
+      setPontosDeRestauracao(new Map());
+      setMedicao(SEM_MEDICAO);
+      setAviso(null);
       setCerca(null);
       setMostrarMoverCerca(false);
       setProjetoAtual(projeto);
@@ -578,6 +632,9 @@ export default function App(): React.JSX.Element {
             setIdsSelecionadosEmLote(new Set());
             setPassado([]);
             setFuturo([]);
+            setPontosDeRestauracao(new Map());
+            setMedicao(SEM_MEDICAO);
+            setAviso(null);
             setCerca(null);
             setMostrarMoverCerca(false);
             setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
@@ -598,6 +655,9 @@ export default function App(): React.JSX.Element {
       setIdsSelecionadosEmLote(new Set());
       setPassado([]);
       setFuturo([]);
+      setPontosDeRestauracao(new Map());
+      setMedicao(SEM_MEDICAO);
+      setAviso(null);
       setCerca(null);
       setMostrarMoverCerca(false);
       setProjetoAtual(atualizado);
@@ -686,6 +746,7 @@ export default function App(): React.JSX.Element {
     setFerramentaDeVista(null);
     setPontosParaModificar(null);
     setRedefinicaoDePerimetro(null);
+    setMedicao(SEM_MEDICAO);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -740,6 +801,26 @@ export default function App(): React.JSX.Element {
     setModo('novo-molde');
     setPontosEmEdicao([]);
     setContornoPendente(null);
+  }, []);
+
+  const entrarModoRetangulo = useCallback(() => {
+    setModo('retangulo');
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+  }, []);
+
+  const entrarModoSentidoDoFio = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('sentido-do-fio');
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+  }, [selecionadoId]);
+
+  const entrarModoDeMedida = useCallback((ferramenta: 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros') => {
+    setModo(ferramenta);
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+    setMedicao(SEM_MEDICAO);
   }, []);
 
   const entrarModoNovoFuro = useCallback(() => {
@@ -798,24 +879,79 @@ export default function App(): React.JSX.Element {
     [pecas, selecionadoId, aplicarMudanca],
   );
 
-  /**
-   * "Converter em costura": atalho real para o mesmo campo "Margem de
-   * costura (mm)" das propriedades da peça (ADR 0005) — no Audaces é o
-   * mesmo conceito (a costura é derivada do molde base + a margem), só
-   * com outro nome/lugar na interface.
-   */
-  const converterEmCosturaDaSelecionada = useCallback(() => {
+  /** Diz, na faixa de mensagens, o que uma ação acabou de fazer — até a próxima mudança nas peças ou na seleção. */
+  const avisar = useCallback(
+    (texto: string, pecasDepois: readonly Molde[] = pecas) => setAviso({ texto, pecas: pecasDepois, selecionadoId }),
+    [pecas, selecionadoId],
+  );
+
+  /** "Inverter seleção" (aba Início): passam a estar selecionadas as peças que não estavam. */
+  const inverterSelecaoDePecas = useCallback(() => {
+    const invertida = inverterSelecao(
+      pecas.map((p) => p.id),
+      { selecionadoId, idsEmLote: idsSelecionadosEmLote },
+    );
+    setSelecionadoId(invertida.selecionadoId);
+    setIdsSelecionadosEmLote(invertida.idsEmLote);
+  }, [pecas, selecionadoId, idsSelecionadosEmLote]);
+
+  /** "Ponto de restauração": guarda a peça selecionada como está agora (troca o ponto anterior dela, se havia). */
+  const criarPontoDeRestauracao = useCallback(() => {
     const peca = pecas.find((p) => p.id === selecionadoId);
     if (!peca) return;
-    const texto = window.prompt('Margem de costura (mm):', String(peca.margemDeCosturaMm || 10));
-    if (texto === null) return;
-    const margemMm = Number.parseFloat(texto);
-    if (!Number.isFinite(margemMm) || margemMm < 0) {
-      window.alert('Margem inválida — informe um número maior ou igual a zero.');
-      return;
-    }
-    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? { ...p, margemDeCosturaMm: margemMm } : p)));
-  }, [pecas, selecionadoId, aplicarMudanca]);
+    setPontosDeRestauracao((atual) => new Map(atual).set(peca.id, peca));
+    avisar(`Ponto de restauração guardado para “${peca.nome}”. “Restaurar” devolve a peça a esta forma.`);
+  }, [pecas, selecionadoId, avisar]);
+
+  /** "Restaurar": a peça selecionada volta à forma do ponto de restauração dela, num passo de desfazer. */
+  const restaurarSelecionada = useCallback(() => {
+    const guardada = selecionadoId ? pontosDeRestauracao.get(selecionadoId) : undefined;
+    if (!guardada) return;
+    const novasPecas = pecas.map((p) => (p.id === selecionadoId ? restaurarFormaDoMolde(p, guardada) : p));
+    aplicarMudanca(novasPecas);
+    avisar(`“${guardada.nome}” voltou à forma do ponto de restauração.`, novasPecas);
+  }, [pecas, selecionadoId, pontosDeRestauracao, aplicarMudanca, avisar]);
+
+  // "Costura", "Remover costura" e "Converter em costura" agem nas peças
+  // marcadas em lote ou, sem lote, na selecionada — a regra de Excluir.
+  const alvosDeCostura = useMemo(
+    () =>
+      idsSelecionadosEmLote.size > 0
+        ? pecas.filter((p) => idsSelecionadosEmLote.has(p.id))
+        : pecas.filter((p) => p.id === selecionadoId),
+    [pecas, idsSelecionadosEmLote, selecionadoId],
+  );
+
+  /** Define a margem de costura dos alvos; devolve a mensagem de erro (nada muda) ou `null`. */
+  const aplicarCostura = useCallback(
+    (margemMm: number): string | null => {
+      const alvos = new Set(alvosDeCostura.map((p) => p.id));
+      if (alvos.size === 0) return 'Selecione uma peça primeiro.';
+      let novasPecas: Molde[];
+      try {
+        novasPecas = pecas.map((p) => (alvos.has(p.id) ? definirMargemDeCostura(p, margemMm) : p));
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      aplicarMudanca(novasPecas);
+      return null;
+    },
+    [pecas, alvosDeCostura, aplicarMudanca],
+  );
+
+  const removerCostura = useCallback(() => {
+    const comCostura = alvosDeCostura.filter((p) => p.margemDeCosturaMm > 0);
+    if (comCostura.length === 0) return;
+    const ids = new Set(comCostura.map((p) => p.id));
+    const novasPecas = pecas.map((p) => (ids.has(p.id) ? definirMargemDeCostura(p, 0) : p));
+    aplicarMudanca(novasPecas);
+    avisar(
+      comCostura.length === 1
+        ? `Costura removida de “${comCostura[0]!.nome}”.`
+        : `Costura removida de ${comCostura.length} peças.`,
+      novasPecas,
+    );
+  }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
 
   const girarPecaSelecionada = useCallback(
     (anguloGraus: number) => {
@@ -1313,6 +1449,60 @@ export default function App(): React.JSX.Element {
         cancelarModo();
         return;
       }
+      if (modo === 'retangulo') {
+        const canto = pontosEmEdicao[0];
+        if (!canto) {
+          setPontosEmEdicao([mundo]);
+          return;
+        }
+        // Sem largura ou sem altura não há retângulo: espera um canto oposto de verdade.
+        if (
+          Math.abs(mundo.x - canto.x) < LADO_MINIMO_DO_RETANGULO_MM ||
+          Math.abs(mundo.y - canto.y) < LADO_MINIMO_DO_RETANGULO_MM
+        ) {
+          return;
+        }
+        // Daqui segue como no molde desenhado reta a reta: falta a linha de fio.
+        setContornoPendente([canto, ponto(canto.x, mundo.y), mundo, ponto(mundo.x, canto.y)]);
+        setPontosEmEdicao([]);
+        setModo('definir-fio');
+        return;
+      }
+      if (modo === 'sentido-do-fio' && selecionadoId) {
+        const inicio = pontosEmEdicao[0];
+        if (!inicio) {
+          setPontosEmEdicao([mundo]);
+          return;
+        }
+        // Fio de comprimento zero não tem direção: ignora o segundo clique no mesmo lugar.
+        if (mesmoPonto(mundo, inicio)) return;
+        aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? redefinirLinhaDeFio(p, inicio, mundo) : p)));
+        cancelarModo();
+        return;
+      }
+      if (modo === 'medir-distancia') {
+        const de = pontosEmEdicao[0];
+        if (!de) {
+          setPontosEmEdicao([mundo]);
+          setMedicao(SEM_MEDICAO);
+          return;
+        }
+        if (mesmoPonto(mundo, de)) return;
+        setMedicao({ medicoes: [{ tipo: 'distancia', de, ate: mundo }], inicioDoTrecho: null });
+        setPontosEmEdicao([]);
+        return;
+      }
+      if (modo === 'medir-perimetro' || modo === 'comparar-perimetros') {
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        setMedicao((atual) =>
+          cliqueDePerimetro(
+            atual,
+            alvoDaMedicao(mundo, pecas, raioMm, atual.inicioDoTrecho?.pecaId ?? null),
+            modo === 'comparar-perimetros',
+          ),
+        );
+        return;
+      }
       if (modo === 'pique' && selecionadoId) {
         aplicarMudanca(
           pecas.map((p) => (p.id === selecionadoId ? adicionarPique(p, mundo, proximoId()) : p)),
@@ -1323,7 +1513,17 @@ export default function App(): React.JSX.Element {
         aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? adicionarMarca(p, mundo, proximoId()) : p)));
       }
     },
-    [modo, pontosEmEdicao, contornoPendente, pecas, selecionadoId, aplicarMudanca, cancelarModo, finalizarContornoEmEdicao],
+    [
+      modo,
+      pontosEmEdicao,
+      contornoPendente,
+      pecas,
+      selecionadoId,
+      transform.escalaPxPorMm,
+      aplicarMudanca,
+      cancelarModo,
+      finalizarContornoEmEdicao,
+    ],
   );
 
   const importarDxfHandler = useCallback(() => {
@@ -1389,7 +1589,7 @@ export default function App(): React.JSX.Element {
         mensagens.push(
           `${semFio.length} peça(s) do arquivo não foram adicionadas por não terem linha de fio reconhecível: ${semFio
             .map((p) => p.nome)
-            .join(', ')}. Desenhe-as manualmente com "Novo Molde" definindo o fio correto.`,
+            .join(', ')}. Desenhe-as manualmente com "Reta" (aba Construção), definindo o fio correto.`,
         );
       }
       if (resultado.pecas.length === 0) {
@@ -1606,6 +1806,90 @@ export default function App(): React.JSX.Element {
     ],
   );
 
+  // Medidas da aba Conferência: só aparecem com uma das ferramentas dela
+  // ligada, e só as que ainda valem para as peças de agora.
+  const emModoDeMedida = modo === 'medir-distancia' || modo === 'medir-perimetro' || modo === 'comparar-perimetros';
+  const medicoesResolvidas = useMemo(
+    () =>
+      emModoDeMedida
+        ? medicao.medicoes.map((m) => resolverMedicao(m, pecas)).filter((m): m is MedicaoResolvida => m !== null)
+        : [],
+    [emModoDeMedida, medicao, pecas],
+  );
+  const inicioDoTrecho = useMemo(() => {
+    const inicio = emModoDeMedida ? medicao.inicioDoTrecho : null;
+    if (!inicio || !pecas.some((p) => p.id === inicio.pecaId && p.contorno === inicio.contorno)) return null;
+    return inicio.de.ponto;
+  }, [emModoDeMedida, medicao, pecas]);
+
+  const textoDaFaixa = ((): React.ReactNode => {
+    if (ferramentaDeVista === 'mao') return 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.';
+    if (ferramentaDeVista === 'zoom-janela') {
+      return 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.';
+    }
+    switch (modo) {
+      case 'novo-molde':
+        return 'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.';
+      case 'novo-furo':
+        return 'Clique para adicionar pontos do furo. Enter fecha o furo (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.';
+      case 'retangulo':
+        return pontosEmEdicao.length === 0
+          ? 'Retângulo: clique no primeiro canto. Esc cancela.'
+          : 'Retângulo: clique no canto oposto — as medidas dos lados aparecem no desenho e na barra de status. Esc cancela.';
+      case 'definir-fio':
+        return pontosEmEdicao.length === 0
+          ? 'Clique no início da linha de fio.'
+          : 'Clique no fim da linha de fio (a seta aponta para lá).';
+      case 'sentido-do-fio':
+        return pontosEmEdicao.length === 0
+          ? 'Sentido do fio: clique no início da nova linha de fio da peça selecionada. Esc cancela.'
+          : 'Sentido do fio: clique no fim da linha de fio (a seta aponta para lá). Esc cancela.';
+      case 'definir-cerca':
+        return 'Arraste de um canto ao outro para definir a cerca. Esc para cancelar.';
+      case 'modificar':
+        return 'Modificar: clique num ponto da peça para digitar o deslocamento exato, ou arraste-o. Para vários pontos, use Shift+clique ou um retângulo e depois clique num deles. Esc sai.';
+      case 'redefinir-perimetro':
+        return 'Redefinir perímetro: clique numa aresta da peça, perto da ponta que deve andar, e digite o novo comprimento. Esc sai.';
+      case 'medir-distancia': {
+        if (pontosEmEdicao.length > 0) return 'Distância: clique no segundo ponto. Esc sai.';
+        const medida = medicoesResolvidas[0];
+        return medida
+          ? `${descreverMedicao(medida)} — clique para medir de novo; Esc sai.`
+          : 'Distância: clique no primeiro ponto (perto de um vértice, o clique cai exatamente nele). Esc sai.';
+      }
+      case 'medir-perimetro': {
+        if (inicioDoTrecho) {
+          return 'Perímetro: clique no segundo ponto do contorno — o trecho segue a numeração dos pontos, do primeiro clique ao segundo. Esc sai.';
+        }
+        const medida = medicoesResolvidas[0];
+        return medida
+          ? `${descreverMedicao(medida)} — clique para medir de novo; Esc sai.`
+          : 'Perímetro: clique dentro de uma peça para medir o perímetro dela, ou em dois pontos do contorno para medir o trecho entre eles. Esc sai.';
+      }
+      case 'comparar-perimetros': {
+        const [primeira, segunda] = medicoesResolvidas;
+        if (inicioDoTrecho) {
+          return 'Comparar perímetros: clique no segundo ponto do contorno — o trecho segue a numeração dos pontos. Esc sai.';
+        }
+        if (primeira && segunda) return `${descreverComparacao(primeira, segunda)} — clique para comparar de novo; Esc sai.`;
+        if (primeira) return `${descreverMedicao(primeira)} — agora faça a 2ª medida. Esc sai.`;
+        return 'Comparar perímetros: faça a 1ª medida — clique dentro de uma peça (perímetro inteiro) ou em dois pontos do contorno (trecho). Esc sai.';
+      }
+      default:
+        break;
+    }
+    if (aviso && aviso.pecas === pecas && aviso.selecionadoId === selecionadoId) return aviso.texto;
+    if (cerca) {
+      return (
+        <>
+          Cerca ativa: &ldquo;Mover cerca&rdquo; (aba Manipulação) desloca os pontos destacados. Clique em
+          &ldquo;Definir cerca&rdquo; de novo para removê-la.
+        </>
+      );
+    }
+    return null;
+  })();
+
   return (
     <div ref={appShellRef} className="app-shell" onKeyDown={aoTeclar} tabIndex={-1}>
       <BarraDeFerramentas
@@ -1680,7 +1964,20 @@ export default function App(): React.JSX.Element {
         onEspelharManual={espelharSelecionadaManualmente}
         onGirarLivre={girarLivreSelecionada}
         onElementoParalelo={criarElementoParaleloDaSelecionada}
-        onConverterEmCostura={converterEmCosturaDaSelecionada}
+        onConverterEmCostura={() => setMostrarCostura(true)}
+        onInverterSelecao={inverterSelecaoDePecas}
+        onCriarPontoDeRestauracao={criarPontoDeRestauracao}
+        onRestaurar={restaurarSelecionada}
+        temPontoDeRestauracao={selecionadoId !== null && pontosDeRestauracao.has(selecionadoId)}
+        onEntrarModoRetangulo={entrarModoRetangulo}
+        onEntrarModoSentidoDoFio={entrarModoSentidoDoFio}
+        onAbrirCostura={() => setMostrarCostura(true)}
+        onRemoverCostura={removerCostura}
+        podeRemoverCostura={alvosDeCostura.some((p) => p.margemDeCosturaMm > 0)}
+        onEntrarModoMedirDistancia={() => entrarModoDeMedida('medir-distancia')}
+        onEntrarModoMedirPerimetro={() => entrarModoDeMedida('medir-perimetro')}
+        onEntrarModoCompararPerimetros={() => entrarModoDeMedida('comparar-perimetros')}
+        onAbrirInformacoesDosMoldes={() => setMostrarInformacoesDosMoldes(true)}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -1805,43 +2102,22 @@ export default function App(): React.JSX.Element {
           onFechar={() => setRedefinicaoDePerimetro(null)}
         />
       )}
-      {painelDeAjuda &&<PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
-      {ferramentaDeVista !== null ? (
+      {mostrarCostura && alvosDeCostura.length > 0 && (
+        <PainelDeCostura pecas={alvosDeCostura} onAplicar={aplicarCostura} onFechar={() => setMostrarCostura(false)} />
+      )}
+      {mostrarInformacoesDosMoldes && (
+        <PainelDeInformacoesDosMoldes
+          pecas={pecas}
+          selecionadoId={selecionadoId}
+          onSelecionar={selecionarUnico}
+          onFechar={() => setMostrarInformacoesDosMoldes(false)}
+        />
+      )}
+      {painelDeAjuda && <PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
+      {textoDaFaixa && (
         <div className="faixa-de-instrucao" role="status">
-          {ferramentaDeVista === 'mao'
-            ? 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.'
-            : 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.'}
+          {textoDaFaixa}
         </div>
-      ) : (
-        modo === 'novo-molde' ||
-        modo === 'novo-furo' ||
-        modo === 'definir-fio' ||
-        modo === 'definir-cerca' ||
-        modo === 'modificar' ||
-        modo === 'redefinir-perimetro' ? (
-          <div className="faixa-de-instrucao" role="status">
-            {modo === 'novo-molde' &&
-              'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
-            {modo === 'novo-furo' &&
-              'Clique para adicionar pontos do furo. Enter fecha o furo (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
-            {modo === 'definir-fio' &&
-              (pontosEmEdicao.length === 0
-                ? 'Clique no início da linha de fio.'
-                : 'Clique no fim da linha de fio (a seta aponta para lá).')}
-            {modo === 'definir-cerca' && 'Arraste de um canto ao outro para definir a cerca. Esc para cancelar.'}
-            {modo === 'modificar' &&
-              'Modificar: clique num ponto da peça para digitar o deslocamento exato, ou arraste-o. Para vários pontos, use Shift+clique ou um retângulo e depois clique num deles. Esc sai.'}
-            {modo === 'redefinir-perimetro' &&
-              'Redefinir perímetro: clique numa aresta da peça, perto da ponta que deve andar, e digite o novo comprimento. Esc sai.'}
-          </div>
-        ) : (
-          cerca && (
-            <div className="faixa-de-instrucao" role="status">
-              Cerca ativa: &ldquo;Mover cerca&rdquo; (aba Manipulação) desloca os pontos destacados. Clique em
-              &ldquo;Definir cerca&rdquo; de novo para removê-la.
-            </div>
-          )
-        )
       )}
       {mensagensImportacao && (
         <div className="faixa-de-avisos" role="alert">
@@ -1912,6 +2188,8 @@ export default function App(): React.JSX.Element {
             unidadeDaRegua={unidadeDaRegua}
             onAlternarUnidadeDaRegua={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
             onTamanhoChange={aoMudarTamanhoDaTela}
+            medicoes={medicoesResolvidas}
+            inicioDoTrecho={inicioDoTrecho}
           />
           {mostrarBarraDeVisualizacao && (
             <BarraDeVisualizacao
@@ -1989,13 +2267,13 @@ export default function App(): React.JSX.Element {
         cursorMundo={cursorMundo}
         transform={transform}
         totalDePecas={pecas.length}
-        temSelecao={selecionadoId !== null}
+        pecasSelecionadas={idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote.size : selecionadoId !== null ? 1 : 0}
         problemas={problemasDeValidacao}
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
         aproveitamentoPercentual={aproveitamentoAtualDaMesa}
         unidade={unidadeDaRegua}
         pontoReferencia={
-          (modo === 'novo-molde' || modo === 'novo-furo') && pontosEmEdicao.length > 0
+          MODOS_COM_PONTO_DE_REFERENCIA.has(modo) && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!
             : null
         }

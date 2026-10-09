@@ -27,7 +27,7 @@ const ATALHOS_DE_TECLADO: ReadonlyArray<readonly [string, string]> = [
   ['+ ou =', 'Aumentar zoom'],
   ['-', 'Diminuir zoom'],
   ['Ctrl+0', 'Ajustar à tela'],
-  ['Enter', 'Fechar o contorno (Novo Molde, Furo)'],
+  ['Enter', 'Fechar o contorno (Reta ou Criar molde, e Furo)'],
   ['Esc', 'Fechar o diálogo aberto; senão, desligar Mão ou Zoom por janela; senão, cancelar a ferramenta atual'],
 ];
 

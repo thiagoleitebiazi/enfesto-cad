@@ -255,6 +255,9 @@ export function espelharContornoHorizontal(contorno: Contorno, centroX: number):
   return contorno.map((p) => espelharHorizontal(p, centroX));
 }
 
+/** Dois pontos a menos disso (mm) contam como o mesmo ponto ao andar sobre o perímetro. */
+const EPSILON_DE_POSICAO_MM = 1e-9;
+
 /** Ponto mais próximo de `p` sobre o segmento [a, b] (projeção com grampo em [0,1]). */
 export function pontoMaisProximoNoSegmento(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
   const dx = b.x - a.x;
@@ -289,6 +292,55 @@ export function pontoMaisProximoNoContorno(p: Ponto2D, contorno: Contorno): Pont
     }
   }
   return melhor!;
+}
+
+/** Comprimento de uma linha aberta: a soma dos segmentos entre pontos seguidos. */
+export function comprimentoDaLinha(pontos: readonly Ponto2D[]): number {
+  let total = 0;
+  for (let i = 1; i < pontos.length; i++) total += distancia(pontos[i - 1]!, pontos[i]!);
+  return total;
+}
+
+/** Perímetro do contorno fechado (conta a aresta que volta do último ponto ao primeiro). */
+export function perimetro(contorno: Contorno): number {
+  if (contorno.length < 2) return 0;
+  return comprimentoDaLinha(contorno) + distancia(contorno.at(-1)!, contorno[0]!);
+}
+
+/** Um ponto sobre o perímetro: a aresta em que está (do vértice `indiceAresta` ao seguinte) e a posição. */
+export interface PosicaoNoContorno {
+  readonly indiceAresta: number;
+  readonly ponto: Ponto2D;
+}
+
+/**
+ * Caminho sobre o perímetro de `de` até `ate`, andando no sentido da
+ * numeração dos vértices (o outro lado é o caminho de `ate` até `de`). Com
+ * os dois na mesma aresta e `ate` antes de `de`, dá a volta inteira.
+ */
+export function trechoDoContorno(contorno: Contorno, de: PosicaoNoContorno, ate: PosicaoNoContorno): Ponto2D[] {
+  const n = contorno.length;
+  const dentro = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < n;
+  if (n < 2 || !dentro(de.indiceAresta) || !dentro(ate.indiceAresta)) {
+    throw new Error('Posição fora do contorno.');
+  }
+  const caminho: Ponto2D[] = [de.ponto];
+  const acrescentar = (p: Ponto2D): void => {
+    if (distancia(caminho.at(-1)!, p) > EPSILON_DE_POSICAO_MM) caminho.push(p);
+  };
+  const inicioDaAresta = contorno[de.indiceAresta]!;
+  const naMesmaArestaEAdiante =
+    de.indiceAresta === ate.indiceAresta &&
+    distancia(inicioDaAresta, ate.ponto) >= distancia(inicioDaAresta, de.ponto) - EPSILON_DE_POSICAO_MM;
+  if (!naMesmaArestaEAdiante) {
+    let i = de.indiceAresta;
+    do {
+      i = (i + 1) % n;
+      acrescentar(contorno[i]!);
+    } while (i !== ate.indiceAresta);
+  }
+  acrescentar(ate.ponto);
+  return caminho;
 }
 
 function normalExternaDaAresta(a: Ponto2D, b: Ponto2D): Ponto2D {

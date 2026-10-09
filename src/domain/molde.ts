@@ -466,6 +466,50 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
   };
 }
 
+/** Abaixo disso (mm) os dois pontos da linha de fio contam como um só, e a seta não tem direção. */
+const COMPRIMENTO_MINIMO_DO_FIO_MM = 1e-6;
+
+/**
+ * "Sentido do fio": troca a linha de fio da peça pela seta de `inicio` a
+ * `fim`. Só a linha muda: a peça não gira, e as rotações permitidas
+ * (`restricaoDeRotacao`) continuam contadas a partir da posição atual dela.
+ */
+export function redefinirLinhaDeFio(molde: Molde, inicio: Ponto2D, fim: Ponto2D): Molde {
+  if (![inicio.x, inicio.y, fim.x, fim.y].every(Number.isFinite)) {
+    throw new Error('Linha de fio inválida.');
+  }
+  if (distancia(inicio, fim) < COMPRIMENTO_MINIMO_DO_FIO_MM) {
+    throw new Error('A linha de fio precisa de dois pontos diferentes: o início e o fim da seta.');
+  }
+  return { ...molde, linhaDeFio: { inicio, fim } };
+}
+
+/** "Costura": define a margem de costura da peça inteira (0 remove a costura). */
+export function definirMargemDeCostura(molde: Molde, margemMm: number): Molde {
+  if (!Number.isFinite(margemMm) || margemMm < 0) {
+    throw new Error('A margem de costura precisa ser um número maior ou igual a zero.');
+  }
+  return { ...molde, margemDeCosturaMm: margemMm };
+}
+
+/**
+ * "Restaurar": a peça volta à forma guardada no ponto de restauração —
+ * contorno, furos, linhas internas, piques, marcas, linha de fio, margem de
+ * costura e giro, no lugar em que estavam. O que identifica a peça (nome,
+ * referência, tamanho, quantidade e rotações permitidas) fica como está hoje.
+ */
+export function restaurarFormaDoMolde(atual: Molde, pontoDeRestauracao: Molde): Molde {
+  return {
+    ...pontoDeRestauracao,
+    id: atual.id,
+    nome: atual.nome,
+    referencia: atual.referencia,
+    tamanho: atual.tamanho,
+    quantidade: atual.quantidade,
+    restricaoDeRotacao: atual.restricaoDeRotacao,
+  };
+}
+
 export interface DimensoesDoMolde {
   readonly larguraMm: number;
   readonly alturaMm: number;

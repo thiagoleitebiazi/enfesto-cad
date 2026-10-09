@@ -259,3 +259,108 @@ describe('AreaDeDesenho — "Redefinir perímetro"', () => {
     expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
   });
 });
+
+function renderizarFerramentaDeClique(
+  modo: 'retangulo' | 'sentido-do-fio' | 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros',
+  opcoes: { imaAtivo: boolean; mostrarGrade: boolean },
+) {
+  const onCliqueNoCanvas = vi.fn();
+  const { container } = render(
+    <AreaDeDesenho
+      pecas={[SELECIONADA, VIZINHA]}
+      selecionadoId="a"
+      idsSelecionadosEmLote={new Set()}
+      enfesto={null}
+      idsComErro={new Set()}
+      transform={TRANSFORM}
+      modo={modo}
+      pontosEmEdicao={[]}
+      contornoFinalizado={null}
+      onTransformChange={vi.fn()}
+      onSelecionar={vi.fn()}
+      onCursorMove={vi.fn()}
+      onCliqueNoCanvas={onCliqueNoCanvas}
+      onMoverPeca={vi.fn()}
+      cerca={null}
+      opcoesDaCerca={TODAS_AS_OPCOES_DA_CERCA}
+      ferramentaDeVista={null}
+      mostrarGrade={opcoes.mostrarGrade}
+      imaAtivo={opcoes.imaAtivo}
+      unidadeDaRegua="cm"
+      onAlternarUnidadeDaRegua={vi.fn()}
+    />,
+  );
+  const canvas = canvasDoDesenho(container);
+  return {
+    onCliqueNoCanvas,
+    clicar: (mundo: Ponto2D) => {
+      fireEvent.mouseDown(canvas, { button: 0, clientX: mundo.y, clientY: mundo.x });
+      fireEvent.mouseUp(canvas, { button: 0, clientX: mundo.y, clientY: mundo.x });
+    },
+  };
+}
+
+describe('"Distância": o clique cai no vértice mesmo com o ímã desligado', () => {
+  it('perto de um vértice, entrega exatamente o vértice', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: false });
+
+    clicar(ponto(98, 4)); // a 6,4 mm do vértice (103, 0)
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(103, 0));
+  });
+
+  it('também prende nos vértices das outras peças', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: false });
+
+    clicar(ponto(205, 96)); // perto do vértice (200, 100) da vizinha
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(200, 100));
+  });
+
+  it('longe dos vértices, entrega o ponto clicado', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: true });
+
+    clicar(ponto(41, 59)); // a grade à vista não prende sem o ímã
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(41, 59));
+  });
+
+  it('com o ímã ligado e a grade à vista, prende também na grade', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: true, mostrarGrade: true });
+
+    clicar(ponto(41, 59));
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(40, 60));
+  });
+});
+
+describe('"Retângulo" e "Sentido do fio": seguem o ímã, como as outras ferramentas que criam pontos', () => {
+  it.each(['retangulo', 'sentido-do-fio'] as const)('%s: com o ímã desligado, o clique fica onde foi dado', (modo) => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique(modo, { imaAtivo: false, mostrarGrade: true });
+
+    clicar(ponto(98, 4));
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4));
+  });
+
+  it.each(['retangulo', 'sentido-do-fio'] as const)('%s: com o ímã ligado, prende no vértice e na grade', (modo) => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique(modo, { imaAtivo: true, mostrarGrade: true });
+
+    clicar(ponto(98, 4));
+    clicar(ponto(41, 59));
+
+    expect(onCliqueNoCanvas.mock.calls).toEqual([[ponto(103, 0)], [ponto(40, 60)]]);
+  });
+});
+
+describe('"Perímetro" e "Comparar perímetros": o clique chega como foi dado', () => {
+  // Quem decide se ele acertou o contorno, um vértice ou o interior da peça é
+  // a medição (ui/medicao.ts), que precisa do ponto sem captura.
+  it.each(['medir-perimetro', 'comparar-perimetros'] as const)('%s: nem o ímã ligado muda o ponto', (modo) => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique(modo, { imaAtivo: true, mostrarGrade: true });
+
+    clicar(ponto(98, 4));
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4));
+  });
+});

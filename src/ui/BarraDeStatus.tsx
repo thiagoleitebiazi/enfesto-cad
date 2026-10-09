@@ -6,10 +6,11 @@ interface BarraDeStatusProps {
   readonly cursorMundo: Ponto2D | null;
   readonly transform: TransformacaoDeTela;
   readonly totalDePecas: number;
-  readonly temSelecao: boolean;
+  /** Quantas peças valem como seleção: as do lote marcado na lista ou, sem lote, a peça selecionada. */
+  readonly pecasSelecionadas: number;
   readonly problemas: readonly ProblemaDeValidacao[];
   readonly onAlternarValidacao: () => void;
-  /** Último ponto confirmado durante uma construção em andamento (Novo Molde/Furo) — habilita a leitura de DX/DY/distância/ângulo relativa a ele. */
+  /** Último ponto confirmado durante uma construção em andamento (Reta, Retângulo, Furo, Distância, Sentido do fio) — habilita a leitura de DX/DY/distância/ângulo relativa a ele. */
   readonly pontoReferencia?: Ponto2D | null;
   /** Aproveitamento físico da mesa em %, ou null quando não há enfesto ou peças. */
   readonly aproveitamentoPercentual?: number | null;
@@ -51,7 +52,14 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
       )}
       <span>Zoom: {zoomPercentual}%</span>
       <span>Peças: {props.totalDePecas}</span>
-      <span>Seleção: {props.temSelecao ? '1 peça' : 'nenhuma'}</span>
+      <span>
+        Seleção:{' '}
+        {props.pecasSelecionadas === 0
+          ? 'nenhuma'
+          : props.pecasSelecionadas === 1
+            ? '1 peça'
+            : `${props.pecasSelecionadas} peças`}
+      </span>
       <span title="Área das peças na mesa ÷ (largura útil × comprimento usado)">
         Aproveitamento da mesa:{' '}
         {props.aproveitamentoPercentual != null ? `${props.aproveitamentoPercentual.toFixed(1)}%` : '—'}

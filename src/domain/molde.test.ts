@@ -23,6 +23,9 @@ import {
   chanfrarCantoDoMolde,
   arredondarCantoDoMolde,
   dimensionarMolde,
+  redefinirLinhaDeFio,
+  definirMargemDeCostura,
+  restaurarFormaDoMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -576,5 +579,89 @@ describe('dimensionarMolde', () => {
     const molde = criarMolde(dadosBase(), 'm1');
     expect(() => dimensionarMolde(molde, 0, 1)).toThrow();
     expect(() => dimensionarMolde(molde, 1, -1)).toThrow();
+  });
+});
+
+describe('redefinirLinhaDeFio', () => {
+  it('troca só a linha de fio: a peça não gira e as rotações permitidas ficam como estão', () => {
+    const molde = criarMolde(dadosBase({ restricaoDeRotacao: { permite180: true, permite90e270: false } }), 'm1');
+    const novo = redefinirLinhaDeFio(molde, ponto(50, 150), ponto(150, 150));
+    expect(novo.linhaDeFio).toEqual({ inicio: ponto(50, 150), fim: ponto(150, 150) });
+    expect(novo.contorno).toEqual(molde.contorno);
+    expect(novo.restricaoDeRotacao).toEqual(molde.restricaoDeRotacao);
+    expect(novo.anguloDeRotacaoGraus).toBe(molde.anguloDeRotacaoGraus);
+  });
+
+  it('recusa dois pontos iguais (seta sem direção) e coordenadas que não são números', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => redefinirLinhaDeFio(molde, ponto(10, 10), ponto(10, 10))).toThrow('dois pontos diferentes');
+    expect(() => redefinirLinhaDeFio(molde, ponto(10, 10), ponto(Number.NaN, 20))).toThrow('Linha de fio inválida.');
+  });
+});
+
+describe('definirMargemDeCostura', () => {
+  it('define a margem, e zero remove a costura (corte volta a ser o contorno)', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const comCostura = definirMargemDeCostura(molde, 10);
+    expect(comCostura.margemDeCosturaMm).toBe(10);
+    expect(area(contornoDeCorte(comCostura))).toBeGreaterThan(area(molde.contorno));
+    const semCostura = definirMargemDeCostura(comCostura, 0);
+    expect(contornoDeCorte(semCostura)).toEqual(molde.contorno);
+  });
+
+  it('recusa margem negativa ou que não é número', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => definirMargemDeCostura(molde, -1)).toThrow('maior ou igual a zero');
+    expect(() => definirMargemDeCostura(molde, Number.NaN)).toThrow('maior ou igual a zero');
+  });
+});
+
+describe('restaurarFormaDoMolde', () => {
+  it('devolve a forma guardada, no lugar em que estava', () => {
+    const guardado = adicionarPique(criarMolde(dadosBase({ margemDeCosturaMm: 10 }), 'm1'), ponto(100, 0), 'p1');
+    const mexido = definirMargemDeCostura(moverPontoDoMolde(guardado, 2, ponto(260, 340)), 0);
+    expect(mexido.contorno).not.toEqual(guardado.contorno);
+
+    const restaurado = restaurarFormaDoMolde(mexido, guardado);
+
+    expect(restaurado.contorno).toEqual(guardado.contorno);
+    expect(restaurado.piques).toEqual(guardado.piques);
+    expect(restaurado.linhaDeFio).toEqual(guardado.linhaDeFio);
+    expect(restaurado.margemDeCosturaMm).toBe(10);
+  });
+
+  it('mantém o que identifica a peça hoje: id, nome, referência, tamanho, quantidade e rotações permitidas', () => {
+    const guardado = criarMolde(dadosBase(), 'm1');
+    const hoje = {
+      ...dimensionarMolde(guardado, 2, 2),
+      nome: 'Frente nova',
+      referencia: 'REF-002',
+      tamanho: 'G',
+      quantidade: 4,
+      restricaoDeRotacao: { permite180: true, permite90e270: true },
+    };
+
+    const restaurado = restaurarFormaDoMolde(hoje, guardado);
+
+    expect(restaurado.contorno).toEqual(guardado.contorno);
+    expect(restaurado).toMatchObject({
+      id: 'm1',
+      nome: 'Frente nova',
+      referencia: 'REF-002',
+      tamanho: 'G',
+      quantidade: 4,
+      restricaoDeRotacao: { permite180: true, permite90e270: true },
+    });
+  });
+
+  it('desfaz também um giro feito depois do ponto de restauração', () => {
+    const guardado = criarMolde(dadosBase({ restricaoDeRotacao: { permite180: false, permite90e270: true } }), 'm1');
+    const girado = rotacionarMolde(guardado, 90);
+    expect(girado.anguloDeRotacaoGraus).toBe(90);
+
+    const restaurado = restaurarFormaDoMolde(girado, guardado);
+
+    expect(restaurado.anguloDeRotacaoGraus).toBe(0);
+    expect(restaurado.contorno).toEqual(guardado.contorno);
   });
 });

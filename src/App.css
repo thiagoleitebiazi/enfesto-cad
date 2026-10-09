@@ -156,14 +156,20 @@ button:focus-visible {
   background: var(--cor-barra);
 }
 
+/* Se faltar largura mesmo com as abas apertadas (ver as regras de janela
+   estreita, mais abaixo), as abas são cortadas à direita em vez de a página
+   inteira ganhar rolagem horizontal; os menus nunca encolhem. */
 .ribbon-abas {
   display: flex;
   align-items: flex-end;
   gap: 1px;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 .ribbon-menus {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 1px;
   padding-bottom: 3px;
@@ -296,6 +302,51 @@ button:focus-visible {
   background: var(--cor-selecao-escura);
   border-color: var(--cor-selecao-escura);
   color: #fff;
+}
+
+/* Janela estreita: as dez abas mais os quatro menus pedem ~1210 px. Abaixo
+   disso as abas e os menus apertam, em dois passos, e continuam cabendo numa
+   linha até a largura mínima da janela (1024 px). */
+@media (max-width: 1240px) {
+  .ribbon-aba {
+    padding-left: 10px;
+    padding-right: 10px;
+    letter-spacing: 0.01em;
+  }
+
+  .botao-de-menu {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .ribbon-aba {
+    padding-left: 7px;
+    padding-right: 7px;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .botao-de-menu {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+}
+
+/* Nota à direita dos grupos, numa aba em que nenhuma ferramenta existe neste
+   programa: diz o motivo sem exigir passar o mouse em cada botão. Ocupa só o
+   espaço que sobrar, sem entrar na conta da compactação da fita. */
+.nota-da-fita {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: center;
+  margin: 0;
+  padding: 0 18px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--cor-texto-secundario);
+  overflow: hidden;
 }
 
 /* Nunca quebra linha (uma segunda linha de grupos roubava ~90 px do desenho):
@@ -1393,4 +1444,72 @@ button:focus-visible {
   border-radius: 3px;
   background: white;
   cursor: pointer;
+}
+
+/* Informações dos moldes (aba Modelo): tabela larga, com rolagem própria e
+   cabeçalho fixo; a linha da peça selecionada fica marcada. */
+.painel-de-informacoes-dos-moldes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(1040px, 86vw);
+}
+
+.rolagem-da-tabela {
+  overflow: auto;
+  max-height: 56vh;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+}
+
+.tabela-de-moldes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tabela-de-moldes th,
+.tabela-de-moldes td {
+  padding: 5px 10px;
+  text-align: left;
+  border-bottom: 1px solid #e6e9ee;
+}
+
+.tabela-de-moldes thead th {
+  position: sticky;
+  top: 0;
+  background: var(--cor-barra-alt);
+  color: var(--cor-texto-secundario);
+  font-weight: 600;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.tabela-de-moldes tbody th {
+  font-weight: 600;
+}
+
+.tabela-de-moldes .coluna-numerica {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabela-de-moldes tbody tr {
+  cursor: pointer;
+}
+
+.tabela-de-moldes tbody tr:hover {
+  background: #f1f5fb;
+}
+
+.tabela-de-moldes tbody tr.linha-selecionada {
+  background: #dfeafa;
+}
+
+.tabela-de-moldes tfoot th,
+.tabela-de-moldes tfoot td {
+  font-weight: 600;
+  background: #f7f8fa;
+  border-top: 1px solid var(--cor-borda);
+  border-bottom: none;
 }

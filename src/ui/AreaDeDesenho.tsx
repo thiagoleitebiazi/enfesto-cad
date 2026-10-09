@@ -25,6 +25,7 @@ import {
 } from './transformacaoDeTela';
 import { capturarComIma, pontosDeCapturaDasPecas, type TipoDeCaptura } from './ima';
 import { formatarMm } from './medidas';
+import type { MedicaoResolvida } from './medicao';
 
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#dde1e6';
@@ -50,6 +51,7 @@ const COR_JANELA_DE_ZOOM = '#5a6270';
 const COR_PREENCHIMENTO_JANELA_DE_ZOOM = 'rgba(90, 98, 112, 0.08)';
 const COR_GRADE = 'rgba(90, 98, 112, 0.38)';
 const COR_IMA = '#d81b60';
+const COR_MEDICAO = '#e65100';
 
 // Numeração de vértices: peças simples numeram todos; contornos com muitos
 // pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
@@ -83,7 +85,12 @@ export type ModoDeDesenho =
   | 'excluir-ponto'
   | 'arredondar-ou-chanfrar'
   | 'redefinir-perimetro'
-  | 'definir-cerca';
+  | 'definir-cerca'
+  | 'retangulo'
+  | 'sentido-do-fio'
+  | 'medir-distancia'
+  | 'medir-perimetro'
+  | 'comparar-perimetros';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -119,7 +126,16 @@ const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
   'definir-fio',
   'marca',
   'definir-cerca',
+  'retangulo',
+  'sentido-do-fio',
 ]);
+
+/**
+ * Modos de medida em que o clique cai no vértice mais próximo mesmo com o
+ * ímã desligado: medir de canto a canto tem de dar o número exato. A grade
+ * só prende com o ímã ligado, como nos outros modos.
+ */
+const MODOS_QUE_PRENDEM_NOS_VERTICES: ReadonlySet<ModoDeDesenho> = new Set(['medir-distancia']);
 
 const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
 /** Abaixo disso (em px) o mouse apertado num vértice é clique, não arrasto: o vértice não sai do lugar. */
@@ -181,7 +197,13 @@ interface AreaDeDesenhoProps {
   readonly onAlternarUnidadeDaRegua: () => void;
   /** Tamanho real da área do desenho, em px — para zoom e "Ajustar" usarem o centro e o espaço de verdade. */
   readonly onTamanhoChange?: (tamanho: { readonly largura: number; readonly altura: number }) => void;
+  /** Medidas da aba Conferência a mostrar por cima do desenho. */
+  readonly medicoes?: readonly MedicaoResolvida[];
+  /** Primeiro ponto de um trecho de perímetro, à espera do segundo clique. */
+  readonly inicioDoTrecho?: Ponto2D | null;
 }
+
+const SEM_MEDICOES: readonly MedicaoResolvida[] = [];
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
   contorno.forEach((p, i) => {
@@ -243,8 +265,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     unidadeDaRegua,
     onAlternarUnidadeDaRegua,
     onTamanhoChange,
+    medicoes = SEM_MEDICOES,
+    inicioDoTrecho = null,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
+  // O que prende o cursor agora: os vértices, com o ímã ligado ou num modo de
+  // medida; a grade, só com o ímã ligado e a grade à vista.
+  const modoDeMedida = MODOS_QUE_PRENDEM_NOS_VERTICES.has(modo);
+  const prendeNosVertices = ferramentaDeVista === null && (modoDeMedida || (imaAtivo && MODOS_COM_IMA.has(modo)));
+  const prendeNaGrade = prendeNosVertices && imaAtivo && mostrarGrade;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
   const reguaVerticalRef = useRef<HTMLCanvasElement | null>(null);
@@ -394,6 +423,23 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fillText(texto, x, y);
     },
     [],
+  );
+
+  // Medida escrita ao lado de um segmento (pontos da tela), afastada dele pela
+  // normal: para cima ou, se o segmento for de pé, para a direita.
+  const rotularSegmento = useCallback(
+    (ctx: CanvasRenderingContext2D, texto: string, a: Ponto2D, b: Ponto2D, cor: string): void => {
+      const meio = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const comprimentoPx = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      let normal = { x: -(b.y - a.y) / comprimentoPx, y: (b.x - a.x) / comprimentoPx };
+      if (normal.y > 0 || (normal.y === 0 && normal.x < 0)) normal = { x: -normal.x, y: -normal.y };
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      const afastamento = 12 + Math.abs(normal.x) * (ctx.measureText(texto).width / 2 + 4) + Math.abs(normal.y) * 4;
+      desenharRotuloComFundo(ctx, texto, meio.x + normal.x * afastamento, meio.y + normal.y * afastamento + 4, cor);
+      ctx.textAlign = 'left';
+    },
+    [desenharRotuloComFundo],
   );
 
   // Desenha o canvas principal.
@@ -724,19 +770,99 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           ctx.lineTo(meio.x + normal.x * 8, meio.y + normal.y * 8);
           ctx.stroke();
         }
+        rotularSegmento(ctx, formatarMm(distancia(inicio, fim)), a, b, COR_ARESTA_EM_DESTAQUE);
+      }
+    }
+
+    // Medidas da aba Conferência, por cima das peças: a distância com os
+    // catetos tracejados (horizontal e vertical); o perímetro com o contorno
+    // inteiro em destaque; o trecho com o caminho medido e os dois extremos.
+    for (const medicao of medicoes) {
+      ctx.strokeStyle = COR_MEDICAO;
+      ctx.fillStyle = COR_MEDICAO;
+      if (medicao.tipo === 'distancia') {
+        const a = mundoParaTela(medicao.de, transform);
+        const b = mundoParaTela(medicao.ate, transform);
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        for (const p of [a, b]) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        rotularSegmento(ctx, formatarMm(medicao.valorMm), a, b, COR_MEDICAO);
+      } else if (medicao.tipo === 'perimetro') {
+        ctx.lineWidth = 3.5;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        traçarContorno(ctx, medicao.peca.contorno, transform);
+        ctx.stroke();
+        ctx.lineJoin = 'miter';
+        const caixa = retanguloEnvolvente(medicao.peca.contorno);
+        const cantoA = mundoParaTela(ponto(caixa.minX, caixa.minY), transform);
+        const cantoB = mundoParaTela(ponto(caixa.maxX, caixa.maxY), transform);
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
-        const texto = formatarMm(distancia(inicio, fim));
-        const afastamento = 12 + Math.abs(normal.x) * (ctx.measureText(texto).width / 2 + 4) + Math.abs(normal.y) * 4;
         desenharRotuloComFundo(
           ctx,
-          texto,
-          meio.x + normal.x * afastamento,
-          meio.y + normal.y * afastamento + 4,
-          COR_ARESTA_EM_DESTAQUE,
+          `Perímetro: ${formatarMm(medicao.valorMm)}`,
+          (cantoA.x + cantoB.x) / 2,
+          Math.min(cantoA.y, cantoB.y) - 14,
+          COR_MEDICAO,
         );
         ctx.textAlign = 'left';
+      } else {
+        const caminho = medicao.caminho.map((p) => mundoParaTela(p, transform));
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        caminho.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        ctx.lineWidth = 2;
+        for (const extremo of [caminho[0], caminho.at(-1)]) {
+          if (!extremo) continue;
+          ctx.beginPath();
+          ctx.arc(extremo.x, extremo.y, 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // O rótulo fica ao lado do segmento em que cai a metade do caminho.
+        let percorrido = 0;
+        const metade = caminho.slice(1).reduce((soma, p, i) => soma + distancia(caminho[i]!, p), 0) / 2;
+        for (let i = 1; i < caminho.length; i++) {
+          const passo = distancia(caminho[i - 1]!, caminho[i]!);
+          if (percorrido + passo >= metade || i === caminho.length - 1) {
+            rotularSegmento(ctx, formatarMm(medicao.valorMm), caminho[i - 1]!, caminho[i]!, COR_MEDICAO);
+            break;
+          }
+          percorrido += passo;
+        }
       }
+    }
+    if (inicioDoTrecho) {
+      const tela = mundoParaTela(inicioDoTrecho, transform);
+      ctx.strokeStyle = COR_MEDICAO;
+      ctx.fillStyle = COR_MEDICAO;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(tela.x, tela.y, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(tela.x, tela.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Cerca ativa: retângulo tracejado laranja e os pontos que "Mover cerca"
@@ -805,8 +931,34 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.stroke();
     }
 
-    // Contorno em edição (novo molde / novo furo): linha aberta + vértices.
-    if (pontosEmEdicao.length > 0) {
+    // Retângulo em construção: do primeiro canto até o mouse, com a medida de
+    // cada lado (a de cima é a horizontal; a da esquerda, a vertical).
+    if (modo === 'retangulo' && pontosEmEdicao.length === 1 && cursorLocal) {
+      const canto = pontosEmEdicao[0]!;
+      const a = mundoParaTela(canto, transform);
+      const b = mundoParaTela(cursorLocal, transform);
+      const esquerda = Math.min(a.x, b.x);
+      const topo = Math.min(a.y, b.y);
+      ctx.strokeStyle = COR_EM_EDICAO;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(esquerda, topo, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = COR_EM_EDICAO;
+      ctx.fill();
+      // Eixos trocados na tela: a horizontal é o Y do mundo e a vertical, o X.
+      const horizontal = formatarMm(Math.abs(cursorLocal.y - canto.y));
+      const vertical = formatarMm(Math.abs(cursorLocal.x - canto.x));
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      desenharRotuloComFundo(ctx, horizontal, (a.x + b.x) / 2, topo - 8, COR_EM_EDICAO);
+      desenharRotuloComFundo(ctx, vertical, esquerda - 10 - ctx.measureText(vertical).width / 2, (a.y + b.y) / 2 + 4, COR_EM_EDICAO);
+      ctx.textAlign = 'left';
+    } else if (pontosEmEdicao.length > 0) {
+      // Contorno em edição (novo molde / novo furo): linha aberta + vértices.
+      // Na "Distância", é a linha do primeiro ponto até o mouse, já com a medida.
       ctx.beginPath();
       pontosEmEdicao.forEach((p, i) => {
         const tela = mundoParaTela(p, transform);
@@ -830,20 +982,29 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.fillStyle = COR_EM_EDICAO;
         ctx.fill();
       }
+      if (modo === 'medir-distancia' && cursorLocal && pontosEmEdicao.length === 1) {
+        rotularSegmento(
+          ctx,
+          formatarMm(distancia(pontosEmEdicao[0]!, cursorLocal)),
+          mundoParaTela(pontosEmEdicao[0]!, transform),
+          mundoParaTela(cursorLocal, transform),
+          COR_EM_EDICAO,
+        );
+      }
     }
 
-    // Prévia da linha de fio sendo definida (primeiro clique já feito).
-    if (modo === 'definir-fio' && pontosEmEdicao.length === 1 && cursorLocal) {
+    // Prévia da linha de fio sendo definida (primeiro clique já feito): a de
+    // um molde novo ou a que "Sentido do fio" vai pôr na peça selecionada.
+    if ((modo === 'definir-fio' || modo === 'sentido-do-fio') && pontosEmEdicao.length === 1 && cursorLocal) {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
 
     // Onde o ímã prendeu: quadrado vazado num vértice, cruz num ponto da
     // grade — para o usuário ver antes de clicar ou de soltar o vértice.
+    const cursorPreso =
+      capturaDoCursor !== null && (capturaDoCursor === 'vertice' ? prendeNosVertices : prendeNaGrade);
     const marcaDoIma =
-      capturaDoArrasto ??
-      (capturaDoCursor && cursorLocal && imaAtivo && ferramentaDeVista === null && MODOS_COM_IMA.has(modo)
-        ? { ponto: cursorLocal, tipo: capturaDoCursor }
-        : null);
+      capturaDoArrasto ?? (cursorPreso && capturaDoCursor && cursorLocal ? { ponto: cursorLocal, tipo: capturaDoCursor } : null);
     if (marcaDoIma) {
       const tela = mundoParaTela(marcaDoIma.ponto, transform);
       ctx.strokeStyle = COR_IMA;
@@ -874,7 +1035,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cursorLocal,
     capturaDoCursor,
     capturaDoArrasto,
-    imaAtivo,
+    prendeNosVertices,
+    prendeNaGrade,
     ferramentaDeVista,
     modo,
     deltaDeArrasto,
@@ -886,6 +1048,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     mostrarGrade,
     pecaSelecionada,
     arestaEmDestaque,
+    rotularSegmento,
+    medicoes,
+    inicioDoTrecho,
   ]);
 
   // Desenha a régua horizontal.
@@ -986,12 +1151,12 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   /** Ponto do mundo sob o mouse, já preso pelo ímã quando ele vale para o modo atual. */
   function pontoNoMundo(tela: Ponto2D): { readonly mundo: Ponto2D; readonly captura: TipoDeCaptura | null } {
     const bruto = telaParaMundo(tela, transform);
-    if (!imaAtivo || ferramentaDeVista !== null || !MODOS_COM_IMA.has(modo)) return { mundo: bruto, captura: null };
+    if (!prendeNosVertices) return { mundo: bruto, captura: null };
     const capturado = capturarComIma(
       bruto,
       pontosDoIma(),
       RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm,
-      mostrarGrade ? passoDaGradeEmMm(transform.escalaPxPorMm) : null,
+      prendeNaGrade ? passoDaGradeEmMm(transform.escalaPxPorMm) : null,
     );
     return { mundo: capturado.ponto, captura: capturado.tipo };
   }
