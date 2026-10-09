@@ -94,6 +94,13 @@ function propsBase(): Props {
     onEntrarModoMedirPerimetro: vi.fn(),
     onEntrarModoCompararPerimetros: vi.fn(),
     onAbrirInformacoesDosMoldes: vi.fn(),
+    onEntrarModoCompararDistancias: vi.fn(),
+    onEntrarModoCotaDistancia: vi.fn(),
+    onEntrarModoCotaHorizontalVertical: vi.fn(),
+    onEntrarModoCotaAngulo: vi.fn(),
+    onEntrarModoCotaPerimetro: vi.fn(),
+    onConverterEmContorno: vi.fn(),
+    onAbrirVariantes: vi.fn(),
   };
 }
 
@@ -256,13 +263,11 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
     expect(botao('Pence interna').title).toContain('são feitas na modelagem');
     expect(botao('Unir').title).toContain('cortar e unir moldes são operações de modelagem');
     expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
-    expect(botao('Converter em contorno').title).toContain('ainda não foi confirmado');
     cleanup();
 
     renderizar('Conferência');
-    expect(botao('Cota distância').title).toContain('cota fixa no desenho');
-    expect(botao('Ângulo').title).toContain('use Distância ou Perímetro');
-    expect(botao('Raio').title).toContain('sem curvas nem arcos');
+    expect(botao('Raio').title).toContain('precisa de um arco');
+    expect(botao('Conferir').title).toContain('operação de modelagem');
   });
 
   it('Graduação: nenhuma ferramenta está disponível, e a aba diz por quê sem precisar do mouse', () => {
@@ -292,6 +297,7 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     fireEvent.click(botao('Excluir'));
     fireEvent.click(botao('Selecionar'));
     fireEvent.click(botao('Inverter seleção'));
+    fireEvent.click(botao('Inverter moldes'));
     fireEvent.click(botao('Ponto de restauração'));
     fireEvent.click(botao('Restaurar'));
 
@@ -301,12 +307,13 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
       props.onCopiar,
       props.onExcluir,
       props.onEntrarModoSelecionar,
-      props.onInverterSelecao,
       props.onCriarPontoDeRestauracao,
       props.onRestaurar,
     ]) {
       expect(acao).toHaveBeenCalledTimes(1);
     }
+    // "Inverter moldes" faz o mesmo que "Inverter seleção": aqui todo objeto é um molde.
+    expect(props.onInverterSelecao).toHaveBeenCalledTimes(2);
   });
 
   it('Início: "Selecionar tudo" e "Selecionar moldes" selecionam todas as peças (aqui todo objeto é um molde)', () => {
@@ -336,23 +343,58 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     fireEvent.click(botao('Costura'));
     fireEvent.click(botao('Converter em costura'));
     fireEvent.click(botao('Remover costura'));
+    fireEvent.click(botao('Converter em contorno'));
 
     expect(props.onEntrarModoNovoMolde).toHaveBeenCalledTimes(1);
     expect(props.onEntrarModoSentidoDoFio).toHaveBeenCalledTimes(1);
     expect(props.onAbrirCostura).toHaveBeenCalledTimes(2);
     expect(props.onRemoverCostura).toHaveBeenCalledTimes(1);
+    expect(props.onConverterEmContorno).toHaveBeenCalledTimes(1);
   });
 
-  it('Conferência: Distância, Perímetro e Comparar perímetros', () => {
+  it('Conferência: as medidas, as comparações e as quatro cotas', () => {
     const props = renderizar('Conferência');
 
-    fireEvent.click(botao('Distância'));
-    fireEvent.click(botao('Perímetro'));
-    fireEvent.click(botao('Comparar perímetros'));
+    for (const nome of [
+      'Distância',
+      'Perímetro',
+      'Comparar perímetros',
+      'Comparar distância',
+      'Cota perímetro',
+      'Cota distância',
+      'Horizontal / Vertical',
+      'Ângulo',
+    ]) {
+      fireEvent.click(botao(nome));
+    }
 
-    expect(props.onEntrarModoMedirDistancia).toHaveBeenCalledTimes(1);
-    expect(props.onEntrarModoMedirPerimetro).toHaveBeenCalledTimes(1);
-    expect(props.onEntrarModoCompararPerimetros).toHaveBeenCalledTimes(1);
+    for (const acao of [
+      props.onEntrarModoMedirDistancia,
+      props.onEntrarModoMedirPerimetro,
+      props.onEntrarModoCompararPerimetros,
+      props.onEntrarModoCompararDistancias,
+      props.onEntrarModoCotaPerimetro,
+      props.onEntrarModoCotaDistancia,
+      props.onEntrarModoCotaHorizontalVertical,
+      props.onEntrarModoCotaAngulo,
+    ]) {
+      expect(acao).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('Conferência: cada cota aparece pressionada enquanto é a ferramenta ligada', () => {
+    for (const [modo, nome] of [
+      ['cota-perimetro', 'Cota perímetro'],
+      ['cota-distancia', 'Cota distância'],
+      ['cota-horizontal-vertical', 'Horizontal / Vertical'],
+      ['cota-angulo', 'Ângulo'],
+      ['comparar-distancias', 'Comparar distância'],
+    ] as const) {
+      renderizar('Conferência', { modo });
+      expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+      expect(botao('Distância')).toHaveAttribute('aria-pressed', 'false');
+      cleanup();
+    }
   });
 
   it('Modelo: Propriedades, Informações, Tecidos, Informações dos moldes e Localizar modelos', () => {
@@ -363,7 +405,9 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     fireEvent.click(botao('Tecidos'));
     fireEvent.click(botao('Informações dos moldes'));
     fireEvent.click(botao('Localizar modelos'));
+    fireEvent.click(botao('Variantes'));
 
+    expect(props.onAbrirVariantes).toHaveBeenCalledTimes(1);
     expect(props.onAbrirPropriedadesDaPeca).toHaveBeenCalledTimes(1);
     expect(props.onAbrirRelatorio).toHaveBeenCalledTimes(1);
     expect(props.onAbrirTecido).toHaveBeenCalledTimes(1);
@@ -447,11 +491,13 @@ describe('BarraDeFerramentas: o que falta para usar', () => {
     expect(props.onRestaurar).not.toHaveBeenCalled();
   });
 
-  it('Remover costura fica desligado quando a seleção não tem costura', () => {
+  it('Remover costura e Converter em contorno ficam desligados quando a seleção não tem costura', () => {
     renderizar('Produção', { podeRemoverCostura: false });
 
     expect(botao('Remover costura')).toBeDisabled();
     expect(botao('Remover costura').title).toBe('Remover costura — a seleção não tem costura para remover');
+    expect(botao('Converter em contorno')).toBeDisabled();
+    expect(botao('Converter em contorno').title).toBe('Converter em contorno — a seleção não tem costura para converter');
     expect(botao('Costura')).toBeEnabled();
   });
 
@@ -465,14 +511,17 @@ describe('BarraDeFerramentas: o que falta para usar', () => {
     const semPecas = { podeSelecionarTudo: false, temSelecao: false, temSelecaoUnica: false };
 
     renderizar('Início', semPecas);
-    for (const nome of ['Inverter seleção', 'Selecionar tudo', 'Selecionar moldes']) {
+    for (const nome of ['Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes']) {
       expect(botao(nome).title).toBe(`${nome} — não há peças no projeto`);
     }
     cleanup();
 
     renderizar('Conferência', semPecas);
-    expect(botao('Perímetro').title).toBe('Perímetro — não há peças no projeto');
-    expect(botao('Comparar perímetros')).toBeDisabled();
+    // As cotas ficam presas a uma peça: sem peças, não há onde pôr.
+    for (const nome of ['Perímetro', 'Comparar perímetros', 'Cota perímetro', 'Cota distância', 'Horizontal / Vertical', 'Ângulo']) {
+      expect(botao(nome).title).toBe(`${nome} — não há peças no projeto`);
+    }
     expect(botao('Distância')).toBeEnabled();
+    expect(botao('Comparar distância')).toBeEnabled();
   });
 });

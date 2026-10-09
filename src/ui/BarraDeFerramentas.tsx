@@ -96,6 +96,13 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoMedirPerimetro: () => void;
   readonly onEntrarModoCompararPerimetros: () => void;
   readonly onAbrirInformacoesDosMoldes: () => void;
+  readonly onEntrarModoCompararDistancias: () => void;
+  readonly onEntrarModoCotaDistancia: () => void;
+  readonly onEntrarModoCotaHorizontalVertical: () => void;
+  readonly onEntrarModoCotaAngulo: () => void;
+  readonly onEntrarModoCotaPerimetro: () => void;
+  readonly onConverterEmContorno: () => void;
+  readonly onAbrirVariantes: () => void;
 }
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
@@ -105,15 +112,12 @@ const SO_PARA_ELEMENTOS =
 const SEM_CURVAS = 'indisponível neste programa: os contornos são feitos só de segmentos retos, sem curvas nem arcos';
 const SEM_GRADUACAO =
   'indisponível neste programa: não há graduação — cada tamanho entra como uma peça própria, já graduada';
-const SEM_COTAS =
-  'indisponível neste programa: é uma cota fixa no desenho, que aqui não existe. Para medir, use Distância ou Perímetro';
 const SO_NA_MODELAGEM =
   'indisponível neste programa: pences, pregas, bainhas e dobras são feitas na modelagem; aqui os moldes chegam prontos para o encaixe';
 const CORTAR_E_UNIR_SAO_DA_MODELAGEM =
   'indisponível neste programa: cortar e unir moldes são operações de modelagem; aqui os moldes chegam prontos para o encaixe';
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
-const NAO_CONFIRMADO = 'ainda não disponível: o comportamento exato desta ferramenta ainda não foi confirmado';
 const SEM_PECA = 'selecione uma peça primeiro';
 const SEM_PECAS = 'não há peças no projeto';
 
@@ -502,7 +506,14 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={props.podeSelecionarTudo ? null : SEM_PECAS}
                     onClick={props.onSelecionarTudo}
                   />
-                  <Ferramenta tamanho="pequeno" rotulo="Inverter moldes" icone="inverter-moldes" indisponivel={NAO_CONFIRMADO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Inverter moldes"
+                    icone="inverter-moldes"
+                    dica="Inverter moldes: inverte a seleção de moldes — aqui todo objeto é um molde, então faz o mesmo que Inverter seleção"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onInverterSelecao}
+                  />
                 </div>
                 <Ferramenta
                   tamanho="grande"
@@ -707,7 +718,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Converter em contorno"
                     icone="converter-contorno"
-                    indisponivel={NAO_CONFIRMADO}
+                    dica="Converter em contorno: a linha de corte (o contorno com a costura) passa a ser o contorno da peça, e a costura volta a zero"
+                    falta={!props.temSelecao ? SEM_PECA : props.podeRemoverCostura ? null : 'a seleção não tem costura para converter'}
+                    onClick={props.onConverterEmContorno}
                   />
                   <Ferramenta
                     tamanho="pequeno"
@@ -1073,7 +1086,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   indisponivel="indisponível neste programa: conferir um molde deslizando sobre o outro é operação de modelagem. Para comparar duas medidas, use Comparar perímetros"
                 />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Cota perímetro" icone="cota-perimetro" indisponivel={SEM_COTAS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Cota perímetro"
+                    icone="cota-perimetro"
+                    pressionado={props.modo === 'cota-perimetro'}
+                    dica="Cota perímetro: clique dentro de uma peça para deixar o perímetro dela escrito no desenho — a cota anda com a peça e acompanha as mudanças dela"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onEntrarModoCotaPerimetro}
+                  />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Perímetro"
@@ -1097,7 +1118,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Distância">
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Cota distância" icone="cota-distancia" indisponivel={SEM_COTAS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Cota distância"
+                    icone="cota-distancia"
+                    pressionado={props.modo === 'cota-distancia'}
+                    dica="Cota distância: clique em dois pontos de uma peça e depois onde a linha de cota deve ficar — a cota fica presa à peça e anda com ela"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onEntrarModoCotaDistancia}
+                  />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Distância"
@@ -1106,17 +1135,40 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     dica="Distância: clique em dois pontos para ver a distância, a horizontal, a vertical e o ângulo entre eles — perto de um vértice, o clique cai exatamente nele"
                     onClick={props.onEntrarModoMedirDistancia}
                   />
-                  <Ferramenta tamanho="pequeno" rotulo="Comparar distância" icone="comparar-distancia" indisponivel={NAO_CONFIRMADO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Comparar distância"
+                    icone="comparar-distancia"
+                    pressionado={props.modo === 'comparar-distancias'}
+                    dica="Comparar distância: meça duas distâncias (dois pontos cada) e veja a diferença entre elas"
+                    onClick={props.onEntrarModoCompararDistancias}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Horizontal / Vertical"
                     icone="cota-horizontal-vertical"
-                    indisponivel={SEM_COTAS}
+                    pressionado={props.modo === 'cota-horizontal-vertical'}
+                    dica="Horizontal / Vertical: cota da distância só na horizontal ou só na vertical entre dois pontos de uma peça — depois dos pontos, clique acima ou abaixo deles para a horizontal, ou ao lado para a vertical"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onEntrarModoCotaHorizontalVertical}
                   />
-                  <Ferramenta tamanho="pequeno" rotulo="Ângulo" icone="angulo" indisponivel={SEM_COTAS} />
-                  <Ferramenta tamanho="pequeno" rotulo="Raio" icone="raio" indisponivel={SEM_CURVAS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Ângulo"
+                    icone="angulo"
+                    pressionado={props.modo === 'cota-angulo'}
+                    dica="Ângulo: cota do ângulo entre dois lados — clique num ponto de um lado, no vértice, num ponto do outro lado e onde o arco deve ficar"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onEntrarModoCotaAngulo}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Raio"
+                    icone="raio"
+                    indisponivel="indisponível neste programa: a cota de raio precisa de um arco, e aqui as curvas são sequências de pontos, sem raio guardado"
+                  />
                 </div>
               </div>
             </>
@@ -1165,7 +1217,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Operações">
-                <Ferramenta tamanho="grande" rotulo="Variantes" icone="variantes" indisponivel={NAO_CONFIRMADO} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Variantes"
+                  icone="variantes"
+                  dica="Variantes: cópias deste projeto para testar outra versão do mesmo trabalho (outras quantidades, outro tecido, outro encaixe), guardadas na Biblioteca"
+                  onClick={props.onAbrirVariantes}
+                />
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
                     tamanho="pequeno"

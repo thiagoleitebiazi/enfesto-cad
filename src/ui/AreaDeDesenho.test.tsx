@@ -261,7 +261,17 @@ describe('AreaDeDesenho — "Redefinir perímetro"', () => {
 });
 
 function renderizarFerramentaDeClique(
-  modo: 'retangulo' | 'sentido-do-fio' | 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros',
+  modo:
+    | 'retangulo'
+    | 'sentido-do-fio'
+    | 'medir-distancia'
+    | 'medir-perimetro'
+    | 'comparar-perimetros'
+    | 'comparar-distancias'
+    | 'cota-distancia'
+    | 'cota-horizontal-vertical'
+    | 'cota-angulo'
+    | 'cota-perimetro',
   opcoes: { imaAtivo: boolean; mostrarGrade: boolean },
 ) {
   const onCliqueNoCanvas = vi.fn();
@@ -306,7 +316,8 @@ describe('"Distância": o clique cai no vértice mesmo com o ímã desligado', (
 
     clicar(ponto(98, 4)); // a 6,4 mm do vértice (103, 0)
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(103, 0));
+    // O segundo argumento é o ponto exato sob o mouse, sem a captura.
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(103, 0), ponto(98, 4));
   });
 
   it('também prende nos vértices das outras peças', () => {
@@ -314,7 +325,7 @@ describe('"Distância": o clique cai no vértice mesmo com o ímã desligado', (
 
     clicar(ponto(205, 96)); // perto do vértice (200, 100) da vizinha
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(200, 100));
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(200, 100), ponto(205, 96));
   });
 
   it('longe dos vértices, entrega o ponto clicado', () => {
@@ -322,7 +333,7 @@ describe('"Distância": o clique cai no vértice mesmo com o ímã desligado', (
 
     clicar(ponto(41, 59)); // a grade à vista não prende sem o ímã
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(41, 59));
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(41, 59), ponto(41, 59));
   });
 
   it('com o ímã ligado e a grade à vista, prende também na grade', () => {
@@ -330,7 +341,28 @@ describe('"Distância": o clique cai no vértice mesmo com o ímã desligado', (
 
     clicar(ponto(41, 59));
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(40, 60));
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(40, 60), ponto(41, 59));
+  });
+});
+
+describe('cotas e "Comparar distância": prendem nos vértices como a "Distância"', () => {
+  it.each(['comparar-distancias', 'cota-distancia', 'cota-horizontal-vertical', 'cota-angulo'] as const)(
+    '%s: perto de um vértice, entrega o vértice, mesmo com o ímã desligado',
+    (modo) => {
+      const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique(modo, { imaAtivo: false, mostrarGrade: false });
+
+      clicar(ponto(98, 4));
+
+      expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(103, 0), ponto(98, 4));
+    },
+  );
+
+  it('cota-perimetro: o clique chega como foi dado (a cota fica onde se clicou)', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('cota-perimetro', { imaAtivo: true, mostrarGrade: true });
+
+    clicar(ponto(98, 4));
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4), ponto(98, 4));
   });
 });
 
@@ -340,7 +372,7 @@ describe('"Retângulo" e "Sentido do fio": seguem o ímã, como as outras ferram
 
     clicar(ponto(98, 4));
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4));
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4), ponto(98, 4));
   });
 
   it.each(['retangulo', 'sentido-do-fio'] as const)('%s: com o ímã ligado, prende no vértice e na grade', (modo) => {
@@ -349,7 +381,10 @@ describe('"Retângulo" e "Sentido do fio": seguem o ímã, como as outras ferram
     clicar(ponto(98, 4));
     clicar(ponto(41, 59));
 
-    expect(onCliqueNoCanvas.mock.calls).toEqual([[ponto(103, 0)], [ponto(40, 60)]]);
+    expect(onCliqueNoCanvas.mock.calls).toEqual([
+      [ponto(103, 0), ponto(98, 4)],
+      [ponto(40, 60), ponto(41, 59)],
+    ]);
   });
 });
 
@@ -361,6 +396,6 @@ describe('"Perímetro" e "Comparar perímetros": o clique chega como foi dado', 
 
     clicar(ponto(98, 4));
 
-    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4));
+    expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4), ponto(98, 4));
   });
 });

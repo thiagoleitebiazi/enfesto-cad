@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
+import {
+  bissetrizDaCotaDeAngulo,
+  geometriaDaCotaLinear,
+  valorDaCotaDeAngulo,
+  valorDaCotaLinear,
+  type Cota,
+} from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import {
+  perimetro,
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
   retanguloEnvolvente,
@@ -52,6 +60,7 @@ const COR_PREENCHIMENTO_JANELA_DE_ZOOM = 'rgba(90, 98, 112, 0.08)';
 const COR_GRADE = 'rgba(90, 98, 112, 0.38)';
 const COR_IMA = '#d81b60';
 const COR_MEDICAO = '#e65100';
+const COR_COTA = '#455a64';
 
 // Numeração de vértices: peças simples numeram todos; contornos com muitos
 // pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
@@ -90,7 +99,12 @@ export type ModoDeDesenho =
   | 'sentido-do-fio'
   | 'medir-distancia'
   | 'medir-perimetro'
-  | 'comparar-perimetros';
+  | 'comparar-perimetros'
+  | 'comparar-distancias'
+  | 'cota-distancia'
+  | 'cota-horizontal-vertical'
+  | 'cota-angulo'
+  | 'cota-perimetro';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -135,7 +149,13 @@ const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
  * ímã desligado: medir de canto a canto tem de dar o número exato. A grade
  * só prende com o ímã ligado, como nos outros modos.
  */
-const MODOS_QUE_PRENDEM_NOS_VERTICES: ReadonlySet<ModoDeDesenho> = new Set(['medir-distancia']);
+const MODOS_QUE_PRENDEM_NOS_VERTICES: ReadonlySet<ModoDeDesenho> = new Set([
+  'medir-distancia',
+  'comparar-distancias',
+  'cota-distancia',
+  'cota-horizontal-vertical',
+  'cota-angulo',
+]);
 
 const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
 /** Abaixo disso (em px) o mouse apertado num vértice é clique, não arrasto: o vértice não sai do lugar. */
@@ -169,7 +189,8 @@ interface AreaDeDesenhoProps {
   readonly onTransformChange: (t: TransformacaoDeTela) => void;
   readonly onSelecionar: (id: string | null) => void;
   readonly onCursorMove: (mundo: Ponto2D | null) => void;
-  readonly onCliqueNoCanvas: (mundo: Ponto2D) => void;
+  /** `mundo` é o ponto do clique, já preso pelo ímã quando vale; `semCaptura`, o ponto exato sob o mouse. */
+  readonly onCliqueNoCanvas: (mundo: Ponto2D, semCaptura: Ponto2D) => void;
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
   readonly onAbrirPropriedades?: (id: string) => void;
   readonly onMoverVariosPontos?: (indices: readonly number[], delta: Ponto2D) => void;
@@ -201,6 +222,8 @@ interface AreaDeDesenhoProps {
   readonly medicoes?: readonly MedicaoResolvida[];
   /** Primeiro ponto de um trecho de perímetro, à espera do segundo clique. */
   readonly inicioDoTrecho?: Ponto2D | null;
+  /** Cota sendo posta (os pontos já clicados e o mouse), desenhada como prévia. */
+  readonly cotaEmPrevia?: Cota | null;
 }
 
 const SEM_MEDICOES: readonly MedicaoResolvida[] = [];
@@ -267,6 +290,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onTamanhoChange,
     medicoes = SEM_MEDICOES,
     inicioDoTrecho = null,
+    cotaEmPrevia = null,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   // O que prende o cursor agora: os vértices, com o ímã ligado ou num modo de
@@ -440,6 +464,99 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.textAlign = 'left';
     },
     [desenharRotuloComFundo],
+  );
+
+  // Uma cota no desenho. A linear tem as duas linhas de chamada, a linha de
+  // cota com setas e o número ao lado dela; a de ângulo, o arco entre os dois
+  // lados e o número na bissetriz; a de perímetro, só o número, onde foi posta.
+  const desenharCota = useCallback(
+    (ctx: CanvasRenderingContext2D, cota: Cota, perimetroDaPecaMm: number | null, cor: string): void => {
+      ctx.strokeStyle = cor;
+      ctx.fillStyle = cor;
+      ctx.lineWidth = 1;
+      ctx.font = 'bold 11px sans-serif';
+      if (cota.tipo === 'perimetro') {
+        if (perimetroDaPecaMm === null) return;
+        const tela = mundoParaTela(cota.posicao, transform);
+        ctx.textAlign = 'center';
+        desenharRotuloComFundo(ctx, `Perímetro: ${formatarMm(perimetroDaPecaMm)}`, tela.x, tela.y + 4, cor);
+        ctx.textAlign = 'left';
+        return;
+      }
+      if (cota.tipo === 'angulo') {
+        const v = mundoParaTela(cota.vertice, transform);
+        const a = mundoParaTela(cota.de, transform);
+        const b = mundoParaTela(cota.ate, transform);
+        const raioPx = Math.max(8, cota.raioMm * transform.escalaPxPorMm);
+        const inicio = Math.atan2(a.y - v.y, a.x - v.x);
+        let varredura = Math.atan2(b.y - v.y, b.x - v.x) - inicio;
+        if (varredura > Math.PI) varredura -= Math.PI * 2;
+        if (varredura <= -Math.PI) varredura += Math.PI * 2;
+        ctx.beginPath();
+        for (const fim of [a, b]) {
+          const comprimento = Math.hypot(fim.x - v.x, fim.y - v.y) || 1;
+          ctx.moveTo(v.x, v.y);
+          ctx.lineTo(v.x + ((fim.x - v.x) / comprimento) * (raioPx + 8), v.y + ((fim.y - v.y) / comprimento) * (raioPx + 8));
+        }
+        ctx.stroke();
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(v.x, v.y, raioPx, inicio, inicio + varredura, varredura < 0);
+        ctx.stroke();
+        const bissetriz = bissetrizDaCotaDeAngulo(cota);
+        // Eixos trocados: a direção do mundo (x, y) aponta, na tela, para (y, x).
+        ctx.textAlign = 'center';
+        desenharRotuloComFundo(
+          ctx,
+          `${valorDaCotaDeAngulo(cota).toFixed(1).replace('.', ',')}°`,
+          v.x + bissetriz.y * (raioPx + 16),
+          v.y + bissetriz.x * (raioPx + 16) + 4,
+          cor,
+        );
+        ctx.textAlign = 'left';
+        return;
+      }
+      const geometria = geometriaDaCotaLinear(cota);
+      const de = mundoParaTela(cota.de, transform);
+      const ate = mundoParaTela(cota.ate, transform);
+      const peDe = mundoParaTela(geometria.peDe, transform);
+      const peAte = mundoParaTela(geometria.peAte, transform);
+      // Linhas de chamada: do ponto medido até um pouco além da linha de cota.
+      ctx.beginPath();
+      for (const [origem, pe] of [
+        [de, peDe],
+        [ate, peAte],
+      ] as const) {
+        const comprimento = Math.hypot(pe.x - origem.x, pe.y - origem.y);
+        if (comprimento < 0.5) continue;
+        ctx.moveTo(origem.x, origem.y);
+        ctx.lineTo(pe.x + ((pe.x - origem.x) / comprimento) * 5, pe.y + ((pe.y - origem.y) / comprimento) * 5);
+      }
+      ctx.stroke();
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(peDe.x, peDe.y);
+      ctx.lineTo(peAte.x, peAte.y);
+      ctx.stroke();
+      const comprimentoPx = Math.hypot(peAte.x - peDe.x, peAte.y - peDe.y);
+      if (comprimentoPx > 14) {
+        const ux = (peAte.x - peDe.x) / comprimentoPx;
+        const uy = (peAte.y - peDe.y) / comprimentoPx;
+        for (const [ponta, sentido] of [
+          [peDe, 1],
+          [peAte, -1],
+        ] as const) {
+          ctx.beginPath();
+          ctx.moveTo(ponta.x, ponta.y);
+          ctx.lineTo(ponta.x + (ux * 7 - uy * 2.6) * sentido, ponta.y + (uy * 7 + ux * 2.6) * sentido);
+          ctx.lineTo(ponta.x + (ux * 7 + uy * 2.6) * sentido, ponta.y + (uy * 7 - ux * 2.6) * sentido);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      rotularSegmento(ctx, formatarMm(valorDaCotaLinear(cota)), peDe, peAte, cor);
+    },
+    [transform, desenharRotuloComFundo, rotularSegmento],
   );
 
   // Desenha o canvas principal.
@@ -695,6 +812,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           Math.abs(cantoB.y - cantoA.y) + folga * 2,
         );
         ctx.setLineDash([]);
+      }
+
+      // Cotas presas à peça: andam com ela (inclusive na prévia do arrasto).
+      if (peca.cotas && peca.cotas.length > 0) {
+        const perimetroDaPeca = perimetro(peca.contorno);
+        for (const cota of peca.cotas) desenharCota(ctx, cota, perimetroDaPeca, COR_COTA);
+        ctx.textAlign = 'left';
       }
     }
 
@@ -965,7 +1089,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         if (i === 0) ctx.moveTo(tela.x, tela.y);
         else ctx.lineTo(tela.x, tela.y);
       });
-      if (cursorLocal) {
+      // Com uma cota em prévia, o mouse já está posicionando a linha de cota.
+      if (cursorLocal && !cotaEmPrevia) {
         const tela = mundoParaTela(cursorLocal, transform);
         ctx.lineTo(tela.x, tela.y);
       }
@@ -992,6 +1117,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         );
       }
     }
+
+    if (cotaEmPrevia) desenharCota(ctx, cotaEmPrevia, null, COR_EM_EDICAO);
 
     // Prévia da linha de fio sendo definida (primeiro clique já feito): a de
     // um molde novo ou a que "Sentido do fio" vai pôr na peça selecionada.
@@ -1051,6 +1178,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     rotularSegmento,
     medicoes,
     inicioDoTrecho,
+    desenharCota,
+    cotaEmPrevia,
   ]);
 
   // Desenha a régua horizontal.
@@ -1178,6 +1307,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     }
 
     const { mundo } = pontoNoMundo(tela);
+    const semCaptura = telaParaMundo(tela, transform);
 
     if (modo === 'definir-cerca') {
       setRetanguloEmDesenho({ tipo: 'cerca', inicio: mundo, atual: mundo });
@@ -1264,7 +1394,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
       return;
     }
-    onCliqueNoCanvas(mundo);
+    onCliqueNoCanvas(mundo, semCaptura);
   }
 
   function aoMoverMouse(e: React.MouseEvent<HTMLCanvasElement>): void {

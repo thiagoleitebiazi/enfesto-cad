@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ponto, area } from '../core/geometria';
+import { ponto, area, perimetro, pontoMaisProximoNoContorno } from '../core/geometria';
+import { cotaDeDistancia, cotaDePerimetro, cotaHorizontalOuVertical, valorDaCotaLinear, type CotaLinear } from './cota';
 import {
   criarMolde,
   dimensoesDoMolde,
@@ -26,6 +27,9 @@ import {
   redefinirLinhaDeFio,
   definirMargemDeCostura,
   restaurarFormaDoMolde,
+  adicionarCota,
+  removerCota,
+  converterCosturaEmContorno,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -663,5 +667,93 @@ describe('restaurarFormaDoMolde', () => {
 
     expect(restaurado.anguloDeRotacaoGraus).toBe(0);
     expect(restaurado.contorno).toEqual(guardado.contorno);
+  });
+});
+
+describe('cotas na peça', () => {
+  // Largura do contorno base: de (0,0) a (200,0), 200 mm.
+  const comCota = () =>
+    adicionarCota(criarMolde(dadosBase(), 'm1'), cotaDeDistancia('c1', ponto(0, 0), ponto(200, 0), ponto(100, -30)));
+  const cotaDe = (molde: ReturnType<typeof comCota>): CotaLinear => molde.cotas![0] as CotaLinear;
+
+  it('uma peça nova não tem cotas; adicionar e remover mexem só nelas', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(molde.cotas).toBeUndefined();
+
+    const comDuas = adicionarCota(comCota(), cotaDePerimetro('c2', ponto(100, 150)));
+    expect(comDuas.cotas!.map((c) => c.id)).toEqual(['c1', 'c2']);
+    expect(comDuas.contorno).toEqual(molde.contorno);
+
+    expect(removerCota(comDuas, 'c1').cotas!.map((c) => c.id)).toEqual(['c2']);
+    expect(removerCota(removerCota(comDuas, 'c1'), 'c2').cotas).toEqual([]);
+  });
+
+  it('a cota anda com a peça', () => {
+    const movida = transladarMolde(comCota(), ponto(50, 70), 'm1');
+    expect(cotaDe(movida)).toMatchObject({ de: ponto(50, 70), ate: ponto(250, 70), posicao: ponto(150, 40) });
+    expect(valorDaCotaLinear(cotaDe(movida))).toBe(200);
+  });
+
+  it('a cota gira com a peça e continua medindo o mesmo', () => {
+    const girada = rotacionarMolde(comCota(), 90);
+    // O canto (0,0) e o canto (200,0) giram junto com o contorno.
+    expect(cotaDe(girada).de.x).toBeCloseTo(girada.contorno[0]!.x, 9);
+    expect(cotaDe(girada).de.y).toBeCloseTo(girada.contorno[0]!.y, 9);
+    expect(cotaDe(girada).ate.x).toBeCloseTo(girada.contorno[1]!.x, 9);
+    expect(valorDaCotaLinear(cotaDe(girada))).toBeCloseTo(200, 9);
+  });
+
+  it('a cota espelha com a peça, e a horizontal/vertical continua no eixo dela', () => {
+    const base = adicionarCota(
+      criarMolde(dadosBase(), 'm1'),
+      cotaHorizontalOuVertical('c1', ponto(0, 0), ponto(200, 300), ponto(100, 340)),
+    );
+    expect(valorDaCotaLinear(cotaDe(base))).toBe(200); // posta ao lado: mede a vertical da tela (X do mundo)
+    const espelhada = espelharMolde(base, 'm1');
+    expect(cotaDe(espelhada).de).toEqual(espelhada.contorno[0]);
+    expect(cotaDe(espelhada).ate).toEqual(espelhada.contorno[2]);
+    expect(valorDaCotaLinear(cotaDe(espelhada))).toBe(200);
+  });
+
+  it('ao dimensionar a peça, a medida da cota acompanha', () => {
+    const maior = dimensionarMolde(comCota(), 1.5, 1);
+    expect(cotaDe(maior).ate).toEqual(maior.contorno[1]);
+    expect(valorDaCotaLinear(cotaDe(maior))).toBeCloseTo(300, 9);
+  });
+
+  it('transformar uma peça sem cotas não cria o campo', () => {
+    expect(transladarMolde(criarMolde(dadosBase(), 'm1'), ponto(5, 5), 'm1').cotas).toBeUndefined();
+  });
+
+  it('restaurar a forma mantém as cotas que a peça tem hoje', () => {
+    const guardado = criarMolde(dadosBase(), 'm1');
+    const hoje = adicionarCota(moverPontoDoMolde(guardado, 2, ponto(260, 340)), cotaDePerimetro('c9', ponto(100, 150)));
+    const restaurado = restaurarFormaDoMolde(hoje, guardado);
+    expect(restaurado.contorno).toEqual(guardado.contorno);
+    expect(restaurado.cotas!.map((c) => c.id)).toEqual(['c9']);
+  });
+});
+
+describe('converterCosturaEmContorno', () => {
+  it('a linha de corte vira o contorno e a margem volta a zero', () => {
+    const molde = criarMolde(dadosBase({ margemDeCosturaMm: 10 }), 'm1'); // 200 × 300
+    const convertido = converterCosturaEmContorno(molde);
+    expect(convertido.margemDeCosturaMm).toBe(0);
+    expect(area(convertido.contorno)).toBeCloseTo(220 * 320, 6);
+    expect(perimetro(convertido.contorno)).toBeCloseTo(1080, 6);
+    expect(contornoDeCorte(convertido)).toEqual(convertido.contorno);
+  });
+
+  it('os piques vão para o contorno novo, na aresta que ficou mais perto', () => {
+    const molde = adicionarPique(criarMolde(dadosBase({ margemDeCosturaMm: 10 }), 'm1'), ponto(100, 0), 'p1');
+    const convertido = converterCosturaEmContorno(molde);
+    const pique = convertido.piques[0]!;
+    expect(pique.posicao.x).toBeCloseTo(100, 6);
+    expect(pique.posicao.y).toBeCloseTo(-10, 6);
+    expect(pontoMaisProximoNoContorno(pique.posicao, convertido.contorno).indiceAresta).toBe(pique.indiceAresta);
+  });
+
+  it('recusa a peça sem costura', () => {
+    expect(() => converterCosturaEmContorno(criarMolde(dadosBase(), 'm1'))).toThrow('não tem costura para converter');
   });
 });

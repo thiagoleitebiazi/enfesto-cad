@@ -19,6 +19,7 @@ import {
   chanfrarCantoDoContorno,
   arredondarCantoDoContorno,
 } from '../core/geometria';
+import { transformarCota, type Cota } from './cota';
 
 /**
  * Regra crítica (seção 5 do escopo): por padrão nenhuma rotação OU
@@ -77,6 +78,8 @@ export interface Molde {
   readonly restricaoDeRotacao: RestricaoDeRotacao;
   /** Rotação acumulada em relação à orientação original (criação/importação), normalizada em [0, 360). */
   readonly anguloDeRotacaoGraus: number;
+  /** Cotas presas à peça (aba Conferência). Ausente em peças sem cota e em projetos antigos. */
+  readonly cotas?: readonly Cota[];
 }
 
 export interface DadosDeNovoMolde {
@@ -155,6 +158,31 @@ export function removerMarca(molde: Molde, marcaId: string): Molde {
   return { ...molde, marcas: molde.marcas.filter((m) => m.id !== marcaId) };
 }
 
+const ORIGEM: Ponto2D = { x: 0, y: 0 };
+
+/**
+ * As cotas da peça levadas por uma transformação afim (`ponto` para posições,
+ * `vetor` para direções). Devolve o campo `cotas` pronto para espalhar no
+ * molde novo, ou nada quando a peça não tem cotas.
+ */
+function cotasTransformadas(
+  molde: Molde,
+  ponto: (p: Ponto2D) => Ponto2D,
+  vetor: (v: Ponto2D) => Ponto2D,
+): { readonly cotas?: readonly Cota[] } {
+  return molde.cotas ? { cotas: molde.cotas.map((c) => transformarCota(c, ponto, vetor)) } : {};
+}
+
+/** Prende uma cota à peça. */
+export function adicionarCota(molde: Molde, cota: Cota): Molde {
+  return { ...molde, cotas: [...(molde.cotas ?? []), cota] };
+}
+
+/** Tira a cota da peça. */
+export function removerCota(molde: Molde, cotaId: string): Molde {
+  return { ...molde, cotas: (molde.cotas ?? []).filter((c) => c.id !== cotaId) };
+}
+
 /**
  * Linha de corte real: o contorno da peça já considerando a margem de
  * costura (seção 8 do escopo — o PDF deve distinguir linha de corte de
@@ -179,6 +207,11 @@ export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: str
       inicio: somar(molde.linhaDeFio.inicio, deslocamento),
       fim: somar(molde.linhaDeFio.fim, deslocamento),
     },
+    ...cotasTransformadas(
+      molde,
+      (p) => somar(p, deslocamento),
+      (v) => v,
+    ),
   };
 }
 
@@ -204,6 +237,11 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
       fim: rotacionar(molde.linhaDeFio.fim, pivo, anguloGraus),
     },
     anguloDeRotacaoGraus: normalizarAngulo(molde.anguloDeRotacaoGraus + anguloGraus),
+    ...cotasTransformadas(
+      molde,
+      (p) => rotacionar(p, pivo, anguloGraus),
+      (v) => rotacionar(v, ORIGEM, anguloGraus),
+    ),
   };
 }
 
@@ -228,6 +266,11 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),
     },
+    ...cotasTransformadas(
+      molde,
+      (p) => espelharHorizontal(p, centroX),
+      (v) => ({ x: -v.x, y: v.y }),
+    ),
   };
 }
 
@@ -463,6 +506,11 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
       inicio: escalarPonto(molde.linhaDeFio.inicio, origem, fatorX, fatorY),
       fim: escalarPonto(molde.linhaDeFio.fim, origem, fatorX, fatorY),
     },
+    ...cotasTransformadas(
+      molde,
+      (p) => escalarPonto(p, origem, fatorX, fatorY),
+      (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
+    ),
   };
 }
 
@@ -507,6 +555,29 @@ export function restaurarFormaDoMolde(atual: Molde, pontoDeRestauracao: Molde): 
     tamanho: atual.tamanho,
     quantidade: atual.quantidade,
     restricaoDeRotacao: atual.restricaoDeRotacao,
+    ...(atual.cotas ? { cotas: atual.cotas } : {}),
+  };
+}
+
+/**
+ * "Converter em contorno": a linha de corte (o contorno afastado pela margem
+ * de costura) passa a ser o contorno da peça, e a margem volta a zero. É o
+ * caminho inverso de dar costura a um contorno. Cada pique vai para o ponto
+ * mais próximo do contorno novo.
+ */
+export function converterCosturaEmContorno(molde: Molde): Molde {
+  if (!(molde.margemDeCosturaMm > 0)) {
+    throw new Error(`A peça "${molde.nome}" não tem costura para converter em contorno.`);
+  }
+  const contorno = contornoDeCorte(molde);
+  return {
+    ...molde,
+    contorno,
+    margemDeCosturaMm: 0,
+    piques: molde.piques.map((p) => {
+      const maisProximo = pontoMaisProximoNoContorno(p.posicao, contorno);
+      return { ...p, posicao: maisProximo.ponto, indiceAresta: maisProximo.indiceAresta };
+    }),
   };
 }
 

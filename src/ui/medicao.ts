@@ -99,7 +99,7 @@ export function alvoDaMedicao(
 }
 
 /** Guarda uma medida pronta. Comparando, ficam até duas (a terceira recomeça); medindo, só a última. */
-function comMedicao(estado: EstadoDeMedicao, medicao: Medicao, comparar: boolean): EstadoDeMedicao {
+export function registrarMedicao(estado: EstadoDeMedicao, medicao: Medicao, comparar: boolean): EstadoDeMedicao {
   const anteriores = comparar && estado.medicoes.length < 2 ? estado.medicoes : [];
   return { medicoes: [...anteriores, medicao], inicioDoTrecho: null };
 }
@@ -113,11 +113,11 @@ function comMedicao(estado: EstadoDeMedicao, medicao: Medicao, comparar: boolean
  */
 export function cliqueDePerimetro(estado: EstadoDeMedicao, alvo: AlvoDeMedicao | null, comparar: boolean): EstadoDeMedicao {
   if (!alvo) return estado;
-  if (alvo.tipo === 'interior') return comMedicao(estado, { tipo: 'perimetro', pecaId: alvo.peca.id }, comparar);
+  if (alvo.tipo === 'interior') return registrarMedicao(estado, { tipo: 'perimetro', pecaId: alvo.peca.id }, comparar);
   const inicio = estado.inicioDoTrecho;
   if (inicio && inicio.pecaId === alvo.peca.id && inicio.contorno === alvo.peca.contorno) {
     if (distancia(inicio.de.ponto, alvo.posicao.ponto) < MESMO_PONTO_MM) return estado;
-    return comMedicao(
+    return registrarMedicao(
       estado,
       { tipo: 'trecho', pecaId: alvo.peca.id, contorno: alvo.peca.contorno, de: inicio.de, ate: alvo.posicao },
       comparar,

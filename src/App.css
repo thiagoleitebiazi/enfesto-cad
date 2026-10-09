@@ -1513,3 +1513,72 @@ button:focus-visible {
   border-top: 1px solid var(--cor-borda);
   border-bottom: none;
 }
+
+/* Variantes (aba Modelo): a família do projeto aberto e o campo para criar outra. */
+.painel-de-variantes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 460px;
+  max-width: 100%;
+}
+
+.lista-de-variantes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.lista-de-variantes li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid #e6e9ee;
+}
+
+.lista-de-variantes li:last-child {
+  border-bottom: none;
+}
+
+.lista-de-variantes li.variante-aberta {
+  background: #eef4fc;
+}
+
+.lista-de-variantes li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detalhes-da-variante {
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
+}
+
+.selo-de-variante-aberta {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cor-selecao-escura);
+}
+
+.lista-de-variantes button {
+  padding: 4px 12px;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.lista-de-variantes button:hover {
+  background: #f4f6f9;
+  border-color: var(--cor-borda-forte);
+}

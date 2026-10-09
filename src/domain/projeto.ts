@@ -66,6 +66,8 @@ export interface Projeto {
   readonly status: StatusDoProjeto;
   readonly estadoAtual: EstadoDoProjeto;
   readonly historico: readonly EventoDeHistorico[];
+  /** Id do projeto original de que este é uma variante. Ausente no original e em projetos sem variantes. */
+  readonly varianteDe?: string;
 }
 
 export function gerarCodigoDeProjeto(dataIso: string, sequencial: number): string {
@@ -168,4 +170,43 @@ export function filtrarProjetos(
 /** Ordena por data de modificação decrescente (mais recentes primeiro) — seção 9. */
 export function ordenarPorMaisRecente(projetos: readonly Projeto[]): Projeto[] {
   return [...projetos].sort((a, b) => b.modificadoEmIso.localeCompare(a.modificadoEmIso));
+}
+
+/**
+ * Variantes: cópias de um projeto para testar outra versão do mesmo trabalho
+ * (outras quantidades, outro tecido, outro encaixe) sem perder a original.
+ * Cada variante é um projeto inteiro da biblioteca, com histórico próprio,
+ * ligado ao original por `varianteDe`. A variante de uma variante continua
+ * ligada ao mesmo original: a família é uma lista, não uma árvore.
+ */
+export function criarVariante(
+  origem: Projeto,
+  nome: string,
+  id: string,
+  codigo: string,
+  agoraIso: string,
+  estado: EstadoDoProjeto,
+): Projeto {
+  return { ...criarProjeto(nome, id, codigo, agoraIso, estado), varianteDe: origem.varianteDe ?? origem.id };
+}
+
+/** O projeto e as variantes da mesma família, da mais antiga à mais nova (o original vem primeiro). */
+export function variantesDoProjeto(projetos: readonly Projeto[], projeto: Projeto): Projeto[] {
+  const original = projeto.varianteDe ?? projeto.id;
+  const familia = projetos.filter((p) => p.id !== projeto.id && (p.varianteDe ?? p.id) === original);
+  return [...familia, projeto].sort((a, b) => a.criadoEmIso.localeCompare(b.criadoEmIso));
+}
+
+const SUFIXO_DE_VARIANTE = / — variante (\d+)$/;
+
+/**
+ * Nome sugerido para a próxima variante: o do original e o número seguinte
+ * ao maior já usado na família ("Camisa — variante 3"). O original conta
+ * como a primeira, então a primeira variante é a 2.
+ */
+export function nomeDaProximaVariante(projetos: readonly Projeto[], projeto: Projeto): string {
+  const familia = variantesDoProjeto(projetos, projeto);
+  const original = familia.find((p) => p.varianteDe === undefined) ?? projeto;
+  const numerosUsados = familia.map((p) => Number(SUFIXO_DE_VARIANTE.exec(p.nome)?.[1] ?? 0));
+  return `${original.nome.replace(SUFIXO_DE_VARIANTE, '')} — variante ${Math.max(familia.length, ...numerosUsados) + 1}`;
 }

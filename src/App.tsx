@@ -11,11 +11,15 @@ import { PainelDeRedefinirPerimetro, type RedefinicaoDePerimetro } from './ui/Pa
 import { PainelDeAjuda, type ConteudoDaAjuda } from './ui/PainelDeAjuda';
 import { PainelDeCostura } from './ui/PainelDeCostura';
 import { PainelDeInformacoesDosMoldes } from './ui/PainelDeInformacoesDosMoldes';
+import { PainelDeVariantes } from './ui/PainelDeVariantes';
+import { CLIQUES_DA_COTA, cotaSobOPonto, montarCota, previaDaCota, type FerramentaDeCotaPorPontos } from './ui/cotas';
+import { cotaDePerimetro } from './domain/cota';
 import {
   alvoDaMedicao,
   cliqueDePerimetro,
   descreverComparacao,
   descreverMedicao,
+  registrarMedicao,
   resolverMedicao,
   SEM_MEDICAO,
   type EstadoDeMedicao,
@@ -59,6 +63,9 @@ import {
   redefinirLinhaDeFio,
   definirMargemDeCostura,
   restaurarFormaDoMolde,
+  adicionarCota,
+  removerCota,
+  converterCosturaEmContorno,
   type Molde,
   type PontaDaAresta,
 } from './domain/molde';
@@ -105,6 +112,9 @@ import {
   alterarStatus,
   renomearProjeto,
   gerarCodigoDeProjeto,
+  criarVariante,
+  variantesDoProjeto,
+  nomeDaProximaVariante,
   type Projeto,
   type EstadoDoProjeto,
   type TipoDeEvento,
@@ -196,7 +206,18 @@ const MODOS_COM_PONTO_DE_REFERENCIA: ReadonlySet<ModoDeDesenho> = new Set([
   'retangulo',
   'sentido-do-fio',
   'medir-distancia',
+  'comparar-distancias',
+  'cota-distancia',
+  'cota-horizontal-vertical',
+  'cota-angulo',
 ]);
+
+type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias';
+type FerramentaDeCota = FerramentaDeCotaPorPontos | 'cota-perimetro';
+
+function ehFerramentaDeCotaPorPontos(modo: ModoDeDesenho): modo is FerramentaDeCotaPorPontos {
+  return modo === 'cota-distancia' || modo === 'cota-horizontal-vertical' || modo === 'cota-angulo';
+}
 
 function mesmoPonto(a: Ponto2D, b: Ponto2D): boolean {
   return a.x === b.x && a.y === b.y;
@@ -257,6 +278,9 @@ export default function App(): React.JSX.Element {
   const [mostrarInformacoesDosMoldes, setMostrarInformacoesDosMoldes] = useState(false);
   // Medidas da aba Conferência: só leitura, somem ao sair da ferramenta.
   const [medicao, setMedicao] = useState<EstadoDeMedicao>(SEM_MEDICAO);
+  // Peça que vai guardar a cota em construção: a do primeiro clique.
+  const [donoDaCota, setDonoDaCota] = useState<string | null>(null);
+  const [mostrarVariantes, setMostrarVariantes] = useState(false);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -545,10 +569,9 @@ export default function App(): React.JSX.Element {
     setMostrarBiblioteca(true);
   }, [carregarListaDeProjetos]);
 
-  const abrirProjeto = useCallback(
-    (id: string) => {
-      const projeto = projetos.find((p) => p.id === id);
-      if (!projeto) return;
+  /** Põe na tela um projeto já carregado, com tudo o que era do anterior limpo e a vista enquadrada. */
+  const mostrarProjeto = useCallback(
+    (projeto: Projeto) => {
       setPecas([...projeto.estadoAtual.pecas]);
       setTecido(projeto.estadoAtual.tecido);
       setEnfesto(projeto.estadoAtual.enfesto);
@@ -574,7 +597,60 @@ export default function App(): React.JSX.Element {
       setVistasAnteriores([]);
       setVistasSeguintes([]);
     },
-    [projetos, tamanhoDaTela],
+    [tamanhoDaTela],
+  );
+
+  const abrirProjeto = useCallback(
+    (id: string) => {
+      const projeto = projetos.find((p) => p.id === id);
+      if (projeto) mostrarProjeto(projeto);
+    },
+    [projetos, mostrarProjeto],
+  );
+
+  // Variantes (aba Modelo): cópias do projeto aberto, guardadas na Biblioteca.
+  const abrirVariantes = useCallback(() => {
+    carregarListaDeProjetos();
+    setMostrarVariantes(true);
+  }, [carregarListaDeProjetos]);
+
+  /** Salva o projeto aberto como está, para trocar de projeto sem perder o que não foi salvo. */
+  const salvarAntesDeTrocar = useCallback((): Projeto => {
+    const salvo = registrarEvento(projetoAtual, 'salvamento', { pecas, tecido, enfesto }, new Date().toISOString());
+    persistirProjeto(salvo);
+    return salvo;
+  }, [projetoAtual, pecas, tecido, enfesto, persistirProjeto]);
+
+  const criarVarianteDoProjeto = useCallback(
+    (nome: string): string | null => {
+      const salvo = salvarAntesDeTrocar();
+      const agora = new Date().toISOString();
+      const variante = criarVariante(
+        salvo,
+        nome,
+        `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        gerarCodigoDeProjeto(agora, 1),
+        agora,
+        { pecas, tecido, enfesto },
+      );
+      persistirProjeto(variante);
+      // A lista já fica certa na tela, sem esperar a releitura do disco.
+      setProjetos((lista) => [...lista.filter((p) => p.id !== salvo.id), salvo, variante]);
+      mostrarProjeto(variante);
+      return null;
+    },
+    [pecas, tecido, enfesto, salvarAntesDeTrocar, persistirProjeto, mostrarProjeto],
+  );
+
+  const abrirVarianteDoProjeto = useCallback(
+    (id: string) => {
+      const variante = projetos.find((p) => p.id === id);
+      if (!variante) return;
+      const salvo = salvarAntesDeTrocar();
+      setProjetos((lista) => lista.map((p) => (p.id === salvo.id ? salvo : p)));
+      mostrarProjeto(variante);
+    },
+    [projetos, salvarAntesDeTrocar, mostrarProjeto],
   );
 
   const duplicarProjetoDaBiblioteca = useCallback(
@@ -747,6 +823,7 @@ export default function App(): React.JSX.Element {
     setPontosParaModificar(null);
     setRedefinicaoDePerimetro(null);
     setMedicao(SEM_MEDICAO);
+    setDonoDaCota(null);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -816,11 +893,18 @@ export default function App(): React.JSX.Element {
     setContornoPendente(null);
   }, [selecionadoId]);
 
-  const entrarModoDeMedida = useCallback((ferramenta: 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros') => {
+  const entrarModoDeMedida = useCallback((ferramenta: FerramentaDeMedida) => {
     setModo(ferramenta);
     setPontosEmEdicao([]);
     setContornoPendente(null);
     setMedicao(SEM_MEDICAO);
+  }, []);
+
+  const entrarModoDeCota = useCallback((ferramenta: FerramentaDeCota) => {
+    setModo(ferramenta);
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+    setDonoDaCota(null);
   }, []);
 
   const entrarModoNovoFuro = useCallback(() => {
@@ -949,6 +1033,21 @@ export default function App(): React.JSX.Element {
       comCostura.length === 1
         ? `Costura removida de “${comCostura[0]!.nome}”.`
         : `Costura removida de ${comCostura.length} peças.`,
+      novasPecas,
+    );
+  }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
+
+  /** "Converter em contorno": a linha de corte das peças selecionadas vira o contorno, e a costura volta a zero. */
+  const converterEmContorno = useCallback(() => {
+    const comCostura = alvosDeCostura.filter((p) => p.margemDeCosturaMm > 0);
+    if (comCostura.length === 0) return;
+    const ids = new Set(comCostura.map((p) => p.id));
+    const novasPecas = pecas.map((p) => (ids.has(p.id) ? converterCosturaEmContorno(p) : p));
+    aplicarMudanca(novasPecas);
+    avisar(
+      comCostura.length === 1
+        ? `A linha de corte de “${comCostura[0]!.nome}” virou o contorno; a costura voltou a zero.`
+        : `A linha de corte de ${comCostura.length} peças virou o contorno; a costura voltou a zero.`,
       novasPecas,
     );
   }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
@@ -1411,7 +1510,7 @@ export default function App(): React.JSX.Element {
   }, [pontosEmEdicao, modo, selecionadoId, pecas, aplicarMudanca, cancelarModo]);
 
   const onCliqueNoCanvas = useCallback(
-    (mundo: Ponto2D) => {
+    (mundo: Ponto2D, semCaptura: Ponto2D) => {
       if (modo === 'novo-molde' || modo === 'novo-furo') {
         // Com o ímã, um clique perto do primeiro ponto cai exatamente nele:
         // fecha o contorno (como Enter). Um clique repetido sobre o último
@@ -1480,16 +1579,58 @@ export default function App(): React.JSX.Element {
         cancelarModo();
         return;
       }
-      if (modo === 'medir-distancia') {
+      if (modo === 'medir-distancia' || modo === 'comparar-distancias') {
+        const comparar = modo === 'comparar-distancias';
         const de = pontosEmEdicao[0];
         if (!de) {
           setPontosEmEdicao([mundo]);
-          setMedicao(SEM_MEDICAO);
+          // Medindo, a medida anterior some; comparando, só recomeça depois da segunda.
+          setMedicao((atual) => (comparar && atual.medicoes.length < 2 ? atual : SEM_MEDICAO));
           return;
         }
         if (mesmoPonto(mundo, de)) return;
-        setMedicao({ medicoes: [{ tipo: 'distancia', de, ate: mundo }], inicioDoTrecho: null });
+        setMedicao((atual) => registrarMedicao(atual, { tipo: 'distancia', de, ate: mundo }, comparar));
         setPontosEmEdicao([]);
+        return;
+      }
+      if (modo === 'cota-perimetro' || ehFerramentaDeCotaPorPontos(modo)) {
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        if (pontosEmEdicao.length === 0) {
+          // Um clique no número de uma cota a apaga.
+          const cotaClicada = cotaSobOPonto(pecas, semCaptura, raioMm);
+          if (cotaClicada) {
+            aplicarMudanca(pecas.map((p) => (p.id === cotaClicada.pecaId ? removerCota(p, cotaClicada.cotaId) : p)));
+            return;
+          }
+          // A cota fica presa a uma peça: a do primeiro clique ou, fora de todas, a selecionada.
+          const dona =
+            alvoDaMedicao(semCaptura, pecas, raioMm)?.peca ?? pecas.find((p) => p.id === selecionadoId) ?? null;
+          if (!dona) return;
+          if (modo === 'cota-perimetro') {
+            aplicarMudanca(
+              pecas.map((p) => (p.id === dona.id ? adicionarCota(p, cotaDePerimetro(proximoId(), semCaptura)) : p)),
+            );
+            return;
+          }
+          setDonoDaCota(dona.id);
+          setPontosEmEdicao([mundo]);
+          return;
+        }
+        if (!ehFerramentaDeCotaPorPontos(modo)) return;
+        const cliques = [...pontosEmEdicao, mundo];
+        if (cliques.length < CLIQUES_DA_COTA[modo]) {
+          // Um ponto repetido não mede nada: espera um ponto diferente.
+          if (!mesmoPonto(mundo, pontosEmEdicao.at(-1)!)) setPontosEmEdicao(cliques);
+          return;
+        }
+        try {
+          const cota = montarCota(modo, proximoId(), cliques);
+          aplicarMudanca(pecas.map((p) => (p.id === donoDaCota ? adicionarCota(p, cota) : p)));
+        } catch {
+          // Pontos que não formam a cota (dois iguais): recomeça sem criar nada.
+        }
+        setPontosEmEdicao([]);
+        setDonoDaCota(null);
         return;
       }
       if (modo === 'medir-perimetro' || modo === 'comparar-perimetros') {
@@ -1519,6 +1660,7 @@ export default function App(): React.JSX.Element {
       contornoPendente,
       pecas,
       selecionadoId,
+      donoDaCota,
       transform.escalaPxPorMm,
       aplicarMudanca,
       cancelarModo,
@@ -1808,7 +1950,16 @@ export default function App(): React.JSX.Element {
 
   // Medidas da aba Conferência: só aparecem com uma das ferramentas dela
   // ligada, e só as que ainda valem para as peças de agora.
-  const emModoDeMedida = modo === 'medir-distancia' || modo === 'medir-perimetro' || modo === 'comparar-perimetros';
+  const emModoDeMedida =
+    modo === 'medir-distancia' ||
+    modo === 'medir-perimetro' ||
+    modo === 'comparar-perimetros' ||
+    modo === 'comparar-distancias';
+  // A cota como ficaria com o próximo clique: só quando falta o clique que a posiciona.
+  const cotaEmPrevia = useMemo(
+    () => (ehFerramentaDeCotaPorPontos(modo) ? previaDaCota(modo, pontosEmEdicao, cursorMundo) : null),
+    [modo, pontosEmEdicao, cursorMundo],
+  );
   const medicoesResolvidas = useMemo(
     () =>
       emModoDeMedida
@@ -1866,6 +2017,33 @@ export default function App(): React.JSX.Element {
           ? `${descreverMedicao(medida)} — clique para medir de novo; Esc sai.`
           : 'Perímetro: clique dentro de uma peça para medir o perímetro dela, ou em dois pontos do contorno para medir o trecho entre eles. Esc sai.';
       }
+      case 'comparar-distancias': {
+        if (pontosEmEdicao.length > 0) return 'Comparar distância: clique no segundo ponto. Esc sai.';
+        const [primeira, segunda] = medicoesResolvidas;
+        if (primeira && segunda) return `${descreverComparacao(primeira, segunda)} — clique para comparar de novo; Esc sai.`;
+        if (primeira) return `${descreverMedicao(primeira)} — agora meça a 2ª distância. Esc sai.`;
+        return 'Comparar distância: meça a 1ª distância — clique em dois pontos (perto de um vértice, o clique cai exatamente nele). Esc sai.';
+      }
+      case 'cota-distancia':
+      case 'cota-horizontal-vertical': {
+        const nome = modo === 'cota-distancia' ? 'Cota distância' : 'Horizontal / Vertical';
+        if (pontosEmEdicao.length === 0) {
+          return `${nome}: clique no primeiro ponto, numa peça (perto de um vértice, o clique cai exatamente nele). Para apagar uma cota, clique no número dela. Esc sai.`;
+        }
+        if (pontosEmEdicao.length === 1) return `${nome}: clique no segundo ponto. Esc sai.`;
+        return modo === 'cota-distancia'
+          ? 'Cota distância: clique onde a linha de cota deve ficar. Esc sai.'
+          : 'Horizontal / Vertical: clique onde a cota deve ficar — acima ou abaixo dos pontos, mede a horizontal; ao lado deles, a vertical. Esc sai.';
+      }
+      case 'cota-angulo':
+        return [
+          'Ângulo: clique num ponto de um dos lados, numa peça. Para apagar uma cota, clique no número dela. Esc sai.',
+          'Ângulo: clique no vértice do ângulo. Esc sai.',
+          'Ângulo: clique num ponto do outro lado. Esc sai.',
+          'Ângulo: clique onde o arco da cota deve ficar. Esc sai.',
+        ][Math.min(pontosEmEdicao.length, 3)]!;
+      case 'cota-perimetro':
+        return 'Cota perímetro: clique dentro de uma peça, onde o perímetro dela deve ficar escrito. Para apagar uma cota, clique no número dela. Esc sai.';
       case 'comparar-perimetros': {
         const [primeira, segunda] = medicoesResolvidas;
         if (inicioDoTrecho) {
@@ -1978,6 +2156,13 @@ export default function App(): React.JSX.Element {
         onEntrarModoMedirPerimetro={() => entrarModoDeMedida('medir-perimetro')}
         onEntrarModoCompararPerimetros={() => entrarModoDeMedida('comparar-perimetros')}
         onAbrirInformacoesDosMoldes={() => setMostrarInformacoesDosMoldes(true)}
+        onEntrarModoCompararDistancias={() => entrarModoDeMedida('comparar-distancias')}
+        onEntrarModoCotaDistancia={() => entrarModoDeCota('cota-distancia')}
+        onEntrarModoCotaHorizontalVertical={() => entrarModoDeCota('cota-horizontal-vertical')}
+        onEntrarModoCotaAngulo={() => entrarModoDeCota('cota-angulo')}
+        onEntrarModoCotaPerimetro={() => entrarModoDeCota('cota-perimetro')}
+        onConverterEmContorno={converterEmContorno}
+        onAbrirVariantes={abrirVariantes}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -2113,6 +2298,16 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarInformacoesDosMoldes(false)}
         />
       )}
+      {mostrarVariantes && (
+        <PainelDeVariantes
+          variantes={variantesDoProjeto(projetos, projetoAtual)}
+          projetoAtualId={projetoAtual.id}
+          nomeSugerido={nomeDaProximaVariante(projetos, projetoAtual)}
+          onCriar={criarVarianteDoProjeto}
+          onAbrir={abrirVarianteDoProjeto}
+          onFechar={() => setMostrarVariantes(false)}
+        />
+      )}
       {painelDeAjuda && <PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
       {textoDaFaixa && (
         <div className="faixa-de-instrucao" role="status">
@@ -2190,6 +2385,7 @@ export default function App(): React.JSX.Element {
             onTamanhoChange={aoMudarTamanhoDaTela}
             medicoes={medicoesResolvidas}
             inicioDoTrecho={inicioDoTrecho}
+            cotaEmPrevia={cotaEmPrevia}
           />
           {mostrarBarraDeVisualizacao && (
             <BarraDeVisualizacao

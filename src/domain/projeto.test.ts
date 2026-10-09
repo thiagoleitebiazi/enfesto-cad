@@ -8,6 +8,9 @@ import {
   filtrarProjetos,
   ordenarPorMaisRecente,
   gerarCodigoDeProjeto,
+  criarVariante,
+  variantesDoProjeto,
+  nomeDaProximaVariante,
   type EstadoDoProjeto,
   type Projeto,
 } from './projeto';
@@ -151,5 +154,47 @@ describe('ordenarPorMaisRecente', () => {
     const original = [a, b];
     ordenarPorMaisRecente(original);
     expect(original[0]).toBe(a);
+  });
+});
+
+describe('variantes do projeto', () => {
+  const original = criarProjeto('Camisa', 'p1', 'ENF-001', '2026-10-01T10:00:00.000Z', ESTADO_VAZIO);
+  const estadoDaVariante: EstadoDoProjeto = { pecas: [], tecido: null, enfesto: null };
+  const variante2 = criarVariante(original, 'Camisa — variante 2', 'p2', 'ENF-002', '2026-10-02T10:00:00.000Z', estadoDaVariante);
+  const outro = criarProjeto('Calça', 'p9', 'ENF-009', '2026-10-01T12:00:00.000Z', ESTADO_VAZIO);
+
+  it('a variante é um projeto novo, com histórico próprio, ligado ao original', () => {
+    expect(variante2).toMatchObject({ id: 'p2', nome: 'Camisa — variante 2', varianteDe: 'p1', status: 'em-edicao' });
+    expect(variante2.historico).toHaveLength(1);
+    expect(variante2.estadoAtual).toBe(estadoDaVariante);
+    expect(original.varianteDe).toBeUndefined();
+  });
+
+  it('a variante de uma variante continua ligada ao mesmo original', () => {
+    const variante3 = criarVariante(variante2, 'Camisa — variante 3', 'p3', 'ENF-003', '2026-10-03T10:00:00.000Z', ESTADO_VAZIO);
+    expect(variante3.varianteDe).toBe('p1');
+  });
+
+  it('lista a família inteira a partir de qualquer membro, da mais antiga à mais nova', () => {
+    const variante3 = criarVariante(variante2, 'Camisa — variante 3', 'p3', 'ENF-003', '2026-10-03T10:00:00.000Z', ESTADO_VAZIO);
+    const biblioteca = [variante3, outro, original, variante2];
+    expect(variantesDoProjeto(biblioteca, original).map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(variantesDoProjeto(biblioteca, variante3).map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(variantesDoProjeto(biblioteca, outro).map((p) => p.id)).toEqual(['p9']);
+  });
+
+  it('o projeto aberto entra na lista como está agora, mesmo que a biblioteca tenha uma cópia antiga ou nenhuma', () => {
+    const renomeado = renomearProjeto(original, 'Camisa social', '2026-10-04T10:00:00.000Z');
+    expect(variantesDoProjeto([original, variante2], renomeado).map((p) => p.nome)).toEqual(['Camisa social', 'Camisa — variante 2']);
+    expect(variantesDoProjeto([], original).map((p) => p.id)).toEqual(['p1']);
+  });
+
+  it('sugere o nome da próxima variante pelo nome do original e pelo tamanho da família', () => {
+    expect(nomeDaProximaVariante([], original)).toBe('Camisa — variante 2');
+    expect(nomeDaProximaVariante([original, variante2], variante2)).toBe('Camisa — variante 3');
+  });
+
+  it('sem o original na biblioteca, usa o nome do projeto aberto sem repetir o sufixo, e não repete um número já usado', () => {
+    expect(nomeDaProximaVariante([variante2], variante2)).toBe('Camisa — variante 3');
   });
 });
