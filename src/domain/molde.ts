@@ -244,26 +244,57 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
  * inequívoca (índice bem depois do ponto editado), o índice só é ajustado
  * (+n ou -n); quando a aresta afetada é exatamente uma das que mudou de
  * forma, o pique é descartado em vez de adivinhado — mais seguro que deixar
- * um pique silenciosamente na posição errada.
+ * um pique silenciosamente na posição errada. Quando só se MOVEM vértices
+ * (a quantidade não muda), a aresta continua a mesma e o pique acompanha
+ * na mesma proporção (`reancorarPiques`).
  */
 
-/** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques mantêm o índice de aresta. */
+/**
+ * Mantém cada pique sobre a sua aresta depois que vértices do contorno
+ * mudaram de lugar (mesma quantidade de vértices, mesma ordem). O pique
+ * conserva a proporção ao longo da aresta: se estava a 30 % do caminho entre
+ * os vértices i e i+1, continua a 30 % entre as posições novas. Arestas cujas
+ * duas pontas não se moveram ficam intocadas — sem deriva de ponto flutuante.
+ */
+export function reancorarPiques(piques: readonly Pique[], contornoAntigo: Contorno, contornoNovo: Contorno): readonly Pique[] {
+  if (contornoAntigo === contornoNovo || contornoAntigo.length !== contornoNovo.length) return piques;
+  const n = contornoAntigo.length;
+  return piques.map((pique) => {
+    const i = pique.indiceAresta;
+    const j = (i + 1) % n;
+    const a = contornoAntigo[i];
+    const b = contornoAntigo[j];
+    const novoA = contornoNovo[i];
+    const novoB = contornoNovo[j];
+    if (!a || !b || !novoA || !novoB) return pique;
+    if (a.x === novoA.x && a.y === novoA.y && b.x === novoB.x && b.y === novoB.y) return pique;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const comprimentoQuadrado = dx * dx + dy * dy;
+    const t =
+      comprimentoQuadrado === 0
+        ? 0
+        : Math.max(0, Math.min(1, ((pique.posicao.x - a.x) * dx + (pique.posicao.y - a.y) * dy) / comprimentoQuadrado));
+    return { ...pique, posicao: { x: novoA.x + (novoB.x - novoA.x) * t, y: novoA.y + (novoB.y - novoA.y) * t } };
+  });
+}
+
+/** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques das duas arestas vizinhas acompanham (`reancorarPiques`). */
 export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Ponto2D): Molde {
-  return { ...molde, contorno: moverPontoDoContorno(molde.contorno, indice, novaPosicao) };
+  const contorno = moverPontoDoContorno(molde.contorno, indice, novaPosicao);
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno) };
 }
 
 /**
- * Move vários vértices do contorno juntos, pelo mesmo deslocamento —
- * seleção múltipla de pontos (Shift+clique ou "cerca" retangular na UI,
- * equivalente ao "Manipulação rápida"/"Definir cerca"+"Mover cerca" do
- * Audaces, unificados aqui numa única operação de domínio).
+ * Move vários vértices do contorno juntos, pelo mesmo deslocamento — a
+ * seleção múltipla de vértices da ferramenta "Mover ponto" (Shift+clique ou
+ * retângulo de seleção). Não confundir com a Cerca (`domain/cerca.ts`), que
+ * delimita uma área e move tudo o que estiver dentro dela, de várias peças.
  */
 export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
   const indicesSet = new Set(indices);
-  return {
-    ...molde,
-    contorno: molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p)),
-  };
+  const contorno = molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p));
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno) };
 }
 
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */

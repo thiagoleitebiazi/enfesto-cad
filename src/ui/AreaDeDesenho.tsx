@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
+import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca } from '../domain/cerca';
 import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
@@ -12,14 +13,17 @@ import {
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import {
   aplicarZoom,
+  enquadrarRetanguloDeTela,
   mundoParaTela,
   telaParaMundo,
+  passoDaGradeEmMm,
   passoDeReguaEmMm,
   subdivisoesDaRegua,
   valorDaReguaEmUnidade,
   type TransformacaoDeTela,
   type UnidadeDeRegua,
 } from './transformacaoDeTela';
+import { capturarComIma, pontosDeCapturaDasPecas, type TipoDeCaptura } from './ima';
 
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#dde1e6';
@@ -38,6 +42,12 @@ const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#f7f8fa';
 const COR_REGUA_TRACO = '#5a6270';
 const COR_ALCA_DE_VERTICE = '#e65100';
+const COR_CERCA = '#e65100';
+const COR_PREENCHIMENTO_CERCA = 'rgba(230, 81, 0, 0.07)';
+const COR_JANELA_DE_ZOOM = '#5a6270';
+const COR_PREENCHIMENTO_JANELA_DE_ZOOM = 'rgba(90, 98, 112, 0.08)';
+const COR_GRADE = 'rgba(90, 98, 112, 0.38)';
+const COR_IMA = '#d81b60';
 
 // Numeração de vértices: peças simples numeram todos; contornos com muitos
 // pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
@@ -68,7 +78,15 @@ export type ModoDeDesenho =
   | 'mover-ponto'
   | 'inserir-ponto'
   | 'excluir-ponto'
-  | 'arredondar-ou-chanfrar';
+  | 'arredondar-ou-chanfrar'
+  | 'definir-cerca';
+
+/**
+ * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
+ * do modo de desenho, sem trocá-lo: a Mão fica ligada até ser desligada (ou
+ * Esc); o Zoom por janela vale para um retângulo e se desliga sozinho.
+ */
+export type FerramentaDeVista = 'mao' | 'zoom-janela';
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'mover-ponto',
@@ -77,7 +95,31 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'arredondar-ou-chanfrar',
 ]);
 
+/** Modos em que o clique cria um ponto novo — só neles o ímã age. Arrastos (peça, vértices) não são capturados. */
+const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
+  'novo-molde',
+  'novo-furo',
+  'definir-fio',
+  'marca',
+  'definir-cerca',
+]);
+
 const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
+/** Abaixo disso (em px, na largura ou na altura) o retângulo é tratado como clique solto e ignorado. */
+const TAMANHO_MINIMO_DA_CERCA_PX = 3;
+const TAMANHO_MINIMO_DA_JANELA_DE_ZOOM_PX = 5;
+/** Rolagens da roda separadas por menos que isso são um só gesto: guardam uma vista só no histórico. */
+const PAUSA_ENTRE_GESTOS_DE_ROLAGEM_MS = 500;
+
+/**
+ * Retângulo sendo arrastado no canvas, em mm do mundo: seleção de vértices
+ * (Mover ponto), definição da cerca ou zoom por janela.
+ */
+interface RetanguloEmDesenho {
+  readonly tipo: 'selecao-de-vertices' | 'cerca' | 'zoom-janela';
+  readonly inicio: Ponto2D;
+  readonly atual: Ponto2D;
+}
 
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
@@ -99,6 +141,19 @@ interface AreaDeDesenhoProps {
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
   readonly onExcluirPontoDoMolde?: (indice: number) => void;
   readonly onArredondarOuChanfrarCanto?: (indice: number) => void;
+  /** Cerca ativa (desenhada tracejada até ser desligada), ou `null`. */
+  readonly cerca: Cerca | null;
+  readonly onDefinirCerca?: (cerca: Cerca) => void;
+  readonly ferramentaDeVista: FerramentaDeVista | null;
+  readonly onZoomJanelaConcluido?: () => void;
+  /** Chamado antes de a vista mudar por mão, roda ou zoom por janela — para "Vista anterior". */
+  readonly onGuardarVista?: () => void;
+  readonly mostrarGrade: boolean;
+  readonly imaAtivo: boolean;
+  readonly unidadeDaRegua: UnidadeDeRegua;
+  readonly onAlternarUnidadeDaRegua: () => void;
+  /** Tamanho real da área do desenho, em px — para zoom e "Ajustar" usarem o centro e o espaço de verdade. */
+  readonly onTamanhoChange?: (tamanho: { readonly largura: number; readonly altura: number }) => void;
 }
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
@@ -131,6 +186,16 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onInserirPontoNoMolde,
     onExcluirPontoDoMolde,
     onArredondarOuChanfrarCanto,
+    cerca,
+    onDefinirCerca,
+    ferramentaDeVista,
+    onZoomJanelaConcluido,
+    onGuardarVista,
+    mostrarGrade,
+    imaAtivo,
+    unidadeDaRegua,
+    onAlternarUnidadeDaRegua,
+    onTamanhoChange,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -139,39 +204,57 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tamanho, setTamanho] = useState({ largura: 800, altura: 600 });
   const [cursorLocal, setCursorLocal] = useState<Ponto2D | null>(null);
-  const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
-  const panRef = useRef<{ ativo: boolean; ultimoX: number; ultimoY: number }>({
+  const [capturaDoCursor, setCapturaDoCursor] = useState<TipoDeCaptura | null>(null);
+  const panRef = useRef<{ ativo: boolean; ultimoX: number; ultimoY: number; vistaGuardada: boolean }>({
     ativo: false,
     ultimoX: 0,
     ultimoY: 0,
+    vistaGuardada: false,
   });
+  // Só para o cursor ("mão fechada" durante o arrasto); o arrasto em si usa panRef.
+  const [panAtivo, setPanAtivo] = useState(false);
+  const ultimaRolagemRef = useRef(-Infinity);
   const espacoPressionadoRef = useRef(false);
   const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
   const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
   // Seleção de vértices no modo "Mover ponto": clique simples seleciona só um
   // e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
-  // clique+arrasto num espaço vazio desenha uma "cerca" retangular que
-  // seleciona todos os vértices dentro dela ao soltar (Definir cerca/Mover
-  // cerca e Manipulação rápida do Audaces, unificados numa única interação:
-  // é a mesma operação de fundo — mover pontos — com métodos de seleção
-  // diferentes, não três ferramentas independentes).
+  // clique+arrasto num espaço vazio desenha um retângulo de seleção que
+  // seleciona os vértices da peça dentro dele ao soltar. Não é a Cerca
+  // ("Definir cerca"/"Mover cerca", `domain/cerca.ts`), que fica desenhada
+  // até ser desligada e vale para todas as peças.
   const [verticesSelecionados, setVerticesSelecionados] = useState<ReadonlySet<number>>(new Set());
   const arrastoDeGrupoRef = useRef<{ indices: readonly number[]; ultimoMundo: Ponto2D } | null>(null);
   const [deltaDeGrupo, setDeltaDeGrupo] = useState<Ponto2D | null>(null);
-  const cercaRef = useRef<{ inicio: Ponto2D } | null>(null);
-  const [cercaEmDesenho, setCercaEmDesenho] = useState<{ inicio: Ponto2D; atual: Ponto2D } | null>(null);
+  const [retanguloEmDesenho, setRetanguloEmDesenho] = useState<RetanguloEmDesenho | null>(null);
 
-  // Limpa a seleção de vértices ao trocar de modo ou de peça selecionada —
-  // ajuste de estado durante a renderização (não num efeito, nem lendo
-  // ref — só state), padrão recomendado pelo React para "resetar estado
-  // quando uma prop muda".
+  // Limpa a seleção de vértices ao trocar de modo ou de peça selecionada, e
+  // descarta um retângulo pela metade ao trocar de modo ou de ferramenta de
+  // vista — ajuste de estado durante a renderização (não num efeito, nem
+  // lendo ref — só state), padrão recomendado pelo React para "resetar
+  // estado quando uma prop muda".
   const [modoAnterior, setModoAnterior] = useState(modo);
   const [selecionadoIdAnterior, setSelecionadoIdAnterior] = useState(selecionadoId);
-  if (modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId) {
+  const [ferramentaDeVistaAnterior, setFerramentaDeVistaAnterior] = useState(ferramentaDeVista);
+  if (modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId || ferramentaDeVistaAnterior !== ferramentaDeVista) {
+    if ((modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId) && verticesSelecionados.size > 0) {
+      setVerticesSelecionados(new Set());
+    }
+    if ((modoAnterior !== modo || ferramentaDeVistaAnterior !== ferramentaDeVista) && retanguloEmDesenho) {
+      setRetanguloEmDesenho(null);
+    }
     setModoAnterior(modo);
     setSelecionadoIdAnterior(selecionadoId);
-    if (verticesSelecionados.size > 0) setVerticesSelecionados(new Set());
+    setFerramentaDeVistaAnterior(ferramentaDeVista);
   }
+
+  // O tamanho é avisado de dentro do ResizeObserver (não de um efeito sobre
+  // `tamanho`), para quem usa nunca receber o valor provisório de 800 × 600:
+  // a primeira chamada já é a medida real da área.
+  const onTamanhoChangeRef = useRef(onTamanhoChange);
+  useEffect(() => {
+    onTamanhoChangeRef.current = onTamanhoChange;
+  }, [onTamanhoChange]);
 
   useEffect(() => {
     const alvo = containerRef.current;
@@ -179,7 +262,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const observador = new ResizeObserver((entradas) => {
       const entrada = entradas[0];
       if (!entrada) return;
-      setTamanho({ largura: entrada.contentRect.width, altura: entrada.contentRect.height });
+      const medido = { largura: entrada.contentRect.width, altura: entrada.contentRect.height };
+      setTamanho(medido);
+      onTamanhoChangeRef.current?.(medido);
     });
     observador.observe(alvo);
     return () => observador.disconnect();
@@ -304,6 +389,26 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         cantoExternoOposto.x - cantoExterno.x,
         cantoExternoOposto.y - cantoExterno.y,
       );
+    }
+
+    // Grade de pontos em múltiplos redondos de mm (o mesmo passo em que o
+    // ímã prende), por baixo das peças. Como a tela troca os eixos, a coluna
+    // de pontos depende só de mundo.y e a linha só de mundo.x.
+    if (mostrarGrade) {
+      const passoMm = passoDaGradeEmMm(transform.escalaPxPorMm);
+      const passoPx = passoMm * transform.escalaPxPorMm;
+      const cantoVisivel = telaParaMundo({ x: 0, y: 0 }, transform);
+      const primeiro = mundoParaTela(
+        ponto(Math.ceil(cantoVisivel.x / passoMm) * passoMm, Math.ceil(cantoVisivel.y / passoMm) * passoMm),
+        transform,
+      );
+      ctx.fillStyle = COR_GRADE;
+      for (let coluna = 0; primeiro.x + coluna * passoPx <= tamanho.largura; coluna++) {
+        const x = Math.round(primeiro.x + coluna * passoPx);
+        for (let linha = 0; primeiro.y + linha * passoPx <= tamanho.altura; linha++) {
+          ctx.fillRect(x - 1, Math.round(primeiro.y + linha * passoPx) - 1, 2, 2);
+        }
+      }
     }
 
     for (const pecaOriginal of pecas) {
@@ -518,14 +623,60 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       });
     }
 
-    // Retângulo da "cerca" sendo desenhada (marquee de seleção de vértices).
-    if (cercaEmDesenho) {
-      const a = mundoParaTela(cercaEmDesenho.inicio, transform);
-      const b = mundoParaTela(cercaEmDesenho.atual, transform);
-      ctx.strokeStyle = COR_CONTORNO_SELECIONADO;
+    // Cerca ativa: retângulo tracejado laranja e os pontos que "Mover cerca"
+    // pode deslocar — só das peças em que ele age (seleção em lote, senão a
+    // peça selecionada, senão todas). Pontos de outras peças que caem dentro
+    // da cerca não são destacados, porque não vão se mover.
+    if (cerca) {
+      const a = mundoParaTela(ponto(cerca.minX, cerca.minY), transform);
+      const b = mundoParaTela(ponto(cerca.maxX, cerca.maxY), transform);
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      ctx.fillStyle = COR_PREENCHIMENTO_CERCA;
+      ctx.fillRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.strokeStyle = COR_CERCA;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([7, 4]);
+      ctx.strokeRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.setLineDash([]);
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      desenharRotuloComFundo(ctx, 'Cerca', x + 4 + ctx.measureText('Cerca').width / 2, y - 6, COR_CERCA);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = COR_CERCA;
+      for (const peca of pecasAlvoDaCerca(pecas, idsSelecionadosEmLote, selecionadoId)) {
+        for (const p of pontosMoveisNaCerca(peca, cerca)) {
+          const tela = mundoParaTela(p, transform);
+          ctx.fillRect(tela.x - 3, tela.y - 3, 6, 6);
+        }
+      }
+    }
+
+    // Retângulo sendo arrastado: seleção de vértices (azul), cerca nova
+    // (laranja) ou janela de zoom (cinza).
+    if (retanguloEmDesenho) {
+      const a = mundoParaTela(retanguloEmDesenho.inicio, transform);
+      const b = mundoParaTela(retanguloEmDesenho.atual, transform);
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      const largura = Math.abs(b.x - a.x);
+      const altura = Math.abs(b.y - a.y);
+      if (retanguloEmDesenho.tipo === 'cerca') {
+        ctx.fillStyle = COR_PREENCHIMENTO_CERCA;
+        ctx.fillRect(x, y, largura, altura);
+      } else if (retanguloEmDesenho.tipo === 'zoom-janela') {
+        ctx.fillStyle = COR_PREENCHIMENTO_JANELA_DE_ZOOM;
+        ctx.fillRect(x, y, largura, altura);
+      }
+      ctx.strokeStyle =
+        retanguloEmDesenho.tipo === 'cerca'
+          ? COR_CERCA
+          : retanguloEmDesenho.tipo === 'zoom-janela'
+            ? COR_JANELA_DE_ZOOM
+            : COR_CONTORNO_SELECIONADO;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
-      ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      ctx.strokeRect(x, y, largura, altura);
       ctx.setLineDash([]);
     }
 
@@ -569,6 +720,24 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (modo === 'definir-fio' && pontosEmEdicao.length === 1 && cursorLocal) {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
+
+    // Onde o ímã prendeu o cursor: quadrado vazado num vértice, cruz num
+    // ponto da grade — para o usuário ver antes de clicar.
+    if (capturaDoCursor && cursorLocal && imaAtivo && ferramentaDeVista === null && MODOS_COM_IMA.has(modo)) {
+      const tela = mundoParaTela(cursorLocal, transform);
+      ctx.strokeStyle = COR_IMA;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (capturaDoCursor === 'vertice') {
+        ctx.rect(tela.x - 6, tela.y - 6, 12, 12);
+      } else {
+        ctx.moveTo(tela.x - 5, tela.y);
+        ctx.lineTo(tela.x + 5, tela.y);
+        ctx.moveTo(tela.x, tela.y - 5);
+        ctx.lineTo(tela.x, tela.y + 5);
+      }
+      ctx.stroke();
+    }
   }, [
     pecas,
     selecionadoId,
@@ -582,11 +751,16 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     pontosEmEdicao,
     contornoFinalizado,
     cursorLocal,
+    capturaDoCursor,
+    imaAtivo,
+    ferramentaDeVista,
     modo,
     deltaDeArrasto,
     deltaDeGrupo,
     verticesSelecionados,
-    cercaEmDesenho,
+    retanguloEmDesenho,
+    cerca,
+    mostrarGrade,
     pecaSelecionada,
   ]);
 
@@ -679,15 +853,47 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  function* pontosDoIma(): Generator<Ponto2D> {
+    yield* pontosDeCapturaDasPecas(pecas);
+    yield* pontosEmEdicao;
+    if (contornoFinalizado) yield* contornoFinalizado;
+  }
+
+  /** Ponto do mundo sob o mouse, já preso pelo ímã quando ele vale para o modo atual. */
+  function pontoNoMundo(tela: Ponto2D): { readonly mundo: Ponto2D; readonly captura: TipoDeCaptura | null } {
+    const bruto = telaParaMundo(tela, transform);
+    if (!imaAtivo || ferramentaDeVista !== null || !MODOS_COM_IMA.has(modo)) return { mundo: bruto, captura: null };
+    const capturado = capturarComIma(
+      bruto,
+      pontosDoIma(),
+      RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm,
+      mostrarGrade ? passoDaGradeEmMm(transform.escalaPxPorMm) : null,
+    );
+    return { mundo: capturado.ponto, captura: capturado.tipo };
+  }
+
   function aoDescerMouse(e: React.MouseEvent<HTMLCanvasElement>): void {
-    const podePanear = e.button === 1 || (e.button === 0 && espacoPressionadoRef.current);
+    const podePanear = e.button === 1 || (e.button === 0 && (espacoPressionadoRef.current || ferramentaDeVista === 'mao'));
     if (podePanear) {
-      panRef.current = { ativo: true, ultimoX: e.clientX, ultimoY: e.clientY };
+      panRef.current = { ativo: true, ultimoX: e.clientX, ultimoY: e.clientY, vistaGuardada: false };
+      setPanAtivo(true);
       return;
     }
     if (e.button !== 0) return;
     const tela = posicaoDoMouse(e);
-    const mundo = telaParaMundo(tela, transform);
+
+    if (ferramentaDeVista === 'zoom-janela') {
+      const inicio = telaParaMundo(tela, transform);
+      setRetanguloEmDesenho({ tipo: 'zoom-janela', inicio, atual: inicio });
+      return;
+    }
+
+    const { mundo } = pontoNoMundo(tela);
+
+    if (modo === 'definir-cerca') {
+      setRetanguloEmDesenho({ tipo: 'cerca', inicio: mundo, atual: mundo });
+      return;
+    }
 
     if (MODOS_DE_EDICAO_DE_VERTICE.has(modo)) {
       if (!pecaSelecionada) return;
@@ -732,10 +938,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           setDeltaDeGrupo({ x: 0, y: 0 });
           return;
         }
-        // Clique em espaço vazio: começa a desenhar a "cerca" de seleção.
+        // Clique em espaço vazio: começa o retângulo de seleção de vértices.
         setVerticesSelecionados(new Set());
-        cercaRef.current = { inicio: mundo };
-        setCercaEmDesenho({ inicio: mundo, atual: mundo });
+        setRetanguloEmDesenho({ tipo: 'selecao-de-vertices', inicio: mundo, atual: mundo });
         return;
       }
 
@@ -764,7 +969,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (panRef.current.ativo) {
       const dx = e.clientX - panRef.current.ultimoX;
       const dy = e.clientY - panRef.current.ultimoY;
-      panRef.current = { ativo: true, ultimoX: e.clientX, ultimoY: e.clientY };
+      if (dx === 0 && dy === 0) return;
+      // A vista de antes do arrasto vai para o histórico só quando a vista
+      // muda de fato — clicar sem arrastar não cria uma "vista anterior".
+      if (!panRef.current.vistaGuardada) onGuardarVista?.();
+      panRef.current = { ativo: true, ultimoX: e.clientX, ultimoY: e.clientY, vistaGuardada: true };
       onTransformChange({
         ...transform,
         offsetXPx: transform.offsetXPx + dx,
@@ -773,8 +982,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       return;
     }
     const tela = posicaoDoMouse(e);
-    const mundo = telaParaMundo(tela, transform);
+    const { mundo, captura } = pontoNoMundo(tela);
     setCursorLocal(mundo);
+    setCapturaDoCursor(captura);
     onCursorMove(mundo);
 
     if (arrastoDeGrupoRef.current) {
@@ -786,8 +996,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       setDeltaDeGrupo((atual) => (atual ? somar(atual, deltaPasso) : deltaPasso));
     }
 
-    if (cercaRef.current) {
-      setCercaEmDesenho({ inicio: cercaRef.current.inicio, atual: mundo });
+    if (retanguloEmDesenho) {
+      setRetanguloEmDesenho((anterior) => (anterior ? { ...anterior, atual: mundo } : anterior));
     }
 
     if (arrastoRef.current) {
@@ -821,57 +1031,107 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setDeltaDeGrupo(null);
   }
 
-  function finalizarCerca(): void {
-    if (cercaRef.current && cercaEmDesenho && pecaSelecionada) {
-      const minX = Math.min(cercaEmDesenho.inicio.x, cercaEmDesenho.atual.x);
-      const maxX = Math.max(cercaEmDesenho.inicio.x, cercaEmDesenho.atual.x);
-      const minY = Math.min(cercaEmDesenho.inicio.y, cercaEmDesenho.atual.y);
-      const maxY = Math.max(cercaEmDesenho.inicio.y, cercaEmDesenho.atual.y);
-      const dentro = new Set<number>();
-      pecaSelecionada.contorno.forEach((p, i) => {
-        if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) dentro.add(i);
-      });
-      setVerticesSelecionados(dentro);
-    }
-    cercaRef.current = null;
-    setCercaEmDesenho(null);
+  /** Os vértices da peça selecionada dentro do retângulo entre `a` e `b` (mm) passam a ser a seleção de "Mover ponto". */
+  function selecionarVerticesNoRetangulo(a: Ponto2D, b: Ponto2D): void {
+    if (!pecaSelecionada) return;
+    const minX = Math.min(a.x, b.x);
+    const maxX = Math.max(a.x, b.x);
+    const minY = Math.min(a.y, b.y);
+    const maxY = Math.max(a.y, b.y);
+    const dentro = new Set<number>();
+    pecaSelecionada.contorno.forEach((p, i) => {
+      if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) dentro.add(i);
+    });
+    setVerticesSelecionados(dentro);
   }
 
-  function aoSoltarMouse(): void {
+  /**
+   * Fecha o retângulo em arrasto. `telaFinal` é onde o botão foi solto, ou
+   * `null` se o mouse saiu do canvas: aí cerca e zoom por janela são
+   * cancelados, e a seleção de vértices fica com o último retângulo visto.
+   */
+  function finalizarRetangulo(telaFinal: Ponto2D | null): void {
+    const retangulo = retanguloEmDesenho;
+    if (!retangulo) return;
+    setRetanguloEmDesenho(null);
+    const fim = telaFinal ? pontoNoMundo(telaFinal).mundo : retangulo.atual;
+    if (retangulo.tipo === 'selecao-de-vertices') {
+      selecionarVerticesNoRetangulo(retangulo.inicio, fim);
+      return;
+    }
+    if (!telaFinal) return;
+    const a = mundoParaTela(retangulo.inicio, transform);
+    const b = mundoParaTela(fim, transform);
+    const larguraPx = Math.abs(b.x - a.x);
+    const alturaPx = Math.abs(b.y - a.y);
+    if (retangulo.tipo === 'cerca') {
+      if (larguraPx >= TAMANHO_MINIMO_DA_CERCA_PX && alturaPx >= TAMANHO_MINIMO_DA_CERCA_PX) {
+        onDefinirCerca?.(cercaEntre(retangulo.inicio, fim));
+      }
+      return;
+    }
+    if (larguraPx >= TAMANHO_MINIMO_DA_JANELA_DE_ZOOM_PX && alturaPx >= TAMANHO_MINIMO_DA_JANELA_DE_ZOOM_PX) {
+      onGuardarVista?.();
+      onTransformChange(enquadrarRetanguloDeTela(transform, a, b, tamanho));
+      onZoomJanelaConcluido?.();
+    }
+  }
+
+  function encerrarPan(): void {
     panRef.current.ativo = false;
+    setPanAtivo(false);
+  }
+
+  function aoSoltarMouse(e: React.MouseEvent<HTMLCanvasElement>): void {
+    encerrarPan();
     finalizarArrasto();
     finalizarArrastoDeGrupo();
-    finalizarCerca();
+    finalizarRetangulo(posicaoDoMouse(e));
   }
 
   function aoSairMouse(): void {
-    panRef.current.ativo = false;
+    encerrarPan();
     finalizarArrasto();
     finalizarArrastoDeGrupo();
-    finalizarCerca();
+    finalizarRetangulo(null);
     setCursorLocal(null);
+    setCapturaDoCursor(null);
     onCursorMove(null);
   }
 
   function aoRolarMouse(e: React.WheelEvent<HTMLCanvasElement>): void {
     e.preventDefault();
-    const tela = posicaoDoMouse(e);
     const fator = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    onTransformChange(aplicarZoom(transform, fator, tela));
+    const nova = aplicarZoom(transform, fator, posicaoDoMouse(e));
+    if (nova.escalaPxPorMm === transform.escalaPxPorMm) return; // já no limite de zoom
+    // Uma sequência de rolagens é um gesto só: a vista de antes dela vai uma vez para o histórico.
+    if (e.timeStamp - ultimaRolagemRef.current > PAUSA_ENTRE_GESTOS_DE_ROLAGEM_MS) onGuardarVista?.();
+    ultimaRolagemRef.current = e.timeStamp;
+    onTransformChange(nova);
   }
 
   function aoClicarDuasVezes(e: React.MouseEvent<HTMLCanvasElement>): void {
-    if (modo !== 'selecionar') return;
+    if (modo !== 'selecionar' || ferramentaDeVista !== null) return;
     const mundo = telaParaMundo(posicaoDoMouse(e), transform);
     const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
     if (encontrada) onAbrirPropriedades?.(encontrada.id);
   }
 
+  const cursorDoCanvas = panAtivo
+    ? 'grabbing'
+    : ferramentaDeVista === 'mao'
+      ? 'grab'
+      : ferramentaDeVista === 'zoom-janela'
+        ? 'zoom-in'
+        : modo === 'selecionar'
+          ? 'default'
+          : 'crosshair';
+
   return (
     <div className="area-de-desenho-grade">
       <button
         className="regua-canto"
-        onClick={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
+        onClick={onAlternarUnidadeDaRegua}
         title="Clique para alternar a unidade da régua (cm/mm) — a geometria interna continua em mm"
       >
         {unidadeDaRegua}
@@ -888,7 +1148,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           onDoubleClick={aoClicarDuasVezes}
           onWheel={aoRolarMouse}
           onContextMenu={(e) => e.preventDefault()}
-          style={{ cursor: modo === 'selecionar' ? 'default' : 'crosshair' }}
+          style={{ cursor: cursorDoCanvas }}
         />
       </div>
     </div>

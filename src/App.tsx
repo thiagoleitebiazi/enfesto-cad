@@ -1,10 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AreaDeDesenho, type ModoDeDesenho } from './ui/AreaDeDesenho';
+import { AreaDeDesenho, type FerramentaDeVista, type ModoDeDesenho } from './ui/AreaDeDesenho';
 import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
+import { BarraDeVisualizacao } from './ui/BarraDeVisualizacao';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { Sobreposicao } from './ui/Sobreposicao';
-import { aplicarZoom, type TransformacaoDeTela } from './ui/transformacaoDeTela';
+import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
+import { PainelDeAjuda, type ConteudoDaAjuda } from './ui/PainelDeAjuda';
+import {
+  aplicarZoom,
+  enquadrarRetanguloDoMundo,
+  passoDaGradeEmMm,
+  type TransformacaoDeTela,
+  type UnidadeDeRegua,
+} from './ui/transformacaoDeTela';
+import {
+  cercaAfetaMolde,
+  moverDentroDaCerca,
+  pecasAlvoDaCerca,
+  transladarCerca,
+  type Cerca,
+  type OpcoesDeMoverCerca,
+} from './domain/cerca';
 import {
   criarMolde,
   transladarMolde,
@@ -97,15 +114,50 @@ function tecidoDeDemonstracao(): Tecido {
   );
 }
 
-function transformParaEnquadrarMesa(larguraUtilMm: number, comprimentoMm: number): TransformacaoDeTela {
-  // Mesmo cálculo de `ajustarTela`/`criarNovoProjetoComDados`: eixos
-  // trocados na tela (ver ui/transformacaoDeTela.ts), comprimento na
-  // horizontal, largura na vertical.
-  const margemPx = 60;
-  const larguraDisponivel = 900 - margemPx * 2;
-  const alturaDisponivel = 600 - margemPx * 2;
-  const escala = Math.min(larguraDisponivel / comprimentoMm, alturaDisponivel / larguraUtilMm);
-  return { escalaPxPorMm: escala, offsetXPx: margemPx, offsetYPx: margemPx };
+/**
+ * Tamanho da área de desenho até a primeira medida real (a área avisa o
+ * tamanho de verdade assim que é montada — ver `aoMudarTamanhoDaTela`).
+ */
+const TAMANHO_PROVISORIO_DA_TELA = { largura: 900, altura: 600 } as const;
+
+/** O que "Ajustar à tela" enquadra: a mesa (com enfesto configurado) e todas as peças. `null` se não houver nenhuma das duas. */
+function retanguloDoDesenho(
+  pecas: readonly Molde[],
+  enfesto: ConfiguracaoDeEnfesto | null,
+): { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } | null {
+  let minX = enfesto ? 0 : Infinity;
+  let minY = enfesto ? 0 : Infinity;
+  let maxX = enfesto ? enfesto.larguraUtilMm : -Infinity;
+  let maxY = enfesto ? enfesto.comprimentoMm : -Infinity;
+  for (const peca of pecas) {
+    const b = retanguloEnvolvente(peca.contorno);
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  return Number.isFinite(minX) && Number.isFinite(maxX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** Quantas vistas "Vista anterior" guarda. */
+const MAXIMO_DE_VISTAS_GUARDADAS = 50;
+
+function mesmaVista(a: TransformacaoDeTela, b: TransformacaoDeTela): boolean {
+  return a.escalaPxPorMm === b.escalaPxPorMm && a.offsetXPx === b.offsetXPx && a.offsetYPx === b.offsetYPx;
+}
+
+function empilharVista(pilha: readonly TransformacaoDeTela[], vista: TransformacaoDeTela): readonly TransformacaoDeTela[] {
+  const topo = pilha.at(-1);
+  if (topo && mesmaVista(topo, vista)) return pilha;
+  return [...pilha, vista].slice(-MAXIMO_DE_VISTAS_GUARDADAS);
+}
+
+function mesmaCerca(a: Cerca | null, b: Cerca): boolean {
+  return a !== null && a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY;
+}
+
+function mesmoPonto(a: Ponto2D, b: Ponto2D): boolean {
+  return a.x === b.x && a.y === b.y;
 }
 
 function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem título'): Projeto {
@@ -119,13 +171,38 @@ export default function App(): React.JSX.Element {
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [idsSelecionadosEmLote, setIdsSelecionadosEmLote] = useState<ReadonlySet<string>>(new Set());
   const [clipboard, setClipboard] = useState<Molde | null>(null);
-  const [transform, setTransform] = useState<TransformacaoDeTela>(() => transformParaEnquadrarMesa(1500, 3000));
+  const [transform, setTransform] = useState<TransformacaoDeTela>(() =>
+    enquadrarRetanguloDoMundo({ minX: 0, minY: 0, maxX: 1500, maxY: 3000 }, TAMANHO_PROVISORIO_DA_TELA),
+  );
+  const [tamanhoDaTela, setTamanhoDaTela] = useState<{ readonly largura: number; readonly altura: number }>(
+    TAMANHO_PROVISORIO_DA_TELA,
+  );
+  const vistaInicialEnquadradaRef = useRef(false);
+  const [vistasAnteriores, setVistasAnteriores] = useState<readonly TransformacaoDeTela[]>([]);
+  const [vistasSeguintes, setVistasSeguintes] = useState<readonly TransformacaoDeTela[]>([]);
+  const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
+  const [mostrarGrade, setMostrarGrade] = useState(false);
+  const [imaAtivo, setImaAtivo] = useState(false);
+  const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
   const [cursorMundo, setCursorMundo] = useState<Ponto2D | null>(null);
 
   const [passado, setPassado] = useState<Molde[][]>([]);
   const [futuro, setFuturo] = useState<Molde[][]>([]);
 
+  const [cerca, setCerca] = useState<Cerca | null>(null);
+  const [mostrarMoverCerca, setMostrarMoverCerca] = useState(false);
+  // Para desfazer/refazer um "Mover cerca" levar a cerca junto com as peças:
+  // a chave é a lista de peças que ficou valendo depois do movimento.
+  const movimentosDeCercaRef = useRef(new WeakMap<readonly Molde[], { readonly antes: Cerca; readonly depois: Cerca }>());
+  const [painelDeAjuda, setPainelDeAjuda] = useState<ConteudoDaAjuda | null>(null);
+
   const [modo, setModo] = useState<ModoDeDesenho>('selecionar');
+  // Trocar de ferramenta desliga a Mão/Zoom por janela — o próximo clique é da ferramenta nova.
+  const [modoDaFerramentaDeVista, setModoDaFerramentaDeVista] = useState<ModoDeDesenho>(modo);
+  if (modo !== modoDaFerramentaDeVista) {
+    setModoDaFerramentaDeVista(modo);
+    setFerramentaDeVista(null);
+  }
   const [pontosEmEdicao, setPontosEmEdicao] = useState<Ponto2D[]>([]);
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
@@ -206,21 +283,28 @@ export default function App(): React.JSX.Element {
     [pecas],
   );
 
+  // Desfazer/refazer um "Mover cerca" também devolve a cerca à posição
+  // correspondente — mas só se ela ainda estiver onde o movimento a deixou
+  // (uma cerca redefinida ou removida depois disso fica como está).
   const desfazer = useCallback(() => {
     const anterior = passado.at(-1);
     if (!anterior) return;
+    const movimento = movimentosDeCercaRef.current.get(pecas);
+    if (movimento && mesmaCerca(cerca, movimento.depois)) setCerca(movimento.antes);
     setPassado((p) => p.slice(0, -1));
     setFuturo((f) => [...f, pecas]);
     setPecas(anterior);
-  }, [pecas, passado]);
+  }, [pecas, passado, cerca]);
 
   const refazer = useCallback(() => {
     const proximo = futuro.at(-1);
     if (!proximo) return;
+    const movimento = movimentosDeCercaRef.current.get(proximo);
+    if (movimento && mesmaCerca(cerca, movimento.antes)) setCerca(movimento.depois);
     setFuturo((f) => f.slice(0, -1));
     setPassado((p) => [...p, pecas]);
     setPecas(proximo);
-  }, [pecas, futuro]);
+  }, [pecas, futuro, cerca]);
 
   // Seleção única "de verdade" (limpa qualquer seleção em lote ativa) — usada
   // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
@@ -343,19 +427,25 @@ export default function App(): React.JSX.Element {
     setSelecionadoId(null);
     setPassado([]);
     setFuturo([]);
+    setCerca(null);
+    setMostrarMoverCerca(false);
     setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome));
     setMostrarNovoProjeto(false);
 
     // Enquadra a mesa nova inteira na tela. Eixos trocados na tela (ver
     // comentário em ui/transformacaoDeTela.ts): comprimento ocupa a
     // horizontal, largura a vertical — a mesa sempre aparece deitada, sem
-    // depender de qual das duas medidas o usuário informou maior.
-    const margemPx = 60;
-    const larguraDisponivel = 900 - margemPx * 2;
-    const alturaDisponivel = 600 - margemPx * 2;
-    const escala = Math.min(larguraDisponivel / enfestoInicial.comprimentoMm, alturaDisponivel / enfestoInicial.larguraUtilMm);
-    setTransform({ escalaPxPorMm: escala, offsetXPx: margemPx, offsetYPx: margemPx });
-  }, []);
+    // depender de qual das duas medidas o usuário informou maior. As vistas
+    // guardadas eram da mesa anterior e deixam de valer.
+    setTransform(
+      enquadrarRetanguloDoMundo(
+        { minX: 0, minY: 0, maxX: enfestoInicial.larguraUtilMm, maxY: enfestoInicial.comprimentoMm },
+        tamanhoDaTela,
+      ),
+    );
+    setVistasAnteriores([]);
+    setVistasSeguintes([]);
+  }, [tamanhoDaTela]);
 
   const salvarProjetoAtual = useCallback(() => {
     registrarEventoEPersistir('salvamento', { pecas, tecido, enfesto });
@@ -385,6 +475,8 @@ export default function App(): React.JSX.Element {
       setSelecionadoId(null);
       setPassado([]);
       setFuturo([]);
+      setCerca(null);
+      setMostrarMoverCerca(false);
       setProjetoAtual(projeto);
       setMostrarBiblioteca(false);
     },
@@ -442,6 +534,8 @@ export default function App(): React.JSX.Element {
             setPecas([]);
             setTecido(null);
             setEnfesto(null);
+            setCerca(null);
+            setMostrarMoverCerca(false);
             setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
           }
         })
@@ -458,50 +552,84 @@ export default function App(): React.JSX.Element {
       setEnfesto(atualizado.estadoAtual.enfesto);
       setPassado([]);
       setFuturo([]);
+      setCerca(null);
+      setMostrarMoverCerca(false);
       setProjetoAtual(atualizado);
       persistirProjeto(atualizado);
     },
     [projetoAtual, persistirProjeto],
   );
 
-  const zoom = useCallback((fator: number) => {
-    setTransform((t) => aplicarZoom(t, fator, { x: 400, y: 300 }));
-  }, []);
+  // Histórico de vistas ("Vista anterior"/"Próxima vista"): cada mudança de
+  // enquadramento feita pelo usuário guarda a vista de antes. A área de
+  // desenho chama `guardarVista` antes de mão, roda e zoom por janela; os
+  // comandos daqui passam por `mudarVistaPara`.
+  const guardarVista = useCallback(() => {
+    setVistasAnteriores((pilha) => empilharVista(pilha, transform));
+    setVistasSeguintes([]);
+  }, [transform]);
+
+  const mudarVistaPara = useCallback(
+    (nova: TransformacaoDeTela) => {
+      if (mesmaVista(nova, transform)) return;
+      guardarVista();
+      setTransform(nova);
+    },
+    [transform, guardarVista],
+  );
+
+  const vistaAnterior = useCallback(() => {
+    const anterior = vistasAnteriores.at(-1);
+    if (!anterior) return;
+    setVistasAnteriores((pilha) => pilha.slice(0, -1));
+    setVistasSeguintes((pilha) => [...pilha, transform]);
+    setTransform(anterior);
+  }, [vistasAnteriores, transform]);
+
+  const proximaVista = useCallback(() => {
+    const proxima = vistasSeguintes.at(-1);
+    if (!proxima) return;
+    setVistasSeguintes((pilha) => pilha.slice(0, -1));
+    setVistasAnteriores((pilha) => empilharVista(pilha, transform));
+    setTransform(proxima);
+  }, [vistasSeguintes, transform]);
+
+  /** Zoom pelos botões e teclas: em torno do centro da área de desenho. */
+  const zoom = useCallback(
+    (fator: number) => {
+      mudarVistaPara(aplicarZoom(transform, fator, { x: tamanhoDaTela.largura / 2, y: tamanhoDaTela.altura / 2 }));
+    },
+    [transform, tamanhoDaTela, mudarVistaPara],
+  );
 
   const ajustarTela = useCallback(() => {
     // Sem peças nem enfesto configurados, não há nada real para enquadrar —
     // mantém o reset antigo. Com enfesto configurado, a mesa real (mesmo
     // vazia) é o retângulo de referência, para aparecer inteira e retangular
     // assim que o projeto é criado, sem precisar de "Ajustar" manual.
-    const bboxes = pecas.map((p) => retanguloEnvolvente(p.contorno));
-    let minX = enfesto ? 0 : Infinity;
-    let minY = enfesto ? 0 : Infinity;
-    let maxX = enfesto ? enfesto.larguraUtilMm : -Infinity;
-    let maxY = enfesto ? enfesto.comprimentoMm : -Infinity;
-    for (const b of bboxes) {
-      minX = Math.min(minX, b.minX);
-      minY = Math.min(minY, b.minY);
-      maxX = Math.max(maxX, b.maxX);
-      maxY = Math.max(maxY, b.maxY);
-    }
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) {
-      setTransform({ escalaPxPorMm: 1, offsetXPx: 80, offsetYPx: 80 });
-      return;
-    }
-    // Eixos trocados na tela (ver comentário em ui/transformacaoDeTela.ts):
-    // mundo.y (comprimento) ocupa a horizontal, mundo.x (largura) a vertical.
-    const larguraNaTela = Math.max(1, maxY - minY);
-    const alturaNaTela = Math.max(1, maxX - minX);
-    const margemPx = 60;
-    const larguraDisponivel = 900 - margemPx * 2;
-    const alturaDisponivel = 600 - margemPx * 2;
-    const escala = Math.min(larguraDisponivel / larguraNaTela, alturaDisponivel / alturaNaTela);
-    setTransform({
-      escalaPxPorMm: escala,
-      offsetXPx: margemPx - minY * escala,
-      offsetYPx: margemPx - minX * escala,
-    });
-  }, [pecas, enfesto]);
+    const retangulo = retanguloDoDesenho(pecas, enfesto);
+    mudarVistaPara(
+      retangulo
+        ? enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela)
+        : { escalaPxPorMm: 1, offsetXPx: 80, offsetYPx: 80 },
+    );
+  }, [pecas, enfesto, tamanhoDaTela, mudarVistaPara]);
+
+  // A área de desenho avisa o tamanho real assim que é montada (e a cada
+  // redimensionamento). Na primeira medida de verdade, a vista inicial —
+  // calculada antes, com um tamanho provisório — é refeita para esse
+  // tamanho, uma vez só: depois disso, redimensionar a janela não mexe no
+  // enquadramento que o usuário escolheu.
+  const aoMudarTamanhoDaTela = useCallback(
+    (tamanho: { readonly largura: number; readonly altura: number }) => {
+      setTamanhoDaTela(tamanho);
+      if (vistaInicialEnquadradaRef.current || tamanho.largura < 50 || tamanho.altura < 50) return;
+      vistaInicialEnquadradaRef.current = true;
+      const retangulo = retanguloDoDesenho(pecas, enfesto);
+      if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanho));
+    },
+    [pecas, enfesto],
+  );
 
   const pecaSelecionada = useMemo(() => pecas.find((p) => p.id === selecionadoId) ?? null, [pecas, selecionadoId]);
 
@@ -509,7 +637,56 @@ export default function App(): React.JSX.Element {
     setModo('selecionar');
     setPontosEmEdicao([]);
     setContornoPendente(null);
+    setFerramentaDeVista(null);
   }, []);
+
+  const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
+    setFerramentaDeVista((atual) => (atual === ferramenta ? null : ferramenta));
+  }, []);
+
+  /** Sem cerca: entra no modo de definir cerca (ou sai dele). Com cerca: remove a cerca. */
+  const alternarDefinirCerca = useCallback(() => {
+    if (cerca) {
+      setCerca(null);
+      setMostrarMoverCerca(false);
+      return;
+    }
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+    setModo((atual) => (atual === 'definir-cerca' ? 'selecionar' : 'definir-cerca'));
+  }, [cerca]);
+
+  const definirCerca = useCallback((nova: Cerca) => {
+    setCerca(nova);
+    setModo('selecionar');
+  }, []);
+
+  const alvosDaCerca = useMemo(
+    () => pecasAlvoDaCerca(pecas, idsSelecionadosEmLote, selecionadoId),
+    [pecas, idsSelecionadosEmLote, selecionadoId],
+  );
+
+  /** Aplica "Mover cerca"; devolve a mensagem de erro (nada muda) ou `null`. A cerca acompanha o movimento. */
+  const aplicarMoverCerca = useCallback(
+    (delta: Ponto2D, opcoes: OpcoesDeMoverCerca): string | null => {
+      if (!cerca) return 'Defina uma cerca primeiro.';
+      const alvos = new Set(alvosDaCerca.map((p) => p.id));
+      let novasPecas: Molde[];
+      try {
+        novasPecas = pecas.map((p) =>
+          alvos.has(p.id) && cercaAfetaMolde(p, cerca, opcoes) ? moverDentroDaCerca(p, cerca, delta, opcoes) : p,
+        );
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      const depois = transladarCerca(cerca, delta);
+      movimentosDeCercaRef.current.set(novasPecas, { antes: cerca, depois });
+      aplicarMudanca(novasPecas);
+      setCerca(depois);
+      return null;
+    },
+    [cerca, pecas, alvosDaCerca, aplicarMudanca],
+  );
 
   const entrarModoNovoMolde = useCallback(() => {
     setModo('novo-molde');
@@ -985,6 +1162,16 @@ export default function App(): React.JSX.Element {
   const onCliqueNoCanvas = useCallback(
     (mundo: Ponto2D) => {
       if (modo === 'novo-molde' || modo === 'novo-furo') {
+        // Com o ímã, um clique perto do primeiro ponto cai exatamente nele:
+        // fecha o contorno (como Enter). Um clique repetido sobre o último
+        // ponto não cria um vértice duplicado.
+        const primeiro = pontosEmEdicao[0];
+        const ultimo = pontosEmEdicao.at(-1);
+        if (primeiro && pontosEmEdicao.length >= 3 && mesmoPonto(mundo, primeiro)) {
+          finalizarContornoEmEdicao();
+          return;
+        }
+        if (ultimo && mesmoPonto(mundo, ultimo)) return;
         setPontosEmEdicao((prev) => [...prev, mundo]);
         return;
       }
@@ -993,6 +1180,8 @@ export default function App(): React.JSX.Element {
           setPontosEmEdicao([mundo]);
           return;
         }
+        // Fio de comprimento zero não tem direção: ignora o segundo clique no mesmo lugar.
+        if (mesmoPonto(mundo, pontosEmEdicao[0]!)) return;
         if (!contornoPendente) return;
         const novoMolde = criarMolde(
           {
@@ -1019,7 +1208,7 @@ export default function App(): React.JSX.Element {
         aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? adicionarMarca(p, mundo, proximoId()) : p)));
       }
     },
-    [modo, pontosEmEdicao, contornoPendente, pecas, selecionadoId, aplicarMudanca, cancelarModo],
+    [modo, pontosEmEdicao, contornoPendente, pecas, selecionadoId, aplicarMudanca, cancelarModo, finalizarContornoEmEdicao],
   );
 
   const importarDxfHandler = useCallback(() => {
@@ -1197,7 +1386,9 @@ export default function App(): React.JSX.Element {
 
       if (e.key === 'Escape') {
         e.preventDefault();
-        cancelarModo();
+        // Primeiro desliga a Mão/Zoom por janela; a ferramenta de baixo continua.
+        if (ferramentaDeVista !== null) setFerramentaDeVista(null);
+        else cancelarModo();
       } else if (e.key === 'Enter' && (modo === 'novo-molde' || modo === 'novo-furo')) {
         e.preventDefault();
         finalizarContornoEmEdicao();
@@ -1257,6 +1448,7 @@ export default function App(): React.JSX.Element {
     },
     [
       modo,
+      ferramentaDeVista,
       cancelarModo,
       finalizarContornoEmEdicao,
       desfazer,
@@ -1300,6 +1492,21 @@ export default function App(): React.JSX.Element {
         onZoomIn={() => zoom(1.15)}
         onZoomOut={() => zoom(1 / 1.15)}
         onAjustarTela={ajustarTela}
+        onVistaAnterior={vistaAnterior}
+        onProximaVista={proximaVista}
+        podeVistaAnterior={vistasAnteriores.length > 0}
+        podeProximaVista={vistasSeguintes.length > 0}
+        mostrarGrade={mostrarGrade}
+        onAlternarGrade={() => setMostrarGrade((v) => !v)}
+        imaAtivo={imaAtivo}
+        onAlternarIma={() => setImaAtivo((v) => !v)}
+        unidadeDaRegua={unidadeDaRegua}
+        onDefinirUnidadeDaRegua={setUnidadeDaRegua}
+        onAbrirAtalhos={() => setPainelDeAjuda('atalhos')}
+        onAbrirSobre={() => setPainelDeAjuda('sobre')}
+        temCerca={cerca !== null}
+        onAlternarDefinirCerca={alternarDefinirCerca}
+        onMoverCerca={() => setMostrarMoverCerca(true)}
         onEntrarModoSelecionar={cancelarModo}
         onEntrarModoNovoMolde={entrarModoNovoMolde}
         onEntrarModoNovoFuro={entrarModoNovoFuro}
@@ -1423,15 +1630,36 @@ export default function App(): React.JSX.Element {
       {mostrarNovoProjeto && (
         <PainelDeNovoProjeto onCriar={criarNovoProjetoComDados} onFechar={() => setMostrarNovoProjeto(false)} />
       )}
-      {(modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio') && (
+      {mostrarMoverCerca && cerca && (
+        <PainelDeMoverCerca
+          cerca={cerca}
+          pecas={alvosDaCerca}
+          temSelecao={selecionadoId !== null || idsSelecionadosEmLote.size > 0}
+          onAplicar={aplicarMoverCerca}
+          onFechar={() => setMostrarMoverCerca(false)}
+        />
+      )}
+      {painelDeAjuda && <PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
+      {ferramentaDeVista !== null ? (
         <div className="faixa-de-instrucao" role="status">
-          {modo === 'novo-molde' && 'Clique para adicionar pontos do contorno. Enter para fechar, Esc para cancelar.'}
-          {modo === 'novo-furo' && 'Clique para adicionar pontos do furo. Enter para fechar, Esc para cancelar.'}
-          {modo === 'definir-fio' &&
-            (pontosEmEdicao.length === 0
-              ? 'Clique no início da linha de fio.'
-              : 'Clique no fim da linha de fio (a seta aponta para lá).')}
+          {ferramentaDeVista === 'mao'
+            ? 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.'
+            : 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.'}
         </div>
+      ) : (
+        (modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio' || modo === 'definir-cerca') && (
+          <div className="faixa-de-instrucao" role="status">
+            {modo === 'novo-molde' &&
+              'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
+            {modo === 'novo-furo' &&
+              'Clique para adicionar pontos do furo. Enter fecha o furo (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
+            {modo === 'definir-fio' &&
+              (pontosEmEdicao.length === 0
+                ? 'Clique no início da linha de fio.'
+                : 'Clique no fim da linha de fio (a seta aponta para lá).')}
+            {modo === 'definir-cerca' && 'Arraste de um canto ao outro para definir a cerca. Esc para cancelar.'}
+          </div>
+        )
       )}
       {mensagensImportacao && (
         <div className="faixa-de-avisos" role="alert">
@@ -1486,6 +1714,33 @@ export default function App(): React.JSX.Element {
             onInserirPontoNoMolde={inserirPontoNaSelecionada}
             onExcluirPontoDoMolde={excluirPontoDaSelecionada}
             onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
+            cerca={cerca}
+            onDefinirCerca={definirCerca}
+            ferramentaDeVista={ferramentaDeVista}
+            onZoomJanelaConcluido={() => setFerramentaDeVista(null)}
+            onGuardarVista={guardarVista}
+            mostrarGrade={mostrarGrade}
+            imaAtivo={imaAtivo}
+            unidadeDaRegua={unidadeDaRegua}
+            onAlternarUnidadeDaRegua={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
+            onTamanhoChange={aoMudarTamanhoDaTela}
+          />
+          <BarraDeVisualizacao
+            ferramentaDeVista={ferramentaDeVista}
+            onAlternarFerramentaDeVista={alternarFerramentaDeVista}
+            onZoomIn={() => zoom(1.15)}
+            onZoomOut={() => zoom(1 / 1.15)}
+            onAjustarTela={ajustarTela}
+            onVistaAnterior={vistaAnterior}
+            onProximaVista={proximaVista}
+            podeVistaAnterior={vistasAnteriores.length > 0}
+            podeProximaVista={vistasSeguintes.length > 0}
+            mostrarGrade={mostrarGrade}
+            onAlternarGrade={() => setMostrarGrade((v) => !v)}
+            imaAtivo={imaAtivo}
+            onAlternarIma={() => setImaAtivo((v) => !v)}
+            passoDaGradeMm={passoDaGradeEmMm(transform.escalaPxPorMm)}
+            unidadeDaRegua={unidadeDaRegua}
           />
         </div>
       </div>

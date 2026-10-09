@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
+import { ajustarCompactacao } from './compactacaoDaFita';
 import { Icone } from './Icone';
+import { MenuSuspenso } from './MenuSuspenso';
+import type { UnidadeDeRegua } from './transformacaoDeTela';
 
 interface BarraDeFerramentasProps {
   readonly modo: ModoDeDesenho;
@@ -22,6 +25,22 @@ interface BarraDeFerramentasProps {
   readonly onZoomIn: () => void;
   readonly onZoomOut: () => void;
   readonly onAjustarTela: () => void;
+  readonly onVistaAnterior: () => void;
+  readonly onProximaVista: () => void;
+  readonly podeVistaAnterior: boolean;
+  readonly podeProximaVista: boolean;
+  readonly mostrarGrade: boolean;
+  readonly onAlternarGrade: () => void;
+  readonly imaAtivo: boolean;
+  readonly onAlternarIma: () => void;
+  readonly unidadeDaRegua: UnidadeDeRegua;
+  readonly onDefinirUnidadeDaRegua: (unidade: UnidadeDeRegua) => void;
+  readonly onAbrirAtalhos: () => void;
+  readonly onAbrirSobre: () => void;
+  readonly temCerca: boolean;
+  /** Sem cerca: entra/sai do modo de definir cerca. Com cerca: remove a cerca. */
+  readonly onAlternarDefinirCerca: () => void;
+  readonly onMoverCerca: () => void;
   readonly onEntrarModoSelecionar: () => void;
   readonly onEntrarModoNovoMolde: () => void;
   readonly onEntrarModoNovoFuro: () => void;
@@ -56,6 +75,29 @@ interface BarraDeFerramentasProps {
 }
 
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
+const SO_PARA_ELEMENTOS =
+  'indisponível neste programa: trabalha sobre elementos de modelagem (linhas soltas), e aqui só existem peças fechadas';
+const NAO_CONFIRMADO = 'ainda não disponível: o comportamento exato desta ferramenta ainda não foi confirmado';
+
+/**
+ * Dica de um botão pequeno sem peça selecionada. Começa pelo nome da
+ * ferramenta porque, com a fita compactada, o botão pequeno fica só com o
+ * ícone e a dica é o que diz qual ferramenta ele é.
+ */
+const semPecaSelecionada = (ferramenta: string): string => `${ferramenta} — selecione uma peça primeiro`;
+
+/**
+ * Rótulo de botão grande: numa linha só; com a fita compactada (janela
+ * estreita, ver compactacaoDaFita), quebra antes de `segunda`.
+ */
+function RotuloDeDuasLinhas(props: { readonly primeira: string; readonly segunda: string }): React.JSX.Element {
+  return (
+    <span>
+      {props.primeira} <br className="quebra-de-rotulo" />
+      {props.segunda}
+    </span>
+  );
+}
 
 type Aba = 'arquivo' | 'edicao' | 'desenho' | 'marcacoes' | 'manipulacao' | 'encaixe';
 
@@ -72,16 +114,38 @@ const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
  * Barra de ferramentas em abas (estilo ribbon) — reorganiza os mesmos
  * grupos/ações que já existiam em linha única numa barra com abas
  * clicáveis, para caber mais ferramentas sem exigir rolagem horizontal
- * numa tela comum. "Visualização" fica fora do sistema de abas (sempre
- * visível à direita) porque zoom é uma necessidade constante,
- * independente da aba/tarefa atual — mesmo padrão de programas de
- * desenho com barra de abas (a visualização nunca fica "escondida" atrás
- * de uma aba). Cada botão tem ícone + rótulo (acabamento de ribbon
- * profissional), com ícones desenhados para este projeto — sem copiar o
- * conjunto de ícones de nenhum software de referência.
+ * numa tela comum. Os comandos de visualização não ocupam uma aba: ficam
+ * nos menus Visão/Opções/Ajuda, à direita das abas, e na barra de
+ * visualização embaixo do desenho (BarraDeVisualizacao), sempre à mão.
+ *
+ * Na aba Manipulação, as ferramentas de programas de modelagem que agem
+ * sobre elementos soltos (linhas que ainda não formam peça) aparecem no
+ * lugar de costume, mas desabilitadas e com a explicação na dica — aqui só
+ * existem peças fechadas. Cada botão tem ícone + rótulo, com ícones
+ * desenhados para este projeto — sem copiar o conjunto de ícones de nenhum
+ * software de referência. Em janela estreita a fita se compacta em vez de
+ * quebrar linha (compactacaoDaFita).
  */
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
   const [abaAtiva, setAbaAtiva] = useState<Aba>('desenho');
+  const conteudoRef = useRef<HTMLDivElement | null>(null);
+
+  // Mede antes da pintura: ao trocar de aba (outros botões) e sempre que a
+  // largura da fita muda. Os atributos de compactação ficam só no DOM — o
+  // React não os renderiza, então não há conflito com ele.
+  useLayoutEffect(() => {
+    const conteudo = conteudoRef.current;
+    if (!conteudo) return;
+    const ajustar = (): void => {
+      const grupos = [...conteudo.querySelectorAll<HTMLElement>('.grupo-de-ferramentas')];
+      ajustarCompactacao(conteudo, grupos, () => conteudo.scrollWidth <= conteudo.clientWidth);
+    };
+    ajustar();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observador = new ResizeObserver(ajustar);
+    observador.observe(conteudo);
+    return () => observador.disconnect();
+  }, [abaAtiva]);
 
   return (
     <div className="barra-de-ferramentas-ribbon" role="toolbar" aria-label="Barra de ferramentas principal">
@@ -119,27 +183,88 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           <Icone nome="excluir" />
         </button>
       </div>
-      <div className="ribbon-abas" role="tablist" aria-label="Categorias de ferramentas">
-        {ABAS.map((aba) => (
-          <button
-            key={aba.id}
-            role="tab"
-            aria-selected={abaAtiva === aba.id}
-            className={[
-              'ribbon-aba',
-              abaAtiva === aba.id ? 'ribbon-aba-ativa' : '',
-              aba.id === 'arquivo' ? 'ribbon-aba-arquivo' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            onClick={() => setAbaAtiva(aba.id)}
-          >
-            {aba.rotulo}
-          </button>
-        ))}
+      <div className="ribbon-cabecalho">
+        <div className="ribbon-abas" role="tablist" aria-label="Categorias de ferramentas">
+          {ABAS.map((aba) => (
+            <button
+              key={aba.id}
+              role="tab"
+              aria-selected={abaAtiva === aba.id}
+              className={[
+                'ribbon-aba',
+                abaAtiva === aba.id ? 'ribbon-aba-ativa' : '',
+                aba.id === 'arquivo' ? 'ribbon-aba-arquivo' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => setAbaAtiva(aba.id)}
+            >
+              {aba.rotulo}
+            </button>
+          ))}
+        </div>
+        <div className="ribbon-menus">
+          <MenuSuspenso
+            rotulo="Visão"
+            itens={[
+              { tipo: 'acao', rotulo: 'Aumentar zoom', atalho: '+', onEscolher: props.onZoomIn },
+              { tipo: 'acao', rotulo: 'Diminuir zoom', atalho: '-', onEscolher: props.onZoomOut },
+              { tipo: 'acao', rotulo: 'Ajustar à tela', atalho: 'Ctrl+0', onEscolher: props.onAjustarTela },
+              { tipo: 'separador' },
+              {
+                tipo: 'acao',
+                rotulo: 'Vista anterior',
+                desabilitado: !props.podeVistaAnterior,
+                titulo: props.podeVistaAnterior ? 'Volta ao enquadramento de antes' : 'Nenhuma vista guardada ainda',
+                onEscolher: props.onVistaAnterior,
+              },
+              {
+                tipo: 'acao',
+                rotulo: 'Próxima vista',
+                desabilitado: !props.podeProximaVista,
+                titulo: props.podeProximaVista ? 'Refaz o enquadramento desfeito por Vista anterior' : 'Nada para refazer',
+                onEscolher: props.onProximaVista,
+              },
+              { tipo: 'separador' },
+              { tipo: 'alternar', rotulo: 'Grade', marcado: props.mostrarGrade, onEscolher: props.onAlternarGrade },
+            ]}
+          />
+          <MenuSuspenso
+            rotulo="Opções"
+            itens={[
+              {
+                tipo: 'alternar',
+                rotulo: 'Ímã',
+                marcado: props.imaAtivo,
+                titulo: 'Ao clicar para criar pontos, prende no vértice mais próximo ou, com a grade visível, no ponto da grade',
+                onEscolher: props.onAlternarIma,
+              },
+              { tipo: 'separador' },
+              {
+                tipo: 'opcao',
+                rotulo: 'Régua em centímetros',
+                marcado: props.unidadeDaRegua === 'cm',
+                onEscolher: () => props.onDefinirUnidadeDaRegua('cm'),
+              },
+              {
+                tipo: 'opcao',
+                rotulo: 'Régua em milímetros',
+                marcado: props.unidadeDaRegua === 'mm',
+                onEscolher: () => props.onDefinirUnidadeDaRegua('mm'),
+              },
+            ]}
+          />
+          <MenuSuspenso
+            rotulo="Ajuda"
+            itens={[
+              { tipo: 'acao', rotulo: 'Atalhos de teclado', onEscolher: props.onAbrirAtalhos },
+              { tipo: 'acao', rotulo: 'Sobre o Enfesto CAD', onEscolher: props.onAbrirSobre },
+            ]}
+          />
+        </div>
       </div>
 
-      <div className="ribbon-conteudo">
+      <div className="ribbon-conteudo" ref={conteudoRef}>
         <div className="ribbon-conteudo-abas" role="tabpanel">
           {abaAtiva === 'arquivo' && (
             <div className="grupo-de-ferramentas" role="group" aria-label="Arquivo">
@@ -272,30 +397,54 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           {abaAtiva === 'manipulacao' && (
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Redefinir">
-                <button
-                  aria-pressed={props.modo === 'selecionar'}
-                  className={props.modo === 'selecionar' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoSelecionar}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Mover: arraste a peça inteira (modo Selecionar)' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="selecionar" />
-                  <span>Mover</span>
+                <button className="botao-grande" disabled title={`Modificar — ${NAO_CONFIRMADO}`}>
+                  <Icone nome="modificar" />
+                  <span>Modificar</span>
                 </button>
-                <button
-                  aria-pressed={props.modo === 'mover-ponto'}
-                  className={props.modo === 'mover-ponto' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoMoverPonto}
-                  disabled={!props.temSelecaoUnica}
-                  title={
-                    props.temSelecaoUnica
-                      ? 'Mover ponto: arraste um vértice — Shift+clique para selecionar vários, ou desenhe uma cerca (clique e arraste num espaço vazio) para selecionar todos os vértices numa área e movê-los juntos (equivalente a Manipulação rápida/Definir cerca/Mover cerca)'
-                      : 'Selecione uma peça primeiro'
-                  }
-                >
-                  <Icone nome="mover-ponto" />
-                  <span>Mover ponto</span>
-                </button>
+                <div className="coluna-de-ferramenta">
+                  <button className="botao-pequeno" disabled title={`Manipular pontos — ${SO_PARA_ELEMENTOS}`}>
+                    <Icone nome="manipular-pontos" />
+                    <span>Manipular pontos</span>
+                  </button>
+                  <button
+                    aria-pressed={props.modo === 'selecionar'}
+                    className={`botao-pequeno${props.modo === 'selecionar' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoSelecionar}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Mover: arraste a peça inteira (modo Selecionar)' : semPecaSelecionada('Mover')}
+                  >
+                    <Icone nome="selecionar" />
+                    <span>Mover</span>
+                  </button>
+                  <button
+                    aria-pressed={props.modo === 'mover-ponto'}
+                    className={`botao-pequeno${props.modo === 'mover-ponto' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoMoverPonto}
+                    disabled={!props.temSelecaoUnica}
+                    title={
+                      props.temSelecaoUnica
+                        ? 'Mover ponto: arraste um vértice da peça selecionada — Shift+clique soma vértices à seleção, e arrastar num espaço vazio seleciona os vértices dentro do retângulo, para movê-los juntos'
+                        : semPecaSelecionada('Mover ponto')
+                    }
+                  >
+                    <Icone nome="mover-ponto" />
+                    <span>Mover ponto</span>
+                  </button>
+                </div>
+                <div className="coluna-de-ferramenta">
+                  <button className="botao-pequeno" disabled title={`Manipulação rápida — ${SO_PARA_ELEMENTOS}`}>
+                    <Icone nome="manipulacao-rapida" />
+                    <span>Manipulação rápida</span>
+                  </button>
+                  <button className="botao-pequeno" disabled title={`Redefinir perímetro — ${NAO_CONFIRMADO}`}>
+                    <Icone nome="redefinir-perimetro" />
+                    <span>Redefinir perímetro</span>
+                  </button>
+                  <button className="botao-pequeno" disabled title={`Dividir elementos — ${SO_PARA_ELEMENTOS}`}>
+                    <Icone nome="dividir" />
+                    <span>Dividir elementos</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Indicar">
@@ -306,7 +455,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   title={props.temSelecaoUnica ? 'Elemento paralelo: cria uma cópia com o contorno deslocado a uma distância uniforme' : 'Selecione uma peça primeiro'}
                 >
                   <Icone nome="elemento-paralelo" />
-                  <span>Elemento paralelo</span>
+                  <RotuloDeDuasLinhas primeira="Elemento" segunda="paralelo" />
                 </button>
                 <div className="coluna-de-ferramenta">
                   <button
@@ -316,7 +465,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     title={
                       props.temSelecaoUnica
                         ? 'Girar em ângulo livre: redefine a orientação de referência da peça (diferente dos botões 90°/180°/270°, que respeitam o sentido do fio)'
-                        : 'Selecione uma peça primeiro'
+                        : semPecaSelecionada('Girar')
                     }
                   >
                     <Icone nome="girar" />
@@ -331,16 +480,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="copiar" />
                     <span>Copiar</span>
                   </button>
+                  <button
+                    className="botao-pequeno"
+                    onClick={props.onAbrirDimensionar}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : semPecaSelecionada('Dimensionar')}
+                  >
+                    <Icone nome="dimensionar" />
+                    <span>Dimensionar</span>
+                  </button>
                 </div>
-                <button
-                  className="botao-grande"
-                  onClick={props.onAbrirDimensionar}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Dimensionar: escala a peça por fatores X/Y independentes' : 'Selecione uma peça primeiro'}
-                >
-                  <Icone nome="dimensionar" />
-                  <span>Dimensionar</span>
-                </button>
                 <button
                   className="botao-grande"
                   onClick={props.onEspelharManual}
@@ -352,49 +501,99 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 </button>
               </div>
 
-              <div className="grupo-de-ferramentas" role="group" aria-label="Definir curva">
+              <div className="grupo-de-ferramentas" role="group" aria-label="Cerca">
                 <button
-                  aria-pressed={props.modo === 'inserir-ponto'}
-                  className={props.modo === 'inserir-ponto' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoInserirPonto}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Inserir ponto: clique numa aresta da peça selecionada' : 'Selecione uma peça primeiro'}
+                  className="botao-grande"
+                  aria-pressed={props.temCerca || props.modo === 'definir-cerca'}
+                  onClick={props.onAlternarDefinirCerca}
+                  title={
+                    props.temCerca
+                      ? 'Cerca definida — clique para removê-la'
+                      : props.modo === 'definir-cerca'
+                        ? 'Definindo a cerca: arraste de um canto ao outro sobre o desenho (clique de novo ou Esc para cancelar)'
+                        : 'Definir cerca: arraste um retângulo sobre o desenho; depois, Mover cerca desloca por uma medida exata o que estiver dentro dele'
+                  }
                 >
-                  <Icone nome="inserir-ponto" />
-                  <span>Inserir ponto</span>
+                  <Icone nome="cerca" />
+                  <RotuloDeDuasLinhas primeira="Definir" segunda="cerca" />
                 </button>
                 <button
-                  aria-pressed={props.modo === 'excluir-ponto'}
-                  className={props.modo === 'excluir-ponto' ? 'item-selecionado' : ''}
-                  onClick={props.onEntrarModoExcluirPonto}
-                  disabled={!props.temSelecaoUnica}
-                  title={props.temSelecaoUnica ? 'Excluir ponto: clique num vértice da peça selecionada' : 'Selecione uma peça primeiro'}
+                  className="botao-grande"
+                  onClick={props.onMoverCerca}
+                  disabled={!props.temCerca}
+                  title={
+                    props.temCerca
+                      ? 'Mover cerca: desloca por uma medida exata os pontos dentro da cerca, nas peças selecionadas (ou em todas)'
+                      : 'Defina uma cerca primeiro'
+                  }
                 >
-                  <Icone nome="excluir-ponto" />
-                  <span>Excluir ponto</span>
+                  <Icone nome="mover-cerca" />
+                  <RotuloDeDuasLinhas primeira="Mover" segunda="cerca" />
                 </button>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Manipular molde">
+                <button className="botao-grande" disabled title={NAO_IMPLEMENTADO_CURVA}>
+                  <Icone nome="curva" />
+                  <RotuloDeDuasLinhas primeira="Definir" segunda="curva" />
+                </button>
+                <div className="coluna-de-ferramenta">
+                  <button
+                    aria-pressed={props.modo === 'inserir-ponto'}
+                    className={`botao-pequeno${props.modo === 'inserir-ponto' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoInserirPonto}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Inserir ponto: clique numa aresta da peça selecionada' : semPecaSelecionada('Inserir ponto')}
+                  >
+                    <Icone nome="inserir-ponto" />
+                    <span>Inserir ponto</span>
+                  </button>
+                  <button
+                    aria-pressed={props.modo === 'excluir-ponto'}
+                    className={`botao-pequeno${props.modo === 'excluir-ponto' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoExcluirPonto}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Excluir ponto: clique num vértice da peça selecionada' : semPecaSelecionada('Excluir ponto')}
+                  >
+                    <Icone nome="excluir-ponto" />
+                    <span>Excluir ponto</span>
+                  </button>
+                  <button className="botao-pequeno" disabled title={`Transformar em elementos — ${SO_PARA_ELEMENTOS}`}>
+                    <Icone nome="transformar-elementos" />
+                    <span>Transformar em elementos</span>
+                  </button>
+                </div>
                 <div className="coluna-de-ferramenta">
                   <button
                     className="botao-pequeno"
                     onClick={props.onAlinhar}
                     disabled={!props.podeAlinhar}
-                    title={props.podeAlinhar ? 'Alinha as peças selecionadas pela borda esquerda' : 'Selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'}
+                    title={
+                      props.podeAlinhar
+                        ? 'Alinhar: alinha as peças selecionadas pela borda esquerda'
+                        : 'Alinhar — selecione 2 ou mais peças (Ctrl+A ou clique múltiplo na lista)'
+                    }
                   >
                     <Icone nome="alinhar" />
                     <span>Alinhar</span>
+                  </button>
+                  <button className="botao-pequeno" disabled title={`Copiar ou trocar elemento — ${SO_PARA_ELEMENTOS}`}>
+                    <Icone nome="trocar-elemento" />
+                    <span>Copiar ou trocar elemento</span>
                   </button>
                   <button
                     aria-pressed={props.modo === 'arredondar-ou-chanfrar'}
                     className={`botao-pequeno${props.modo === 'arredondar-ou-chanfrar' ? ' item-selecionado' : ''}`}
                     onClick={props.onEntrarModoArredondarOuChanfrar}
                     disabled={!props.temSelecaoUnica}
-                    title={props.temSelecaoUnica ? 'Arredondar ou chanfrar: clique num vértice da peça selecionada e escolha' : 'Selecione uma peça primeiro'}
+                    title={
+                      props.temSelecaoUnica
+                        ? 'Arredondar ou chanfrar: clique num vértice da peça selecionada e escolha'
+                        : semPecaSelecionada('Arredondar ou chanfrar')
+                    }
                   >
                     <Icone nome="arredondar" />
-                    <span>Arredondar/chanfrar</span>
+                    <span>Arredondar ou chanfrar</span>
                   </button>
                 </div>
                 <button
@@ -404,7 +603,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   title={props.temSelecaoUnica ? 'Converter em costura: define a margem de costura da peça (mesmo campo das Propriedades)' : 'Selecione uma peça primeiro'}
                 >
                   <Icone nome="converter-costura" />
-                  <span>Converter em costura</span>
+                  <RotuloDeDuasLinhas primeira="Converter" segunda="em costura" />
                 </button>
               </div>
             </>
@@ -478,21 +677,6 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
             </>
           )}
-        </div>
-
-        <div className="grupo-de-ferramentas ribbon-visualizacao" role="group" aria-label="Visualização">
-          <button onClick={props.onZoomOut} title="Diminuir zoom (-)">
-            <Icone nome="zoom-out" />
-            <span>Menos</span>
-          </button>
-          <button onClick={props.onZoomIn} title="Aumentar zoom (+)">
-            <Icone nome="zoom-in" />
-            <span>Mais</span>
-          </button>
-          <button onClick={props.onAjustarTela} title="Ajustar à tela (Ctrl+0)">
-            <Icone nome="ajustar" />
-            <span>Ajustar</span>
-          </button>
         </div>
       </div>
     </div>

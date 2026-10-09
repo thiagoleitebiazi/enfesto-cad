@@ -46,7 +46,22 @@ export type NomeDoIcone =
   | 'nesting'
   | 'zoom-in'
   | 'zoom-out'
-  | 'ajustar';
+  | 'ajustar'
+  | 'mao'
+  | 'zoom-janela'
+  | 'vista-anterior'
+  | 'vista-proxima'
+  | 'grade'
+  | 'ima'
+  | 'cerca'
+  | 'mover-cerca'
+  | 'modificar'
+  | 'manipular-pontos'
+  | 'manipulacao-rapida'
+  | 'redefinir-perimetro'
+  | 'dividir'
+  | 'transformar-elementos'
+  | 'trocar-elemento';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -291,6 +306,95 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M17 7V4a1 1 0 0 0-1-1h-3" />
       <path d="M3 13v3a1 1 0 0 0 1 1h3" />
       <path d="M17 13v3a1 1 0 0 1-1 1h-3" />
+    </>
+  ),
+  mao: (
+    <path d="M7 12.6V4.6a1.2 1.2 0 0 1 2.4 0v4.9M9.4 9.5V3.4a1.2 1.2 0 0 1 2.4 0v6.1M11.8 9.5V4.4a1.2 1.2 0 0 1 2.4 0V10M14.2 10V6.8a1.2 1.2 0 0 1 2.4 0v5c0 3.4-2.4 6.2-5.8 6.2h-.6c-2.2 0-3.6-1-4.8-2.8l-2.2-3.6a1.25 1.25 0 0 1 2.1-1.4L7 12.6" />
+  ),
+  'zoom-janela': (
+    <>
+      <rect x="2.5" y="2.5" width="10" height="7.5" strokeDasharray="2 1.6" />
+      <circle cx="13.2" cy="13.2" r="3" />
+      <line x1="15.4" y1="15.4" x2="18" y2="18" />
+    </>
+  ),
+  'vista-anterior': (
+    <>
+      <rect x="2.5" y="4" width="15" height="12" rx="1.2" />
+      <path d="M13.5 10h-7M9.3 7.2 6.5 10l2.8 2.8" />
+    </>
+  ),
+  'vista-proxima': (
+    <>
+      <rect x="2.5" y="4" width="15" height="12" rx="1.2" />
+      <path d="M6.5 10h7M10.7 7.2 13.5 10l-2.8 2.8" />
+    </>
+  ),
+  grade: (
+    <>
+      {[4, 10, 16].flatMap((x) =>
+        [4, 10, 16].map((y) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.1" fill="currentColor" stroke="none" />),
+      )}
+    </>
+  ),
+  ima: (
+    <>
+      <path d="M4 3v7a6 6 0 0 0 12 0V3h-3.6v7a2.4 2.4 0 0 1-4.8 0V3z" />
+      <line x1="4" y1="6.2" x2="7.6" y2="6.2" />
+      <line x1="12.4" y1="6.2" x2="16" y2="6.2" />
+    </>
+  ),
+  cerca: (
+    <>
+      <rect x="3.5" y="4.5" width="13" height="11" strokeDasharray="2.2 1.8" />
+      <rect x="2" y="3" width="3" height="3" fill="currentColor" stroke="none" />
+      <rect x="15" y="14" width="3" height="3" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'mover-cerca': (
+    <>
+      <rect x="2.5" y="2.5" width="10" height="8" strokeDasharray="2.2 1.8" />
+      <path d="M8.5 8.5 17 17M17 12.5V17h-4.5" />
+    </>
+  ),
+  modificar: (
+    <>
+      <path d="M13.5 3.5l3 3L7 16H4v-3z" />
+      <line x1="11.5" y1="5.5" x2="14.5" y2="8.5" />
+    </>
+  ),
+  'manipular-pontos': (
+    <>
+      <path d="M3 15 8 6l5 7 4-8" />
+      <rect x="6.6" y="4.6" width="2.8" height="2.8" fill="currentColor" stroke="none" />
+      <rect x="11.6" y="11.6" width="2.8" height="2.8" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'manipulacao-rapida': <path d="M11 2 5 11h4.5L8 18l7-9.5h-4.5L12 2z" />,
+  'redefinir-perimetro': (
+    <>
+      <rect x="3" y="3" width="14" height="9" rx="1.5" />
+      <path d="M3 16h14M5 14.2 3 16l2 1.8M15 14.2l2 1.8-2 1.8" />
+    </>
+  ),
+  dividir: (
+    <>
+      <path d="M2.5 13 8 7.5" />
+      <path d="M12 12.5 17.5 7" />
+      <path d="M10 3.5v13" strokeDasharray="1.8 1.6" />
+    </>
+  ),
+  'transformar-elementos': (
+    <>
+      <path d="M4.5 15.5 9 6.5" />
+      <path d="M11 6.5l4.5 9" />
+      <path d="M6 17.5h8" />
+    </>
+  ),
+  'trocar-elemento': (
+    <>
+      <path d="M4 7h11M12 4l3 3-3 3" />
+      <path d="M16 13H5M8 10l-3 3 3 3" />
     </>
   ),
 };

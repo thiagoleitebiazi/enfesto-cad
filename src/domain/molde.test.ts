@@ -348,9 +348,29 @@ describe('moverPontoDoMolde', () => {
     expect(movido.contorno[0]).toEqual(molde.contorno[0]);
     expect(movido.linhaDeFio).toEqual(molde.linhaDeFio);
   });
+
+  it('pique da aresta que mudou continua sobre ela, na mesma proporção; pique de aresta intacta não muda', () => {
+    let molde = criarMolde(dadosBase(), 'm1'); // (0,0),(200,0),(200,300),(0,300)
+    molde = adicionarPique(molde, ponto(100, 300), 'meio'); // aresta 2, a 50 %
+    molde = adicionarPique(molde, ponto(50, 0), 'fixo'); // aresta 0, não tocada
+    const movido = moverPontoDoMolde(molde, 2, ponto(200, 400)); // aresta 2 vira (200,400)→(0,300)
+    const meio = movido.piques.find((p) => p.id === 'meio')!;
+    expect(meio.indiceAresta).toBe(2);
+    expect(meio.posicao.x).toBeCloseTo(100, 9);
+    expect(meio.posicao.y).toBeCloseTo(350, 9);
+    expect(movido.piques.find((p) => p.id === 'fixo')).toBe(molde.piques.find((p) => p.id === 'fixo'));
+  });
 });
 
 describe('moverVariosPontosDoMolde', () => {
+  it('pique de aresta com as duas pontas movidas acompanha o deslocamento', () => {
+    let molde = criarMolde(dadosBase(), 'm1');
+    molde = adicionarPique(molde, ponto(100, 300), 'p1'); // aresta 2: (200,300)→(0,300)
+    const movido = moverVariosPontosDoMolde(molde, [2, 3], ponto(0, 100));
+    expect(movido.piques[0]!.posicao.x).toBeCloseTo(100, 9);
+    expect(movido.piques[0]!.posicao.y).toBeCloseTo(400, 9);
+  });
+
   it('move só os vértices indicados pelo mesmo deslocamento, resto intacto', () => {
     const molde = criarMolde(dadosBase(), 'm1'); // (0,0),(200,0),(200,300),(0,300)
     const movido = moverVariosPontosDoMolde(molde, [0, 1], ponto(10, -5));

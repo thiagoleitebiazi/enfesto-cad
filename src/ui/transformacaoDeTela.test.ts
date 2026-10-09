@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { mundoParaTela, telaParaMundo, aplicarZoom, passoDeReguaEmMm, subdivisoesDaRegua, valorDaReguaEmUnidade } from './transformacaoDeTela';
+import {
+  mundoParaTela,
+  telaParaMundo,
+  aplicarZoom,
+  enquadrarRetanguloDeTela,
+  enquadrarRetanguloDoMundo,
+  passoDaGradeEmMm,
+  passoDeReguaEmMm,
+  subdivisoesDaRegua,
+  valorDaReguaEmUnidade,
+  ESCALA_MAXIMA,
+} from './transformacaoDeTela';
 
 describe('mundoParaTela / telaParaMundo', () => {
   it('são inversas uma da outra', () => {
@@ -42,6 +53,78 @@ describe('aplicarZoom', () => {
     const zoomInExtremo = aplicarZoom(t, 100000, { x: 0, y: 0 });
     expect(zoomOutExtremo.escalaPxPorMm).toBeGreaterThan(0);
     expect(zoomInExtremo.escalaPxPorMm).toBeLessThan(1000);
+  });
+});
+
+describe('enquadrarRetanguloDeTela (zoom por janela)', () => {
+  const tamanho = { largura: 800, altura: 600 };
+
+  it('o centro do retângulo vai para o centro da tela e o lado que limita passa a ocupá-la', () => {
+    const t = { escalaPxPorMm: 2, offsetXPx: 30, offsetYPx: -20 };
+    const a = { x: 100, y: 100 };
+    const b = { x: 300, y: 200 }; // 200 × 100 px → fator min(800/200, 600/100) = 4
+    const centroNoMundo = telaParaMundo({ x: 200, y: 150 }, t);
+    const depois = enquadrarRetanguloDeTela(t, a, b, tamanho);
+    expect(depois.escalaPxPorMm).toBeCloseTo(8, 9);
+    const centroNaTela = mundoParaTela(centroNoMundo, depois);
+    expect(centroNaTela.x).toBeCloseTo(400, 9);
+    expect(centroNaTela.y).toBeCloseTo(300, 9);
+    // Os dois cantos ficam dentro da tela; a largura (lado que limita) ocupa os 800 px.
+    const cantoA = mundoParaTela(telaParaMundo(a, t), depois);
+    const cantoB = mundoParaTela(telaParaMundo(b, t), depois);
+    expect(cantoA.x).toBeCloseTo(0, 9);
+    expect(cantoB.x).toBeCloseTo(800, 9);
+  });
+
+  it('cantos em qualquer ordem dão o mesmo resultado', () => {
+    const t = { escalaPxPorMm: 1, offsetXPx: 0, offsetYPx: 0 };
+    expect(enquadrarRetanguloDeTela(t, { x: 300, y: 50 }, { x: 100, y: 250 }, tamanho)).toEqual(
+      enquadrarRetanguloDeTela(t, { x: 100, y: 250 }, { x: 300, y: 50 }, tamanho),
+    );
+  });
+
+  it('respeita a escala máxima e ignora retângulo sem altura ou largura', () => {
+    const t = { escalaPxPorMm: 30, offsetXPx: 0, offsetYPx: 0 };
+    expect(enquadrarRetanguloDeTela(t, { x: 0, y: 0 }, { x: 4, y: 3 }, tamanho).escalaPxPorMm).toBe(ESCALA_MAXIMA);
+    expect(enquadrarRetanguloDeTela(t, { x: 10, y: 10 }, { x: 10, y: 90 }, tamanho)).toBe(t);
+  });
+});
+
+describe('enquadrarRetanguloDoMundo (ajustar à tela)', () => {
+  it('mostra o retângulo inteiro, centralizado, com o comprimento (Y) na horizontal', () => {
+    // Mesa 1500 × 3000 mm numa área de 1000 × 600 px, margem 50:
+    // escala = min(900/3000, 500/1500) = 0,3 → 900 × 450 px na tela.
+    const t = enquadrarRetanguloDoMundo({ minX: 0, minY: 0, maxX: 1500, maxY: 3000 }, { largura: 1000, altura: 600 }, 50);
+    expect(t.escalaPxPorMm).toBeCloseTo(0.3, 9);
+    const cantoInicial = mundoParaTela({ x: 0, y: 0 }, t);
+    const cantoFinal = mundoParaTela({ x: 1500, y: 3000 }, t);
+    expect(cantoInicial.x).toBeCloseTo(50, 9);
+    expect(cantoFinal.x).toBeCloseTo(950, 9);
+    expect(cantoInicial.y).toBeCloseTo(75, 9);
+    expect(cantoFinal.y).toBeCloseTo(525, 9);
+  });
+
+  it('respeita a escala máxima para um retângulo minúsculo, mantendo-o no centro', () => {
+    const t = enquadrarRetanguloDoMundo({ minX: 10, minY: 10, maxX: 10.5, maxY: 10.5 }, { largura: 800, altura: 600 });
+    expect(t.escalaPxPorMm).toBe(ESCALA_MAXIMA);
+    const centro = mundoParaTela({ x: 10.25, y: 10.25 }, t);
+    expect(centro.x).toBeCloseTo(400, 9);
+    expect(centro.y).toBeCloseTo(300, 9);
+  });
+});
+
+describe('passoDaGradeEmMm', () => {
+  it('menor passo redondo com pelo menos 12 px entre pontos', () => {
+    expect(passoDaGradeEmMm(40)).toBe(1); // 1 mm = 40 px
+    expect(passoDaGradeEmMm(1)).toBe(20); // 10 mm = 10 px não cabe; 20 mm = 20 px
+    expect(passoDaGradeEmMm(0.5)).toBe(50); // 20 mm = 10 px; 50 mm = 25 px
+    expect(passoDaGradeEmMm(0.05)).toBe(500); // 200 mm = 10 px; 500 mm = 25 px
+  });
+
+  it('o passo nunca fica abaixo do mínimo em pixels', () => {
+    for (const escala of [0.05, 0.13, 0.7, 2.2, 9, 40]) {
+      expect(passoDaGradeEmMm(escala) * escala).toBeGreaterThanOrEqual(12);
+    }
   });
 });
 

@@ -50,6 +50,71 @@ export function aplicarZoom(
   };
 }
 
+/**
+ * Zoom por janela: a transformação que faz o retângulo de tela entre `a` e
+ * `b` (px, cantos em qualquer ordem) ocupar a área visível `tamanho`, com o
+ * centro do retângulo no centro da área. A escala respeita os limites; um
+ * retângulo sem largura ou sem altura não muda nada.
+ */
+export function enquadrarRetanguloDeTela(
+  t: TransformacaoDeTela,
+  a: Ponto2D,
+  b: Ponto2D,
+  tamanho: { readonly largura: number; readonly altura: number },
+): TransformacaoDeTela {
+  const largura = Math.abs(b.x - a.x);
+  const altura = Math.abs(b.y - a.y);
+  if (largura <= 0 || altura <= 0 || tamanho.largura <= 0 || tamanho.altura <= 0) return t;
+  const fator = Math.min(tamanho.largura / largura, tamanho.altura / altura);
+  const novaEscala = Math.min(ESCALA_MAXIMA, Math.max(ESCALA_MINIMA, t.escalaPxPorMm * fator));
+  const centroNoMundo = telaParaMundo({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, t);
+  return {
+    escalaPxPorMm: novaEscala,
+    offsetXPx: tamanho.largura / 2 - centroNoMundo.y * novaEscala,
+    offsetYPx: tamanho.altura / 2 - centroNoMundo.x * novaEscala,
+  };
+}
+
+/**
+ * "Ajustar à tela": a transformação que mostra inteiro o retângulo do mundo
+ * `ret` (mm) na área visível `tamanho` (px), centralizado e com `margemPx`
+ * livres em volta. Com os eixos trocados (ver `mundoParaTela`), o intervalo
+ * em Y ocupa a horizontal e o intervalo em X a vertical. A escala respeita
+ * os limites; um retângulo sem largura ou altura conta como 1 mm.
+ */
+export function enquadrarRetanguloDoMundo(
+  ret: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number },
+  tamanho: { readonly largura: number; readonly altura: number },
+  margemPx = 60,
+): TransformacaoDeTela {
+  const larguraNaTelaMm = Math.max(1, ret.maxY - ret.minY);
+  const alturaNaTelaMm = Math.max(1, ret.maxX - ret.minX);
+  const larguraDisponivel = Math.max(1, tamanho.largura - margemPx * 2);
+  const alturaDisponivel = Math.max(1, tamanho.altura - margemPx * 2);
+  const escala = Math.min(
+    ESCALA_MAXIMA,
+    Math.max(ESCALA_MINIMA, Math.min(larguraDisponivel / larguraNaTelaMm, alturaDisponivel / alturaNaTelaMm)),
+  );
+  return {
+    escalaPxPorMm: escala,
+    offsetXPx: tamanho.largura / 2 - ((ret.minY + ret.maxY) / 2) * escala,
+    offsetYPx: tamanho.altura / 2 - ((ret.minX + ret.maxX) / 2) * escala,
+  };
+}
+
+/**
+ * Espaçamento da grade de pontos: o menor passo "redondo" (1, 2, 5, 10, 20,
+ * 50 mm...) que deixa pelo menos `minimoPx` entre pontos vizinhos na tela.
+ */
+export function passoDaGradeEmMm(escalaPxPorMm: number, minimoPx = 12): number {
+  for (let potencia = 1; potencia <= 1e6; potencia *= 10) {
+    for (const base of [1, 2, 5]) {
+      if (base * potencia * escalaPxPorMm >= minimoPx) return base * potencia;
+    }
+  }
+  return 1e7;
+}
+
 /** Unidade de exibição da régua — o valor interno continua sempre em mm; isto só afeta o que é desenhado/lido. */
 export type UnidadeDeRegua = 'cm' | 'mm';
 

@@ -79,12 +79,15 @@ button:focus-visible {
   border-bottom: 1px solid var(--cor-borda);
 }
 
+/* Acima do corpo (inclusive dos títulos fixos do painel lateral), para que as
+   listas dos menus Visão/Opções/Ajuda abram por cima do desenho. Os diálogos
+   (.sobreposicao-fundo, z-index 100) continuam acima de tudo. */
 .barra-de-ferramentas-ribbon {
   background: var(--cor-barra);
   border-bottom: 1px solid var(--cor-borda);
   box-shadow: var(--sombra-leve);
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 .barra-de-acesso-rapido {
@@ -96,7 +99,8 @@ button:focus-visible {
   border-bottom: 1px solid var(--cor-borda);
 }
 
-.barra-de-acesso-rapido button {
+.barra-de-acesso-rapido button,
+.barra-de-visualizacao button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,23 +114,27 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.barra-de-acesso-rapido button:hover:not(:disabled) {
+.barra-de-acesso-rapido button:hover:not(:disabled),
+.barra-de-visualizacao button:hover:not(:disabled) {
   background: #fff;
   border-color: var(--cor-borda);
   box-shadow: var(--sombra-leve);
 }
 
-.barra-de-acesso-rapido button:active:not(:disabled) {
+.barra-de-acesso-rapido button:active:not(:disabled),
+.barra-de-visualizacao button:active:not(:disabled) {
   background: #eef2f7;
   box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.15);
 }
 
-.barra-de-acesso-rapido button:disabled {
+.barra-de-acesso-rapido button:disabled,
+.barra-de-visualizacao button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
-.barra-de-acesso-rapido .icone-de-ferramenta {
+.barra-de-acesso-rapido .icone-de-ferramenta,
+.barra-de-visualizacao .icone-de-ferramenta {
   width: 14px;
   height: 14px;
 }
@@ -138,12 +146,108 @@ button:focus-visible {
   margin: 0 3px;
 }
 
+/* Linha das abas: abas à esquerda, menus Visão/Opções/Ajuda à direita. */
+.ribbon-cabecalho {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 0;
+  background: var(--cor-barra);
+}
+
 .ribbon-abas {
   display: flex;
   align-items: flex-end;
   gap: 1px;
-  padding: 4px 8px 0;
-  background: var(--cor-barra);
+}
+
+.ribbon-menus {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-bottom: 3px;
+}
+
+.menu-suspenso {
+  position: relative;
+}
+
+.botao-de-menu {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--raio-sm);
+  background: transparent;
+  color: var(--cor-texto-secundario);
+  cursor: pointer;
+}
+
+.botao-de-menu:hover,
+.botao-de-menu-aberto {
+  background: #fff;
+  border-color: var(--cor-borda);
+  color: var(--cor-texto);
+}
+
+/* Alinhada pela direita do botão: os menus ficam no canto direito da janela. */
+.lista-de-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  z-index: 30;
+  min-width: 230px;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  box-shadow: var(--sombra-media);
+}
+
+.item-de-menu {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 5px 14px 5px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cor-texto);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item-de-menu:hover:not(:disabled),
+.item-de-menu:focus-visible {
+  background: #e3edfb;
+  box-shadow: none;
+}
+
+.item-de-menu:disabled {
+  color: var(--cor-texto-secundario);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.marca-do-item-de-menu {
+  text-align: center;
+  font-weight: 600;
+  color: var(--cor-selecao);
+}
+
+.atalho-do-item-de-menu {
+  padding-left: 18px;
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
+}
+
+.separador-de-menu {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--cor-borda);
 }
 
 /* Abas em maiúsculas, como numa fita de ferramentas de CAD. "Arquivo" fica
@@ -194,6 +298,9 @@ button:focus-visible {
   color: #fff;
 }
 
+/* Nunca quebra linha (uma segunda linha de grupos roubava ~90 px do desenho):
+   em janela estreita a fita se compacta (compactacaoDaFita.ts) e, se nem
+   assim couber, rola na horizontal. */
 .ribbon-conteudo {
   display: flex;
   align-items: stretch;
@@ -201,12 +308,13 @@ button:focus-visible {
   padding: 0 4px;
   background: #fff;
   border-top: 1px solid var(--cor-borda);
-  flex-wrap: wrap;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .ribbon-conteudo-abas {
   display: flex;
-  flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: stretch;
 }
 
@@ -215,6 +323,7 @@ button:focus-visible {
 .grupo-de-ferramentas {
   position: relative;
   display: flex;
+  flex-shrink: 0;
   align-items: stretch;
   gap: 2px;
   min-height: 90px;
@@ -235,12 +344,6 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
-}
-
-.ribbon-visualizacao {
-  flex-shrink: 0;
-  border-right: none;
-  border-left: 1px solid #e1e4e8;
 }
 
 .grupo-de-ferramentas button {
@@ -295,16 +398,13 @@ button:focus-visible {
   color: var(--cor-selecao);
 }
 
-.ribbon-visualizacao button {
-  min-width: 44px;
-}
-
-/* Coluna de botões pequenos (ícone à esquerda, texto à direita) empilhados. */
+/* Coluna de botões pequenos (ícone à esquerda, texto à direita) empilhados —
+   até três por coluna cabem na altura de um botão grande. */
 .coluna-de-ferramenta {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 2px;
+  gap: 1px;
 }
 
 .grupo-de-ferramentas button.botao-pequeno {
@@ -312,7 +412,7 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 3px 7px;
+  padding: 1px 7px;
   white-space: nowrap;
 }
 
@@ -329,6 +429,35 @@ button:focus-visible {
 
 .grupo-de-ferramentas button.botao-grande {
   justify-content: flex-start;
+}
+
+/* Compactação (compactacaoDaFita.ts), nível 1: os rótulos grandes quebram em
+   duas linhas, onde o rótulo marca. Espaçamentos e entrelinha menores para
+   as duas linhas caberem na mesma altura de grupo. */
+.ribbon-conteudo:not([data-rotulos-em-duas-linhas]) .quebra-de-rotulo {
+  display: none;
+}
+
+.ribbon-conteudo[data-rotulos-em-duas-linhas] .grupo-de-ferramentas button.botao-grande {
+  gap: 2px;
+  padding-top: 3px;
+  padding-bottom: 2px;
+  line-height: 1.15;
+}
+
+/* Níveis seguintes: os botões pequenos do grupo ficam só com o ícone. O nome
+   sai da tela mas continua no botão (dica e leitores de tela). */
+.grupo-de-ferramentas[data-compacto] button.botao-pequeno {
+  position: relative;
+}
+
+.grupo-de-ferramentas[data-compacto] button.botao-pequeno > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 
@@ -350,6 +479,37 @@ button:focus-visible {
 .coluna-do-desenho > .area-de-desenho-grade {
   flex: 1 1 auto;
   height: auto;
+}
+
+/* Barra de visualização embaixo do desenho: só ícones, no estilo da barra de
+   acesso rápido; Mão, Zoom por janela, Grade e Ímã ficam marcados quando ligados. */
+.barra-de-visualizacao {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  background: var(--cor-barra);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.barra-de-visualizacao button[aria-pressed='true'] {
+  background: #dfeafa;
+  border-color: #8fb4e6;
+  color: var(--cor-selecao);
+}
+
+.separador-da-barra-de-visualizacao {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--cor-borda);
+}
+
+.texto-da-barra-de-visualizacao {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
 }
 
 /* Barra do documento: aba com o nome do projeto aberto, e o contexto de
@@ -863,6 +1023,132 @@ button:focus-visible {
   color: #b91c1c;
   font-size: 11px;
   margin: 0;
+}
+
+/* Diálogo Mover cerca. */
+.formulario-de-mover-cerca {
+  width: 380px;
+  max-width: 100%;
+}
+
+.formulario-de-mover-cerca .lista-de-propriedades,
+.painel-sobre .lista-de-propriedades {
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+
+.formulario-de-mover-cerca .lista-de-propriedades dt,
+.painel-sobre .lista-de-propriedades dt {
+  margin-top: 0;
+}
+
+.grupo-de-opcoes-da-cerca {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 4px;
+}
+
+.grupo-de-opcoes-da-cerca legend {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
+}
+
+.grupo-de-opcoes-da-cerca input[type='checkbox'] {
+  margin: 0;
+}
+
+/* Contagens alinhadas à direita, numa coluna. */
+.contagem-da-cerca {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--cor-texto-secundario);
+}
+
+.nota-do-formulario {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
+}
+
+.campos-de-deslocamento {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Menu Ajuda: atalhos e "Sobre". */
+.painel-de-ajuda {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 520px;
+  max-width: 100%;
+  font-size: 12px;
+}
+
+.tabela-de-atalhos {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabela-de-atalhos caption {
+  padding-bottom: 4px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-secundario);
+}
+
+.tabela-de-atalhos th,
+.tabela-de-atalhos td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #eef0f3;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tabela-de-atalhos th {
+  width: 1%;
+  padding-right: 16px;
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.painel-de-ajuda kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--cor-borda);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f7f8fa;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--cor-texto);
+  white-space: nowrap;
+}
+
+.painel-sobre p {
+  margin: 0;
+}
+
+.painel-sobre .nome-do-programa {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.painel-sobre .nome-do-programa span {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--cor-texto-secundario);
 }
 
 .diagrama-de-enfesto {
