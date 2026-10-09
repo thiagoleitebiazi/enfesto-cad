@@ -110,6 +110,8 @@ function propsBase(): Props {
     onAbrirCurvaPredefinida: vi.fn(),
     onAbrirEspiral: vi.fn(),
     onEntrarModoCirculo: vi.fn(),
+    onUsarFerramentaDeMolde: vi.fn(),
+    temOutraPeca: true,
   };
 }
 
@@ -278,7 +280,6 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
 
     renderizar('Produção');
     expect(botao('Pence interna').title).toContain('são feitas na modelagem');
-    expect(botao('Unir').title).toContain('cortar e unir moldes são operações de modelagem');
     expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
     cleanup();
 
@@ -430,6 +431,42 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     expect(props.onConverterEmContorno).toHaveBeenCalledTimes(1);
   });
 
+  it('Produção: Bainha, Dobrar, Desdobrar, Cortar, Unir e Remover região chamam a ferramenta de cada um', () => {
+    const props = renderizar('Produção');
+
+    for (const nome of ['Bainha', 'Dobrar', 'Desdobrar', 'Cortar', 'Unir', 'Remover região']) fireEvent.click(botao(nome));
+
+    expect(vi.mocked(props.onUsarFerramentaDeMolde).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'bainha',
+      'dobrar',
+      'desdobrar',
+      'cortar',
+      'unir',
+      'remover-regiao',
+    ]);
+  });
+
+  it.each([
+    ['Bainha', 'bainha'],
+    ['Dobrar', 'dobrar'],
+    ['Desdobrar', 'desdobrar'],
+    ['Cortar', 'cortar'],
+    ['Unir', 'unir'],
+    ['Remover região', 'remover-regiao'],
+  ] as const)('Produção: %s aparece pressionado enquanto é a ferramenta ligada', (nome, modo) => {
+    renderizar('Produção', { modo });
+
+    expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+    expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
+  });
+
+  it('Produção: Dobrar e Desdobrar avisam na dica que o manual da referência não os descreve', () => {
+    renderizar('Produção');
+
+    expect(botao('Dobrar').title).toContain('leitura natural');
+    expect(botao('Desdobrar').title).toContain('leitura natural');
+  });
+
   it('Conferência: as medidas, as comparações e as quatro cotas', () => {
     const props = renderizar('Conferência');
 
@@ -535,7 +572,18 @@ describe('BarraDeFerramentas: o que falta para usar', () => {
     cleanup();
 
     renderizar('Produção', semSelecao);
-    for (const nome of ['Sentido do fio', 'Costura', 'Remover costura', 'Converter em costura']) {
+    for (const nome of [
+      'Sentido do fio',
+      'Costura',
+      'Remover costura',
+      'Converter em costura',
+      'Bainha',
+      'Dobrar',
+      'Desdobrar',
+      'Cortar',
+      'Unir',
+      'Remover região',
+    ]) {
       expect(botao(nome)).toBeDisabled();
       expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
     }
@@ -557,6 +605,15 @@ describe('BarraDeFerramentas: o que falta para usar', () => {
     renderizar('Início', { temSelecao: true, temSelecaoUnica: false });
     expect(botao('Excluir')).toBeEnabled();
     expect(botao('Copiar')).toBeDisabled();
+  });
+
+  it('Unir pede outra peça além da selecionada; as outras ferramentas de corte, não', () => {
+    renderizar('Produção', { temOutraPeca: false });
+
+    expect(botao('Unir')).toBeDisabled();
+    expect(botao('Unir').title).toBe('Unir — é preciso ter outra peça para unir a esta');
+    expect(botao('Cortar')).toBeEnabled();
+    expect(botao('Remover região')).toBeEnabled();
   });
 
   it('Restaurar pede antes um ponto de restauração para a peça', () => {

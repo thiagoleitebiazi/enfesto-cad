@@ -526,7 +526,7 @@ const TOLERANCIA_DE_PIQUE_NO_CONTORNO_MM = 1e-6;
  * acertado), e os do trecho trocado saem — a mesma regra das outras edições
  * de forma: melhor perder um pique do que deixá-lo num lugar adivinhado.
  */
-function piquesQueFicamNoContorno(piques: readonly Pique[], contorno: Contorno): readonly Pique[] {
+export function piquesQueFicamNoContorno(piques: readonly Pique[], contorno: Contorno): readonly Pique[] {
   return piques.flatMap((pique) => {
     const maisProximo = pontoMaisProximoNoContorno(pique.posicao, contorno);
     return maisProximo.distancia <= TOLERANCIA_DE_PIQUE_NO_CONTORNO_MM

@@ -8,7 +8,14 @@ import { lerMedida } from './medidas';
  * entre várias opções.
  */
 export type CampoDoDialogo =
-  | { readonly tipo: 'medida' | 'inteiro' | 'texto'; readonly id: string; readonly rotulo: string; readonly inicial: string }
+  | {
+      readonly tipo: 'medida' | 'inteiro' | 'texto';
+      readonly id: string;
+      readonly rotulo: string;
+      readonly inicial: string;
+      /** Pode ficar em branco: nesse caso o diálogo não entrega valor para ele. */
+      readonly opcional?: boolean;
+    }
   | { readonly tipo: 'caixa'; readonly id: string; readonly rotulo: string; readonly inicial: boolean }
   | {
       readonly tipo: 'escolha';
@@ -18,7 +25,11 @@ export type CampoDoDialogo =
       readonly inicial: string;
     };
 
-/** O que o diálogo entrega: número nos campos `medida` e `inteiro`, texto nos de texto e escolha, booleano nas caixas. */
+/**
+ * O que o diálogo entrega: número nos campos `medida` e `inteiro`, texto nos
+ * de texto e escolha, booleano nas caixas. Um campo opcional deixado em
+ * branco não aparece.
+ */
 export type ValoresDoDialogo = Readonly<Record<string, number | string | boolean>>;
 
 interface DialogoDeCamposProps {
@@ -58,6 +69,8 @@ export function DialogoDeCampos(props: DialogoDeCamposProps): React.JSX.Element 
         lidos[campo.id] = bruto === true;
       } else if (campo.tipo === 'escolha') {
         lidos[campo.id] = String(bruto);
+      } else if (campo.opcional && String(bruto).trim() === '') {
+        continue;
       } else if (campo.tipo === 'texto') {
         const texto = String(bruto).trim();
         if (texto === '') return setErro(`Preencha "${campo.rotulo}".`);

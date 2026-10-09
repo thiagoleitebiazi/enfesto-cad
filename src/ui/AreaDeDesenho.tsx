@@ -113,7 +113,13 @@ export type ModoDeDesenho =
   | 'cadastrar-curva'
   | 'curva-predefinida'
   | 'circulo'
-  | 'espiral';
+  | 'espiral'
+  | 'cortar'
+  | 'remover-regiao'
+  | 'dobrar'
+  | 'desdobrar'
+  | 'unir'
+  | 'bainha';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -133,8 +139,9 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
 
 /**
  * Modos que mostram as alças dos vértices da peça selecionada: os de edição
- * de vértice e as ferramentas que pedem pontos do contorno dela (curvas e
- * arcos) — nestes o clique segue para a ferramenta, sem agarrar o vértice.
+ * de vértice e as ferramentas que pedem pontos do contorno dela (curvas,
+ * arcos, cortar, dobrar, unir e bainha) — nestas o clique segue para a
+ * ferramenta, sem agarrar o vértice.
  */
 const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   ...MODOS_DE_EDICAO_DE_VERTICE,
@@ -145,6 +152,12 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'editar-pontos-de-curva',
   'cadastrar-curva',
   'curva-predefinida',
+  'cortar',
+  'remover-regiao',
+  'dobrar',
+  'desdobrar',
+  'unir',
+  'bainha',
 ]);
 
 /**

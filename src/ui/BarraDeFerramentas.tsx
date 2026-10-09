@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
 import { ajustarCompactacao } from './compactacaoDaFita';
+import type { FerramentaDeMolde } from './ferramentasDeMolde';
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
@@ -112,6 +113,10 @@ interface BarraDeFerramentasProps {
   readonly onAbrirCurvaPredefinida: () => void;
   readonly onAbrirEspiral: () => void;
   readonly onEntrarModoCirculo: () => void;
+  /** Cortar, Remover região, Dobrar, Desdobrar, Unir e Bainha (aba Produção), na peça selecionada. */
+  readonly onUsarFerramentaDeMolde: (ferramenta: FerramentaDeMolde) => void;
+  /** Há pelo menos duas peças no projeto (Unir precisa de outra além da selecionada). */
+  readonly temOutraPeca: boolean;
 }
 
 const SO_PARA_ELEMENTOS =
@@ -122,9 +127,7 @@ const SO_ENTRE_ARCOS =
 const SEM_GRADUACAO =
   'indisponível neste programa: não há graduação — cada tamanho entra como uma peça própria, já graduada';
 const SO_NA_MODELAGEM =
-  'indisponível neste programa: pences, pregas, bainhas e dobras são feitas na modelagem; aqui os moldes chegam prontos para o encaixe';
-const CORTAR_E_UNIR_SAO_DA_MODELAGEM =
-  'indisponível neste programa: cortar e unir moldes são operações de modelagem; aqui os moldes chegam prontos para o encaixe';
+  'indisponível neste programa: pences e pregas são feitas na modelagem; aqui os moldes chegam prontos para o encaixe';
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
 const SEM_PECA = 'selecione uma peça primeiro';
@@ -788,9 +791,33 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   indisponivel="indisponível neste programa: o encaixe não dobra moldes numa linha de simetria"
                 />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Bainha" icone="bainha" indisponivel={SO_NA_MODELAGEM} />
-                  <Ferramenta tamanho="pequeno" rotulo="Dobrar" icone="dobrar" indisponivel={SO_NA_MODELAGEM} />
-                  <Ferramenta tamanho="pequeno" rotulo="Desdobrar" icone="desdobrar" indisponivel={SO_NA_MODELAGEM} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Bainha"
+                    icone="bainha"
+                    pressionado={props.modo === 'bainha'}
+                    dica="Bainha: acrescenta a sobra que se dobra para dentro num trecho do contorno — escolha o número de dobras e a largura, e indique no contorno onde a bainha começa e onde termina"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('bainha')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Dobrar"
+                    icone="dobrar"
+                    pressionado={props.modo === 'dobrar'}
+                    dica="Dobrar: deixa só uma metade da peça — clique nas duas pontas da linha de dobra, no contorno, e depois do lado que deve ficar. A linha de dobra vira uma aresta (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('dobrar')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Desdobrar"
+                    icone="desdobrar"
+                    pressionado={props.modo === 'desdobrar'}
+                    dica="Desdobrar: a peça ganha a outra metade, espelhada — clique na aresta que é a linha de dobra. A dobra fica como linha interna (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('desdobrar')}
+                  />
                 </div>
               </div>
 
@@ -854,13 +881,32 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Cortar e Unir">
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Cortar" icone="cortar-molde" indisponivel={CORTAR_E_UNIR_SAO_DA_MODELAGEM} />
-                  <Ferramenta tamanho="pequeno" rotulo="Unir" icone="unir-moldes" indisponivel={CORTAR_E_UNIR_SAO_DA_MODELAGEM} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Cortar"
+                    icone="cortar-molde"
+                    pressionado={props.modo === 'cortar'}
+                    dica="Cortar: divide a peça selecionada em duas por uma reta — clique no contorno, onde o corte começa e onde termina. A parte maior continua sendo a peça; a outra vira uma peça nova"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('cortar')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Unir"
+                    icone="unir-moldes"
+                    pressionado={props.modo === 'unir'}
+                    dica="Unir: junta outra peça à selecionada, aresta com aresta — clique na aresta da peça selecionada e depois na aresta da outra, que gira e encosta. Com “Apenas mover”, a outra só encosta, sem unir"
+                    falta={!props.temSelecaoUnica ? SEM_PECA : props.temOutraPeca ? null : 'é preciso ter outra peça para unir a esta'}
+                    onClick={() => props.onUsarFerramentaDeMolde('unir')}
+                  />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Remover região"
                     icone="remover-regiao"
-                    indisponivel={CORTAR_E_UNIR_SAO_DA_MODELAGEM}
+                    pressionado={props.modo === 'remover-regiao'}
+                    dica="Remover região: tira um pedaço da peça selecionada — clique nas duas pontas da reta que separa a região, no contorno, e depois dentro da região que deve sair"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('remover-regiao')}
                   />
                 </div>
               </div>

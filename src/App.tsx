@@ -28,6 +28,23 @@ import {
   type TrechoEmEdicao,
 } from './ui/ferramentasDeTrecho';
 import {
+  aplicarBainha,
+  aplicarDesdobrar,
+  aplicarReta,
+  aplicarUniao,
+  arestaDeOutraPecaPerto,
+  arestaPerto,
+  cliqueDeReta,
+  ehFerramentaDeReta,
+  previaDaBainha,
+  previaDaReta,
+  previaDeDesdobrar,
+  previaDeUnir,
+  retaCompleta,
+  type FerramentaDeMolde,
+} from './ui/ferramentasDeMolde';
+import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
+import {
   curvaDoTrecho,
   CURVAS_DE_FABRICA,
   gravarCurvasCadastradas,
@@ -264,7 +281,14 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'cadastrar-curva'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
   | { readonly tipo: 'escolher-curva' }
   | { readonly tipo: 'espiral' }
-  | { readonly tipo: 'raio-do-arco'; readonly indice: number };
+  | { readonly tipo: 'raio-do-arco'; readonly indice: number }
+  | { readonly tipo: 'bainha' }
+  | { readonly tipo: 'unir' };
+
+/** Número para um campo de diálogo, com vírgula decimal. */
+function paraCampo(valor: number): string {
+  return String(valor).replace('.', ',');
+}
 
 type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias';
 type FerramentaDeCota = FerramentaDeCotaPorPontos | 'cota-perimetro';
@@ -350,6 +374,9 @@ export default function App(): React.JSX.Element {
   const [espiralPendente, setEspiralPendente] = useState<{ readonly larguraMm: number; readonly perimetroMm: number } | null>(
     null,
   );
+  // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
+  const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
+  const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -986,6 +1013,16 @@ export default function App(): React.JSX.Element {
   const entrarModoNaPecaSelecionada = useCallback(
     (ferramenta: FerramentaDeTrecho | 'arco-tangente') => {
       if (selecionadoId) entrarModoDeConstrucao(ferramenta);
+    },
+    [selecionadoId, entrarModoDeConstrucao],
+  );
+
+  /** Cortar, dobrar, unir e bainha: as duas últimas pedem antes as opções, num diálogo. */
+  const usarFerramentaDeMolde = useCallback(
+    (ferramenta: FerramentaDeMolde) => {
+      if (!selecionadoId) return;
+      if (ferramenta === 'bainha' || ferramenta === 'unir') setDialogoDeFerramenta({ tipo: ferramenta });
+      else entrarModoDeConstrucao(ferramenta);
     },
     [selecionadoId, entrarModoDeConstrucao],
   );
@@ -1818,6 +1855,77 @@ export default function App(): React.JSX.Element {
         setRecadoDaFerramenta(aplicarTrecho(modo, novo, opcoes));
         return;
       }
+      if (ehFerramentaDeReta(modo) || modo === 'bainha') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        setRecadoDaFerramenta(null);
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const novo = cliqueDeReta(modo, trecho, {
+          noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
+          livre: semCaptura,
+        });
+        if (!retaCompleta(modo, novo)) {
+          setTrecho(novo);
+          return;
+        }
+        // Deu certo ou não, a ferramenta volta a esperar a primeira ponta.
+        setTrecho(SEM_TRECHO);
+        try {
+          const resultado =
+            modo === 'bainha'
+              ? aplicarBainha(pecas, peca, novo, opcoesDeBainha, proximoId)
+              : aplicarReta(modo, pecas, peca, novo, proximoId);
+          aplicarMudanca([...resultado.pecas]);
+          setRecadoDaFerramenta(resultado.recado);
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
+      if (modo === 'desdobrar') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const aresta = arestaPerto(semCaptura, peca.contorno, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+        if (aresta === null) return;
+        try {
+          const resultado = aplicarDesdobrar(pecas, peca, aresta, proximoId);
+          aplicarMudanca([...resultado.pecas]);
+          setRecadoDaFerramenta(resultado.recado);
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
+      if (modo === 'unir') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        // Primeiro a aresta da peça selecionada; depois, a da outra peça.
+        if (!trecho.inicio) {
+          const aresta = arestaPerto(semCaptura, peca.contorno, raioMm);
+          if (aresta === null) return;
+          setRecadoDaFerramenta(null);
+          setTrecho({ ...SEM_TRECHO, inicio: { indiceAresta: aresta, ponto: semCaptura } });
+          return;
+        }
+        const alvo = arestaDeOutraPecaPerto(semCaptura, pecas, peca.id, raioMm);
+        if (!alvo) return;
+        setTrecho(SEM_TRECHO);
+        try {
+          const resultado = aplicarUniao(pecas, peca, trecho.inicio.indiceAresta, alvo.peca, alvo.indiceAresta, unirApenasMovendo);
+          aplicarMudanca([...resultado.pecas]);
+          // A peça que foi unida deixa de existir: sai também da seleção em lote.
+          if (!unirApenasMovendo) {
+            setIdsSelecionadosEmLote((atual) =>
+              atual.has(alvo.peca.id) ? new Set([...atual].filter((id) => id !== alvo.peca.id)) : atual,
+            );
+          }
+          setRecadoDaFerramenta(resultado.recado);
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
       if (modo === 'arco-tangente') {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -1869,6 +1977,8 @@ export default function App(): React.JSX.Element {
       trecho,
       curvaEscolhida,
       espiralPendente,
+      opcoesDeBainha,
+      unirApenasMovendo,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2200,6 +2310,23 @@ export default function App(): React.JSX.Element {
           : {};
       return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
     }
+    if (pecaSelecionada && (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'desdobrar' || modo === 'unir')) {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const contorno = pecaSelecionada.contorno;
+      if (modo === 'desdobrar') return previaDeDesdobrar(pecaSelecionada, cursorMundo ? arestaPerto(cursorMundo, contorno, raioMm) : null);
+      if (modo === 'unir') {
+        return previaDeUnir(
+          pecaSelecionada,
+          trecho.inicio?.indiceAresta ?? null,
+          cursorMundo ? arestaPerto(cursorMundo, contorno, raioMm) : null,
+          cursorMundo ? arestaDeOutraPecaPerto(cursorMundo, pecas, pecaSelecionada.id, raioMm) : null,
+        );
+      }
+      const mouse = cursorMundo ? { noContorno: posicaoNoContornoPerto(cursorMundo, contorno, raioMm), livre: cursorMundo } : null;
+      return modo === 'bainha'
+        ? previaDaBainha(pecaSelecionada, trecho, mouse, opcoesDeBainha)
+        : previaDaReta(modo, pecaSelecionada, trecho, mouse);
+    }
     if (modo === 'circulo' && pontosEmEdicao[0] && cursorMundo && !mesmoPonto(pontosEmEdicao[0], cursorMundo)) {
       return { novo: circulo(pontosEmEdicao[0], cursorMundo), novoFechado: true };
     }
@@ -2207,7 +2334,18 @@ export default function App(): React.JSX.Element {
       return { novo: espiral(cursorMundo, espiralPendente.larguraMm, espiralPendente.perimetroMm), novoFechado: true };
     }
     return null;
-  }, [modo, pecaSelecionada, trecho, cursorMundo, curvaEscolhida, espiralPendente, pontosEmEdicao, transform.escalaPxPorMm]);
+  }, [
+    modo,
+    pecas,
+    pecaSelecionada,
+    trecho,
+    cursorMundo,
+    curvaEscolhida,
+    espiralPendente,
+    opcoesDeBainha,
+    pontosEmEdicao,
+    transform.escalaPxPorMm,
+  ]);
 
   /** O texto da ferramenta de curva ou arco ligada, conforme o que já foi clicado. */
   const textoDaConstrucao = ((): string | null => {
@@ -2250,6 +2388,32 @@ export default function App(): React.JSX.Element {
           : 'Por raio: clique na borda do círculo — a distância até o centro é o raio, e a barra de status mostra a medida.' + fim;
       case 'espiral':
         return 'Espiral: clique onde o centro da espiral deve ficar.' + fim;
+      case 'cortar':
+        return !trecho.inicio
+          ? 'Cortar: clique no contorno da peça selecionada, onde o corte começa.' + fim
+          : 'Cortar: clique no contorno, onde o corte termina — a peça vira duas, pela reta tracejada.' + fim;
+      case 'remover-regiao':
+        if (!trecho.inicio) return 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região.' + fim;
+        return !trecho.fim
+          ? 'Remover região: clique no contorno, na outra ponta da reta.' + fim
+          : 'Remover região: clique dentro da peça, na região que deve sair (ela fica em destaque).' + fim;
+      case 'dobrar':
+        if (!trecho.inicio) return 'Dobrar: clique no contorno da peça selecionada, numa ponta da linha de dobra.' + fim;
+        return !trecho.fim
+          ? 'Dobrar: clique no contorno, na outra ponta da linha de dobra.' + fim
+          : 'Dobrar: clique dentro da peça, do lado que deve ficar — o lado em destaque é o que sai.' + fim;
+      case 'desdobrar':
+        return 'Desdobrar: clique na aresta da peça selecionada que é a linha de dobra — a outra metade entra espelhada.' + fim;
+      case 'unir': {
+        const nome = unirApenasMovendo ? 'Unir (apenas mover)' : 'Unir';
+        return !trecho.inicio
+          ? `${nome}: clique na aresta da peça selecionada por onde as duas se juntam.` + fim
+          : `${nome}: clique na aresta da outra peça — ela gira e encosta na aresta em destaque.` + fim;
+      }
+      case 'bainha':
+        return !trecho.inicio
+          ? 'Bainha: clique no contorno da peça selecionada, onde a bainha começa.' + fim
+          : 'Bainha: clique no contorno, onde a bainha termina — a sobra tracejada entra no lugar do trecho em destaque.' + fim;
       default:
         return null;
     }
@@ -2457,6 +2621,8 @@ export default function App(): React.JSX.Element {
         onAbrirCurvaPredefinida={() => selecionadoId && setDialogoDeFerramenta({ tipo: 'escolher-curva' })}
         onAbrirEspiral={() => setDialogoDeFerramenta({ tipo: 'espiral' })}
         onEntrarModoCirculo={() => entrarModoDeConstrucao('circulo')}
+        onUsarFerramentaDeMolde={usarFerramentaDeMolde}
+        temOutraPeca={pecas.length >= 2}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -2682,6 +2848,70 @@ export default function App(): React.JSX.Element {
             }
             entrarModoDeConstrucao('espiral');
             setEspiralPendente({ larguraMm, perimetroMm });
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'bainha' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Bainha"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[
+            {
+              tipo: 'inteiro',
+              id: 'dobras',
+              rotulo: `Número de dobras (1 a ${MAXIMO_DE_DOBRAS_DA_BAINHA})`,
+              inicial: String(opcoesDeBainha.dobras),
+            },
+            { tipo: 'medida', id: 'largura', rotulo: 'Largura de cada dobra (mm)', inicial: paraCampo(opcoesDeBainha.larguraMm) },
+            {
+              tipo: 'medida',
+              id: 'largura2',
+              rotulo: 'Largura 2 (mm): só se a outra ponta tiver largura diferente',
+              inicial: opcoesDeBainha.largura2Mm === undefined ? '' : paraCampo(opcoesDeBainha.largura2Mm),
+              opcional: true,
+            },
+            { tipo: 'caixa', id: 'piques', rotulo: 'Pique nas pontas de cada linha de dobra', inicial: opcoesDeBainha.piques },
+          ]}
+          nota="Depois de confirmar, clique no contorno da peça onde a bainha começa e onde termina. A sobra sai para fora da peça, as laterais copiam as costuras vizinhas (para caírem em cima delas quando a bainha dobrar), e cada linha de dobra fica como linha interna."
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            const opcoes: OpcoesDeBainha = {
+              dobras: Number(valores.dobras),
+              larguraMm: Number(valores.largura),
+              ...(valores.largura2 === undefined ? {} : { largura2Mm: Number(valores.largura2) }),
+              piques: valores.piques === true,
+            };
+            try {
+              conferirOpcoesDeBainha(opcoes);
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            entrarModoDeConstrucao('bainha');
+            setOpcoesDeBainha(opcoes);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'unir' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Unir moldes"
+          resumo={[['Primeira peça', pecaSelecionada.nome]]}
+          campos={[
+            {
+              tipo: 'caixa',
+              id: 'apenasMover',
+              rotulo: 'Apenas mover: a outra peça encosta, mas as duas continuam separadas',
+              inicial: unirApenasMovendo,
+            },
+          ]}
+          nota="Depois de confirmar, clique na aresta desta peça por onde as duas se juntam e, em seguida, na aresta da outra peça. A outra gira e encosta, aresta com aresta, centralizada. Unidas, as duas viram uma peça só, com o nome e a linha de fio desta."
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            entrarModoDeConstrucao('unir');
+            setUnirApenasMovendo(valores.apenasMover === true);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta(null)}

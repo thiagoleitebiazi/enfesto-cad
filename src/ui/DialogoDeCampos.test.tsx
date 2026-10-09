@@ -111,6 +111,47 @@ describe('DialogoDeCampos', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('um campo opcional pode ficar em branco: o diálogo aplica e não entrega valor para ele', () => {
+    const onAplicar = vi.fn(() => null);
+    render(
+      <DialogoDeCampos
+        titulo="Bainha"
+        campos={[
+          { tipo: 'medida', id: 'largura', rotulo: 'Largura (mm)', inicial: '30' },
+          { tipo: 'medida', id: 'largura2', rotulo: 'Largura 2 (mm)', inicial: '', opcional: true },
+        ]}
+        rotuloDoBotao="Criar bainha"
+        onAplicar={onAplicar}
+        onFechar={() => {}}
+      />,
+    );
+
+    aplicar();
+    expect(onAplicar).toHaveBeenLastCalledWith({ largura: 30 });
+
+    fireEvent.change(screen.getByLabelText('Largura 2 (mm)'), { target: { value: '45,5' } });
+    aplicar();
+    expect(onAplicar).toHaveBeenLastCalledWith({ largura: 30, largura2: 45.5 });
+  });
+
+  it('um campo opcional preenchido ainda precisa ser um número', () => {
+    const onAplicar = vi.fn(() => null);
+    render(
+      <DialogoDeCampos
+        titulo="Bainha"
+        campos={[{ tipo: 'medida', id: 'largura2', rotulo: 'Largura 2 (mm)', inicial: 'larga', opcional: true }]}
+        rotuloDoBotao="Criar bainha"
+        onAplicar={onAplicar}
+        onFechar={() => {}}
+      />,
+    );
+
+    aplicar();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('"Largura 2 (mm)" precisa ser um número.');
+    expect(onAplicar).not.toHaveBeenCalled();
+  });
+
   it('Cancelar fecha sem aplicar', () => {
     const { aplicar: onAplicar, fechar } = renderizar();
 
