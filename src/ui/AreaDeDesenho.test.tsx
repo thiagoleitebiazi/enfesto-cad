@@ -38,8 +38,14 @@ function canvasDoDesenho(container: HTMLElement): HTMLCanvasElement {
   return canvas;
 }
 
-function renderizarMoverPonto(opcoes: { imaAtivo: boolean; mostrarGrade: boolean }) {
+function renderizarEdicaoDeVertices(opcoes: {
+  imaAtivo: boolean;
+  mostrarGrade: boolean;
+  modo?: 'mover-ponto' | 'modificar' | 'redefinir-perimetro';
+}) {
   const onMoverVariosPontos = vi.fn();
+  const onIndicarPontosParaModificar = vi.fn();
+  const onIndicarArestaParaRedefinir = vi.fn();
   const { container } = render(
     <AreaDeDesenho
       pecas={[SELECIONADA, VIZINHA]}
@@ -48,7 +54,7 @@ function renderizarMoverPonto(opcoes: { imaAtivo: boolean; mostrarGrade: boolean
       enfesto={null}
       idsComErro={new Set()}
       transform={TRANSFORM}
-      modo="mover-ponto"
+      modo={opcoes.modo ?? 'mover-ponto'}
       pontosEmEdicao={[]}
       contornoFinalizado={null}
       onTransformChange={vi.fn()}
@@ -57,6 +63,8 @@ function renderizarMoverPonto(opcoes: { imaAtivo: boolean; mostrarGrade: boolean
       onCliqueNoCanvas={vi.fn()}
       onMoverPeca={vi.fn()}
       onMoverVariosPontos={onMoverVariosPontos}
+      onIndicarPontosParaModificar={onIndicarPontosParaModificar}
+      onIndicarArestaParaRedefinir={onIndicarArestaParaRedefinir}
       cerca={null}
       opcoesDaCerca={TODAS_AS_OPCOES_DA_CERCA}
       ferramentaDeVista={null}
@@ -70,6 +78,12 @@ function renderizarMoverPonto(opcoes: { imaAtivo: boolean; mostrarGrade: boolean
   const naTela = (mundo: Ponto2D) => ({ clientX: mundo.y, clientY: mundo.x });
   return {
     onMoverVariosPontos,
+    onIndicarPontosParaModificar,
+    onIndicarArestaParaRedefinir,
+    clicar: (mundo: Ponto2D) => {
+      fireEvent.mouseDown(canvas, { button: 0, ...naTela(mundo) });
+      fireEvent.mouseUp(canvas, { button: 0, ...naTela(mundo) });
+    },
     shiftClique: (mundo: Ponto2D) => {
       fireEvent.mouseDown(canvas, { button: 0, shiftKey: true, ...naTela(mundo) });
       fireEvent.mouseUp(canvas, { button: 0, shiftKey: true, ...naTela(mundo) });
@@ -80,56 +94,67 @@ function renderizarMoverPonto(opcoes: { imaAtivo: boolean; mostrarGrade: boolean
       fireEvent.mouseMove(canvas, naTela(ate));
       fireEvent.mouseUp(canvas, { button: 0, ...naTela(ate) });
     },
+    /** Aperta o mouse em `mundo` e sai do desenho sem soltar. */
+    apertarESair: (mundo: Ponto2D) => {
+      fireEvent.mouseDown(canvas, { button: 0, ...naTela(mundo) });
+      fireEvent.mouseLeave(canvas, naTela(mundo));
+    },
+    soltar: (mundo: Ponto2D) => {
+      fireEvent.mouseUp(canvas, { button: 0, ...naTela(mundo) });
+    },
   };
 }
 
+beforeEach(() => {
+  // O jsdom não tem ResizeObserver nem desenha em canvas; aqui só importa
+  // o que o mouse entrega ao programa.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    },
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
 describe('AreaDeDesenho — "Mover ponto" com o ímã', () => {
-  beforeEach(() => {
-    // O jsdom não tem ResizeObserver nem desenha em canvas; aqui só importa
-    // o que o arrasto entrega ao programa.
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        observe = vi.fn();
-        unobserve = vi.fn();
-        disconnect = vi.fn();
-      },
-    );
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-  });
-
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
   it('o vértice arrastado prende no vértice de outra peça', () => {
-    const { arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: true, mostrarGrade: false });
+    const { arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({ imaAtivo: true, mostrarGrade: false });
     arrastar(ponto(103, 0), ponto(196, 3)); // a 5 mm de (200, 0), canto da vizinha
     expect(onMoverVariosPontos).toHaveBeenCalledExactlyOnceWith([1], { x: 97, y: 0 });
   });
 
   it('não prende nos vértices da própria peça', () => {
-    const { arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: true, mostrarGrade: false });
+    const { arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({ imaAtivo: true, mostrarGrade: false });
     arrastar(ponto(103, 0), ponto(100, 96)); // a 5 mm de (103, 100), da própria peça
     expect(onMoverVariosPontos).toHaveBeenCalledExactlyOnceWith([1], { x: -3, y: 96 });
   });
 
   it('com a grade visível e nenhum vértice perto, prende na grade', () => {
-    const { arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: true, mostrarGrade: true });
+    const { arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({ imaAtivo: true, mostrarGrade: true });
     arrastar(ponto(103, 0), ponto(133, 7)); // grade de 20 mm: (140, 0)
     expect(onMoverVariosPontos).toHaveBeenCalledExactlyOnceWith([1], { x: 37, y: 0 });
   });
 
   it('um clique com tremor menor que 3 px não tira o vértice do lugar, nem com a grade', () => {
-    const { arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: true, mostrarGrade: true });
+    const { arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({ imaAtivo: true, mostrarGrade: true });
     arrastar(ponto(103, 0), ponto(104, 1));
     expect(onMoverVariosPontos).not.toHaveBeenCalled();
   });
 
   it('os outros vértices da seleção andam o mesmo tanto que o agarrado', () => {
-    const { shiftClique, arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: true, mostrarGrade: false });
+    const { shiftClique, arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({
+      imaAtivo: true,
+      mostrarGrade: false,
+    });
     shiftClique(ponto(103, 0));
     shiftClique(ponto(103, 100));
     arrastar(ponto(103, 0), ponto(196, 3));
@@ -137,8 +162,100 @@ describe('AreaDeDesenho — "Mover ponto" com o ímã', () => {
   });
 
   it('com o ímã desligado, o vértice anda exatamente o que o mouse andou', () => {
-    const { arrastar, onMoverVariosPontos } = renderizarMoverPonto({ imaAtivo: false, mostrarGrade: true });
+    const { arrastar, onMoverVariosPontos } = renderizarEdicaoDeVertices({ imaAtivo: false, mostrarGrade: true });
     arrastar(ponto(103, 0), ponto(196, 3));
     expect(onMoverVariosPontos).toHaveBeenCalledExactlyOnceWith([1], { x: 93, y: 3 });
+  });
+
+  it('um clique sem arrastar não abre a medida exata, que é só do "Modificar"', () => {
+    const { clicar, onIndicarPontosParaModificar } = renderizarEdicaoDeVertices({ imaAtivo: false, mostrarGrade: false });
+    clicar(ponto(103, 0));
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
+  });
+});
+
+describe('AreaDeDesenho — "Modificar"', () => {
+  const modificar = () => renderizarEdicaoDeVertices({ imaAtivo: false, mostrarGrade: false, modo: 'modificar' });
+
+  it('um clique sem arrastar num vértice o indica para a medida exata, sem movê-lo', () => {
+    const { clicar, onIndicarPontosParaModificar, onMoverVariosPontos } = modificar();
+    clicar(ponto(103, 0));
+    expect(onIndicarPontosParaModificar).toHaveBeenCalledExactlyOnceWith([1]);
+    expect(onMoverVariosPontos).not.toHaveBeenCalled();
+  });
+
+  it('um clique num vértice de uma seleção de vários indica a seleção inteira', () => {
+    const { shiftClique, clicar, onIndicarPontosParaModificar } = modificar();
+    shiftClique(ponto(103, 0));
+    shiftClique(ponto(103, 100));
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
+    clicar(ponto(103, 100));
+    expect(onIndicarPontosParaModificar).toHaveBeenCalledExactlyOnceWith([1, 2]);
+  });
+
+  it('um clique fora da seleção indica só o vértice clicado', () => {
+    const { shiftClique, clicar, onIndicarPontosParaModificar } = modificar();
+    shiftClique(ponto(103, 0));
+    shiftClique(ponto(103, 100));
+    clicar(ponto(0, 100));
+    expect(onIndicarPontosParaModificar).toHaveBeenCalledExactlyOnceWith([3]);
+  });
+
+  it('arrastar move os vértices como no "Mover ponto", sem abrir a medida exata', () => {
+    const { arrastar, onIndicarPontosParaModificar, onMoverVariosPontos } = modificar();
+    arrastar(ponto(103, 0), ponto(196, 3));
+    expect(onMoverVariosPontos).toHaveBeenCalledExactlyOnceWith([1], { x: 93, y: 3 });
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
+  });
+
+  it('o mouse saindo do desenho com o botão apertado não abre a medida exata', () => {
+    const { apertarESair, soltar, onIndicarPontosParaModificar, onMoverVariosPontos } = modificar();
+    apertarESair(ponto(103, 0));
+    // Se a saída não tivesse encerrado o clique, soltar de volta no desenho abriria a medida exata.
+    soltar(ponto(103, 0));
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
+    expect(onMoverVariosPontos).not.toHaveBeenCalled();
+  });
+
+  it('um clique longe dos vértices não indica nada', () => {
+    const { clicar, onIndicarPontosParaModificar } = modificar();
+    clicar(ponto(50, 50));
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
+  });
+});
+
+describe('AreaDeDesenho — "Redefinir perímetro"', () => {
+  const redefinir = () =>
+    renderizarEdicaoDeVertices({ imaAtivo: false, mostrarGrade: false, modo: 'redefinir-perimetro' });
+
+  it('um clique perto de uma aresta a indica, com a ponta mais perto do clique', () => {
+    const { clicar, onIndicarArestaParaRedefinir } = redefinir();
+    clicar(ponto(90, 3)); // aresta 0, de (0, 0) a (103, 0); mais perto do fim
+    expect(onIndicarArestaParaRedefinir).toHaveBeenCalledExactlyOnceWith(0, 'fim');
+  });
+
+  it('clicando perto do início da aresta, é o início que vem marcado', () => {
+    const { clicar, onIndicarArestaParaRedefinir } = redefinir();
+    clicar(ponto(103, 20)); // aresta 1, de (103, 0) a (103, 100)
+    expect(onIndicarArestaParaRedefinir).toHaveBeenCalledExactlyOnceWith(1, 'inicio');
+  });
+
+  it('a aresta que fecha o contorno (do último ponto ao primeiro) também pode ser indicada', () => {
+    const { clicar, onIndicarArestaParaRedefinir } = redefinir();
+    clicar(ponto(-4, 30)); // aresta 3, de (0, 100) a (0, 0); mais perto do fim
+    expect(onIndicarArestaParaRedefinir).toHaveBeenCalledExactlyOnceWith(3, 'fim');
+  });
+
+  it('um clique longe das arestas não indica nada', () => {
+    const { clicar, onIndicarArestaParaRedefinir } = redefinir();
+    clicar(ponto(50, 50));
+    expect(onIndicarArestaParaRedefinir).not.toHaveBeenCalled();
+  });
+
+  it('arrastar um vértice não o move: nesta ferramenta o mouse só indica a aresta', () => {
+    const { arrastar, onMoverVariosPontos, onIndicarPontosParaModificar } = redefinir();
+    arrastar(ponto(103, 0), ponto(150, 30));
+    expect(onMoverVariosPontos).not.toHaveBeenCalled();
+    expect(onIndicarPontosParaModificar).not.toHaveBeenCalled();
   });
 });

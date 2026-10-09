@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
+import { formatarMm, lerMedida } from './medidas';
 import type { Ponto2D } from '../core/geometria';
 import type { Molde } from '../domain/molde';
 import {
@@ -32,16 +33,6 @@ const CATEGORIAS: ReadonlyArray<{ readonly id: CategoriaDaCerca; readonly rotulo
 ];
 
 const MAXIMO_DE_NOMES = 4;
-
-/** Número digitado com vírgula ou ponto decimal; campo vazio vale 0. `null` se não for um número. */
-function lerMedida(texto: string): number | null {
-  const valor = Number(texto.trim().replace(',', '.'));
-  return Number.isFinite(valor) ? valor : null;
-}
-
-function formatarMm(valor: number): string {
-  return `${valor.toFixed(1).replace('.', ',')} mm`;
-}
 
 /**
  * "Mover cerca": desloca por uma medida exata os pontos que estão dentro da

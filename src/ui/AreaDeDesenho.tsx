@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
+import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import {
   pontoDentroDoContorno,
@@ -24,6 +24,7 @@ import {
   type UnidadeDeRegua,
 } from './transformacaoDeTela';
 import { capturarComIma, pontosDeCapturaDasPecas, type TipoDeCaptura } from './ima';
+import { formatarMm } from './medidas';
 
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#dde1e6';
@@ -42,6 +43,7 @@ const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#f7f8fa';
 const COR_REGUA_TRACO = '#5a6270';
 const COR_ALCA_DE_VERTICE = '#e65100';
+const COR_ARESTA_EM_DESTAQUE = '#e65100';
 const COR_CERCA = '#e65100';
 const COR_PREENCHIMENTO_CERCA = 'rgba(230, 81, 0, 0.07)';
 const COR_JANELA_DE_ZOOM = '#5a6270';
@@ -76,9 +78,11 @@ export type ModoDeDesenho =
   | 'pique'
   | 'marca'
   | 'mover-ponto'
+  | 'modificar'
   | 'inserir-ponto'
   | 'excluir-ponto'
   | 'arredondar-ou-chanfrar'
+  | 'redefinir-perimetro'
   | 'definir-cerca';
 
 /**
@@ -90,10 +94,19 @@ export type FerramentaDeVista = 'mao' | 'zoom-janela';
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'mover-ponto',
+  'modificar',
   'inserir-ponto',
   'excluir-ponto',
   'arredondar-ou-chanfrar',
+  'redefinir-perimetro',
 ]);
+
+/**
+ * Modos em que se seleciona vértices (clique, Shift+clique, retângulo) e se
+ * arrasta a seleção. No "Modificar", um clique sem arrastar ainda abre a
+ * medida exata para os vértices indicados.
+ */
+const MODOS_COM_SELECAO_DE_VERTICES: ReadonlySet<ModoDeDesenho> = new Set(['mover-ponto', 'modificar']);
 
 /**
  * Modos em que o clique cria um ponto novo: neles o ímã prende o cursor. No
@@ -147,6 +160,12 @@ interface AreaDeDesenhoProps {
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
   readonly onExcluirPontoDoMolde?: (indice: number) => void;
   readonly onArredondarOuChanfrarCanto?: (indice: number) => void;
+  /** "Modificar": clique sem arrastar num vértice — os vértices indicados, para digitar o deslocamento exato. */
+  readonly onIndicarPontosParaModificar?: (indices: readonly number[]) => void;
+  /** "Redefinir perímetro": clique numa aresta — ela e a ponta dela mais perto do clique. */
+  readonly onIndicarArestaParaRedefinir?: (indiceAresta: number, extremidade: 'inicio' | 'fim') => void;
+  /** Aresta escolhida no "Redefinir perímetro" (diálogo aberto) e a ponta que vai andar. */
+  readonly arestaEmDestaque?: { readonly indiceAresta: number; readonly ponta: PontaDaAresta } | null;
   /** Cerca ativa (desenhada tracejada até ser desligada), ou `null`. */
   readonly cerca: Cerca | null;
   /** Categorias marcadas em "Mover cerca": só os pontos delas aparecem destacados dentro da cerca. */
@@ -173,6 +192,22 @@ function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto
   ctx.closePath();
 }
 
+/** A aresta do contorno a até `raioMm` de `p` (a mais perto), e qual ponta dela fica mais perto de `p`. */
+function arestaPerto(
+  p: Ponto2D,
+  contorno: readonly Ponto2D[],
+  raioMm: number,
+): { readonly indiceAresta: number; readonly extremidade: 'inicio' | 'fim' } | null {
+  const maisProximo = pontoMaisProximoNoContorno(p, contorno);
+  if (maisProximo.distancia > raioMm) return null;
+  const inicio = contorno[maisProximo.indiceAresta]!;
+  const fim = contorno[(maisProximo.indiceAresta + 1) % contorno.length]!;
+  return {
+    indiceAresta: maisProximo.indiceAresta,
+    extremidade: distancia(maisProximo.ponto, inicio) <= distancia(maisProximo.ponto, fim) ? 'inicio' : 'fim',
+  };
+}
+
 export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const {
     pecas,
@@ -194,6 +229,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onInserirPontoNoMolde,
     onExcluirPontoDoMolde,
     onArredondarOuChanfrarCanto,
+    onIndicarPontosParaModificar,
+    onIndicarArestaParaRedefinir,
+    arestaEmDestaque = null,
     cerca,
     opcoesDaCerca,
     onDefinirCerca,
@@ -226,8 +264,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const espacoPressionadoRef = useRef(false);
   const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
   const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
-  // Seleção de vértices no modo "Mover ponto": clique simples seleciona só um
-  // e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
+  // Seleção de vértices nos modos "Mover ponto" e "Modificar": clique simples
+  // seleciona só um e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
   // clique+arrasto num espaço vazio desenha um retângulo de seleção que
   // seleciona os vértices da peça dentro dele ao soltar. Não é a Cerca
   // ("Definir cerca"/"Mover cerca", `domain/cerca.ts`), que fica desenhada
@@ -615,10 +653,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     }
 
     // Alças nos vértices da peça selecionada, nos modos de edição de forma
-    // (mover/inserir/excluir ponto, chanfrar/arredondar canto) — a mesma
-    // prévia ao vivo do grupo em arrasto já foi aplicada acima. No modo
-    // "mover ponto", vértices selecionados (clique com Shift ou dentro da
-    // cerca) ficam destacados numa cor diferente.
+    // (mover/inserir/excluir ponto, chanfrar/arredondar canto, modificar,
+    // redefinir perímetro) — a mesma prévia ao vivo do grupo em arrasto já
+    // foi aplicada acima. Em "Mover ponto" e "Modificar", os vértices
+    // selecionados (clique, Shift+clique ou retângulo) ficam destacados numa
+    // cor diferente.
     if (MODOS_DE_EDICAO_DE_VERTICE.has(modo) && pecaSelecionada) {
       const indicesEmArrasto = deltaDeGrupo && arrastoDeGrupoRef.current ? new Set(arrastoDeGrupoRef.current.indices) : null;
       const pecaParaAlcas =
@@ -630,7 +669,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           : pecaSelecionada;
       pecaParaAlcas.contorno.forEach((p, i) => {
         const tela = mundoParaTela(p, transform);
-        const selecionado = modo === 'mover-ponto' && (verticesSelecionados.has(i) || indicesEmArrasto?.has(i));
+        const selecionado =
+          MODOS_COM_SELECAO_DE_VERTICES.has(modo) && (verticesSelecionados.has(i) || indicesEmArrasto?.has(i));
         ctx.beginPath();
         ctx.arc(tela.x, tela.y, 5, 0, Math.PI * 2);
         ctx.fillStyle = selecionado ? COR_CONTORNO_SELECIONADO : COR_ALCA_DE_VERTICE;
@@ -639,6 +679,64 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.lineWidth = 1.5;
         ctx.stroke();
       });
+    }
+
+    // "Redefinir perímetro": a aresta escolhida (diálogo aberto) ou, antes do
+    // clique, a que está sob o mouse fica grossa, com o comprimento atual e um
+    // anel na ponta que vai andar. No bi-direcional as duas pontas ganham anel
+    // e o meio, que fica parado, ganha um traço.
+    if (modo === 'redefinir-perimetro' && pecaSelecionada) {
+      const contorno = pecaSelecionada.contorno;
+      let destaque = arestaEmDestaque;
+      if (!destaque && cursorLocal && ferramentaDeVista === null) {
+        const sobOMouse = arestaPerto(cursorLocal, contorno, RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm);
+        destaque = sobOMouse && { indiceAresta: sobOMouse.indiceAresta, ponta: sobOMouse.extremidade };
+      }
+      if (destaque && destaque.indiceAresta < contorno.length) {
+        const inicio = contorno[destaque.indiceAresta]!;
+        const fim = contorno[(destaque.indiceAresta + 1) % contorno.length]!;
+        const a = mundoParaTela(inicio, transform);
+        const b = mundoParaTela(fim, transform);
+        const meio = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const comprimentoPx = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        // Normal unitária da aresta na tela, apontando para cima (ou para a direita, se a aresta for de pé).
+        let normal = { x: -(b.y - a.y) / comprimentoPx, y: (b.x - a.x) / comprimentoPx };
+        if (normal.y > 0 || (normal.y === 0 && normal.x < 0)) normal = { x: -normal.x, y: -normal.y };
+
+        ctx.strokeStyle = COR_ARESTA_EM_DESTAQUE;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.lineWidth = 2;
+        const pontasQueAndam = destaque.ponta === 'ambas' ? [a, b] : [destaque.ponta === 'inicio' ? a : b];
+        for (const ponta of pontasQueAndam) {
+          ctx.beginPath();
+          ctx.arc(ponta.x, ponta.y, 9, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (destaque.ponta === 'ambas') {
+          ctx.beginPath();
+          ctx.moveTo(meio.x - normal.x * 8, meio.y - normal.y * 8);
+          ctx.lineTo(meio.x + normal.x * 8, meio.y + normal.y * 8);
+          ctx.stroke();
+        }
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        const texto = formatarMm(distancia(inicio, fim));
+        const afastamento = 12 + Math.abs(normal.x) * (ctx.measureText(texto).width / 2 + 4) + Math.abs(normal.y) * 4;
+        desenharRotuloComFundo(
+          ctx,
+          texto,
+          meio.x + normal.x * afastamento,
+          meio.y + normal.y * afastamento + 4,
+          COR_ARESTA_EM_DESTAQUE,
+        );
+        ctx.textAlign = 'left';
+      }
     }
 
     // Cerca ativa: retângulo tracejado laranja e os pontos que "Mover cerca"
@@ -787,6 +885,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     opcoesDaCerca,
     mostrarGrade,
     pecaSelecionada,
+    arestaEmDestaque,
   ]);
 
   // Desenha a régua horizontal.
@@ -930,6 +1029,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
 
       const raioMm = RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm;
+
+      if (modo === 'redefinir-perimetro') {
+        const aresta = arestaPerto(mundo, pecaSelecionada.contorno, raioMm);
+        if (aresta) onIndicarArestaParaRedefinir?.(aresta.indiceAresta, aresta.extremidade);
+        return;
+      }
+
       let indiceMaisProximo = -1;
       let menorDistancia = Infinity;
       pecaSelecionada.contorno.forEach((p, i) => {
@@ -941,7 +1047,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       });
       const achouVertice = indiceMaisProximo >= 0 && menorDistancia <= raioMm;
 
-      if (modo === 'mover-ponto') {
+      if (MODOS_COM_SELECAO_DE_VERTICES.has(modo)) {
         if (e.shiftKey) {
           // Shift+clique: acrescenta/remove da seleção, sem arrastar —
           // monta um grupo de vértices para mover juntos depois.
@@ -1069,19 +1175,24 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setDeltaDeArrasto(null);
   }
 
-  function finalizarArrastoDeGrupo(): void {
-    if (arrastoDeGrupoRef.current && deltaDeGrupo) {
-      const { indices } = arrastoDeGrupoRef.current;
-      if (Math.abs(deltaDeGrupo.x) > 1e-6 || Math.abs(deltaDeGrupo.y) > 1e-6) {
-        onMoverVariosPontos?.(indices, deltaDeGrupo);
-      }
+  /**
+   * Fecha o arrasto de vértices. `soltou` é falso quando o mouse saiu do
+   * desenho: aí só um arrasto de fato move os pontos. Em "Modificar", soltar
+   * o botão sem ter arrastado abre a medida exata para os vértices agarrados.
+   */
+  function finalizarArrastoDeGrupo(soltou: boolean): void {
+    const arrasto = arrastoDeGrupoRef.current;
+    if (arrasto && deltaDeGrupo && (Math.abs(deltaDeGrupo.x) > 1e-6 || Math.abs(deltaDeGrupo.y) > 1e-6)) {
+      onMoverVariosPontos?.(arrasto.indices, deltaDeGrupo);
+    } else if (arrasto && soltou && !arrasto.arrastou && modo === 'modificar') {
+      onIndicarPontosParaModificar?.(arrasto.indices);
     }
     arrastoDeGrupoRef.current = null;
     setDeltaDeGrupo(null);
     setCapturaDoArrasto(null);
   }
 
-  /** Os vértices da peça selecionada dentro do retângulo entre `a` e `b` (mm) passam a ser a seleção de "Mover ponto". */
+  /** Os vértices da peça selecionada dentro do retângulo entre `a` e `b` (mm) passam a ser a seleção de vértices. */
   function selecionarVerticesNoRetangulo(a: Ponto2D, b: Ponto2D): void {
     if (!pecaSelecionada) return;
     const minX = Math.min(a.x, b.x);
@@ -1135,14 +1246,14 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   function aoSoltarMouse(e: React.MouseEvent<HTMLCanvasElement>): void {
     encerrarPan();
     finalizarArrasto();
-    finalizarArrastoDeGrupo();
+    finalizarArrastoDeGrupo(true);
     finalizarRetangulo(posicaoDoMouse(e));
   }
 
   function aoSairMouse(): void {
     encerrarPan();
     finalizarArrasto();
-    finalizarArrastoDeGrupo();
+    finalizarArrastoDeGrupo(false);
     finalizarRetangulo(null);
     setCursorLocal(null);
     setCapturaDoCursor(null);

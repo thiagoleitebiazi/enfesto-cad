@@ -16,6 +16,8 @@ import {
   espelharMolde,
   moverPontoDoMolde,
   moverVariosPontosDoMolde,
+  modificarPontosDoMolde,
+  redefinirComprimentoDaAresta,
   inserirPontoNoMolde,
   removerPontoDoMolde,
   chanfrarCantoDoMolde,
@@ -384,6 +386,107 @@ describe('moverVariosPontosDoMolde', () => {
     const molde = criarMolde(dadosBase(), 'm1');
     const movido = moverVariosPontosDoMolde(molde, [], ponto(100, 100));
     expect(movido.contorno).toEqual(molde.contorno);
+  });
+});
+
+describe('modificarPontosDoMolde', () => {
+  it('desloca só os pontos indicados pela medida digitada', () => {
+    const molde = criarMolde(dadosBase(), 'm1'); // (0,0),(200,0),(200,300),(0,300)
+    const modificado = modificarPontosDoMolde(molde, [2], ponto(15, -2.5));
+    expect(modificado.contorno).toEqual([ponto(0, 0), ponto(200, 0), ponto(215, 297.5), ponto(0, 300)]);
+  });
+
+  it('recusa o deslocamento que deixaria o contorno sem área', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    // Os pontos 3 e 4 descem até os pontos 1 e 2: o contorno vira uma linha.
+    expect(() => modificarPontosDoMolde(molde, [2, 3], ponto(0, -300))).toThrow(/"Frente" ficaria sem área/);
+  });
+
+  it('recusa nenhum ponto, ponto fora do contorno e medida que não é número', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => modificarPontosDoMolde(molde, [], ponto(1, 0))).toThrow(/pelo menos um ponto/);
+    expect(() => modificarPontosDoMolde(molde, [4], ponto(1, 0))).toThrow(/fora do contorno/);
+    expect(() => modificarPontosDoMolde(molde, [0], ponto(Number.NaN, 0))).toThrow(/inválido/);
+  });
+});
+
+describe('redefinirComprimentoDaAresta', () => {
+  // dadosBase: (0,0),(200,0),(200,300),(0,300). Aresta 0 = (0,0)→(200,0), 200 mm.
+  it('uni-direcional pelo fim: só o vértice do fim anda, na mesma direção', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const redefinido = redefinirComprimentoDaAresta(molde, 0, 250, 'fim');
+    expect(redefinido.contorno).toEqual([ponto(0, 0), ponto(250, 0), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('uni-direcional pelo início: só o vértice do início anda', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const redefinido = redefinirComprimentoDaAresta(molde, 0, 250, 'inicio');
+    expect(redefinido.contorno).toEqual([ponto(-50, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('bi-direcional: as duas pontas andam metade cada e o meio da aresta fica no lugar', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const redefinido = redefinirComprimentoDaAresta(molde, 0, 250, 'ambas');
+    expect(redefinido.contorno).toEqual([ponto(-25, 0), ponto(225, 0), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('encolhe a aresta e funciona na última aresta, que fecha o contorno', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    // Aresta 3 = (0,300)→(0,0): o fim dela é o vértice 0.
+    const redefinido = redefinirComprimentoDaAresta(molde, 3, 120, 'fim');
+    expect(redefinido.contorno[0]!.x).toBeCloseTo(0, 9);
+    expect(redefinido.contorno[0]!.y).toBeCloseTo(180, 9);
+    expect(redefinido.contorno.slice(1)).toEqual(molde.contorno.slice(1));
+  });
+
+  it('a aresta passa a medir o valor pedido mesmo inclinada', () => {
+    const molde = criarMolde(dadosBase({ contorno: [ponto(0, 0), ponto(30, 40), ponto(0, 80)] }), 'm1');
+    const redefinido = redefinirComprimentoDaAresta(molde, 0, 75, 'fim'); // de 50 para 75 mm
+    expect(redefinido.contorno[1]!.x).toBeCloseTo(45, 9);
+    expect(redefinido.contorno[1]!.y).toBeCloseTo(60, 9);
+  });
+
+  it('pique da aresta fica onde estava; pique da aresta vizinha acompanha na mesma proporção', () => {
+    let molde = criarMolde(dadosBase(), 'm1');
+    molde = adicionarPique(molde, ponto(50, 0), 'na-aresta'); // aresta 0, a 50 mm do ponto parado
+    molde = adicionarPique(molde, ponto(200, 150), 'vizinho'); // aresta 1, no meio
+    const redefinido = redefinirComprimentoDaAresta(molde, 0, 250, 'fim');
+    expect(redefinido.piques.find((p) => p.id === 'na-aresta')!.posicao).toEqual(ponto(50, 0));
+    const vizinho = redefinido.piques.find((p) => p.id === 'vizinho')!;
+    // Aresta 1 passou a ir de (250,0) a (200,300): o meio dela é (225,150).
+    expect(vizinho.posicao.x).toBeCloseTo(225, 9);
+    expect(vizinho.posicao.y).toBeCloseTo(150, 9);
+  });
+
+  it('recusa encolher a aresta a ponto de deixar um pique dela para fora', () => {
+    const molde = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(150, 0), 'p1');
+    expect(() => redefinirComprimentoDaAresta(molde, 0, 100, 'fim')).toThrow(/pique/);
+    // Encolhendo pela outra ponta, o pique continua sobre a aresta.
+    expect(redefinirComprimentoDaAresta(molde, 0, 100, 'inicio').piques[0]!.posicao).toEqual(ponto(150, 0));
+  });
+
+  it('recusa comprimento zero, negativo ou que não é número', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => redefinirComprimentoDaAresta(molde, 0, 0, 'fim')).toThrow(/maior que zero/);
+    expect(() => redefinirComprimentoDaAresta(molde, 0, -5, 'fim')).toThrow(/maior que zero/);
+    expect(() => redefinirComprimentoDaAresta(molde, 0, Number.NaN, 'fim')).toThrow(/maior que zero/);
+  });
+
+  it('recusa aresta que não existe e aresta sem comprimento', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    expect(() => redefinirComprimentoDaAresta(molde, 4, 100, 'fim')).toThrow(/fora do contorno/);
+    const comPontoRepetido = criarMolde(
+      dadosBase({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)] }),
+      'm2',
+    );
+    expect(() => redefinirComprimentoDaAresta(comPontoRepetido, 1, 100, 'fim')).toThrow(/não tem comprimento/);
+  });
+
+  it('recusa o comprimento que deixaria o contorno sem área', () => {
+    // Contorno que já se cruza (aceito, porque tem área); com a aresta 0 em
+    // 20 mm as duas metades se anulam e a área vai a zero.
+    const molde = criarMolde(dadosBase({ contorno: [ponto(0, 0), ponto(50, 0), ponto(10, 10), ponto(30, 10)] }), 'm1');
+    expect(() => redefinirComprimentoDaAresta(molde, 0, 20, 'fim')).toThrow(/ficaria sem área/);
   });
 });
 

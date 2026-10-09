@@ -6,6 +6,8 @@ import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/Pai
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { Sobreposicao } from './ui/Sobreposicao';
 import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
+import { PainelDeModificar } from './ui/PainelDeModificar';
+import { PainelDeRedefinirPerimetro, type RedefinicaoDePerimetro } from './ui/PainelDeRedefinirPerimetro';
 import { PainelDeAjuda, type ConteudoDaAjuda } from './ui/PainelDeAjuda';
 import {
   aplicarZoom,
@@ -33,6 +35,8 @@ import {
   rotacoesPermitidas,
   espelharMolde,
   moverVariosPontosDoMolde,
+  modificarPontosDoMolde,
+  redefinirComprimentoDaAresta,
   inserirPontoNoMolde,
   removerPontoDoMolde,
   chanfrarCantoDoMolde,
@@ -40,6 +44,7 @@ import {
   dimensionarMolde,
   dimensoesDoMolde,
   type Molde,
+  type PontaDaAresta,
 } from './domain/molde';
 import {
   alturaDoDesenho,
@@ -207,6 +212,13 @@ export default function App(): React.JSX.Element {
   // Para desfazer/refazer um "Mover cerca" levar a cerca junto com as peças:
   // a chave é a lista de peças que ficou valendo depois do movimento.
   const movimentosDeCercaRef = useRef(new WeakMap<readonly Molde[], { readonly antes: Cerca; readonly depois: Cerca }>());
+  // "Modificar" com medida exata: os vértices indicados no desenho, enquanto o diálogo está aberto.
+  const [pontosParaModificar, setPontosParaModificar] = useState<readonly number[] | null>(null);
+  // "Redefinir perímetro": fica aqui, e não no diálogo, porque o desenho
+  // destaca a aresta escolhida e a ponta que anda.
+  const [redefinicaoDePerimetro, setRedefinicaoDePerimetro] = useState<RedefinicaoDePerimetro | null>(null);
+  // O modo usado no último "Redefinir perímetro" vem marcado no próximo.
+  const ultimoModoDeRedefinirRef = useRef<RedefinicaoDePerimetro['modo']>('uni-direcional');
   const [painelDeAjuda, setPainelDeAjuda] = useState<ConteudoDaAjuda | null>(null);
 
   const [modo, setModo] = useState<ModoDeDesenho>('selecionar');
@@ -672,6 +684,8 @@ export default function App(): React.JSX.Element {
     setPontosEmEdicao([]);
     setContornoPendente(null);
     setFerramentaDeVista(null);
+    setPontosParaModificar(null);
+    setRedefinicaoDePerimetro(null);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -764,6 +778,18 @@ export default function App(): React.JSX.Element {
     setModo('arredondar-ou-chanfrar');
   }, [selecionadoId]);
 
+  const entrarModoModificar = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('modificar');
+    setPontosParaModificar(null);
+  }, [selecionadoId]);
+
+  const entrarModoRedefinirPerimetro = useCallback(() => {
+    if (!selecionadoId) return;
+    setModo('redefinir-perimetro');
+    setRedefinicaoDePerimetro(null);
+  }, [selecionadoId]);
+
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
@@ -823,6 +849,61 @@ export default function App(): React.JSX.Element {
       );
     },
     [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  /** "Modificar" com medida exata nos vértices indicados; devolve a mensagem de erro (nada muda) ou `null`. */
+  const aplicarModificar = useCallback(
+    (indices: readonly number[], delta: Ponto2D): string | null => {
+      if (!selecionadoId) return 'Selecione uma peça primeiro.';
+      let novasPecas: Molde[];
+      try {
+        novasPecas = pecas.map((p) => (p.id === selecionadoId ? modificarPontosDoMolde(p, indices, delta) : p));
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      aplicarMudanca(novasPecas);
+      return null;
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  /** "Redefinir perímetro" de uma aresta da peça selecionada; devolve a mensagem de erro (nada muda) ou `null`. */
+  const aplicarRedefinirPerimetro = useCallback(
+    (indiceAresta: number, novoComprimentoMm: number, ponta: PontaDaAresta): string | null => {
+      if (!selecionadoId) return 'Selecione uma peça primeiro.';
+      let novasPecas: Molde[];
+      try {
+        novasPecas = pecas.map((p) =>
+          p.id === selecionadoId ? redefinirComprimentoDaAresta(p, indiceAresta, novoComprimentoMm, ponta) : p,
+        );
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      aplicarMudanca(novasPecas);
+      return null;
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  /** Clique numa aresta em "Redefinir perímetro": a ponta mais perto do clique vem marcada para andar. */
+  const indicarArestaParaRedefinir = useCallback((indiceAresta: number, extremidade: 'inicio' | 'fim') => {
+    setRedefinicaoDePerimetro({ indiceAresta, extremidade, modo: ultimoModoDeRedefinirRef.current });
+  }, []);
+
+  const alterarRedefinicaoDePerimetro = useCallback((redefinicao: RedefinicaoDePerimetro) => {
+    ultimoModoDeRedefinirRef.current = redefinicao.modo;
+    setRedefinicaoDePerimetro(redefinicao);
+  }, []);
+
+  const arestaEmDestaque = useMemo<{ readonly indiceAresta: number; readonly ponta: PontaDaAresta } | null>(
+    () =>
+      redefinicaoDePerimetro && modo === 'redefinir-perimetro'
+        ? {
+            indiceAresta: redefinicaoDePerimetro.indiceAresta,
+            ponta: redefinicaoDePerimetro.modo === 'bi-direcional' ? 'ambas' : redefinicaoDePerimetro.extremidade,
+          }
+        : null,
+    [redefinicaoDePerimetro, modo],
   );
 
   const inserirPontoNaSelecionada = useCallback(
@@ -1590,6 +1671,8 @@ export default function App(): React.JSX.Element {
         onAbrirHistorico={() => setMostrarHistorico(true)}
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
         onEntrarModoMoverPonto={entrarModoMoverPonto}
+        onEntrarModoModificar={entrarModoModificar}
+        onEntrarModoRedefinirPerimetro={entrarModoRedefinirPerimetro}
         onEntrarModoInserirPonto={entrarModoInserirPonto}
         onEntrarModoExcluirPonto={entrarModoExcluirPonto}
         onEntrarModoArredondarOuChanfrar={entrarModoArredondarOuChanfrar}
@@ -1703,7 +1786,26 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarMoverCerca(false)}
         />
       )}
-      {painelDeAjuda && <PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
+      {modo === 'modificar' && pontosParaModificar && pecaSelecionada && (
+        <PainelDeModificar
+          peca={pecaSelecionada}
+          indices={pontosParaModificar}
+          onAplicar={(delta) => aplicarModificar(pontosParaModificar, delta)}
+          onFechar={() => setPontosParaModificar(null)}
+        />
+      )}
+      {modo === 'redefinir-perimetro' && redefinicaoDePerimetro && pecaSelecionada && (
+        <PainelDeRedefinirPerimetro
+          peca={pecaSelecionada}
+          redefinicao={redefinicaoDePerimetro}
+          onAlterar={alterarRedefinicaoDePerimetro}
+          onAplicar={(comprimento, ponta) =>
+            aplicarRedefinirPerimetro(redefinicaoDePerimetro.indiceAresta, comprimento, ponta)
+          }
+          onFechar={() => setRedefinicaoDePerimetro(null)}
+        />
+      )}
+      {painelDeAjuda &&<PainelDeAjuda conteudo={painelDeAjuda} onFechar={() => setPainelDeAjuda(null)} />}
       {ferramentaDeVista !== null ? (
         <div className="faixa-de-instrucao" role="status">
           {ferramentaDeVista === 'mao'
@@ -1711,7 +1813,12 @@ export default function App(): React.JSX.Element {
             : 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.'}
         </div>
       ) : (
-        modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio' || modo === 'definir-cerca' ? (
+        modo === 'novo-molde' ||
+        modo === 'novo-furo' ||
+        modo === 'definir-fio' ||
+        modo === 'definir-cerca' ||
+        modo === 'modificar' ||
+        modo === 'redefinir-perimetro' ? (
           <div className="faixa-de-instrucao" role="status">
             {modo === 'novo-molde' &&
               'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
@@ -1722,6 +1829,10 @@ export default function App(): React.JSX.Element {
                 ? 'Clique no início da linha de fio.'
                 : 'Clique no fim da linha de fio (a seta aponta para lá).')}
             {modo === 'definir-cerca' && 'Arraste de um canto ao outro para definir a cerca. Esc para cancelar.'}
+            {modo === 'modificar' &&
+              'Modificar: clique num ponto da peça para digitar o deslocamento exato, ou arraste-o. Para vários pontos, use Shift+clique ou um retângulo e depois clique num deles. Esc sai.'}
+            {modo === 'redefinir-perimetro' &&
+              'Redefinir perímetro: clique numa aresta da peça, perto da ponta que deve andar, e digite o novo comprimento. Esc sai.'}
           </div>
         ) : (
           cerca && (
@@ -1784,6 +1895,9 @@ export default function App(): React.JSX.Element {
             onMoverPeca={moverPeca}
             onAbrirPropriedades={abrirPropriedadesDaPeca}
             onMoverVariosPontos={moverVariosPontosDaSelecionada}
+            onIndicarPontosParaModificar={setPontosParaModificar}
+            onIndicarArestaParaRedefinir={indicarArestaParaRedefinir}
+            arestaEmDestaque={arestaEmDestaque}
             onInserirPontoNoMolde={inserirPontoNaSelecionada}
             onExcluirPontoDoMolde={excluirPontoDaSelecionada}
             onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}

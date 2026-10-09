@@ -10,6 +10,7 @@ import {
   espelharContornoHorizontal,
   espelharHorizontal,
   somar,
+  distancia,
   moverPontoDoContorno,
   inserirPontoNoContorno,
   removerPontoDoContorno,
@@ -295,6 +296,98 @@ export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[
   const indicesSet = new Set(indices);
   const contorno = molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p));
   return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno) };
+}
+
+/** Abaixo disso (mm²) o contorno conta como sem área — a mesma tolerância da Cerca. */
+const AREA_MINIMA_DO_CONTORNO_MM2 = 1e-6;
+/** Tolerância (mm) das medidas ao longo de uma aresta: abaixo disso é zero. */
+const TOLERANCIA_NA_ARESTA_MM = 1e-6;
+
+function exigirContornoComArea(molde: Molde, comOQue: string): Molde {
+  if (!(area(molde.contorno) > AREA_MINIMA_DO_CONTORNO_MM2)) {
+    throw new Error(`O contorno da peça "${molde.nome}" ficaria sem área ${comOQue}.`);
+  }
+  return molde;
+}
+
+/**
+ * "Modificar" pela janela de coordenadas: desloca os vértices `indices` por
+ * `delta`, como `moverVariosPontosDoMolde` (só eles andam; os vizinhos ficam
+ * no lugar), mas recusa com erro a medida que deixaria o contorno sem área —
+ * digitando não há a prévia do arrasto para mostrar o problema antes.
+ */
+export function modificarPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
+  if (indices.length === 0) throw new Error('Indique pelo menos um ponto do contorno.');
+  if (indices.some((i) => !Number.isInteger(i) || i < 0 || i >= molde.contorno.length)) {
+    throw new Error('Ponto fora do contorno da peça.');
+  }
+  if (!Number.isFinite(delta.x) || !Number.isFinite(delta.y)) throw new Error('Deslocamento inválido.');
+  return exigirContornoComArea(moverVariosPontosDoMolde(molde, indices, delta), 'com esse deslocamento');
+}
+
+/**
+ * Qual ponta anda no "Redefinir perímetro": a do início da aresta (o vértice
+ * i), a do fim (i+1) — uni-direcional — ou as duas, bi-direcional.
+ */
+export type PontaDaAresta = 'inicio' | 'fim' | 'ambas';
+
+/**
+ * "Redefinir perímetro" de uma aresta reta: a aresta `indiceAresta` (do
+ * vértice i ao i+1) passa a medir `novoComprimentoMm`, sem mudar de direção.
+ * Uni-direcional ('inicio' ou 'fim'): só aquela ponta anda, a outra fica no
+ * lugar. Bi-direcional ('ambas'): cada ponta anda metade da diferença e o
+ * meio da aresta fica no lugar. As arestas vizinhas dividem o vértice que
+ * andou e mudam junto, com os piques delas na mesma proporção
+ * (`reancorarPiques`).
+ *
+ * Os piques da própria aresta não andam: a reta dela continua a mesma, só as
+ * pontas mudam, então um pique marcado a 30 mm do ponto parado continua a
+ * 30 mm dele. Se a aresta encolher a ponto de deixar um pique para fora, a
+ * medida é recusada — mais seguro que mover ou apagar o pique sem avisar.
+ * Também é recusada medida não positiva, aresta sem comprimento (não há
+ * direção) e contorno que ficaria sem área.
+ */
+export function redefinirComprimentoDaAresta(
+  molde: Molde,
+  indiceAresta: number,
+  novoComprimentoMm: number,
+  ponta: PontaDaAresta,
+): Molde {
+  const n = molde.contorno.length;
+  if (!Number.isInteger(indiceAresta) || indiceAresta < 0 || indiceAresta >= n) {
+    throw new Error('Aresta fora do contorno da peça.');
+  }
+  if (!Number.isFinite(novoComprimentoMm) || novoComprimentoMm <= 0) {
+    throw new Error('O novo comprimento precisa ser maior que zero.');
+  }
+  const indiceDoFim = (indiceAresta + 1) % n;
+  const a = molde.contorno[indiceAresta]!;
+  const b = molde.contorno[indiceDoFim]!;
+  const comprimentoAtual = distancia(a, b);
+  if (comprimentoAtual <= TOLERANCIA_NA_ARESTA_MM) {
+    throw new Error('Essa aresta não tem comprimento, então não tem direção para crescer ou encolher.');
+  }
+  const direcao = { x: (b.x - a.x) / comprimentoAtual, y: (b.y - a.y) / comprimentoAtual };
+  const aoLongo = (origem: Ponto2D, mm: number): Ponto2D => ({ x: origem.x + direcao.x * mm, y: origem.y + direcao.y * mm });
+  const meio = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const novoInicio =
+    ponta === 'fim' ? a : ponta === 'inicio' ? aoLongo(b, -novoComprimentoMm) : aoLongo(meio, -novoComprimentoMm / 2);
+  const novoFim = ponta === 'inicio' ? b : ponta === 'fim' ? aoLongo(a, novoComprimentoMm) : aoLongo(meio, novoComprimentoMm / 2);
+  const contorno = molde.contorno.map((p, i) => (i === indiceAresta ? novoInicio : i === indiceDoFim ? novoFim : p));
+
+  const reancorados = reancorarPiques(molde.piques, molde.contorno, contorno);
+  const piques = molde.piques.map((pique, k) => {
+    if (pique.indiceAresta !== indiceAresta) return reancorados[k]!;
+    const posicaoNaAresta =
+      (pique.posicao.x - novoInicio.x) * direcao.x + (pique.posicao.y - novoInicio.y) * direcao.y;
+    if (posicaoNaAresta < -TOLERANCIA_NA_ARESTA_MM || posicaoNaAresta > novoComprimentoMm + TOLERANCIA_NA_ARESTA_MM) {
+      throw new Error(
+        'Um pique dessa aresta ficaria fora dela com esse comprimento. Exclua o pique antes, ou use um comprimento maior.',
+      );
+    }
+    return pique;
+  });
+  return exigirContornoComArea({ ...molde, contorno, piques }, 'com esse comprimento');
 }
 
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */

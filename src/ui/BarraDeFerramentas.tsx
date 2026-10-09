@@ -62,6 +62,8 @@ interface BarraDeFerramentasProps {
   readonly onNestingAutomatico: () => void;
   readonly podeExecutarNesting: boolean;
   readonly onEntrarModoMoverPonto: () => void;
+  readonly onEntrarModoModificar: () => void;
+  readonly onEntrarModoRedefinirPerimetro: () => void;
   readonly onEntrarModoInserirPonto: () => void;
   readonly onEntrarModoExcluirPonto: () => void;
   readonly onEntrarModoArredondarOuChanfrar: () => void;
@@ -84,7 +86,6 @@ interface BarraDeFerramentasProps {
 const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 const SO_PARA_ELEMENTOS =
   'indisponível neste programa: trabalha sobre elementos de modelagem (linhas soltas), e aqui só existem peças fechadas';
-const NAO_CONFIRMADO = 'ainda não disponível: o comportamento exato desta ferramenta ainda não foi confirmado';
 
 /**
  * Dica de um botão pequeno sem peça selecionada. Começa pelo nome da
@@ -439,7 +440,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           {abaAtiva === 'manipulacao' && (
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Redefinir">
-                <button className="botao-grande" disabled title={`Modificar — ${NAO_CONFIRMADO}`}>
+                <button
+                  aria-pressed={props.modo === 'modificar'}
+                  className={`botao-grande${props.modo === 'modificar' ? ' item-selecionado' : ''}`}
+                  onClick={props.onEntrarModoModificar}
+                  disabled={!props.temSelecaoUnica}
+                  title={
+                    props.temSelecaoUnica
+                      ? 'Modificar: clique num vértice da peça selecionada para deslocá-lo por uma medida exata, ou arraste-o — Shift+clique ou um retângulo indicam vários vértices de uma vez'
+                      : semPecaSelecionada('Modificar')
+                  }
+                >
                   <Icone nome="modificar" />
                   <span>Modificar</span>
                 </button>
@@ -478,7 +489,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="manipulacao-rapida" />
                     <span>Manipulação rápida</span>
                   </button>
-                  <button className="botao-pequeno" disabled title={`Redefinir perímetro — ${NAO_CONFIRMADO}`}>
+                  <button
+                    aria-pressed={props.modo === 'redefinir-perimetro'}
+                    className={`botao-pequeno${props.modo === 'redefinir-perimetro' ? ' item-selecionado' : ''}`}
+                    onClick={props.onEntrarModoRedefinirPerimetro}
+                    disabled={!props.temSelecaoUnica}
+                    title={
+                      props.temSelecaoUnica
+                        ? 'Redefinir perímetro: clique numa aresta da peça selecionada e digite o novo comprimento dela'
+                        : semPecaSelecionada('Redefinir perímetro')
+                    }
+                  >
                     <Icone nome="redefinir-perimetro" />
                     <span>Redefinir perímetro</span>
                   </button>

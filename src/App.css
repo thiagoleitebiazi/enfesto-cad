@@ -1035,13 +1035,15 @@ button:focus-visible {
   margin: 0;
 }
 
-/* Diálogo Mover cerca. */
-.formulario-de-mover-cerca {
+/* Diálogos Mover cerca, Modificar e Redefinir perímetro (medidas exatas). */
+.formulario-de-mover-cerca,
+.formulario-de-medida-exata {
   width: 380px;
   max-width: 100%;
 }
 
 .formulario-de-mover-cerca .lista-de-propriedades,
+.formulario-de-medida-exata .lista-de-propriedades,
 .painel-sobre .lista-de-propriedades {
   grid-template-columns: auto 1fr;
   column-gap: 12px;
@@ -1049,11 +1051,13 @@ button:focus-visible {
 }
 
 .formulario-de-mover-cerca .lista-de-propriedades dt,
+.formulario-de-medida-exata .lista-de-propriedades dt,
 .painel-sobre .lista-de-propriedades dt {
   margin-top: 0;
 }
 
-.grupo-de-opcoes-da-cerca {
+.grupo-de-opcoes-da-cerca,
+.grupo-de-opcoes-do-formulario {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -1063,14 +1067,29 @@ button:focus-visible {
   border-radius: 4px;
 }
 
-.grupo-de-opcoes-da-cerca legend {
+.grupo-de-opcoes-da-cerca legend,
+.grupo-de-opcoes-do-formulario legend {
   padding: 0 4px;
   font-size: 11px;
   color: var(--cor-texto-secundario);
 }
 
-.grupo-de-opcoes-da-cerca input[type='checkbox'] {
+.grupo-de-opcoes-da-cerca input[type='checkbox'],
+.grupo-de-opcoes-do-formulario input[type='radio'] {
   margin: 0;
+}
+
+/* Modo que a ferramenta tem na referência mas ainda não aqui: aparece desligado. */
+.opcao-indisponivel {
+  color: var(--cor-texto-secundario) !important;
+  cursor: not-allowed;
+}
+
+/* Escolha que depende da opção de cima (a ponta que anda, no uni-direcional). */
+.sub-opcoes {
+  display: flex;
+  gap: 14px;
+  padding-left: 20px;
 }
 
 /* Contagens alinhadas à direita, numa coluna. */

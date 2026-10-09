@@ -35,7 +35,7 @@ const GESTOS_DO_MOUSE: ReadonlyArray<readonly [string, string]> = [
   ['Roda', 'Zoom no ponto do cursor'],
   ['Botão do meio, ou Espaço + arrastar', 'Mover a vista (como a Mão)'],
   ['Duplo clique numa peça', 'Propriedades da peça'],
-  ['Shift+clique num vértice', 'Mover ponto: incluir o vértice na seleção, ou tirá-lo dela'],
+  ['Shift+clique num vértice', 'Mover ponto e Modificar: incluir o vértice na seleção, ou tirá-lo dela'],
   ['Clique no canto das réguas', 'Alternar a régua entre cm e mm'],
 ];
 
