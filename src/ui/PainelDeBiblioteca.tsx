@@ -66,8 +66,22 @@ export function PainelDeBiblioteca(props: PainelDeBibliotecaProps): React.JSX.El
                   <div className="linha-de-renomear">
                     <input
                       type="text"
+                      aria-label={`Novo nome de ${p.nome}`}
                       value={novoNome}
                       onChange={(e) => setNovoNome(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter faz o mesmo que OK; Esc, o mesmo que Cancelar —
+                        // sem fechar a biblioteca, que é o que Esc faz fora daqui.
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          props.onRenomear(p.id, novoNome);
+                          setRenomeandoId(null);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setRenomeandoId(null);
+                        }
+                      }}
                       autoFocus
                     />
                     <button

@@ -1,5 +1,5 @@
 import { distancia, anguloEmGraus, type Ponto2D } from '../core/geometria';
-import type { TransformacaoDeTela } from './transformacaoDeTela';
+import { valorDaReguaEmUnidade, type TransformacaoDeTela, type UnidadeDeRegua } from './transformacaoDeTela';
 import type { ProblemaDeValidacao } from '../domain/validacao';
 
 interface BarraDeStatusProps {
@@ -13,6 +13,13 @@ interface BarraDeStatusProps {
   readonly pontoReferencia?: Ponto2D | null;
   /** Aproveitamento físico da mesa em %, ou null quando não há enfesto ou peças. */
   readonly aproveitamentoPercentual?: number | null;
+  /** Unidade escolhida no canto das réguas: as medidas da barra seguem a mesma. */
+  readonly unidade: UnidadeDeRegua;
+}
+
+/** Medida em mm escrita na unidade das réguas; em cm, duas casas dão a mesma precisão de 0,1 mm. */
+function medida(mm: number, unidade: UnidadeDeRegua): string {
+  return unidade === 'cm' ? `${valorDaReguaEmUnidade(mm, 'cm').toFixed(2)} cm` : `${mm.toFixed(1)} mm`;
 }
 
 export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
@@ -33,13 +40,13 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
     <div className="barra-de-status">
       <span>
         {props.cursorMundo
-          ? `X: ${props.cursorMundo.x.toFixed(1)} mm  Y: ${props.cursorMundo.y.toFixed(1)} mm`
+          ? `X: ${medida(props.cursorMundo.x, props.unidade)}  Y: ${medida(props.cursorMundo.y, props.unidade)}`
           : 'X: —  Y: —'}
       </span>
       {referencia && (
         <span>
-          DX: {referencia.dx.toFixed(1)} mm  DY: {referencia.dy.toFixed(1)} mm  Dist:{' '}
-          {referencia.distancia.toFixed(1)} mm  Âng: {referencia.angulo.toFixed(1)}°
+          DX: {medida(referencia.dx, props.unidade)}  DY: {medida(referencia.dy, props.unidade)}  Dist:{' '}
+          {medida(referencia.distancia, props.unidade)}  Âng: {referencia.angulo.toFixed(1)}°
         </span>
       )}
       <span>Zoom: {zoomPercentual}%</span>

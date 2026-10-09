@@ -10,6 +10,7 @@ import {
   moverDentroDaCerca,
   pecasAlvoDaCerca,
   pontosMoveisNaCerca,
+  TODAS_AS_OPCOES_DA_CERCA,
   type OpcoesDeMoverCerca,
 } from './cerca';
 
@@ -100,6 +101,27 @@ describe('pecasAlvoDaCerca / pontosMoveisNaCerca', () => {
 
     const pecaInteira = cercaEntre(ponto(-10, -10), ponto(210, 310));
     expect(pontosMoveisNaCerca(molde, pecaInteira)).toHaveLength(4 + 4 + 2 + 1 + 2);
+  });
+
+  it('pontos destacados seguem as opções marcadas no diálogo', () => {
+    let molde = criarMolde(
+      dadosBase({ furos: [[ponto(20, 260), ponto(40, 260), ponto(40, 280), ponto(20, 280)]] }),
+      'm1',
+    );
+    molde = adicionarMarca(molde, ponto(100, 270), 'mk1');
+    const pecaInteira = cercaEntre(ponto(-10, -10), ponto(210, 310));
+
+    const soFurosEMarcas = { ...TODAS_AS_OPCOES_DA_CERCA, pontosDoContorno: false, linhaDeFio: false };
+    expect(pontosMoveisNaCerca(molde, pecaInteira, soFurosEMarcas)).toEqual([
+      ponto(20, 260),
+      ponto(40, 260),
+      ponto(40, 280),
+      ponto(20, 280),
+      ponto(100, 270),
+    ]);
+
+    const nada = { pontosDoContorno: false, furos: false, linhasInternas: false, marcas: false, linhaDeFio: false };
+    expect(pontosMoveisNaCerca(molde, pecaInteira, nada)).toEqual([]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde } from '../domain/molde';
-import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca } from '../domain/cerca';
+import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
@@ -95,7 +95,11 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'arredondar-ou-chanfrar',
 ]);
 
-/** Modos em que o clique cria um ponto novo — só neles o ímã age. Arrastos (peça, vértices) não são capturados. */
+/**
+ * Modos em que o clique cria um ponto novo: neles o ímã prende o cursor. No
+ * "Mover ponto" o ímã age no vértice arrastado (ver aoMoverMouse); arrastar a
+ * peça inteira não é capturado.
+ */
 const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
   'novo-molde',
   'novo-furo',
@@ -105,6 +109,8 @@ const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
 ]);
 
 const RAIO_DE_CAPTURA_DE_VERTICE_PX = 10;
+/** Abaixo disso (em px) o mouse apertado num vértice é clique, não arrasto: o vértice não sai do lugar. */
+const LIMIAR_DE_ARRASTO_DE_VERTICE_PX = 3;
 /** Abaixo disso (em px, na largura ou na altura) o retângulo é tratado como clique solto e ignorado. */
 const TAMANHO_MINIMO_DA_CERCA_PX = 3;
 const TAMANHO_MINIMO_DA_JANELA_DE_ZOOM_PX = 5;
@@ -143,6 +149,8 @@ interface AreaDeDesenhoProps {
   readonly onArredondarOuChanfrarCanto?: (indice: number) => void;
   /** Cerca ativa (desenhada tracejada até ser desligada), ou `null`. */
   readonly cerca: Cerca | null;
+  /** Categorias marcadas em "Mover cerca": só os pontos delas aparecem destacados dentro da cerca. */
+  readonly opcoesDaCerca: OpcoesDeMoverCerca;
   readonly onDefinirCerca?: (cerca: Cerca) => void;
   readonly ferramentaDeVista: FerramentaDeVista | null;
   readonly onZoomJanelaConcluido?: () => void;
@@ -187,6 +195,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onExcluirPontoDoMolde,
     onArredondarOuChanfrarCanto,
     cerca,
+    opcoesDaCerca,
     onDefinirCerca,
     ferramentaDeVista,
     onZoomJanelaConcluido,
@@ -224,8 +233,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   // ("Definir cerca"/"Mover cerca", `domain/cerca.ts`), que fica desenhada
   // até ser desligada e vale para todas as peças.
   const [verticesSelecionados, setVerticesSelecionados] = useState<ReadonlySet<number>>(new Set());
-  const arrastoDeGrupoRef = useRef<{ indices: readonly number[]; ultimoMundo: Ponto2D } | null>(null);
+  // `ancora` é o vértice agarrado: é ele que o ímã prende, e os outros da
+  // seleção andam o mesmo tanto.
+  const arrastoDeGrupoRef = useRef<{
+    indices: readonly number[];
+    ancora: Ponto2D;
+    inicioDoMouse: Ponto2D;
+    inicioNaTela: Ponto2D;
+    arrastou: boolean;
+  } | null>(null);
   const [deltaDeGrupo, setDeltaDeGrupo] = useState<Ponto2D | null>(null);
+  const [capturaDoArrasto, setCapturaDoArrasto] = useState<{ readonly ponto: Ponto2D; readonly tipo: TipoDeCaptura } | null>(null);
   const [retanguloEmDesenho, setRetanguloEmDesenho] = useState<RetanguloEmDesenho | null>(null);
 
   // Limpa a seleção de vértices ao trocar de modo ou de peça selecionada, e
@@ -645,7 +663,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.textAlign = 'left';
       ctx.fillStyle = COR_CERCA;
       for (const peca of pecasAlvoDaCerca(pecas, idsSelecionadosEmLote, selecionadoId)) {
-        for (const p of pontosMoveisNaCerca(peca, cerca)) {
+        for (const p of pontosMoveisNaCerca(peca, cerca, opcoesDaCerca)) {
           const tela = mundoParaTela(p, transform);
           ctx.fillRect(tela.x - 3, tela.y - 3, 6, 6);
         }
@@ -721,14 +739,19 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
 
-    // Onde o ímã prendeu o cursor: quadrado vazado num vértice, cruz num
-    // ponto da grade — para o usuário ver antes de clicar.
-    if (capturaDoCursor && cursorLocal && imaAtivo && ferramentaDeVista === null && MODOS_COM_IMA.has(modo)) {
-      const tela = mundoParaTela(cursorLocal, transform);
+    // Onde o ímã prendeu: quadrado vazado num vértice, cruz num ponto da
+    // grade — para o usuário ver antes de clicar ou de soltar o vértice.
+    const marcaDoIma =
+      capturaDoArrasto ??
+      (capturaDoCursor && cursorLocal && imaAtivo && ferramentaDeVista === null && MODOS_COM_IMA.has(modo)
+        ? { ponto: cursorLocal, tipo: capturaDoCursor }
+        : null);
+    if (marcaDoIma) {
+      const tela = mundoParaTela(marcaDoIma.ponto, transform);
       ctx.strokeStyle = COR_IMA;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      if (capturaDoCursor === 'vertice') {
+      if (marcaDoIma.tipo === 'vertice') {
         ctx.rect(tela.x - 6, tela.y - 6, 12, 12);
       } else {
         ctx.moveTo(tela.x - 5, tela.y);
@@ -752,6 +775,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     contornoFinalizado,
     cursorLocal,
     capturaDoCursor,
+    capturaDoArrasto,
     imaAtivo,
     ferramentaDeVista,
     modo,
@@ -760,6 +784,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     verticesSelecionados,
     retanguloEmDesenho,
     cerca,
+    opcoesDaCerca,
     mostrarGrade,
     pecaSelecionada,
   ]);
@@ -934,7 +959,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           const jaFazParteDaSelecao = verticesSelecionados.has(indiceMaisProximo) && verticesSelecionados.size > 1;
           const indices = jaFazParteDaSelecao ? [...verticesSelecionados] : [indiceMaisProximo];
           if (!jaFazParteDaSelecao) setVerticesSelecionados(new Set([indiceMaisProximo]));
-          arrastoDeGrupoRef.current = { indices, ultimoMundo: mundo };
+          arrastoDeGrupoRef.current = {
+            indices,
+            ancora: pecaSelecionada.contorno[indiceMaisProximo]!,
+            inicioDoMouse: mundo,
+            inicioNaTela: tela,
+            arrastou: false,
+          };
           setDeltaDeGrupo({ x: 0, y: 0 });
           return;
         }
@@ -987,13 +1018,31 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     setCapturaDoCursor(captura);
     onCursorMove(mundo);
 
-    if (arrastoDeGrupoRef.current) {
-      const deltaPasso = {
-        x: mundo.x - arrastoDeGrupoRef.current.ultimoMundo.x,
-        y: mundo.y - arrastoDeGrupoRef.current.ultimoMundo.y,
-      };
-      arrastoDeGrupoRef.current.ultimoMundo = mundo;
-      setDeltaDeGrupo((atual) => (atual ? somar(atual, deltaPasso) : deltaPasso));
+    const arrastoDeGrupo = arrastoDeGrupoRef.current;
+    if (arrastoDeGrupo) {
+      // Um clique para escolher o vértice não o move: com o ímã na grade, um
+      // tremor do mouse o levaria até o ponto da grade mais próximo.
+      if (distancia(tela, arrastoDeGrupo.inicioNaTela) >= LIMIAR_DE_ARRASTO_DE_VERTICE_PX) arrastoDeGrupo.arrastou = true;
+      if (arrastoDeGrupo.arrastou) {
+        const alvo = somar(arrastoDeGrupo.ancora, {
+          x: mundo.x - arrastoDeGrupo.inicioDoMouse.x,
+          y: mundo.y - arrastoDeGrupo.inicioDoMouse.y,
+        });
+        // O ímã prende o vértice agarrado nos vértices das outras peças ou na
+        // grade — não nos da própria peça, o que deixaria pontos repetidos
+        // ou o contorno encostando em si mesmo.
+        const capturado =
+          imaAtivo && pecaSelecionada
+            ? capturarComIma(
+                alvo,
+                pontosDeCapturaDasPecas(pecas.filter((p) => p.id !== pecaSelecionada.id)),
+                RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm,
+                mostrarGrade ? passoDaGradeEmMm(transform.escalaPxPorMm) : null,
+              )
+            : { ponto: alvo, tipo: null };
+        setDeltaDeGrupo({ x: capturado.ponto.x - arrastoDeGrupo.ancora.x, y: capturado.ponto.y - arrastoDeGrupo.ancora.y });
+        setCapturaDoArrasto(capturado.tipo ? { ponto: capturado.ponto, tipo: capturado.tipo } : null);
+      }
     }
 
     if (retanguloEmDesenho) {
@@ -1029,6 +1078,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     }
     arrastoDeGrupoRef.current = null;
     setDeltaDeGrupo(null);
+    setCapturaDoArrasto(null);
   }
 
   /** Os vértices da peça selecionada dentro do retângulo entre `a` e `b` (mm) passam a ser a seleção de "Mover ponto". */

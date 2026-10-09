@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { PainelDeMoverCerca } from './PainelDeMoverCerca';
 import { ponto } from '../core/geometria';
 import { criarMolde } from '../domain/molde';
-import { cercaEntre } from '../domain/cerca';
+import { cercaEntre, TODAS_AS_OPCOES_DA_CERCA, type OpcoesDeMoverCerca } from '../domain/cerca';
 
 const frente = criarMolde(
   {
@@ -22,8 +23,27 @@ const cerca = cercaEntre(ponto(150, 250), ponto(250, 350));
 function renderizar(onAplicar: (delta: unknown, opcoes: unknown) => string | null = () => null) {
   const aplicar = vi.fn(onAplicar);
   const fechar = vi.fn();
-  render(<PainelDeMoverCerca cerca={cerca} pecas={[frente]} temSelecao={false} onAplicar={aplicar} onFechar={fechar} />);
-  return { aplicar, fechar };
+  const alterarOpcoes = vi.fn();
+  // As opções ficam com quem abre o diálogo (o desenho destaca os pontos delas).
+  function ComOpcoes(): React.JSX.Element {
+    const [opcoes, setOpcoes] = useState<OpcoesDeMoverCerca>(TODAS_AS_OPCOES_DA_CERCA);
+    return (
+      <PainelDeMoverCerca
+        cerca={cerca}
+        pecas={[frente]}
+        temSelecao={false}
+        opcoes={opcoes}
+        onAlterarOpcoes={(novas) => {
+          alterarOpcoes(novas);
+          setOpcoes(novas);
+        }}
+        onAplicar={aplicar}
+        onFechar={fechar}
+      />
+    );
+  }
+  render(<ComOpcoes />);
+  return { aplicar, fechar, alterarOpcoes };
 }
 
 function preencher(horizontal: string, vertical: string): void {
@@ -66,8 +86,9 @@ describe('PainelDeMoverCerca', () => {
   });
 
   it('avisa quando, com as opções marcadas, nada dentro da cerca mudaria', () => {
-    const { aplicar } = renderizar();
+    const { aplicar, alterarOpcoes } = renderizar();
     fireEvent.click(screen.getByLabelText(/Pontos do contorno/));
+    expect(alterarOpcoes).toHaveBeenCalledWith({ ...TODAS_AS_OPCOES_DA_CERCA, pontosDoContorno: false });
     preencher('10', '0');
 
     fireEvent.click(screen.getByRole('button', { name: 'Mover' }));

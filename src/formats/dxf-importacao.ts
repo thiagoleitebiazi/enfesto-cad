@@ -464,3 +464,12 @@ export function alturaDoDesenho(resultado: ResultadoImportacaoDxf): number {
 export function dxfParaMundo(p: Ponto2D, alturaDoDesenhoDxf: number): Ponto2D {
   return ponto(alturaDoDesenhoDxf - p.y, p.x);
 }
+
+/**
+ * Direção, na tela do app, de uma linha de fio lida do DXF (coordenadas do
+ * arquivo). Como em dxfParaMundo, o x do DXF vai para a horizontal da tela e
+ * o y para a vertical; uma linha inclinada fica com o eixo em que anda mais.
+ */
+export function direcaoNaTelaDaLinhaDeFio(fio: LinhaDeFio): 'vertical' | 'horizontal' {
+  return Math.abs(fio.fim.x - fio.inicio.x) >= Math.abs(fio.fim.y - fio.inicio.y) ? 'horizontal' : 'vertical';
+}

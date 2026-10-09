@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { importarDxf } from './dxf-importacao';
-import { area } from '../core/geometria';
+import { alturaDoDesenho, direcaoNaTelaDaLinhaDeFio, dxfParaMundo, importarDxf } from './dxf-importacao';
+import { linhaDeFioSobreContorno } from './pdf-pecas-vetoriais';
+import { area, type Ponto2D } from '../core/geometria';
 
 // Fixtures sintéticas escritas à mão seguindo a especificação de grupos de
 // código do DXF ASCII (uma AutoCAD DXF Reference). NÃO existem arquivos DXF
@@ -311,5 +312,29 @@ describe('importarDxf — arquivo sem nenhuma polilinha', () => {
     const resultado = importarDxf(doc, 'vazio');
     expect(resultado.pecas).toEqual([]);
     expect(resultado.avisos.some((a) => /nenhuma peça/i.test(a))).toBe(true);
+  });
+});
+
+describe('direcaoNaTelaDaLinhaDeFio — o fio do arquivo na tela do app', () => {
+  it('x do DXF é a horizontal da tela; y do DXF, a vertical; inclinada vale o eixo em que mais anda', () => {
+    expect(direcaoNaTelaDaLinhaDeFio({ inicio: { x: 10, y: 50 }, fim: { x: 290, y: 50 } })).toBe('horizontal');
+    expect(direcaoNaTelaDaLinhaDeFio({ inicio: { x: 150, y: 50 }, fim: { x: 150, y: 350 } })).toBe('vertical');
+    expect(direcaoNaTelaDaLinhaDeFio({ inicio: { x: 0, y: 0 }, fim: { x: 100, y: 30 } })).toBe('horizontal');
+    expect(direcaoNaTelaDaLinhaDeFio({ inicio: { x: 0, y: 0 }, fim: { x: 30, y: -100 } })).toBe('vertical');
+  });
+
+  it('a direção sugerida anda no mesmo eixo da linha do arquivo depois de convertida para a tela', () => {
+    const doc = documento([...lwpolyline('CONTORNO', RETANGULO_300X400), ...linha('FIO', 150, 50, 150, 350)], 4);
+    const resultado = importarDxf(doc, 'peca');
+    const peca = resultado.pecas[0]!;
+    const altura = alturaDoDesenho(resultado);
+    const fio = peca.linhaDeFio!;
+    const contorno = peca.contorno.map((p) => dxfParaMundo(p, altura));
+    const eixo = (a: Ponto2D, b: Ponto2D) => (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 'x' : 'y');
+
+    const doArquivo = { inicio: dxfParaMundo(fio.inicio, altura), fim: dxfParaMundo(fio.fim, altura) };
+    const sugerida = linhaDeFioSobreContorno(contorno, direcaoNaTelaDaLinhaDeFio(fio));
+    expect(direcaoNaTelaDaLinhaDeFio(fio)).toBe('vertical');
+    expect(eixo(sugerida.inicio, sugerida.fim)).toBe(eixo(doArquivo.inicio, doArquivo.fim));
   });
 });

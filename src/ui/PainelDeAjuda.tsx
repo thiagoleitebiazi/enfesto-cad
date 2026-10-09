@@ -10,6 +10,7 @@ interface PainelDeAjudaProps {
 
 /** Os mesmos atalhos tratados em `aoTeclar` (App.tsx) — manter as duas listas juntas. */
 const ATALHOS_DE_TECLADO: ReadonlyArray<readonly [string, string]> = [
+  ['F1', 'Esta lista de atalhos'],
   ['Ctrl+N', 'Novo projeto'],
   ['Ctrl+O', 'Abrir (Biblioteca)'],
   ['Ctrl+S', 'Salvar'],
@@ -27,14 +28,14 @@ const ATALHOS_DE_TECLADO: ReadonlyArray<readonly [string, string]> = [
   ['-', 'Diminuir zoom'],
   ['Ctrl+0', 'Ajustar à tela'],
   ['Enter', 'Fechar o contorno (Novo Molde, Furo)'],
-  ['Esc', 'Desligar Mão ou Zoom por janela; senão, cancelar a ferramenta atual'],
+  ['Esc', 'Fechar o diálogo aberto; senão, desligar Mão ou Zoom por janela; senão, cancelar a ferramenta atual'],
 ];
 
 const GESTOS_DO_MOUSE: ReadonlyArray<readonly [string, string]> = [
   ['Roda', 'Zoom no ponto do cursor'],
   ['Botão do meio, ou Espaço + arrastar', 'Mover a vista (como a Mão)'],
   ['Duplo clique numa peça', 'Propriedades da peça'],
-  ['Shift+clique num vértice (Mover ponto)', 'Somar vértices à seleção'],
+  ['Shift+clique num vértice', 'Mover ponto: incluir o vértice na seleção, ou tirá-lo dela'],
   ['Clique no canto das réguas', 'Alternar a régua entre cm e mm'],
 ];
 
@@ -42,6 +43,11 @@ function TabelaDeAtalhos(props: { readonly titulo: string; readonly linhas: Read
   return (
     <table className="tabela-de-atalhos">
       <caption>{props.titulo}</caption>
+      {/* Largura fixa da coluna das teclas: as duas tabelas do diálogo ficam alinhadas. */}
+      <colgroup>
+        <col className="coluna-das-teclas" />
+        <col />
+      </colgroup>
       <tbody>
         {props.linhas.map(([tecla, acao]) => (
           <tr key={tecla}>

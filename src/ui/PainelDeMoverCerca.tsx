@@ -15,6 +15,9 @@ interface PainelDeMoverCercaProps {
   /** Peças sobre as quais o movimento age: as selecionadas, ou todas quando nada está selecionado. */
   readonly pecas: readonly Molde[];
   readonly temSelecao: boolean;
+  /** O que mover. Fica fora do diálogo porque o desenho destaca só os pontos dessas categorias. */
+  readonly opcoes: OpcoesDeMoverCerca;
+  readonly onAlterarOpcoes: (opcoes: OpcoesDeMoverCerca) => void;
   /** Aplica o movimento; devolve a mensagem de erro, ou `null` se deu certo. */
   readonly onAplicar: (delta: Ponto2D, opcoes: OpcoesDeMoverCerca) => string | null;
   readonly onFechar: () => void;
@@ -45,16 +48,11 @@ function formatarMm(valor: number): string {
  * cerca, nas peças selecionadas (ou em todas). Horizontal e vertical são os
  * da tela — horizontal ao longo do comprimento da mesa, vertical ao longo da
  * largura. As opções dizem o que pode se mover; ao lado de cada uma, quantos
- * itens estão dentro da cerca.
+ * itens estão dentro da cerca. O desenho destaca só os pontos das opções
+ * marcadas.
  */
 export function PainelDeMoverCerca(props: PainelDeMoverCercaProps): React.JSX.Element {
-  const [opcoes, setOpcoes] = useState<OpcoesDeMoverCerca>({
-    pontosDoContorno: true,
-    furos: true,
-    linhasInternas: true,
-    marcas: true,
-    linhaDeFio: true,
-  });
+  const { opcoes } = props;
   const [horizontal, setHorizontal] = useState('0');
   const [vertical, setVertical] = useState('0');
   const [erro, setErro] = useState<string | null>(null);
@@ -72,7 +70,7 @@ export function PainelDeMoverCerca(props: PainelDeMoverCercaProps): React.JSX.El
           .join(', ')} e mais ${afetadas.length - MAXIMO_DE_NOMES}`;
 
   function alternar(categoria: CategoriaDaCerca, marcado: boolean): void {
-    setOpcoes((atuais) => ({ ...atuais, [categoria]: marcado }));
+    props.onAlterarOpcoes({ ...opcoes, [categoria]: marcado });
     setErro(null);
   }
 

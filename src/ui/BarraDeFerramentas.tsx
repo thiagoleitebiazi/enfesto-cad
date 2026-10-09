@@ -37,6 +37,13 @@ interface BarraDeFerramentasProps {
   readonly onDefinirUnidadeDaRegua: (unidade: UnidadeDeRegua) => void;
   readonly onAbrirAtalhos: () => void;
   readonly onAbrirSobre: () => void;
+  readonly mostrarListaDePecas: boolean;
+  readonly onAlternarListaDePecas: () => void;
+  readonly mostrarBarraDeVisualizacao: boolean;
+  readonly onAlternarBarraDeVisualizacao: () => void;
+  readonly mostrarValidacao: boolean;
+  readonly onAlternarValidacao: () => void;
+  readonly onAbrirPropriedadesDaPeca: () => void;
   readonly temCerca: boolean;
   /** Sem cerca: entra/sai do modo de definir cerca. Com cerca: remove a cerca. */
   readonly onAlternarDefinirCerca: () => void;
@@ -115,7 +122,7 @@ const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
  * grupos/ações que já existiam em linha única numa barra com abas
  * clicáveis, para caber mais ferramentas sem exigir rolagem horizontal
  * numa tela comum. Os comandos de visualização não ocupam uma aba: ficam
- * nos menus Visão/Opções/Ajuda, à direita das abas, e na barra de
+ * nos menus Visão/Opções/Janelas/Ajuda, à direita das abas, e na barra de
  * visualização embaixo do desenho (BarraDeVisualizacao), sempre à mão.
  *
  * Na aba Manipulação, as ferramentas de programas de modelagem que agem
@@ -236,7 +243,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 tipo: 'alternar',
                 rotulo: 'Ímã',
                 marcado: props.imaAtivo,
-                titulo: 'Ao clicar para criar pontos, prende no vértice mais próximo ou, com a grade visível, no ponto da grade',
+                titulo:
+                  'Prende no vértice mais próximo ou, com a grade visível, no ponto da grade: ao clicar para criar pontos e ao arrastar um vértice (Mover ponto)',
                 onEscolher: props.onAlternarIma,
               },
               { tipo: 'separador' },
@@ -255,9 +263,43 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             ]}
           />
           <MenuSuspenso
+            rotulo="Janelas"
+            itens={[
+              {
+                tipo: 'alternar',
+                rotulo: 'Lista de peças',
+                marcado: props.mostrarListaDePecas,
+                titulo: 'A lista à esquerda do desenho',
+                onEscolher: props.onAlternarListaDePecas,
+              },
+              {
+                tipo: 'alternar',
+                rotulo: 'Barra de visualização',
+                marcado: props.mostrarBarraDeVisualizacao,
+                titulo: 'Mão, zoom, vistas, grade e ímã, embaixo do desenho',
+                onEscolher: props.onAlternarBarraDeVisualizacao,
+              },
+              {
+                tipo: 'alternar',
+                rotulo: 'Validação do projeto',
+                marcado: props.mostrarValidacao,
+                titulo: 'A lista de problemas do projeto (também pelo botão Validação, na barra de status)',
+                onEscolher: props.onAlternarValidacao,
+              },
+              { tipo: 'separador' },
+              {
+                tipo: 'acao',
+                rotulo: 'Propriedades da peça',
+                desabilitado: !props.temSelecaoUnica,
+                titulo: props.temSelecaoUnica ? 'Também com duplo clique na peça' : 'Selecione uma peça primeiro',
+                onEscolher: props.onAbrirPropriedadesDaPeca,
+              },
+            ]}
+          />
+          <MenuSuspenso
             rotulo="Ajuda"
             itens={[
-              { tipo: 'acao', rotulo: 'Atalhos de teclado', onEscolher: props.onAbrirAtalhos },
+              { tipo: 'acao', rotulo: 'Atalhos de teclado', atalho: 'F1', onEscolher: props.onAbrirAtalhos },
               { tipo: 'acao', rotulo: 'Sobre o Enfesto CAD', onEscolher: props.onAbrirSobre },
             ]}
           />

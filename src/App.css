@@ -469,6 +469,11 @@ button:focus-visible {
   overflow: hidden;
 }
 
+/* Lista de peças escondida (menu Janelas): o desenho ocupa a largura toda. */
+.corpo-principal.sem-lista-de-pecas {
+  grid-template-columns: 1fr;
+}
+
 .coluna-do-desenho {
   display: flex;
   flex-direction: column;
@@ -934,6 +939,11 @@ button:focus-visible {
   box-shadow: var(--sombra-flutuante);
 }
 
+/* O foco entra no painel ao abrir (ver Sobreposicao): só para segurar o teclado, sem moldura. */
+.sobreposicao-painel:focus {
+  outline: none;
+}
+
 .sobreposicao-cabecalho {
   display: flex;
   align-items: center;
@@ -1095,6 +1105,12 @@ button:focus-visible {
 .tabela-de-atalhos {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* A mesma largura nas duas tabelas (Teclado e Mouse), para as colunas ficarem alinhadas. */
+.tabela-de-atalhos .coluna-das-teclas {
+  width: 46%;
 }
 
 .tabela-de-atalhos caption {
@@ -1116,8 +1132,7 @@ button:focus-visible {
 }
 
 .tabela-de-atalhos th {
-  width: 1%;
-  padding-right: 16px;
+  padding-right: 12px;
   font-weight: normal;
   white-space: nowrap;
 }

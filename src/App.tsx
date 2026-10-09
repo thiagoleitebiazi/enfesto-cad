@@ -18,6 +18,7 @@ import {
   cercaAfetaMolde,
   moverDentroDaCerca,
   pecasAlvoDaCerca,
+  TODAS_AS_OPCOES_DA_CERCA,
   transladarCerca,
   type Cerca,
   type OpcoesDeMoverCerca,
@@ -40,7 +41,13 @@ import {
   dimensoesDoMolde,
   type Molde,
 } from './domain/molde';
-import { alturaDoDesenho, dxfParaMundo, importarDxf, type ResultadoImportacaoDxf } from './formats/dxf-importacao';
+import {
+  alturaDoDesenho,
+  direcaoNaTelaDaLinhaDeFio,
+  dxfParaMundo,
+  importarDxf,
+  type ResultadoImportacaoDxf,
+} from './formats/dxf-importacao';
 import { importarPdf } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import {
@@ -189,8 +196,14 @@ export default function App(): React.JSX.Element {
   const [passado, setPassado] = useState<Molde[][]>([]);
   const [futuro, setFuturo] = useState<Molde[][]>([]);
 
+  const [mostrarListaDePecas, setMostrarListaDePecas] = useState(true);
+  const [mostrarBarraDeVisualizacao, setMostrarBarraDeVisualizacao] = useState(true);
+
   const [cerca, setCerca] = useState<Cerca | null>(null);
   const [mostrarMoverCerca, setMostrarMoverCerca] = useState(false);
+  // Fica aqui, e não no diálogo, porque o desenho destaca só os pontos das
+  // categorias marcadas — o que o próximo "Mover cerca" vai mover.
+  const [opcoesDaCerca, setOpcoesDaCerca] = useState<OpcoesDeMoverCerca>(TODAS_AS_OPCOES_DA_CERCA);
   // Para desfazer/refazer um "Mover cerca" levar a cerca junto com as peças:
   // a chave é a lista de peças que ficou valendo depois do movimento.
   const movimentosDeCercaRef = useRef(new WeakMap<readonly Molde[], { readonly antes: Cerca; readonly depois: Cerca }>());
@@ -425,6 +438,10 @@ export default function App(): React.JSX.Element {
     setTecido(tecidoInicial);
     setEnfesto(enfestoInicial);
     setSelecionadoId(null);
+    setIdsSelecionadosEmLote(new Set());
+    setModo('selecionar');
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
     setPassado([]);
     setFuturo([]);
     setCerca(null);
@@ -473,14 +490,25 @@ export default function App(): React.JSX.Element {
       setTecido(projeto.estadoAtual.tecido);
       setEnfesto(projeto.estadoAtual.enfesto);
       setSelecionadoId(null);
+      setIdsSelecionadosEmLote(new Set());
+      // Um contorno pela metade era do projeto anterior.
+      setModo('selecionar');
+      setPontosEmEdicao([]);
+      setContornoPendente(null);
       setPassado([]);
       setFuturo([]);
       setCerca(null);
       setMostrarMoverCerca(false);
       setProjetoAtual(projeto);
       setMostrarBiblioteca(false);
+      // Enquadra o projeto aberto, como "Ajustar à tela". As vistas guardadas
+      // eram do projeto anterior e deixam de valer.
+      const retangulo = retanguloDoDesenho(projeto.estadoAtual.pecas, projeto.estadoAtual.enfesto);
+      if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela));
+      setVistasAnteriores([]);
+      setVistasSeguintes([]);
     },
-    [projetos],
+    [projetos, tamanhoDaTela],
   );
 
   const duplicarProjetoDaBiblioteca = useCallback(
@@ -534,6 +562,10 @@ export default function App(): React.JSX.Element {
             setPecas([]);
             setTecido(null);
             setEnfesto(null);
+            setSelecionadoId(null);
+            setIdsSelecionadosEmLote(new Set());
+            setPassado([]);
+            setFuturo([]);
             setCerca(null);
             setMostrarMoverCerca(false);
             setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
@@ -550,6 +582,8 @@ export default function App(): React.JSX.Element {
       setPecas([...atualizado.estadoAtual.pecas]);
       setTecido(atualizado.estadoAtual.tecido);
       setEnfesto(atualizado.estadoAtual.enfesto);
+      setSelecionadoId(null);
+      setIdsSelecionadosEmLote(new Set());
       setPassado([]);
       setFuturo([]);
       setCerca(null);
@@ -1316,9 +1350,12 @@ export default function App(): React.JSX.Element {
               contorno,
               furos: peca.furos.map(paraTela),
               linhasInternas: peca.linhasInternas.map(paraTela),
-              linhaDeFio: fioDoArquivo
-                ? { inicio: dxfParaMundo(fioDoArquivo.inicio, altura), fim: dxfParaMundo(fioDoArquivo.fim, altura) }
-                : linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
+              // A linha exata do arquivo só vale se o usuário manteve a
+              // direção dela no diálogo; se escolheu a outra, vale a escolha.
+              linhaDeFio:
+                fioDoArquivo && direcaoNaTelaDaLinhaDeFio(fioDoArquivo) === item.direcaoDoFio
+                  ? { inicio: dxfParaMundo(fioDoArquivo.inicio, altura), fim: dxfParaMundo(fioDoArquivo.fim, altura) }
+                  : linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
             },
             proximoId(),
           );
@@ -1379,8 +1416,26 @@ export default function App(): React.JSX.Element {
     [importacaoPdfPendente, pecas, aplicarMudanca],
   );
 
+  // Ao abrir o programa o foco fica no corpo da página, fora da janela do
+  // app, e os atalhos (F1, Ctrl+O...) só valeriam depois do primeiro clique.
+  // Só pega o foco se ninguém o tiver: um diálogo aberto fica com ele.
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!document.activeElement || document.activeElement === document.body) appShellRef.current?.focus();
+  }, []);
+
   const aoTeclar = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // Os diálogos (Sobreposicao) já seguram as próprias teclas; isto cobre
+      // uma tecla que chegue de fora deles enquanto um está aberto.
+      if (e.currentTarget.querySelector('[role="dialog"][aria-modal="true"]')) return;
+
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setPainelDeAjuda('atalhos');
+        return;
+      }
+
       const alvoEhCampoDeTexto = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
       if (alvoEhCampoDeTexto) return;
 
@@ -1471,7 +1526,7 @@ export default function App(): React.JSX.Element {
   );
 
   return (
-    <div className="app-shell" onKeyDown={aoTeclar} tabIndex={-1}>
+    <div ref={appShellRef} className="app-shell" onKeyDown={aoTeclar} tabIndex={-1}>
       <BarraDeFerramentas
         modo={modo}
         podeDesfazer={passado.length > 0}
@@ -1504,6 +1559,13 @@ export default function App(): React.JSX.Element {
         onDefinirUnidadeDaRegua={setUnidadeDaRegua}
         onAbrirAtalhos={() => setPainelDeAjuda('atalhos')}
         onAbrirSobre={() => setPainelDeAjuda('sobre')}
+        mostrarListaDePecas={mostrarListaDePecas}
+        onAlternarListaDePecas={() => setMostrarListaDePecas((v) => !v)}
+        mostrarBarraDeVisualizacao={mostrarBarraDeVisualizacao}
+        onAlternarBarraDeVisualizacao={() => setMostrarBarraDeVisualizacao((v) => !v)}
+        mostrarValidacao={mostrarValidacao}
+        onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
+        onAbrirPropriedadesDaPeca={() => selecionadoId && abrirPropriedadesDaPeca(selecionadoId)}
         temCerca={cerca !== null}
         onAlternarDefinirCerca={alternarDefinirCerca}
         onMoverCerca={() => setMostrarMoverCerca(true)}
@@ -1635,6 +1697,8 @@ export default function App(): React.JSX.Element {
           cerca={cerca}
           pecas={alvosDaCerca}
           temSelecao={selecionadoId !== null || idsSelecionadosEmLote.size > 0}
+          opcoes={opcoesDaCerca}
+          onAlterarOpcoes={setOpcoesDaCerca}
           onAplicar={aplicarMoverCerca}
           onFechar={() => setMostrarMoverCerca(false)}
         />
@@ -1647,7 +1711,7 @@ export default function App(): React.JSX.Element {
             : 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.'}
         </div>
       ) : (
-        (modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio' || modo === 'definir-cerca') && (
+        modo === 'novo-molde' || modo === 'novo-furo' || modo === 'definir-fio' || modo === 'definir-cerca' ? (
           <div className="faixa-de-instrucao" role="status">
             {modo === 'novo-molde' &&
               'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.'}
@@ -1659,6 +1723,13 @@ export default function App(): React.JSX.Element {
                 : 'Clique no fim da linha de fio (a seta aponta para lá).')}
             {modo === 'definir-cerca' && 'Arraste de um canto ao outro para definir a cerca. Esc para cancelar.'}
           </div>
+        ) : (
+          cerca && (
+            <div className="faixa-de-instrucao" role="status">
+              Cerca ativa: &ldquo;Mover cerca&rdquo; (aba Manipulação) desloca os pontos destacados. Clique em
+              &ldquo;Definir cerca&rdquo; de novo para removê-la.
+            </div>
+          )
         )
       )}
       {mensagensImportacao && (
@@ -1672,15 +1743,17 @@ export default function App(): React.JSX.Element {
           <button onClick={() => setMensagensImportacao(null)}>Dispensar</button>
         </div>
       )}
-      <div className="corpo-principal">
-        <PainelDePecas
-          pecas={pecas}
-          selecionadoId={selecionadoId}
-          idsSelecionadosEmLote={idsSelecionadosEmLote}
-          onSelecionar={selecionarUnico}
-          onAlternarSelecaoEmLote={alternarSelecaoEmLote}
-          onAbrirPropriedades={abrirPropriedadesDaPeca}
-        />
+      <div className={mostrarListaDePecas ? 'corpo-principal' : 'corpo-principal sem-lista-de-pecas'}>
+        {mostrarListaDePecas && (
+          <PainelDePecas
+            pecas={pecas}
+            selecionadoId={selecionadoId}
+            idsSelecionadosEmLote={idsSelecionadosEmLote}
+            onSelecionar={selecionarUnico}
+            onAlternarSelecaoEmLote={alternarSelecaoEmLote}
+            onAbrirPropriedades={abrirPropriedadesDaPeca}
+          />
+        )}
         <div className="coluna-do-desenho">
           <div className="barra-de-documento">
             <span className="aba-de-documento" title="Projeto aberto">
@@ -1715,6 +1788,7 @@ export default function App(): React.JSX.Element {
             onExcluirPontoDoMolde={excluirPontoDaSelecionada}
             onArredondarOuChanfrarCanto={arredondarOuChanfrarVerticeDaSelecionada}
             cerca={cerca}
+            opcoesDaCerca={opcoesDaCerca}
             onDefinirCerca={definirCerca}
             ferramentaDeVista={ferramentaDeVista}
             onZoomJanelaConcluido={() => setFerramentaDeVista(null)}
@@ -1725,23 +1799,25 @@ export default function App(): React.JSX.Element {
             onAlternarUnidadeDaRegua={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
             onTamanhoChange={aoMudarTamanhoDaTela}
           />
-          <BarraDeVisualizacao
-            ferramentaDeVista={ferramentaDeVista}
-            onAlternarFerramentaDeVista={alternarFerramentaDeVista}
-            onZoomIn={() => zoom(1.15)}
-            onZoomOut={() => zoom(1 / 1.15)}
-            onAjustarTela={ajustarTela}
-            onVistaAnterior={vistaAnterior}
-            onProximaVista={proximaVista}
-            podeVistaAnterior={vistasAnteriores.length > 0}
-            podeProximaVista={vistasSeguintes.length > 0}
-            mostrarGrade={mostrarGrade}
-            onAlternarGrade={() => setMostrarGrade((v) => !v)}
-            imaAtivo={imaAtivo}
-            onAlternarIma={() => setImaAtivo((v) => !v)}
-            passoDaGradeMm={passoDaGradeEmMm(transform.escalaPxPorMm)}
-            unidadeDaRegua={unidadeDaRegua}
-          />
+          {mostrarBarraDeVisualizacao && (
+            <BarraDeVisualizacao
+              ferramentaDeVista={ferramentaDeVista}
+              onAlternarFerramentaDeVista={alternarFerramentaDeVista}
+              onZoomIn={() => zoom(1.15)}
+              onZoomOut={() => zoom(1 / 1.15)}
+              onAjustarTela={ajustarTela}
+              onVistaAnterior={vistaAnterior}
+              onProximaVista={proximaVista}
+              podeVistaAnterior={vistasAnteriores.length > 0}
+              podeProximaVista={vistasSeguintes.length > 0}
+              mostrarGrade={mostrarGrade}
+              onAlternarGrade={() => setMostrarGrade((v) => !v)}
+              imaAtivo={imaAtivo}
+              onAlternarIma={() => setImaAtivo((v) => !v)}
+              passoDaGradeMm={passoDaGradeEmMm(transform.escalaPxPorMm)}
+              unidadeDaRegua={unidadeDaRegua}
+            />
+          )}
         </div>
       </div>
       {importacaoPdfPendente && (
@@ -1763,11 +1839,7 @@ export default function App(): React.JSX.Element {
           candidatos={importacaoDxfPendente.pecas.map((p, indice) => ({
             id: String(indice),
             vertices: p.contorno.length,
-            direcaoSugerida: p.linhaDeFio
-              ? Math.abs(p.linhaDeFio.fim.x - p.linhaDeFio.inicio.x) >= Math.abs(p.linhaDeFio.fim.y - p.linhaDeFio.inicio.y)
-                ? 'vertical'
-                : 'horizontal'
-              : undefined,
+            direcaoSugerida: p.linhaDeFio ? direcaoNaTelaDaLinhaDeFio(p.linhaDeFio) : undefined,
           }))}
           mostrarEscala={false}
           onConfirmar={confirmarImportacaoDxf}
@@ -1807,6 +1879,7 @@ export default function App(): React.JSX.Element {
         problemas={problemasDeValidacao}
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
         aproveitamentoPercentual={aproveitamentoAtualDaMesa}
+        unidade={unidadeDaRegua}
         pontoReferencia={
           (modo === 'novo-molde' || modo === 'novo-furo') && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!

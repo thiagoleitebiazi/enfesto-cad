@@ -58,6 +58,15 @@ export interface OpcoesDeMoverCerca {
 
 export type CategoriaDaCerca = keyof OpcoesDeMoverCerca;
 
+/** Tudo marcado: como o diálogo "Mover cerca" começa. */
+export const TODAS_AS_OPCOES_DA_CERCA: OpcoesDeMoverCerca = {
+  pontosDoContorno: true,
+  furos: true,
+  linhasInternas: true,
+  marcas: true,
+  linhaDeFio: true,
+};
+
 /** Quantos itens de cada categoria estão dentro da cerca (pontos de contorno/furos/linhas, marcas; linha de fio: 1 se inteira dentro). */
 export type ContagemNaCerca = Readonly<Record<CategoriaDaCerca, number>>;
 
@@ -106,21 +115,25 @@ export function pecasAlvoDaCerca(
 }
 
 /**
- * Pontos da peça que "Mover cerca" pode deslocar com todas as opções
- * marcadas: os do contorno, dos furos e das linhas internas que estão dentro
- * da cerca, as marcas dentro dela e as duas pontas da linha de fio, se ela
- * estiver inteira dentro.
+ * Pontos da peça que "Mover cerca" desloca com essas opções: os do contorno,
+ * dos furos e das linhas internas que estão dentro da cerca, as marcas dentro
+ * dela e as duas pontas da linha de fio, se ela estiver inteira dentro — cada
+ * categoria só se estiver marcada.
  */
-export function pontosMoveisNaCerca(molde: Molde, cerca: Cerca): Ponto2D[] {
+export function pontosMoveisNaCerca(
+  molde: Molde,
+  cerca: Cerca,
+  opcoes: OpcoesDeMoverCerca = TODAS_AS_OPCOES_DA_CERCA,
+): Ponto2D[] {
   const pontos: Ponto2D[] = [];
   const incluirSeDentro = (p: Ponto2D): void => {
     if (pontoDentroDaCerca(p, cerca)) pontos.push(p);
   };
-  molde.contorno.forEach(incluirSeDentro);
-  for (const furo of molde.furos) furo.forEach(incluirSeDentro);
-  for (const linha of molde.linhasInternas) linha.forEach(incluirSeDentro);
-  for (const marca of molde.marcas) incluirSeDentro(marca.posicao);
-  if (fioInteiroDentro(molde, cerca)) pontos.push(molde.linhaDeFio.inicio, molde.linhaDeFio.fim);
+  if (opcoes.pontosDoContorno) molde.contorno.forEach(incluirSeDentro);
+  if (opcoes.furos) for (const furo of molde.furos) furo.forEach(incluirSeDentro);
+  if (opcoes.linhasInternas) for (const linha of molde.linhasInternas) linha.forEach(incluirSeDentro);
+  if (opcoes.marcas) for (const marca of molde.marcas) incluirSeDentro(marca.posicao);
+  if (opcoes.linhaDeFio && fioInteiroDentro(molde, cerca)) pontos.push(molde.linhaDeFio.inicio, molde.linhaDeFio.fim);
   return pontos;
 }
 
