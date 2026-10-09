@@ -137,7 +137,13 @@ export type NomeDoIcone =
   | 'variantes'
   | 'relacionamento-piques'
   | 'imagens'
-  | 'localizar-modelos';
+  | 'localizar-modelos'
+  | 'arco-2-pontos'
+  | 'arco-3-pontos'
+  | 'arco-tangente-reta'
+  | 'arco-tangente-2-retas'
+  | 'arco-tangente-arco-reta'
+  | 'arco-tangente-2-arcos';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -947,6 +953,43 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <circle cx="8.5" cy="8.5" r="5.5" />
       <path d="M12.6 12.6 17.5 17.5" />
       <path d="M6.5 6.8h4v3.4h-4z" />
+    </>
+  ),
+  'arco-2-pontos': (
+    <>
+      <path d="M3.5 14.5A7.5 7.5 0 0 1 16.5 14.5" />
+      <circle cx="3.5" cy="14.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="16.5" cy="14.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'arco-3-pontos': (
+    <>
+      <path d="M3.5 14.5A7.5 7.5 0 0 1 16.5 14.5" />
+      <circle cx="3.5" cy="14.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="10.8" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="16.5" cy="14.5" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'arco-tangente-reta': (
+    <>
+      <line x1="3" y1="16" x2="17" y2="16" />
+      <path d="M6 16a6 6 0 0 0 6-6" />
+      <circle cx="6" cy="16" r="1.5" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'arco-tangente-2-retas': <path d="M4 3.5V10a6 6 0 0 0 6 6h6.5" />,
+  'arco-tangente-arco-reta': (
+    <>
+      <path d="M3 11a7 7 0 0 1 7-7" />
+      <line x1="8" y1="16.5" x2="17" y2="16.5" />
+      <path d="M10 4a6.3 6.3 0 0 1 4 12.5" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  'arco-tangente-2-arcos': (
+    <>
+      <path d="M3 14a5.5 5.5 0 0 1 5.5-5.5" />
+      <path d="M11.5 8.5a5.5 5.5 0 0 1 5.5 5.5" />
+      <path d="M8.5 8.5a1.5 1.5 0 0 0 3 0" strokeDasharray="2.2 1.8" />
     </>
   ),
 };

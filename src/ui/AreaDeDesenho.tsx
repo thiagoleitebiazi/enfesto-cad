@@ -104,7 +104,16 @@ export type ModoDeDesenho =
   | 'cota-distancia'
   | 'cota-horizontal-vertical'
   | 'cota-angulo'
-  | 'cota-perimetro';
+  | 'cota-perimetro'
+  | 'curva'
+  | 'arco-2-pontos'
+  | 'arco-3-pontos'
+  | 'arco-tangente'
+  | 'editar-pontos-de-curva'
+  | 'cadastrar-curva'
+  | 'curva-predefinida'
+  | 'circulo'
+  | 'espiral';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -120,6 +129,22 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'excluir-ponto',
   'arredondar-ou-chanfrar',
   'redefinir-perimetro',
+]);
+
+/**
+ * Modos que mostram as alças dos vértices da peça selecionada: os de edição
+ * de vértice e as ferramentas que pedem pontos do contorno dela (curvas e
+ * arcos) — nestes o clique segue para a ferramenta, sem agarrar o vértice.
+ */
+const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
+  ...MODOS_DE_EDICAO_DE_VERTICE,
+  'curva',
+  'arco-2-pontos',
+  'arco-3-pontos',
+  'arco-tangente',
+  'editar-pontos-de-curva',
+  'cadastrar-curva',
+  'curva-predefinida',
 ]);
 
 /**
@@ -142,6 +167,11 @@ const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
   'definir-cerca',
   'retangulo',
   'sentido-do-fio',
+  'curva',
+  'arco-2-pontos',
+  'arco-3-pontos',
+  'circulo',
+  'espiral',
 ]);
 
 /**
@@ -224,6 +254,19 @@ interface AreaDeDesenhoProps {
   readonly inicioDoTrecho?: Ponto2D | null;
   /** Cota sendo posta (os pontos já clicados e o mouse), desenhada como prévia. */
   readonly cotaEmPrevia?: Cota | null;
+  /** Prévia de uma ferramenta que mexe no contorno: o que entra, o que sai e os pontos já indicados. */
+  readonly previa?: PreviaNoDesenho | null;
+}
+
+/** O que uma ferramenta de contorno mostra antes de aplicar. Tudo em mm do mundo. */
+export interface PreviaNoDesenho {
+  /** A linha que vai entrar (tracejada, na cor de edição); fechada, quando é um contorno inteiro. */
+  readonly novo?: readonly Ponto2D[] | null;
+  readonly novoFechado?: boolean;
+  /** O trecho do contorno que vai sair, ou que foi indicado (em destaque). */
+  readonly substituido?: readonly Ponto2D[] | null;
+  /** Pontos já indicados no contorno. */
+  readonly marcas?: readonly Ponto2D[];
 }
 
 const SEM_MEDICOES: readonly MedicaoResolvida[] = [];
@@ -291,6 +334,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     medicoes = SEM_MEDICOES,
     inicioDoTrecho = null,
     cotaEmPrevia = null,
+    previa = null,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   // O que prende o cursor agora: os vértices, com o ímã ligado ou num modo de
@@ -828,7 +872,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     // foi aplicada acima. Em "Mover ponto" e "Modificar", os vértices
     // selecionados (clique, Shift+clique ou retângulo) ficam destacados numa
     // cor diferente.
-    if (MODOS_DE_EDICAO_DE_VERTICE.has(modo) && pecaSelecionada) {
+    if (MODOS_QUE_MOSTRAM_ALCAS.has(modo) && pecaSelecionada) {
       const indicesEmArrasto = deltaDeGrupo && arrastoDeGrupoRef.current ? new Set(arrastoDeGrupoRef.current.indices) : null;
       const pecaParaAlcas =
         indicesEmArrasto && pecaSelecionada.id === selecionadoId
@@ -1120,6 +1164,45 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
     if (cotaEmPrevia) desenharCota(ctx, cotaEmPrevia, null, COR_EM_EDICAO);
 
+    // Prévia das ferramentas de contorno: o trecho que sai em destaque, a
+    // linha que entra tracejada e um anel em cada ponto já indicado.
+    if (previa) {
+      const tracar = (pontos: readonly Ponto2D[], fechar: boolean): void => {
+        ctx.beginPath();
+        pontos.forEach((p, i) => {
+          const tela = mundoParaTela(p, transform);
+          if (i === 0) ctx.moveTo(tela.x, tela.y);
+          else ctx.lineTo(tela.x, tela.y);
+        });
+        if (fechar) ctx.closePath();
+        ctx.stroke();
+      };
+      ctx.lineJoin = 'round';
+      if (previa.substituido && previa.substituido.length > 1) {
+        ctx.strokeStyle = COR_MEDICAO;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        tracar(previa.substituido, false);
+        ctx.lineCap = 'butt';
+      }
+      if (previa.novo && previa.novo.length > 1) {
+        ctx.strokeStyle = COR_EM_EDICAO;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        tracar(previa.novo, previa.novoFechado === true);
+        ctx.setLineDash([]);
+      }
+      ctx.lineJoin = 'miter';
+      ctx.strokeStyle = COR_MEDICAO;
+      ctx.lineWidth = 2;
+      for (const marca of previa.marcas ?? []) {
+        const tela = mundoParaTela(marca, transform);
+        ctx.beginPath();
+        ctx.arc(tela.x, tela.y, 7, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
     // Prévia da linha de fio sendo definida (primeiro clique já feito): a de
     // um molde novo ou a que "Sentido do fio" vai pôr na peça selecionada.
     if ((modo === 'definir-fio' || modo === 'sentido-do-fio') && pontosEmEdicao.length === 1 && cursorLocal) {
@@ -1180,6 +1263,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     inicioDoTrecho,
     desenharCota,
     cotaEmPrevia,
+    previa,
   ]);
 
   // Desenha a régua horizontal.

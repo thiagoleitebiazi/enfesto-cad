@@ -31,6 +31,8 @@ import {
   comprimentoDaLinha,
   perimetro,
   trechoDoContorno,
+  trechoMaisCurto,
+  substituirTrechoDoContorno,
   arredondarCantoDoContorno,
 } from './geometria';
 
@@ -499,6 +501,77 @@ describe('trechoDoContorno', () => {
       'Posição fora do contorno.',
     );
     expect(() => trechoDoContorno(retangulo, { indiceAresta: -1, ponto: ponto(0, 0) }, vertice(0))).toThrow(
+      'Posição fora do contorno.',
+    );
+  });
+});
+
+describe('trechoMaisCurto', () => {
+  const retangulo = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+  const vertice = (i: number) => ({ indiceAresta: i, ponto: retangulo[i]! });
+
+  it('entre dois vértices vizinhos, é a aresta entre eles, em qualquer ordem dos cliques', () => {
+    expect(trechoMaisCurto(retangulo, vertice(0), vertice(1))).toEqual({ de: vertice(0), ate: vertice(1), invertido: false });
+    expect(trechoMaisCurto(retangulo, vertice(1), vertice(0))).toEqual({ de: vertice(0), ate: vertice(1), invertido: true });
+  });
+
+  it('passa pela aresta que fecha o contorno quando esse é o lado mais curto', () => {
+    // Do ponto 4 ao ponto 1: pela aresta 3 (300 mm), não pela volta (700 mm).
+    expect(trechoMaisCurto(retangulo, vertice(0), vertice(3))).toEqual({ de: vertice(3), ate: vertice(0), invertido: true });
+  });
+});
+
+describe('substituirTrechoDoContorno', () => {
+  // Arestas: 0 de (0,0) a (200,0); 1 até (200,300); 2 até (0,300); 3 fecha em (0,0).
+  const retangulo = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+  const vertice = (i: number) => ({ indiceAresta: i, ponto: retangulo[i]! });
+
+  it('troca uma aresta inteira por um caminho novo, mantendo os outros vértices e a numeração', () => {
+    const novo = substituirTrechoDoContorno(retangulo, vertice(1), vertice(2), [ponto(260, 150)]);
+    expect(novo).toEqual([ponto(0, 0), ponto(200, 0), ponto(260, 150), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('com o miolo vazio, o trecho vira uma reta entre os extremos', () => {
+    // Do ponto 2 ao ponto 4, o ponto 3 some.
+    const novo = substituirTrechoDoContorno(retangulo, vertice(1), vertice(3), []);
+    expect(novo).toEqual([ponto(0, 0), ponto(200, 0), ponto(0, 300)]);
+  });
+
+  it('entre dois pontos no meio da mesma aresta, só aquele pedaço muda', () => {
+    const de = { indiceAresta: 0, ponto: ponto(50, 0) };
+    const ate = { indiceAresta: 0, ponto: ponto(150, 0) };
+    const novo = substituirTrechoDoContorno(retangulo, de, ate, [ponto(100, -40)]);
+    expect(novo).toEqual([ponto(0, 0), ponto(50, 0), ponto(100, -40), ponto(150, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('entre pontos de arestas diferentes, os vértices do caminho somem', () => {
+    const de = { indiceAresta: 0, ponto: ponto(150, 0) };
+    const ate = { indiceAresta: 1, ponto: ponto(200, 100) };
+    const novo = substituirTrechoDoContorno(retangulo, de, ate, []);
+    // O canto (200,0) é cortado por uma reta.
+    expect(novo).toEqual([ponto(0, 0), ponto(150, 0), ponto(200, 100), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('pela aresta que fecha o contorno, o primeiro vértice que sobrou continua sendo o primeiro', () => {
+    const novo = substituirTrechoDoContorno(retangulo, vertice(3), vertice(0), [ponto(-50, 150)]);
+    expect(novo).toEqual([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300), ponto(-50, 150)]);
+  });
+
+  it('se o primeiro vértice é engolido pelo trecho, a numeração começa no menor que sobrou', () => {
+    // Do ponto 4 ao ponto 2, passando pelo 1: o 1 some.
+    const novo = substituirTrechoDoContorno(retangulo, vertice(3), vertice(1), [ponto(100, -60)]);
+    expect(novo).toEqual([ponto(200, 0), ponto(200, 300), ponto(0, 300), ponto(100, -60)]);
+  });
+
+  it('a área e o perímetro batem com a forma nova', () => {
+    const novo = substituirTrechoDoContorno(retangulo, vertice(1), vertice(2), [ponto(260, 150)]);
+    // Retângulo 200 × 300 mais um triângulo de base 300 e altura 60.
+    expect(area(novo)).toBe(200 * 300 + (300 * 60) / 2);
+    expect(perimetro(novo)).toBeCloseTo(200 + 300 + 200 + 2 * Math.hypot(60, 150), 9);
+  });
+
+  it('recusa aresta que não existe', () => {
+    expect(() => substituirTrechoDoContorno(retangulo, vertice(0), { indiceAresta: 9, ponto: ponto(0, 0) }, [])).toThrow(
       'Posição fora do contorno.',
     );
   });

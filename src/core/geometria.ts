@@ -343,6 +343,71 @@ export function trechoDoContorno(contorno: Contorno, de: PosicaoNoContorno, ate:
   return caminho;
 }
 
+/**
+ * Dos dois caminhos que ligam `a` e `b` sobre o perímetro, o mais curto —
+ * já orientado no sentido da numeração dos vértices (`de` → `ate`).
+ * `invertido` diz que esse caminho vai de `b` para `a`.
+ */
+export function trechoMaisCurto(
+  contorno: Contorno,
+  a: PosicaoNoContorno,
+  b: PosicaoNoContorno,
+): { readonly de: PosicaoNoContorno; readonly ate: PosicaoNoContorno; readonly invertido: boolean } {
+  const ida = comprimentoDaLinha(trechoDoContorno(contorno, a, b));
+  const volta = comprimentoDaLinha(trechoDoContorno(contorno, b, a));
+  return ida <= volta ? { de: a, ate: b, invertido: false } : { de: b, ate: a, invertido: true };
+}
+
+/**
+ * Troca o caminho do perímetro de `de` até `ate` (no sentido da numeração
+ * dos vértices) por `de.ponto`, o `miolo` e `ate.ponto`. O resto do
+ * contorno fica como estava, na mesma ordem, e o contorno novo começa pelo
+ * vértice de menor número que sobrou — assim a numeração dos pontos que não
+ * foram mexidos muda o mínimo possível.
+ */
+export function substituirTrechoDoContorno(
+  contorno: Contorno,
+  de: PosicaoNoContorno,
+  ate: PosicaoNoContorno,
+  miolo: readonly Ponto2D[],
+): Ponto2D[] {
+  const n = contorno.length;
+  const dentro = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < n;
+  if (n < 2 || !dentro(de.indiceAresta) || !dentro(ate.indiceAresta)) {
+    throw new Error('Posição fora do contorno.');
+  }
+  const inicioDaAresta = contorno[de.indiceAresta]!;
+  const naMesmaArestaEAdiante =
+    de.indiceAresta === ate.indiceAresta &&
+    distancia(inicioDaAresta, ate.ponto) >= distancia(inicioDaAresta, de.ponto) - EPSILON_DE_POSICAO_MM;
+  // Vértices que o caminho trocado engolia: do seguinte a `de` até o da aresta de `ate`.
+  const removidos = naMesmaArestaEAdiante ? 0 : (ate.indiceAresta - de.indiceAresta + n) % n || n;
+  const mantidos = Array.from({ length: n - removidos }, (_, j) => (ate.indiceAresta + 1 + j) % n);
+  const sequencia = [de.ponto, ...miolo, ate.ponto, ...mantidos.map((i) => contorno[i]!)];
+  // Vértices originais que continuam no contorno novo, com a posição de cada
+  // um na sequência: os mantidos e os extremos do trecho que caem num vértice.
+  const sobreviventes = mantidos.map((indice, j) => ({ indice, posicao: miolo.length + 2 + j }));
+  if (distancia(ate.ponto, contorno[ate.indiceAresta]!) <= EPSILON_DE_POSICAO_MM) {
+    sobreviventes.push({ indice: ate.indiceAresta, posicao: miolo.length + 1 });
+  }
+  if (distancia(de.ponto, inicioDaAresta) <= EPSILON_DE_POSICAO_MM) {
+    sobreviventes.push({ indice: de.indiceAresta, posicao: 0 });
+  }
+  const primeiro = sobreviventes.reduce<{ indice: number; posicao: number } | null>(
+    (menor, v) => (!menor || v.indice < menor.indice ? v : menor),
+    null,
+  );
+  const comeco = primeiro?.posicao ?? 0;
+  const girada = [...sequencia.slice(comeco), ...sequencia.slice(0, comeco)];
+  // Um extremo do trecho em cima de um vértice mantido apareceria duas vezes seguidas.
+  const semRepetidos: Ponto2D[] = [];
+  for (const p of girada) {
+    if (semRepetidos.length === 0 || distancia(semRepetidos.at(-1)!, p) > EPSILON_DE_POSICAO_MM) semRepetidos.push(p);
+  }
+  if (semRepetidos.length > 1 && distancia(semRepetidos.at(-1)!, semRepetidos[0]!) <= EPSILON_DE_POSICAO_MM) semRepetidos.pop();
+  return semRepetidos;
+}
+
 function normalExternaDaAresta(a: Ponto2D, b: Ponto2D): Ponto2D {
   const dx = b.x - a.x;
   const dy = b.y - a.y;

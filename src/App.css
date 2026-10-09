@@ -498,11 +498,15 @@ button:focus-visible {
 
 /* Níveis seguintes: os botões pequenos do grupo ficam só com o ícone. O nome
    sai da tela mas continua no botão (dica e leitores de tela). */
-.grupo-de-ferramentas[data-compacto] button.botao-pequeno {
+.grupo-de-ferramentas[data-compacto] button.botao-pequeno,
+.grupo-de-ferramentas button.botao-so-icone {
   position: relative;
 }
 
-.grupo-de-ferramentas[data-compacto] button.botao-pequeno > span {
+/* O botão só com ícone (as ferramentas de arco sem rótulo) é sempre assim,
+   em qualquer largura de janela. */
+.grupo-de-ferramentas[data-compacto] button.botao-pequeno > span,
+.grupo-de-ferramentas button.botao-so-icone > span {
   position: absolute;
   width: 1px;
   height: 1px;

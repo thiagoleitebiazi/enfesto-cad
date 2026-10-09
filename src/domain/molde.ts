@@ -12,6 +12,9 @@ import {
   somar,
   distancia,
   moverPontoDoContorno,
+  substituirTrechoDoContorno,
+  trechoMaisCurto,
+  type PosicaoNoContorno,
   inserirPontoNoContorno,
   removerPontoDoContorno,
   escalarContorno,
@@ -512,6 +515,45 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
       (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
     ),
   };
+}
+
+/** Um pique a menos disso (mm) do contorno novo continua sendo um pique dele. */
+const TOLERANCIA_DE_PIQUE_NO_CONTORNO_MM = 1e-6;
+
+/**
+ * Os piques que continuam sobre o contorno depois de um trecho dele ser
+ * trocado: os das arestas que não mudaram ficam (com o índice de aresta
+ * acertado), e os do trecho trocado saem — a mesma regra das outras edições
+ * de forma: melhor perder um pique do que deixá-lo num lugar adivinhado.
+ */
+function piquesQueFicamNoContorno(piques: readonly Pique[], contorno: Contorno): readonly Pique[] {
+  return piques.flatMap((pique) => {
+    const maisProximo = pontoMaisProximoNoContorno(pique.posicao, contorno);
+    return maisProximo.distancia <= TOLERANCIA_DE_PIQUE_NO_CONTORNO_MM
+      ? [{ ...pique, posicao: maisProximo.ponto, indiceAresta: maisProximo.indiceAresta }]
+      : [];
+  });
+}
+
+/**
+ * Troca um trecho do contorno — o mais curto dos dois caminhos entre `a` e
+ * `b` — por um caminho novo, dado de `a` para `b` sem os extremos
+ * (`miolo`). É a base das curvas e dos arcos: uma curva é um miolo de pontos
+ * próximos. Recusa a troca que deixaria o contorno sem área.
+ */
+export function substituirTrechoDoMolde(
+  molde: Molde,
+  a: PosicaoNoContorno,
+  b: PosicaoNoContorno,
+  miolo: readonly Ponto2D[],
+): Molde {
+  const { de, ate, invertido } = trechoMaisCurto(molde.contorno, a, b);
+  const contorno = substituirTrechoDoContorno(molde.contorno, de, ate, invertido ? [...miolo].reverse() : miolo);
+  if (contorno.length < 3) throw new Error(`O contorno da peça "${molde.nome}" ficaria sem área com essa mudança.`);
+  return exigirContornoComArea(
+    { ...molde, contorno, piques: piquesQueFicamNoContorno(molde.piques, contorno) },
+    'com essa mudança',
+  );
 }
 
 /** Abaixo disso (mm) os dois pontos da linha de fio contam como um só, e a seta não tem direção. */

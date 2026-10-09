@@ -101,6 +101,15 @@ function propsBase(): Props {
     onEntrarModoCotaPerimetro: vi.fn(),
     onConverterEmContorno: vi.fn(),
     onAbrirVariantes: vi.fn(),
+    onEntrarModoCurva: vi.fn(),
+    onEntrarModoArco2Pontos: vi.fn(),
+    onEntrarModoArco3Pontos: vi.fn(),
+    onEntrarModoArcoTangente: vi.fn(),
+    onEntrarModoEditarPontosDeCurva: vi.fn(),
+    onEntrarModoCadastrarCurva: vi.fn(),
+    onAbrirCurvaPredefinida: vi.fn(),
+    onAbrirEspiral: vi.fn(),
+    onEntrarModoCirculo: vi.fn(),
   };
 }
 
@@ -172,7 +181,15 @@ describe('BarraDeFerramentas: abas', () => {
       Retas: ['Reta', 'Retângulo', 'Por ângulo', 'Estender reta', 'Estender até elemento', 'Estender duas retas'],
       Curvas: ['Curva', 'Dividir curva', 'Pré-definida', 'Espiral e curvas', 'Cadastrar curva', 'Editar pontos de curva'],
       Pontos: ['Por coordenada', 'Por interseção', 'No centro do arco', 'No perímetro', 'Por distância'],
-      Arcos: ['Por raio'],
+      Arcos: [
+        'Por raio',
+        'Arco por 2 pontos',
+        'Arco por 3 pontos',
+        'Arco tangente à reta ou arco',
+        'Arco tangente a 2 retas',
+        'Arco tangente a arco e reta',
+        'Arco tangente a 2 arcos',
+      ],
       Texto: ['Inserir texto', 'Editar texto'],
     });
   });
@@ -255,7 +272,7 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
   it('os motivos são os de cada família de ferramenta', () => {
     renderizar('Construção');
     expect(botao('Estender reta').title).toContain('trabalha sobre elementos de modelagem');
-    expect(botao('Dividir curva').title).toContain('sem curvas nem arcos');
+    expect(botao('Arco tangente a 2 arcos').title).toContain('precisa de um arco como elemento');
     expect(botao('Inserir texto').title).toContain('não há textos soltos no desenho');
     cleanup();
 
@@ -333,6 +350,67 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
 
     expect(props.onEntrarModoNovoMolde).toHaveBeenCalledTimes(1);
     expect(props.onEntrarModoRetangulo).toHaveBeenCalledTimes(1);
+  });
+
+  it('Construção: as seis ferramentas de curva e as quatro de arco que funcionam', () => {
+    const props = renderizar('Construção');
+
+    for (const nome of [
+      'Curva',
+      'Dividir curva',
+      'Pré-definida',
+      'Espiral e curvas',
+      'Cadastrar curva',
+      'Editar pontos de curva',
+      'Por raio',
+      'Arco por 2 pontos',
+      'Arco por 3 pontos',
+      'Arco tangente a 2 retas',
+    ]) {
+      fireEvent.click(botao(nome));
+    }
+
+    for (const acao of [
+      props.onEntrarModoCurva,
+      props.onEntrarModoInserirPonto,
+      props.onAbrirCurvaPredefinida,
+      props.onAbrirEspiral,
+      props.onEntrarModoCadastrarCurva,
+      props.onEntrarModoEditarPontosDeCurva,
+      props.onEntrarModoCirculo,
+      props.onEntrarModoArco2Pontos,
+      props.onEntrarModoArco3Pontos,
+      props.onEntrarModoArcoTangente,
+    ]) {
+      expect(acao).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('Construção: sem peça selecionada, só as ferramentas que criam molde novo ficam ligadas', () => {
+    renderizar('Construção', { temSelecao: false, temSelecaoUnica: false });
+
+    for (const nome of ['Curva', 'Dividir curva', 'Pré-definida', 'Cadastrar curva', 'Editar pontos de curva', 'Arco por 2 pontos', 'Arco por 3 pontos', 'Arco tangente a 2 retas']) {
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
+    for (const nome of ['Reta', 'Retângulo', 'Espiral e curvas', 'Por raio']) expect(botao(nome)).toBeEnabled();
+  });
+
+  it('Construção: as ferramentas de arco sem rótulo são botões só com ícone, com o nome na dica', () => {
+    renderizar('Construção');
+
+    for (const nome of ['Arco por 2 pontos', 'Arco por 3 pontos', 'Arco tangente a 2 retas', 'Arco tangente a 2 arcos']) {
+      expect(botao(nome)).toHaveClass('botao-so-icone');
+      expect(botao(nome).title.startsWith(nome)).toBe(true);
+    }
+    expect(botao('Por raio')).not.toHaveClass('botao-so-icone');
+  });
+
+  it('Manipulação: "Definir curva" liga a mesma ferramenta de Construção > Curva', () => {
+    const props = renderizar('Manipulação');
+
+    fireEvent.click(botao('Definir curva'));
+
+    expect(props.onEntrarModoCurva).toHaveBeenCalledTimes(1);
   });
 
   it('Produção: Criar molde, Sentido do fio e as três ações de costura', () => {

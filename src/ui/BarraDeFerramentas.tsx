@@ -103,13 +103,22 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoCotaPerimetro: () => void;
   readonly onConverterEmContorno: () => void;
   readonly onAbrirVariantes: () => void;
+  readonly onEntrarModoCurva: () => void;
+  readonly onEntrarModoArco2Pontos: () => void;
+  readonly onEntrarModoArco3Pontos: () => void;
+  readonly onEntrarModoArcoTangente: () => void;
+  readonly onEntrarModoEditarPontosDeCurva: () => void;
+  readonly onEntrarModoCadastrarCurva: () => void;
+  readonly onAbrirCurvaPredefinida: () => void;
+  readonly onAbrirEspiral: () => void;
+  readonly onEntrarModoCirculo: () => void;
 }
 
-const NAO_IMPLEMENTADO_CURVA = 'Ainda não implementado — contornos com curvas Bézier (apenas segmentos retos por enquanto)';
 const SO_PARA_ELEMENTOS =
   'indisponível neste programa: trabalha sobre elementos de modelagem (linhas soltas), e aqui só existem peças fechadas';
 
-const SEM_CURVAS = 'indisponível neste programa: os contornos são feitos só de segmentos retos, sem curvas nem arcos';
+const SO_ENTRE_ARCOS =
+  'indisponível neste programa: precisa de um arco como elemento para tangenciar, e aqui os arcos viram pontos do contorno, sem centro nem raio guardados';
 const SEM_GRADUACAO =
   'indisponível neste programa: não há graduação — cada tamanho entra como uma peça própria, já graduada';
 const SO_NA_MODELAGEM =
@@ -142,7 +151,8 @@ function RotuloDeDuasLinhas(props: { readonly primeira: string; readonly segunda
 }
 
 interface FerramentaProps {
-  readonly tamanho: 'grande' | 'pequeno';
+  /** `icone` é o botão pequeno sem rótulo à vista: o nome fica na dica e para leitores de tela. */
+  readonly tamanho: 'grande' | 'pequeno' | 'icone';
   /** O nome da ferramenta; num botão grande, um par diz onde o rótulo quebra com a fita compactada. */
   readonly rotulo: string | readonly [string, string];
   readonly icone: NomeDoIcone;
@@ -168,7 +178,7 @@ function Ferramenta(props: FerramentaProps): React.JSX.Element {
   const motivo = props.indisponivel ?? props.falta ?? null;
   return (
     <button
-      className={`botao-${props.tamanho}${props.pressionado ? ' item-selecionado' : ''}`}
+      className={`${props.tamanho === 'icone' ? 'botao-pequeno botao-so-icone' : `botao-${props.tamanho}`}${props.pressionado ? ' item-selecionado' : ''}`}
       aria-pressed={props.pressionado}
       onClick={props.onClick}
       disabled={motivo !== null}
@@ -597,18 +607,60 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Curvas">
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Curva" icone="curva" indisponivel={SEM_CURVAS} />
-                  <Ferramenta tamanho="pequeno" rotulo="Dividir curva" icone="dividir-curva" indisponivel={SEM_CURVAS} />
-                  <Ferramenta tamanho="pequeno" rotulo="Pré-definida" icone="curva-predefinida" indisponivel={SEM_CURVAS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Curva"
+                    icone="curva"
+                    pressionado={props.modo === 'curva'}
+                    dica="Curva: troca um trecho do contorno por uma curva suave — clique no contorno, onde ela começa, nos pontos por onde deve passar e, por fim, no contorno, onde termina"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoCurva}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Dividir curva"
+                    icone="dividir-curva"
+                    pressionado={props.modo === 'inserir-ponto'}
+                    dica="Dividir curva: marca um ponto novo no contorno, onde a curva passa a poder ser dividida ou presa (aqui a curva é uma sequência de pontos; é o Inserir ponto)"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoInserirPonto}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Pré-definida"
+                    icone="curva-predefinida"
+                    pressionado={props.modo === 'curva-predefinida'}
+                    dica="Pré-definida: escolhe uma curva do cadastro e a põe entre dois pontos do contorno, esticada ou encolhida por igual"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onAbrirCurvaPredefinida}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Espiral e curvas" icone="espiral" indisponivel={SEM_CURVAS} />
-                  <Ferramenta tamanho="pequeno" rotulo="Cadastrar curva" icone="cadastrar-curva" indisponivel={SEM_CURVAS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Espiral e curvas"
+                    icone="espiral"
+                    pressionado={props.modo === 'espiral'}
+                    dica="Espiral: cria um molde em espiral (o do babado), dadas a largura da tira e o perímetro da borda de dentro"
+                    onClick={props.onAbrirEspiral}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Cadastrar curva"
+                    icone="cadastrar-curva"
+                    pressionado={props.modo === 'cadastrar-curva'}
+                    dica="Cadastrar curva: guarda a forma de um trecho do contorno para usar de novo em Pré-definida — clique no começo e no fim do trecho"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoCadastrarCurva}
+                  />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Editar pontos de curva"
                     icone="editar-pontos-de-curva"
-                    indisponivel={SEM_CURVAS}
+                    pressionado={props.modo === 'editar-pontos-de-curva'}
+                    dica="Editar pontos de curva: muda quantos pontos um trecho do contorno tem — clique no começo e no fim do trecho e digite o número"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoEditarPontosDeCurva}
                   />
                 </div>
               </div>
@@ -627,14 +679,60 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   indisponivel={SO_PARA_ELEMENTOS}
                 />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="No centro do arco" icone="ponto-no-centro" indisponivel={SEM_CURVAS} />
+                  <Ferramenta tamanho="pequeno" rotulo="No centro do arco" icone="ponto-no-centro" indisponivel={SO_PARA_ELEMENTOS} />
                   <Ferramenta tamanho="pequeno" rotulo="No perímetro" icone="ponto-no-perimetro" indisponivel={SO_PARA_ELEMENTOS} />
                   <Ferramenta tamanho="pequeno" rotulo="Por distância" icone="ponto-por-distancia" indisponivel={SO_PARA_ELEMENTOS} />
                 </div>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Arcos">
-                <Ferramenta tamanho="grande" rotulo={['Por', 'raio']} icone="arco-por-raio" indisponivel={SEM_CURVAS} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Por', 'raio']}
+                  icone="arco-por-raio"
+                  pressionado={props.modo === 'circulo'}
+                  dica="Por raio: cria um molde circular — clique no centro e depois na borda; a distância entre os dois é o raio"
+                  onClick={props.onEntrarModoCirculo}
+                />
+                <div className="coluna-de-ferramenta">
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco por 2 pontos"
+                    icone="arco-2-pontos"
+                    pressionado={props.modo === 'arco-2-pontos'}
+                    dica="Arco por 2 pontos: troca um trecho do contorno por um arco de círculo — clique nos dois pontos do contorno e depois por onde o arco deve passar"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoArco2Pontos}
+                  />
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco por 3 pontos"
+                    icone="arco-3-pontos"
+                    pressionado={props.modo === 'arco-3-pontos'}
+                    dica="Arco por 3 pontos: troca um trecho do contorno por um arco de círculo — clique no contorno, depois por onde o arco deve passar e, por fim, no contorno de novo"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoArco3Pontos}
+                  />
+                  <Ferramenta tamanho="icone" rotulo="Arco tangente à reta ou arco" icone="arco-tangente-reta" indisponivel={SO_ENTRE_ARCOS} />
+                </div>
+                <div className="coluna-de-ferramenta">
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco tangente a 2 retas"
+                    icone="arco-tangente-2-retas"
+                    pressionado={props.modo === 'arco-tangente'}
+                    dica="Arco tangente a 2 retas, dado o raio: clique num canto da peça selecionada e digite o raio — o canto vira um arco tangente às duas arestas"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={props.onEntrarModoArcoTangente}
+                  />
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco tangente a arco e reta"
+                    icone="arco-tangente-arco-reta"
+                    indisponivel={SO_ENTRE_ARCOS}
+                  />
+                  <Ferramenta tamanho="icone" rotulo="Arco tangente a 2 arcos" icone="arco-tangente-2-arcos" indisponivel={SO_ENTRE_ARCOS} />
+                </div>
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Texto">
@@ -1000,10 +1098,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Manipular molde">
-                <button className="botao-grande" disabled title={NAO_IMPLEMENTADO_CURVA}>
-                  <Icone nome="curva" />
-                  <RotuloDeDuasLinhas primeira="Definir" segunda="curva" />
-                </button>
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Definir', 'curva']}
+                  icone="curva"
+                  pressionado={props.modo === 'curva'}
+                  dica="Definir curva: troca um trecho do contorno por uma curva suave (a mesma ferramenta de Construção > Curva)"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={props.onEntrarModoCurva}
+                />
                 <div className="coluna-de-ferramenta">
                   <button
                     aria-pressed={props.modo === 'inserir-ponto'}

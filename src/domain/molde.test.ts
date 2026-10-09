@@ -30,6 +30,7 @@ import {
   adicionarCota,
   removerCota,
   converterCosturaEmContorno,
+  substituirTrechoDoMolde,
   RESTRICAO_PADRAO,
   type DadosDeNovoMolde,
 } from './molde';
@@ -755,5 +756,49 @@ describe('converterCosturaEmContorno', () => {
 
   it('recusa a peça sem costura', () => {
     expect(() => converterCosturaEmContorno(criarMolde(dadosBase(), 'm1'))).toThrow('não tem costura para converter');
+  });
+});
+
+describe('substituirTrechoDoMolde', () => {
+  // Contorno base: (0,0), (200,0), (200,300), (0,300).
+  const vertice = (i: number) => ({ indiceAresta: i, ponto: dadosBase().contorno[i]! });
+
+  it('troca o caminho mais curto entre os dois pontos, na ordem em que foram dados', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const novo = substituirTrechoDoMolde(molde, vertice(1), vertice(2), [ponto(240, 100), ponto(240, 200)]);
+    expect(novo.contorno).toEqual([ponto(0, 0), ponto(200, 0), ponto(240, 100), ponto(240, 200), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('com os pontos dados na ordem contrária à numeração, o miolo é invertido para caber no mesmo lugar', () => {
+    const molde = criarMolde(dadosBase(), 'm1');
+    const novo = substituirTrechoDoMolde(molde, vertice(2), vertice(1), [ponto(240, 200), ponto(240, 100)]);
+    expect(novo.contorno).toEqual([ponto(0, 0), ponto(200, 0), ponto(240, 100), ponto(240, 200), ponto(200, 300), ponto(0, 300)]);
+  });
+
+  it('os piques das arestas que não mudaram ficam, com o índice acertado; os do trecho trocado saem', () => {
+    const comPiques = adicionarPique(adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(200, 150), 'no-trecho'), ponto(0, 150), 'fora');
+    const novo = substituirTrechoDoMolde(comPiques, vertice(1), vertice(2), [ponto(240, 100), ponto(240, 200)]);
+    expect(novo.piques.map((p) => p.id)).toEqual(['fora']);
+    // A aresta (0,300)→(0,0) era a 3 e passou a ser a 5.
+    expect(novo.piques[0]).toMatchObject({ posicao: ponto(0, 150), indiceAresta: 5 });
+  });
+
+  it('o resto da peça não muda: fio, furos, cotas, nome', () => {
+    const molde = criarMolde(dadosBase({ furos: [[ponto(50, 50), ponto(80, 50), ponto(80, 80)]] }), 'm1');
+    const novo = substituirTrechoDoMolde(molde, vertice(1), vertice(2), [ponto(240, 150)]);
+    expect(novo.linhaDeFio).toEqual(molde.linhaDeFio);
+    expect(novo.furos).toEqual(molde.furos);
+    expect(novo.nome).toBe(molde.nome);
+  });
+
+  it('recusa a troca que deixaria o contorno sem área', () => {
+    const triangulo = criarMolde(dadosBase({ contorno: [ponto(0, 0), ponto(200, 0), ponto(100, 100)] }), 'm1');
+    const base = [
+      { indiceAresta: 0, ponto: ponto(0, 0) },
+      { indiceAresta: 1, ponto: ponto(200, 0) },
+    ] as const;
+    // Levar a base até o terceiro vértice dobra o contorno sobre si mesmo.
+    expect(() => substituirTrechoDoMolde(triangulo, base[0], base[1], [ponto(100, 100)])).toThrow('ficaria sem área');
+    expect(() => substituirTrechoDoMolde(triangulo, base[0], base[1], [ponto(100, -40)])).not.toThrow();
   });
 });

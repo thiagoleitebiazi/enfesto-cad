@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AreaDeDesenho, type FerramentaDeVista, type ModoDeDesenho } from './ui/AreaDeDesenho';
+import { AreaDeDesenho, type FerramentaDeVista, type ModoDeDesenho, type PreviaNoDesenho } from './ui/AreaDeDesenho';
 import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { BarraDeVisualizacao } from './ui/BarraDeVisualizacao';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
@@ -12,11 +12,36 @@ import { PainelDeAjuda, type ConteudoDaAjuda } from './ui/PainelDeAjuda';
 import { PainelDeCostura } from './ui/PainelDeCostura';
 import { PainelDeInformacoesDosMoldes } from './ui/PainelDeInformacoesDosMoldes';
 import { PainelDeVariantes } from './ui/PainelDeVariantes';
+import { DialogoDeCampos } from './ui/DialogoDeCampos';
+import { PainelDeCurvaPredefinida } from './ui/PainelDeCurvaPredefinida';
+import {
+  caminhoDoTrecho,
+  cliqueDeTrecho,
+  comprimentoDoTrecho,
+  linhaNovaDoTrecho,
+  pontosDoTrecho,
+  previaDoTrecho,
+  SEM_TRECHO,
+  trechoCompleto,
+  type FerramentaDeTrecho,
+  type OpcoesDoTrecho,
+  type TrechoEmEdicao,
+} from './ui/ferramentasDeTrecho';
+import {
+  curvaDoTrecho,
+  CURVAS_DE_FABRICA,
+  gravarCurvasCadastradas,
+  lerCurvasCadastradas,
+  type CurvaCadastrada,
+} from './ui/curvasCadastradas';
+import { formatarMm } from './ui/medidas';
+import { circulo, espiral } from './core/curvas';
 import { CLIQUES_DA_COTA, cotaSobOPonto, montarCota, previaDaCota, type FerramentaDeCotaPorPontos } from './ui/cotas';
 import { cotaDePerimetro } from './domain/cota';
 import {
   alvoDaMedicao,
   cliqueDePerimetro,
+  posicaoNoContornoPerto,
   descreverComparacao,
   descreverMedicao,
   registrarMedicao,
@@ -66,6 +91,7 @@ import {
   adicionarCota,
   removerCota,
   converterCosturaEmContorno,
+  substituirTrechoDoMolde,
   type Molde,
   type PontaDaAresta,
 } from './domain/molde';
@@ -88,7 +114,15 @@ import { DialogoDeImportacaoDeContornos, type ItemConfirmadoDeContorno } from '.
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
-import { ponto, area, retanguloEnvolvente, deslocarContornoParaFora, type Ponto2D } from './core/geometria';
+import {
+  ponto,
+  area,
+  distancia,
+  retanguloEnvolvente,
+  deslocarContornoParaFora,
+  type Ponto2D,
+  type PosicaoNoContorno,
+} from './core/geometria';
 import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -210,7 +244,27 @@ const MODOS_COM_PONTO_DE_REFERENCIA: ReadonlySet<ModoDeDesenho> = new Set([
   'cota-distancia',
   'cota-horizontal-vertical',
   'cota-angulo',
+  'circulo',
 ]);
+
+function ehFerramentaDeTrecho(modo: ModoDeDesenho): modo is FerramentaDeTrecho {
+  return (
+    modo === 'curva' ||
+    modo === 'arco-2-pontos' ||
+    modo === 'arco-3-pontos' ||
+    modo === 'editar-pontos-de-curva' ||
+    modo === 'cadastrar-curva' ||
+    modo === 'curva-predefinida'
+  );
+}
+
+/** Diálogo aberto por uma ferramenta de desenho, com o que ele precisa para aplicar. */
+type DialogoDeFerramenta =
+  | { readonly tipo: 'numero-de-pontos'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
+  | { readonly tipo: 'cadastrar-curva'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
+  | { readonly tipo: 'escolher-curva' }
+  | { readonly tipo: 'espiral' }
+  | { readonly tipo: 'raio-do-arco'; readonly indice: number };
 
 type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias';
 type FerramentaDeCota = FerramentaDeCotaPorPontos | 'cota-perimetro';
@@ -281,6 +335,21 @@ export default function App(): React.JSX.Element {
   // Peça que vai guardar a cota em construção: a do primeiro clique.
   const [donoDaCota, setDonoDaCota] = useState<string | null>(null);
   const [mostrarVariantes, setMostrarVariantes] = useState(false);
+  // Ferramentas de curva e arco (aba Construção): o trecho do contorno sendo
+  // indicado, o diálogo que a ferramenta abriu e o recado dela na faixa
+  // (o que acabou de fazer, ou por que não fez).
+  const [trecho, setTrecho] = useState<TrechoEmEdicao>(SEM_TRECHO);
+  const [dialogoDeFerramenta, setDialogoDeFerramenta] = useState<DialogoDeFerramenta | null>(null);
+  const [recadoDaFerramenta, setRecadoDaFerramenta] = useState<string | null>(null);
+  const [curvasDoUsuario, setCurvasDoUsuario] = useState<readonly CurvaCadastrada[]>(() =>
+    lerCurvasCadastradas(window.localStorage),
+  );
+  const [curvaEscolhida, setCurvaEscolhida] = useState<{ readonly curva: CurvaCadastrada; readonly espelhar: boolean } | null>(
+    null,
+  );
+  const [espiralPendente, setEspiralPendente] = useState<{ readonly larguraMm: number; readonly perimetroMm: number } | null>(
+    null,
+  );
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -824,6 +893,9 @@ export default function App(): React.JSX.Element {
     setRedefinicaoDePerimetro(null);
     setMedicao(SEM_MEDICAO);
     setDonoDaCota(null);
+    setTrecho(SEM_TRECHO);
+    setDialogoDeFerramenta(null);
+    setRecadoDaFerramenta(null);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -899,6 +971,24 @@ export default function App(): React.JSX.Element {
     setContornoPendente(null);
     setMedicao(SEM_MEDICAO);
   }, []);
+
+  /** Liga uma ferramenta de desenho da aba Construção, começando do zero. */
+  const entrarModoDeConstrucao = useCallback((ferramenta: ModoDeDesenho) => {
+    setModo(ferramenta);
+    setPontosEmEdicao([]);
+    setContornoPendente(null);
+    setTrecho(SEM_TRECHO);
+    setDialogoDeFerramenta(null);
+    setRecadoDaFerramenta(null);
+  }, []);
+
+  /** As ferramentas que mexem no contorno precisam de uma peça selecionada. */
+  const entrarModoNaPecaSelecionada = useCallback(
+    (ferramenta: FerramentaDeTrecho | 'arco-tangente') => {
+      if (selecionadoId) entrarModoDeConstrucao(ferramenta);
+    },
+    [selecionadoId, entrarModoDeConstrucao],
+  );
 
   const entrarModoDeCota = useCallback((ferramenta: FerramentaDeCota) => {
     setModo(ferramenta);
@@ -1051,6 +1141,60 @@ export default function App(): React.JSX.Element {
       novasPecas,
     );
   }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
+
+  /**
+   * Põe a linha nova no lugar do trecho indicado na peça selecionada. Devolve
+   * a mensagem de erro (nada muda) ou `null`. De um jeito ou de outro a
+   * ferramenta volta a esperar um trecho novo.
+   */
+  const aplicarTrecho = useCallback(
+    (ferramenta: FerramentaDeTrecho, estado: TrechoEmEdicao, opcoes: OpcoesDoTrecho = {}): string | null => {
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      setTrecho(SEM_TRECHO);
+      if (!peca || !estado.inicio || !estado.fim) return 'Selecione uma peça e indique o trecho no contorno dela.';
+      try {
+        const linha = linhaNovaDoTrecho(ferramenta, peca.contorno, estado.inicio, estado.fim.ponto, estado.livres, opcoes, estado.fim);
+        if (!linha) return 'Faltam pontos para montar a curva.';
+        const nova = substituirTrechoDoMolde(peca, estado.inicio, estado.fim, linha.slice(1, -1));
+        aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  const curvasDisponiveis = useMemo(() => [...CURVAS_DE_FABRICA, ...curvasDoUsuario], [curvasDoUsuario]);
+
+  /** Guarda no cadastro a forma do trecho indicado; devolve a mensagem de erro ou `null`. */
+  const cadastrarCurva = useCallback(
+    (nome: string, inicio: PosicaoNoContorno, fim: PosicaoNoContorno): string | null => {
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      if (!peca) return 'Selecione uma peça primeiro.';
+      try {
+        const curva = curvaDoTrecho(proximoId(), nome, caminhoDoTrecho(peca.contorno, inicio, fim));
+        const novas = [...curvasDoUsuario, curva];
+        if (!gravarCurvasCadastradas(window.localStorage, novas)) return 'Não foi possível guardar a curva neste computador.';
+        setCurvasDoUsuario(novas);
+        setRecadoDaFerramenta(`Curva “${curva.nome}” cadastrada: está em “Pré-definida”.`);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [pecas, selecionadoId, curvasDoUsuario],
+  );
+
+  const excluirCurvaCadastrada = useCallback(
+    (id: string) => {
+      const novas = curvasDoUsuario.filter((c) => c.id !== id);
+      gravarCurvasCadastradas(window.localStorage, novas);
+      setCurvasDoUsuario(novas);
+      if (curvaEscolhida?.curva.id === id) setCurvaEscolhida(null);
+    },
+    [curvasDoUsuario, curvaEscolhida],
+  );
 
   const girarPecaSelecionada = useCallback(
     (anguloGraus: number) => {
@@ -1644,6 +1788,67 @@ export default function App(): React.JSX.Element {
         );
         return;
       }
+      if (ehFerramentaDeTrecho(modo)) {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        setRecadoDaFerramenta(null);
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const novo = cliqueDeTrecho(modo, trecho, {
+          noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
+          livre: mundo,
+        });
+        if (!trechoCompleto(modo, novo) || !novo.inicio || !novo.fim) {
+          setTrecho(novo);
+          return;
+        }
+        // Estas duas pedem um valor antes de aplicar: o diálogo termina o serviço.
+        if (modo === 'editar-pontos-de-curva' || modo === 'cadastrar-curva') {
+          setTrecho(novo);
+          setDialogoDeFerramenta({
+            tipo: modo === 'cadastrar-curva' ? 'cadastrar-curva' : 'numero-de-pontos',
+            inicio: novo.inicio,
+            fim: novo.fim,
+          });
+          return;
+        }
+        const opcoes =
+          modo === 'curva-predefinida' && curvaEscolhida
+            ? { forma: curvaEscolhida.curva.forma, espelhar: curvaEscolhida.espelhar }
+            : {};
+        setRecadoDaFerramenta(aplicarTrecho(modo, novo, opcoes));
+        return;
+      }
+      if (modo === 'arco-tangente') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        setRecadoDaFerramenta(null);
+        const canto = posicaoNoContornoPerto(semCaptura, peca.contorno, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+        // Só um vértice serve: o arco é tangente às duas arestas que se encontram nele.
+        if (canto && distancia(canto.ponto, peca.contorno[canto.indiceAresta]!) < 1e-9) {
+          setDialogoDeFerramenta({ tipo: 'raio-do-arco', indice: canto.indiceAresta });
+        }
+        return;
+      }
+      if (modo === 'circulo') {
+        const centro = pontosEmEdicao[0];
+        if (!centro) {
+          setPontosEmEdicao([mundo]);
+          return;
+        }
+        if (mesmoPonto(mundo, centro)) return;
+        // Como no retângulo: o círculo vira molde depois da linha de fio.
+        setContornoPendente(circulo(centro, mundo));
+        setPontosEmEdicao([]);
+        setModo('definir-fio');
+        return;
+      }
+      if (modo === 'espiral') {
+        if (!espiralPendente) return;
+        setContornoPendente(espiral(mundo, espiralPendente.larguraMm, espiralPendente.perimetroMm));
+        setPontosEmEdicao([]);
+        setModo('definir-fio');
+        return;
+      }
       if (modo === 'pique' && selecionadoId) {
         aplicarMudanca(
           pecas.map((p) => (p.id === selecionadoId ? adicionarPique(p, mundo, proximoId()) : p)),
@@ -1661,6 +1866,10 @@ export default function App(): React.JSX.Element {
       pecas,
       selecionadoId,
       donoDaCota,
+      trecho,
+      curvaEscolhida,
+      espiralPendente,
+      aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
       cancelarModo,
@@ -1879,6 +2088,9 @@ export default function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicarSelecionado();
+      } else if (e.key === 'Backspace' && modo === 'curva' && trecho.livres.length > 0) {
+        e.preventDefault();
+        setTrecho((atual) => ({ ...atual, livres: atual.livres.slice(0, -1) }));
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         excluirSelecionado();
@@ -1926,6 +2138,7 @@ export default function App(): React.JSX.Element {
     },
     [
       modo,
+      trecho.livres.length,
       ferramentaDeVista,
       cancelarModo,
       finalizarContornoEmEdicao,
@@ -1973,11 +2186,83 @@ export default function App(): React.JSX.Element {
     return inicio.de.ponto;
   }, [emModoDeMedida, medicao, pecas]);
 
+  // Prévia das ferramentas de curva e arco: o trecho que sai, a linha que entra
+  // e os pontos já indicados; no círculo e na espiral, o contorno novo inteiro.
+  const previaNoDesenho = useMemo<PreviaNoDesenho | null>(() => {
+    if (ehFerramentaDeTrecho(modo) && pecaSelecionada) {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const mouse = cursorMundo
+        ? { noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm), livre: cursorMundo }
+        : null;
+      const opcoes =
+        modo === 'curva-predefinida' && curvaEscolhida
+          ? { forma: curvaEscolhida.curva.forma, espelhar: curvaEscolhida.espelhar }
+          : {};
+      return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
+    }
+    if (modo === 'circulo' && pontosEmEdicao[0] && cursorMundo && !mesmoPonto(pontosEmEdicao[0], cursorMundo)) {
+      return { novo: circulo(pontosEmEdicao[0], cursorMundo), novoFechado: true };
+    }
+    if (modo === 'espiral' && espiralPendente && cursorMundo) {
+      return { novo: espiral(cursorMundo, espiralPendente.larguraMm, espiralPendente.perimetroMm), novoFechado: true };
+    }
+    return null;
+  }, [modo, pecaSelecionada, trecho, cursorMundo, curvaEscolhida, espiralPendente, pontosEmEdicao, transform.escalaPxPorMm]);
+
+  /** O texto da ferramenta de curva ou arco ligada, conforme o que já foi clicado. */
+  const textoDaConstrucao = ((): string | null => {
+    const fim = ' Esc sai.';
+    switch (modo) {
+      case 'curva':
+        if (!trecho.inicio) return 'Curva: clique no contorno da peça selecionada, onde a curva começa.' + fim;
+        return trecho.livres.length === 0
+          ? 'Curva: clique nos pontos por onde a curva deve passar, fora do contorno.' + fim
+          : 'Curva: mais pontos de passagem, ou clique no contorno, onde a curva termina — ela entra no lugar do trecho em destaque. Backspace desfaz o último ponto.' + fim;
+      case 'arco-2-pontos':
+        if (!trecho.inicio) return 'Arco por 2 pontos: clique no contorno da peça selecionada, onde o arco começa.' + fim;
+        return !trecho.fim
+          ? 'Arco por 2 pontos: clique no contorno, onde o arco termina.' + fim
+          : 'Arco por 2 pontos: clique por onde o arco deve passar.' + fim;
+      case 'arco-3-pontos':
+        if (!trecho.inicio) return 'Arco por 3 pontos: clique no contorno da peça selecionada, onde o arco começa.' + fim;
+        return trecho.livres.length === 0
+          ? 'Arco por 3 pontos: clique por onde o arco deve passar, fora do contorno.' + fim
+          : 'Arco por 3 pontos: clique no contorno, onde o arco termina (um clique fora dele troca o ponto de passagem).' + fim;
+      case 'arco-tangente':
+        return 'Arco tangente a 2 retas: clique num canto da peça selecionada e digite o raio.' + fim;
+      case 'editar-pontos-de-curva':
+        return !trecho.inicio
+          ? 'Editar pontos de curva: clique no contorno da peça selecionada, no começo do trecho.' + fim
+          : 'Editar pontos de curva: clique no fim do trecho — os pontos entre os dois serão redistribuídos.' + fim;
+      case 'cadastrar-curva':
+        return !trecho.inicio
+          ? 'Cadastrar curva: clique no contorno da peça selecionada, no começo do trecho a guardar.' + fim
+          : 'Cadastrar curva: clique no fim do trecho.' + fim;
+      case 'curva-predefinida': {
+        const nome = curvaEscolhida ? ` (“${curvaEscolhida.curva.nome}”${curvaEscolhida.espelhar ? ', espelhada' : ''})` : '';
+        return !trecho.inicio
+          ? `Pré-definida${nome}: clique no contorno da peça selecionada, onde a curva começa.` + fim
+          : `Pré-definida${nome}: clique no contorno, onde a curva termina.` + fim;
+      }
+      case 'circulo':
+        return pontosEmEdicao.length === 0
+          ? 'Por raio: clique no centro do círculo.' + fim
+          : 'Por raio: clique na borda do círculo — a distância até o centro é o raio, e a barra de status mostra a medida.' + fim;
+      case 'espiral':
+        return 'Espiral: clique onde o centro da espiral deve ficar.' + fim;
+      default:
+        return null;
+    }
+  })();
+
   const textoDaFaixa = ((): React.ReactNode => {
     if (ferramentaDeVista === 'mao') return 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.';
     if (ferramentaDeVista === 'zoom-janela') {
       return 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.';
     }
+    // Ferramentas de curva e arco: o recado do que a ferramenta acabou de fazer
+  // (ou de por que não fez) vem antes da instrução do próximo clique.
+    if (textoDaConstrucao) return recadoDaFerramenta ? `${recadoDaFerramenta} — ${textoDaConstrucao}` : textoDaConstrucao;
     switch (modo) {
       case 'novo-molde':
         return 'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.';
@@ -2163,6 +2448,15 @@ export default function App(): React.JSX.Element {
         onEntrarModoCotaPerimetro={() => entrarModoDeCota('cota-perimetro')}
         onConverterEmContorno={converterEmContorno}
         onAbrirVariantes={abrirVariantes}
+        onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
+        onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
+        onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
+        onEntrarModoArcoTangente={() => entrarModoNaPecaSelecionada('arco-tangente')}
+        onEntrarModoEditarPontosDeCurva={() => entrarModoNaPecaSelecionada('editar-pontos-de-curva')}
+        onEntrarModoCadastrarCurva={() => entrarModoNaPecaSelecionada('cadastrar-curva')}
+        onAbrirCurvaPredefinida={() => selecionadoId && setDialogoDeFerramenta({ tipo: 'escolher-curva' })}
+        onAbrirEspiral={() => setDialogoDeFerramenta({ tipo: 'espiral' })}
+        onEntrarModoCirculo={() => entrarModoDeConstrucao('circulo')}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -2298,6 +2592,128 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarInformacoesDosMoldes(false)}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'escolher-curva' && (
+        <PainelDeCurvaPredefinida
+          curvas={curvasDisponiveis}
+          idInicial={curvaEscolhida?.curva.id ?? null}
+          espelharInicial={curvaEscolhida?.espelhar ?? false}
+          onEscolher={(curva, espelhar) => {
+            entrarModoDeConstrucao('curva-predefinida');
+            setCurvaEscolhida({ curva, espelhar });
+          }}
+          onExcluir={excluirCurvaCadastrada}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'numero-de-pontos' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Editar pontos de curva"
+          resumo={[
+            ['Peça', pecaSelecionada.nome],
+            [
+              'Trecho',
+              `${pontosDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim)} pontos em ${formatarMm(comprimentoDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim))}`,
+            ],
+          ]}
+          campos={[
+            {
+              tipo: 'inteiro',
+              id: 'pontos',
+              rotulo: 'Número de pontos do trecho (contando as duas pontas)',
+              inicial: String(pontosDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim)),
+            },
+          ]}
+          nota="Os pontos ficam igualmente espaçados ao longo do trecho. Com menos pontos a curva fica mais simples, e a forma pode mudar um pouco."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) =>
+            aplicarTrecho(
+              'editar-pontos-de-curva',
+              { inicio: dialogoDeFerramenta.inicio, fim: dialogoDeFerramenta.fim, livres: [] },
+              { quantidadeDePontos: Number(valores.pontos) },
+            )
+          }
+          onFechar={() => {
+            setDialogoDeFerramenta(null);
+            setTrecho(SEM_TRECHO);
+          }}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'cadastrar-curva' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Cadastrar curva"
+          resumo={[
+            ['Peça', pecaSelecionada.nome],
+            [
+              'Trecho',
+              `${pontosDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim)} pontos em ${formatarMm(comprimentoDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim))}`,
+            ],
+          ]}
+          campos={[{ tipo: 'texto', id: 'nome', rotulo: 'Nome da curva', inicial: '' }]}
+          nota="Fica guardada só a forma do trecho, sem o tamanho: em “Pré-definida”, ela estica ou encolhe para caber entre dois pontos. O cadastro fica neste computador."
+          rotuloDoBotao="Cadastrar"
+          onAplicar={(valores) => cadastrarCurva(String(valores.nome), dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim)}
+          onFechar={() => {
+            setDialogoDeFerramenta(null);
+            setTrecho(SEM_TRECHO);
+          }}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'espiral' && (
+        <DialogoDeCampos
+          titulo="Espiral"
+          campos={[
+            { tipo: 'medida', id: 'largura', rotulo: 'Largura da tira (mm)', inicial: String(espiralPendente?.larguraMm ?? 60) },
+            {
+              tipo: 'medida',
+              id: 'perimetro',
+              rotulo: 'Perímetro (mm): o comprimento da borda de dentro',
+              inicial: String(espiralPendente?.perimetroMm ?? 1000),
+            },
+          ]}
+          nota="É o molde em espiral do babado: uma tira enrolada, cuja borda de dentro — a que se costura esticada — mede o perímetro. Depois de confirmar, clique onde o centro da espiral deve ficar."
+          rotuloDoBotao="Posicionar"
+          onAplicar={(valores) => {
+            const larguraMm = Number(valores.largura);
+            const perimetroMm = Number(valores.perimetro);
+            try {
+              espiral(ponto(0, 0), larguraMm, perimetroMm);
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            entrarModoDeConstrucao('espiral');
+            setEspiralPendente({ larguraMm, perimetroMm });
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'raio-do-arco' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Arco tangente a 2 retas"
+          resumo={[
+            ['Peça', pecaSelecionada.nome],
+            ['Canto', `ponto ${dialogoDeFerramenta.indice + 1}`],
+          ]}
+          campos={[{ tipo: 'medida', id: 'raio', rotulo: 'Raio do arco (mm)', inicial: '10' }]}
+          nota="O canto vira um arco tangente às duas arestas que se encontram nele. Um raio grande demais para as arestas é reduzido ao que cabe."
+          rotuloDoBotao="Criar arco"
+          onAplicar={(valores) => {
+            const raioMm = Number(valores.raio);
+            if (!(raioMm > 0)) return 'O raio precisa ser maior que zero.';
+            try {
+              aplicarMudanca(
+                pecas.map((p) =>
+                  p.id === pecaSelecionada.id ? arredondarCantoDoMolde(p, dialogoDeFerramenta.indice, raioMm) : p,
+                ),
+              );
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
       {mostrarVariantes && (
         <PainelDeVariantes
           variantes={variantesDoProjeto(projetos, projetoAtual)}
@@ -2386,6 +2802,7 @@ export default function App(): React.JSX.Element {
             medicoes={medicoesResolvidas}
             inicioDoTrecho={inicioDoTrecho}
             cotaEmPrevia={cotaEmPrevia}
+            previa={previaNoDesenho}
           />
           {mostrarBarraDeVisualizacao && (
             <BarraDeVisualizacao
