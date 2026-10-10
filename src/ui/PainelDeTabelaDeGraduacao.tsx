@@ -10,8 +10,6 @@ interface PainelDeTabelaDeGraduacaoProps {
   readonly numeroDoPonto: number;
   /** O ponto tem regra própria; senão, anda na proporção dos vizinhos (e a tabela mostra essa proporção). */
   readonly graduado: boolean;
-  /** O ponto está num grupo: a regra aplicada vale para todos os pontos dele. */
-  readonly emGrupo: boolean;
   readonly tamanhos: readonly string[];
   readonly base: number;
   /** A regra de hoje: o deslocamento do ponto em cada tamanho, em mm do mundo. */
@@ -105,7 +103,7 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
           <dt>Ponto</dt>
           <dd>
             {props.numeroDoPonto} —{' '}
-            {props.graduado ? (props.emGrupo ? 'graduado, num grupo' : 'graduado') : 'proporcional aos vizinhos'}
+            {props.graduado ? 'graduado' : 'proporcional aos vizinhos'}
           </dd>
         </dl>
 
@@ -148,7 +146,6 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
           {props.graduado
             ? 'A regra vale para este ponto; os pontos proporcionais vizinhos acompanham.'
             : 'Este ponto ainda não tem regra própria: os números são os que ele tem na proporção dos vizinhos. Aplicando, ele passa a ser um ponto graduado.'}
-          {props.emGrupo && ' Como ele está num grupo, a regra vale para todos os pontos do grupo.'}
         </p>
 
         {erro && (

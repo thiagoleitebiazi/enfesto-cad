@@ -7,7 +7,16 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { criarBainha, geometriaDaBainha, type OpcoesDeBainha } from '../domain/bainha';
-import { cortarMolde, desdobrarMolde, encostarMolde, metadeDoMolde, unirMoldes } from '../domain/corteEUniao';
+import {
+  cortarMolde,
+  desdobraComAMetadeGuardada,
+  desdobrarMolde,
+  dobrarMolde,
+  encostarMolde,
+  metadeDoMolde,
+  unirMoldes,
+  type OpcoesDeDobra,
+} from '../domain/corteEUniao';
 import { rotacaoEhPermitida, type Molde } from '../domain/molde';
 import { caminhoDoTrecho, SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
 import { formatarMm } from './medidas';
@@ -122,13 +131,19 @@ function trocar(pecas: readonly Molde[], id: string, novas: readonly Molde[]): M
   return pecas.flatMap((p) => (p.id === id ? novas : [p]));
 }
 
-/** Aplica "Cortar", "Remover região" ou "Dobrar" na peça. Lança erro, sem mudar nada, quando a reta não serve. */
+const DOBRA_SIMPLES: OpcoesDeDobra = { manter: false, fioNoCentro: false };
+
+/**
+ * Aplica "Cortar", "Remover região" ou "Dobrar" na peça. Lança erro, sem mudar
+ * nada, quando a reta não serve. `dobra` são as opções da janela do "Dobrar".
+ */
 export function aplicarReta(
   ferramenta: FerramentaDeReta,
   pecas: readonly Molde[],
   peca: Molde,
   estado: TrechoEmEdicao,
   novoId: () => string,
+  dobra: OpcoesDeDobra = DOBRA_SIMPLES,
 ): ResultadoDeFerramentaDeMolde {
   if (!estado.inicio || !estado.fim) throw new Error('Indique os dois pontos da reta no contorno da peça.');
   if (ferramenta === 'cortar') {
@@ -141,14 +156,21 @@ export function aplicarReta(
   }
   const lado = estado.livres[0];
   if (!lado) throw new Error('Clique dentro da peça para escolher o lado.');
-  const metade = metadeDoMolde(peca, estado.inicio, estado.fim, lado, ferramenta === 'dobrar' ? 'fica' : 'sai');
-  const saiu = cm2(area(peca.contorno) - area(metade.contorno));
+  if (ferramenta === 'dobrar') {
+    const dobrada = dobrarMolde(peca, estado.inicio, estado.fim, lado, dobra);
+    return {
+      pecas: trocar(pecas, peca.id, [dobrada]),
+      recado: `“${peca.nome}” dobrada: ficou o lado clicado, e a reta é a linha de dobra. ${
+        dobra.manter
+          ? 'A outra metade ficou guardada: “Desdobrar”, nessa aresta, traz ela de volta como era.'
+          : '“Desdobrar”, nessa aresta, devolve a outra metade espelhada.'
+      }`,
+    };
+  }
+  const metade = metadeDoMolde(peca, estado.inicio, estado.fim, lado, 'sai');
   return {
     pecas: trocar(pecas, peca.id, [metade]),
-    recado:
-      ferramenta === 'dobrar'
-        ? `“${peca.nome}” dobrada: ficou o lado clicado, e a reta é a linha de dobra. “Desdobrar”, nessa aresta, devolve a outra metade espelhada.`
-        : `Região de ${saiu} removida de “${peca.nome}”.`,
+    recado: `Região de ${cm2(area(peca.contorno) - area(metade.contorno))} removida de “${peca.nome}”.`,
   };
 }
 
@@ -213,17 +235,24 @@ export function previaDaBainha(
   }
 }
 
-/** Aplica "Desdobrar" na aresta indicada da peça. */
+/** Aplica "Desdobrar" na aresta indicada da peça; `fioNoCentro` é a opção da janela do "Dobrar". */
 export function aplicarDesdobrar(
   pecas: readonly Molde[],
   peca: Molde,
   indiceAresta: number,
   novoId: () => string,
+  fioNoCentro = false,
 ): ResultadoDeFerramentaDeMolde {
-  const inteira = desdobrarMolde(peca, indiceAresta, novoId);
+  const comAGuardada = desdobraComAMetadeGuardada(peca, indiceAresta);
+  const inteira = desdobrarMolde(peca, indiceAresta, novoId, { fioNoCentro });
+  const como = comAGuardada
+    ? 'a metade que estava guardada voltou como era'
+    : peca.dobraMantida
+      ? 'a outra metade entrou espelhada — a metade guardada é de outra aresta, ou a dobra foi mexida e ela já não encaixa'
+      : 'a outra metade entrou espelhada';
   return {
     pecas: trocar(pecas, peca.id, [inteira]),
-    recado: `“${peca.nome}” desdobrada: agora tem ${cm2(area(inteira.contorno))}, e a dobra ficou como linha interna.`,
+    recado: `“${peca.nome}” desdobrada: ${como}. Agora tem ${cm2(area(inteira.contorno))}, e a dobra ficou como linha interna.`,
   };
 }
 

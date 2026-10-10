@@ -76,6 +76,23 @@ export interface Marca {
   readonly rotulo?: string;
 }
 
+/**
+ * A metade que o "Dobrar" tirou da peça com "Manter dobra do molde" ligado:
+ * fica guardada, fora do desenho, para o "Desdobrar" trazê-la de volta como
+ * era — em vez de espelhar a metade que ficou.
+ */
+export interface MetadeGuardada {
+  /** As duas pontas da dobra. A metade só encaixa enquanto as duas forem pontos seguidos do contorno. */
+  readonly de: Ponto2D;
+  readonly ate: Ponto2D;
+  /** O contorno fechado da metade guardada; a dobra é uma das arestas dele. */
+  readonly contorno: Contorno;
+  readonly furos: readonly Contorno[];
+  readonly linhasInternas: readonly Contorno[];
+  readonly marcas: readonly Marca[];
+  readonly piques: readonly Pique[];
+}
+
 export interface Molde {
   readonly id: string;
   readonly nome: string;
@@ -109,6 +126,8 @@ export interface Molde {
    * pelas duas pontas. Só vale enquanto as duas forem pontos seguidos do contorno.
    */
   readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
+  /** A outra metade de uma peça dobrada com "Manter dobra do molde" (aba Produção > Dobrar). */
+  readonly dobraMantida?: MetadeGuardada;
 }
 
 export interface DadosDeNovoMolde {
@@ -217,7 +236,7 @@ function graduacaoAcompanhando(molde: Molde, contornoNovo: Contorno): { readonly
 }
 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
-export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos'): Molde {
+export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida'): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
   return copia;
@@ -228,14 +247,32 @@ export function semGraduacao(molde: Molde): Molde {
   return semCampo(molde, 'graduacao');
 }
 
-/** Os textos e a linha de simetria da peça levados por uma transformação, prontos para espalhar no molde novo. */
+/** Os textos, a linha de simetria e a metade guardada da peça levados por uma transformação, prontos para espalhar no molde novo. */
 function anotacoesTransformadas(
   molde: Molde,
   ponto: (p: Ponto2D) => Ponto2D,
-): { readonly textos?: readonly TextoDaPeca[]; readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D } } {
+): {
+  readonly textos?: readonly TextoDaPeca[];
+  readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
+  readonly dobraMantida?: MetadeGuardada;
+} {
+  const guardada = molde.dobraMantida;
   return {
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),
     ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: ponto(molde.linhaDeSimetria.de), ate: ponto(molde.linhaDeSimetria.ate) } } : {}),
+    ...(guardada
+      ? {
+          dobraMantida: {
+            de: ponto(guardada.de),
+            ate: ponto(guardada.ate),
+            contorno: guardada.contorno.map(ponto),
+            furos: guardada.furos.map((f) => f.map(ponto)),
+            linhasInternas: guardada.linhasInternas.map((l) => l.map(ponto)),
+            marcas: guardada.marcas.map((m) => ({ ...m, posicao: ponto(m.posicao) })),
+            piques: guardada.piques.map((q) => ({ ...q, posicao: ponto(q.posicao) })),
+          },
+        }
+      : {}),
   };
 }
 

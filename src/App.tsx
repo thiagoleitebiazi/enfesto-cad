@@ -124,6 +124,27 @@ import {
 import { lerImagemDoArquivo } from './ui/carregarImagem';
 import { PainelDeImagens } from './ui/PainelDeImagens';
 import { PainelDeProgramas } from './ui/PainelDeProgramas';
+import {
+  cliqueDeDobrar,
+  dialogoDeDobrar,
+  instrucaoDeDobrar,
+  lerDialogoDeDobrar,
+  OPCOES_INICIAIS_DE_DOBRAR,
+  previaDeDobrar,
+  type OpcoesDeDobrar,
+} from './ui/ferramentasDeDobra';
+import { linhaInternaPerto } from './domain/elementos';
+import {
+  cliqueDaConferencia,
+  dialogoDaConferencia,
+  lerDialogoDaConferencia,
+  OPCOES_INICIAIS_DA_CONFERENCIA,
+  previaDaConferencia,
+  SEM_CONFERENCIA,
+  textoDaConferencia,
+  type EstadoDaConferencia,
+  type OpcoesDaConferencia,
+} from './ui/conferencia';
 import type { Programa } from './domain/programas';
 import {
   apagarElementoEscolhido,
@@ -155,7 +176,6 @@ import {
   cliqueDePerimetro,
   posicaoNoContornoPerto,
   descreverComparacao,
-  descreverConferencia,
   descreverMedicao,
   registrarMedicao,
   resolverMedicao,
@@ -392,6 +412,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'espiral' }
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
+  | { readonly tipo: 'dobrar' }
+  | { readonly tipo: 'conferir' }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -412,7 +434,7 @@ function paraCampo(valor: number): string {
   return String(valor).replace('.', ',');
 }
 
-type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias' | 'conferir';
+type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias';
 type FerramentaDeCota = FerramentaDeCotaPorPontos | 'cota-perimetro';
 
 function ehFerramentaDeCotaPorPontos(modo: ModoDeDesenho): modo is FerramentaDeCotaPorPontos {
@@ -498,6 +520,11 @@ export default function App(): React.JSX.Element {
   );
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
+  // "Conferir": as opções da janela e as costuras já indicadas no desenho.
+  const [opcoesDaConferencia, setOpcoesDaConferencia] = useState<OpcoesDaConferencia>(OPCOES_INICIAIS_DA_CONFERENCIA);
+  const [conferencia, setConferencia] = useState<EstadoDaConferencia>(SEM_CONFERENCIA);
+  // "Dobrar": o modo e as opções da janela; "Fio no centro" vale também para o "Desdobrar".
+  const [opcoesDeDobrar, setOpcoesDeDobrar] = useState<OpcoesDeDobrar>(OPCOES_INICIAIS_DE_DOBRAR);
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
   // Pences e pregas: o que cada diálogo deixou escolhido.
   const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
@@ -1078,6 +1105,7 @@ export default function App(): React.JSX.Element {
     setDialogoDeFerramenta(null);
     setRecadoDaFerramenta(null);
     setCalibracao(null);
+    setConferencia(SEM_CONFERENCIA);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -1177,7 +1205,7 @@ export default function App(): React.JSX.Element {
   const usarFerramentaDeMolde = useCallback(
     (ferramenta: FerramentaDeMolde | FerramentaDePence) => {
       if (!selecionadoId) return;
-      if (ferramenta === 'bainha' || ferramenta === 'unir') setDialogoDeFerramenta({ tipo: ferramenta });
+      if (ferramenta === 'bainha' || ferramenta === 'unir' || ferramenta === 'dobrar') setDialogoDeFerramenta({ tipo: ferramenta });
       else if (ehFerramentaDePence(ferramenta) && dialogoDaPence(ferramenta, opcoesDasPences)) {
         setDialogoDeFerramenta({ tipo: 'pence', ferramenta });
       } else entrarModoDeConstrucao(ferramenta);
@@ -1327,14 +1355,14 @@ export default function App(): React.JSX.Element {
   const usarFerramentaDeAnotacao = useCallback(
     (ferramenta: FerramentaDeAnotacao) => {
       if (ferramenta === 'autor') setDialogoDeFerramenta({ tipo: 'autor' });
-      else if (ferramenta === 'conferir') entrarModoDeMedida('conferir');
+      else if (ferramenta === 'conferir') setDialogoDeFerramenta({ tipo: 'conferir' });
       else if (ferramenta === 'cor') {
         if (selecionadoId !== null || idsSelecionadosEmLote.size > 0) setDialogoDeFerramenta({ tipo: 'cor' });
       } else if (!selecionadoId) return;
       else if (ferramenta === 'inserir-texto') setDialogoDeFerramenta({ tipo: 'texto-novo' });
       else entrarModoDeConstrucao(ferramenta);
     },
-    [selecionadoId, idsSelecionadosEmLote, entrarModoDeMedida, entrarModoDeConstrucao],
+    [selecionadoId, idsSelecionadosEmLote, entrarModoDeConstrucao],
   );
 
   /** "Programas": lê a lista de atalhos deste computador e abre o painel. */
@@ -2140,15 +2168,22 @@ export default function App(): React.JSX.Element {
         setDonoDaCota(null);
         return;
       }
-      if (modo === 'medir-perimetro' || modo === 'comparar-perimetros' || modo === 'conferir') {
+      if (modo === 'medir-perimetro' || modo === 'comparar-perimetros') {
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
         setMedicao((atual) =>
           cliqueDePerimetro(
             atual,
             alvoDaMedicao(mundo, pecas, raioMm, atual.inicioDoTrecho?.pecaId ?? null),
-            modo !== 'medir-perimetro',
+            modo === 'comparar-perimetros',
           ),
         );
+        return;
+      }
+      if (modo === 'conferir') {
+        const resultado = cliqueDaConferencia(opcoesDaConferencia, pecas, conferencia, semCaptura, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm, proximoId);
+        setConferencia(resultado.estado);
+        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
+        setRecadoDaFerramenta(resultado.recado);
         return;
       }
       if (modo === 'calibrar-imagem') {
@@ -2226,6 +2261,27 @@ export default function App(): React.JSX.Element {
         setRecadoDaFerramenta(aplicarTrecho(modo, novo, opcoes));
         return;
       }
+      if (modo === 'dobrar') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const resultado = cliqueDeDobrar(
+          opcoesDeDobrar,
+          pecas,
+          peca,
+          trecho,
+          {
+            noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
+            livre: semCaptura,
+            linhaInterna: linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null,
+          },
+          proximoId,
+        );
+        setTrecho(resultado.estado);
+        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
+        setRecadoDaFerramenta(resultado.recado);
+        return;
+      }
       if (ehFerramentaDeReta(modo) || modo === 'bainha') {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2283,7 +2339,7 @@ export default function App(): React.JSX.Element {
           peca,
           trecho,
           { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
-          { regra: regraEscolhida, novoGrupo: proximoId },
+          { regra: regraEscolhida },
         );
         setTrecho(resultado.estado);
         setRecadoDaFerramenta(resultado.recado);
@@ -2326,7 +2382,7 @@ export default function App(): React.JSX.Element {
         const aresta = arestaPerto(semCaptura, peca.contorno, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
         if (aresta === null) return;
         try {
-          const resultado = aplicarDesdobrar(pecas, peca, aresta, proximoId);
+          const resultado = aplicarDesdobrar(pecas, peca, aresta, proximoId, opcoesDeDobrar.fioNoCentro);
           aplicarMudanca([...resultado.pecas]);
           setRecadoDaFerramenta(resultado.recado);
         } catch (e) {
@@ -2450,6 +2506,9 @@ export default function App(): React.JSX.Element {
       opcoesDeElemento,
       textoAInserir,
       calibracao,
+      opcoesDeDobrar,
+      opcoesDaConferencia,
+      conferencia,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2761,8 +2820,7 @@ export default function App(): React.JSX.Element {
     modo === 'medir-distancia' ||
     modo === 'medir-perimetro' ||
     modo === 'comparar-perimetros' ||
-    modo === 'comparar-distancias' ||
-    modo === 'conferir';
+    modo === 'comparar-distancias';
   // A cota como ficaria com o próximo clique: só quando falta o clique que a posiciona.
   const cotaEmPrevia = useMemo(
     () => (ehFerramentaDeCotaPorPontos(modo) ? previaDaCota(modo, pontosEmEdicao, cursorMundo) : null),
@@ -2818,6 +2876,18 @@ export default function App(): React.JSX.Element {
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
     }
+    if (modo === 'conferir') return previaDaConferencia(pecas, conferencia, cursorMundo, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+    if (pecaSelecionada && modo === 'dobrar') {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const mouse = cursorMundo
+        ? {
+            noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm),
+            livre: cursorMundo,
+            linhaInterna: linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null,
+          }
+        : null;
+      return previaDeDobrar(opcoesDeDobrar, pecaSelecionada, trecho, mouse);
+    }
     if (pecaSelecionada && (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'desdobrar' || modo === 'unir')) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const contorno = pecaSelecionada.contorno;
@@ -2854,6 +2924,8 @@ export default function App(): React.JSX.Element {
     opcoesDasPences,
     opcoesDaGraduacao,
     opcoesDeElemento,
+    opcoesDeDobrar,
+    conferencia,
     pontosEmEdicao,
     calibracao,
     transform.escalaPxPorMm,
@@ -2865,6 +2937,7 @@ export default function App(): React.JSX.Element {
     if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
+    if (modo === 'conferir') return textoDaConferencia(opcoesDaConferencia, conferencia, cursorMundo);
     if (modo === 'calibrar-imagem') {
       return (
         (calibracao?.pontos.length === 1
@@ -2936,12 +3009,13 @@ export default function App(): React.JSX.Element {
           ? 'Remover região: clique no contorno, na outra ponta da reta.' + fim
           : 'Remover região: clique dentro da peça, na região que deve sair (ela fica em destaque).' + fim;
       case 'dobrar':
-        if (!trecho.inicio) return 'Dobrar: clique no contorno da peça selecionada, numa ponta da linha de dobra.' + fim;
-        return !trecho.fim
-          ? 'Dobrar: clique no contorno, na outra ponta da linha de dobra.' + fim
-          : 'Dobrar: clique dentro da peça, do lado que deve ficar — o lado em destaque é o que sai.' + fim;
+        return instrucaoDeDobrar(opcoesDeDobrar, trecho);
       case 'desdobrar':
-        return 'Desdobrar: clique na aresta da peça selecionada que é a linha de dobra — a outra metade entra espelhada.' + fim;
+        return (
+          `Desdobrar: clique na aresta da peça selecionada que é a linha de dobra — ${
+            pecaSelecionada?.dobraMantida ? 'a metade guardada volta como era (noutra aresta, entra o espelho)' : 'a outra metade entra espelhada'
+          }${opcoesDeDobrar.fioNoCentro ? ', e o fio vai para o centro da peça' : ''}.` + fim
+        );
       case 'unir': {
         const nome = unirApenasMovendo ? 'Unir (apenas mover)' : 'Unir';
         return !trecho.inicio
@@ -3064,13 +3138,6 @@ export default function App(): React.JSX.Element {
         ][Math.min(pontosEmEdicao.length, 3)]!;
       case 'cota-perimetro':
         return 'Cota perímetro: clique dentro de uma peça, onde o perímetro dela deve ficar escrito. Para apagar uma cota, clique no número dela. Esc sai.';
-      case 'conferir': {
-        const [primeira, segunda] = medicoesResolvidas;
-        if (inicioDoTrecho) return 'Conferir: clique no segundo ponto do contorno — o trecho segue a numeração dos pontos. Esc sai.';
-        if (primeira && segunda) return `${descreverConferencia(primeira, segunda)} — clique para conferir de novo; Esc sai.`;
-        if (primeira) return `${descreverMedicao(primeira)} — agora meça a costura da outra peça. Esc sai.`;
-        return 'Conferir: meça a 1ª costura — clique em dois pontos do contorno de uma peça (ou dentro dela, para o perímetro inteiro). Esc sai.';
-      }
       case 'comparar-perimetros': {
         const [primeira, segunda] = medicoesResolvidas;
         if (inicioDoTrecho) {
@@ -3656,6 +3723,41 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'conferir' && (
+        <DialogoDeCampos
+          titulo="Conferir moldes"
+          campos={dialogoDaConferencia(opcoesDaConferencia).campos}
+          nota={dialogoDaConferencia(opcoesDaConferencia).nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            try {
+              const opcoes = lerDialogoDaConferencia(valores);
+              entrarModoDeConstrucao('conferir');
+              setConferencia(SEM_CONFERENCIA);
+              setOpcoesDaConferencia(opcoes);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'dobrar' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Dobrar"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeDobrar(opcoesDeDobrar).campos}
+          nota={dialogoDeDobrar(opcoesDeDobrar).nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            entrarModoDeConstrucao('dobrar');
+            setOpcoesDeDobrar(lerDialogoDeDobrar(valores));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'cor' && (
         <DialogoDeCampos
           titulo="Cor da peça"
@@ -3888,9 +3990,6 @@ export default function App(): React.JSX.Element {
           nomeDaPeca={pecaSelecionada.nome}
           numeroDoPonto={pontoDaGraduacao.indice + 1}
           graduado={pontoGraduadoEm(pontoDaGraduacao.graduacao, pecaSelecionada.contorno, pontoDaGraduacao.indice) !== null}
-          emGrupo={
-            pontoGraduadoEm(pontoDaGraduacao.graduacao, pecaSelecionada.contorno, pontoDaGraduacao.indice)?.grupo !== undefined
-          }
           tamanhos={pontoDaGraduacao.graduacao.tamanhos}
           base={pontoDaGraduacao.graduacao.base}
           deslocamentos={pontoDaGraduacao.regra}

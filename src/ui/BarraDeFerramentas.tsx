@@ -933,7 +933,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Dobrar"
                     icone="dobrar"
                     pressionado={props.modo === 'dobrar'}
-                    dica="Dobrar: deixa só uma metade da peça — clique nas duas pontas da linha de dobra, no contorno, e depois do lado que deve ficar. A linha de dobra vira uma aresta (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    dica="Dobrar: deixa só uma metade da peça, com a linha de dobra virando uma aresta — na horizontal, na vertical, numa linha interna ou por dois pontos do contorno. “Manter dobra do molde” guarda a outra metade como ela é, para a peça que não é simétrica"
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMolde('dobrar')}
                   />
@@ -942,7 +942,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Desdobrar"
                     icone="desdobrar"
                     pressionado={props.modo === 'desdobrar'}
-                    dica="Desdobrar: a peça ganha a outra metade, espelhada — clique na aresta que é a linha de dobra. A dobra fica como linha interna (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    dica="Desdobrar: a peça volta a ser inteira — clique na aresta que é a linha de dobra. Entra a outra metade espelhada ou, se ela foi guardada com “Manter dobra do molde”, como era. A dobra fica como linha interna"
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMolde('desdobrar')}
                   />
@@ -1209,7 +1209,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Agrupar"
                     icone="agrupar-graduacao"
                     pressionado={props.modo === 'agrupar-graduacao'}
-                    dica="Agrupar: os pontos clicados recebem a regra do primeiro e passam a ser graduados juntos; um clique num ponto do grupo tira-o dele"
+                    dica="Agrupar: organiza os tamanhos a partir de um ponto de referência — empilhados nele (agrupados) ou afastados uns dos outros pela distância que você der (desagrupados); a forma de cada tamanho não muda"
                     falta={faltaParaGraduar}
                     onClick={() => props.onUsarFerramentaDeGraduacao('agrupar-graduacao')}
                   />
@@ -1218,7 +1218,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Deduzir"
                     icone="deduzir-graduacao"
                     pressionado={props.modo === 'deduzir-graduacao'}
-                    dica="Deduzir: desconta de todos os pontos a graduação do ponto clicado — ele passa a ser o ponto fixo, onde os tamanhos ficam empilhados (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    dica="Deduzir: desconta de todos os pontos a graduação do ponto clicado — ele passa a ser o ponto fixo, onde os tamanhos ficam empilhados. É o mesmo que “Agrupar” com a distância zero (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
                     falta={faltaParaGraduar}
                     onClick={() => props.onUsarFerramentaDeGraduacao('deduzir-graduacao')}
                   />
@@ -1238,7 +1238,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Ajustar"
                     icone="ajustar-graduacao"
                     pressionado={props.modo === 'ajustar-graduacao'}
-                    dica="Ajustar: soma um acréscimo de DX e de DY por tamanho à regra que os pontos clicados já têm"
+                    dica="Ajustar: ajusta a graduação de pontos em relação a outros dois — clique no ponto inicial, nos pontos a ajustar e no ponto final; os do meio passam a andar na proporção entre o inicial e o final (só DX, só DY ou os dois)"
                     falta={faltaParaGraduar}
                     onClick={() => props.onUsarFerramentaDeGraduacao('ajustar-graduacao')}
                   />
@@ -1247,7 +1247,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Graduar curva"
                     icone="graduar-curva"
                     pressionado={props.modo === 'graduar-curva'}
-                    dica="Graduar curva: torna graduado um ponto que andava na proporção dos vizinhos (um ponto de curva), ou devolve um ponto graduado à proporção (o manual da referência não traz esta ferramenta pelo nome; esta é a leitura natural)"
+                    dica="Graduar curva: torna graduado um ponto que andava na proporção dos vizinhos (um ponto de curva), ou devolve um ponto graduado à proporção (no manual da referência é “Adicionar ou remover ponto de curva graduado”)"
                     falta={faltaParaGraduar}
                     onClick={() => props.onUsarFerramentaDeGraduacao('graduar-curva')}
                   />
@@ -1534,7 +1534,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   rotulo="Conferir"
                   icone="conferir"
                   pressionado={props.modo === 'conferir'}
-                  dica="Conferir: confere duas costuras que vão ser unidas — meça um trecho do contorno em cada peça (dois cliques em cada), e a faixa diz se conferem ou quanto uma sobra"
+                  dica="Conferir: confere duas costuras que vão ser unidas — indique uma em cada peça (o começo e o fim), e a segunda peça anda sobre a primeira, como na costura; a faixa diz se conferem ou quanto uma sobra, e um clique marca o ponto de encontro nas duas"
                   falta={props.podeSelecionarTudo ? null : SEM_PECAS}
                   onClick={() => props.onUsarFerramentaDeAnotacao('conferir')}
                 />

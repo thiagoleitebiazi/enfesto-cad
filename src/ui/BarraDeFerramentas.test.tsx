@@ -462,7 +462,7 @@ describe('BarraDeFerramentas: Graduação', () => {
     renderizar('Graduação', { temGraduacao: true });
 
     expect(botao('Deduzir').title).toContain('leitura natural');
-    expect(botao('Graduar curva').title).toContain('leitura natural');
+    expect(botao('Graduar curva').title).toContain('ponto de curva graduado');
   });
 });
 
@@ -828,11 +828,12 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     }
   });
 
-  it('Produção: Dobrar e Desdobrar avisam na dica que o manual da referência não os descreve', () => {
+  it('Produção: Dobrar e Desdobrar dizem na dica os modos e a dobra mantida, como no manual da referência', () => {
     renderizar('Produção');
 
-    expect(botao('Dobrar').title).toContain('leitura natural');
-    expect(botao('Desdobrar').title).toContain('leitura natural');
+    expect(botao('Dobrar').title).toContain('na horizontal, na vertical, numa linha interna ou por dois pontos do contorno');
+    expect(botao('Dobrar').title).toContain('Manter dobra do molde');
+    expect(botao('Desdobrar').title).toContain('como era');
   });
 
   it('Conferência: as medidas, as comparações e as quatro cotas', () => {

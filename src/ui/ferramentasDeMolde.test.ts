@@ -214,7 +214,7 @@ describe('desdobrar', () => {
   it('aplica na aresta e conta a área nova', () => {
     const resultado = aplicarDesdobrar([frente()], frente(), 3, ids());
     expect(area(resultado.pecas[0]!.contorno)).toBeCloseTo(120000, 6);
-    expect(resultado.recado).toBe('“Frente” desdobrada: agora tem 1200,0 cm², e a dobra ficou como linha interna.');
+    expect(resultado.recado).toBe('“Frente” desdobrada: a outra metade entrou espelhada. Agora tem 1200,0 cm², e a dobra ficou como linha interna.');
   });
 
   it('a prévia mostra a peça inteira e a linha de dobra', () => {

@@ -9,7 +9,7 @@ const ZERO = ponto(0, 0);
 // O ponto anda, no mundo, (10, 20) no G e (−10, −20) no P: na tela, DX 20 e DY 10.
 const REGRA = [ponto(-10, -20), ZERO, ponto(10, 20)];
 
-function renderizar(opcoes: { copiada?: readonly Ponto2D[] | null; graduado?: boolean; emGrupo?: boolean; aplicar?: () => string | null } = {}) {
+function renderizar(opcoes: { copiada?: readonly Ponto2D[] | null; graduado?: boolean; aplicar?: () => string | null } = {}) {
   const onAplicar = vi.fn<(deslocamentos: readonly Ponto2D[]) => string | null>(opcoes.aplicar ?? (() => null));
   const onCopiar = vi.fn();
   const onFechar = vi.fn();
@@ -18,7 +18,6 @@ function renderizar(opcoes: { copiada?: readonly Ponto2D[] | null; graduado?: bo
       nomeDaPeca="Frente"
       numeroDoPonto={3}
       graduado={opcoes.graduado ?? true}
-      emGrupo={opcoes.emGrupo ?? false}
       tamanhos={['P', 'M', 'G']}
       base={1}
       deslocamentos={REGRA}
@@ -73,7 +72,6 @@ describe('PainelDeTabelaDeGraduacao', () => {
         nomeDaPeca="Frente"
         numeroDoPonto={1}
         graduado
-        emGrupo={false}
         tamanhos={['M', 'G', 'GG']}
         base={0}
         deslocamentos={[ZERO, ponto(0, 10), ponto(0, 25)]}
@@ -158,13 +156,6 @@ describe('PainelDeTabelaDeGraduacao', () => {
 
     expect(screen.getByText('3 — proporcional aos vizinhos')).toBeInTheDocument();
     expect(screen.getByText(/Aplicando, ele passa a ser um ponto graduado/)).toBeInTheDocument();
-  });
-
-  it('no ponto de um grupo, avisa que a regra vale para todos do grupo', () => {
-    renderizar({ emGrupo: true });
-
-    expect(screen.getByText('3 — graduado, num grupo')).toBeInTheDocument();
-    expect(screen.getByText(/a regra vale para todos os pontos do grupo/)).toBeInTheDocument();
   });
 
   it('Cancelar fecha sem aplicar', () => {

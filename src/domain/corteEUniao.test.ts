@@ -1,8 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import { area, areaAssinada, ponto, retanguloEnvolvente, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { cotaDeDistancia } from './cota';
-import { cortarMolde, desdobrarMolde, encostarMolde, metadeDoMolde, unirMoldes } from './corteEUniao';
-import { adicionarCota, adicionarMarca, adicionarPique, criarMolde, type DadosDeNovoMolde, type Molde } from './molde';
+import {
+  cortarMolde,
+  cruzamentosDaReta,
+  desdobraComAMetadeGuardada,
+  desdobrarMolde,
+  dobraPelaLinhaInterna,
+  dobraPeloMeio,
+  dobrarMolde,
+  encostarMolde,
+  fioNoCentro,
+  metadeDoMolde,
+  unirMoldes,
+} from './corteEUniao';
+import {
+  adicionarCota,
+  adicionarMarca,
+  adicionarPique,
+  criarMolde,
+  dimensionarMolde,
+  espelharMolde,
+  rotacionarMolde,
+  transladarMolde,
+  type DadosDeNovoMolde,
+  type Molde,
+} from './molde';
 
 // Retângulo de 200 × 300 mm, no sentido anti-horário: arestas 0 (y = 0), 1 (x = 200), 2 (y = 300) e 3 (x = 0).
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -389,5 +412,162 @@ describe('unirMoldes', () => {
     expect(unida.piques[0]).toMatchObject({ indiceAresta: 1 });
     expect(unida.piques[1]).toMatchObject({ indiceAresta: 4 });
     expect(unida.piques[1]!.posicao.x).toBeCloseTo(300, 6);
+  });
+});
+
+describe('a linha de dobra', () => {
+  it('cruzamentosDaReta: onde a reta atravessa o contorno, na ordem dos pontos dele', () => {
+    expect(cruzamentosDaReta(RETANGULO, ponto(100, -50), ponto(100, 900))).toEqual([na(0, 100, 0), na(2, 100, 300)]);
+    // Pela diagonal: os dois cantos, cada um pelo número do ponto.
+    expect(cruzamentosDaReta(RETANGULO, ponto(0, 0), ponto(200, 300))).toEqual([na(0, 0, 0), na(2, 200, 300)]);
+    // Fora da peça, não cruza nada.
+    expect(cruzamentosDaReta(RETANGULO, ponto(500, 0), ponto(500, 300))).toEqual([]);
+    expect(cruzamentosDaReta(RETANGULO, ponto(5, 5), ponto(5, 5))).toEqual([]);
+  });
+
+  it('dobraPeloMeio: horizontal é a linha deitada na tela (o X do mundo constante); vertical, a em pé', () => {
+    expect(dobraPeloMeio(molde(), 'horizontal')).toEqual([na(0, 100, 0), na(2, 100, 300)]);
+    expect(dobraPeloMeio(molde(), 'vertical')).toEqual([na(1, 200, 150), na(3, 0, 150)]);
+  });
+
+  it('recusa a linha do meio que passa por cima de uma aresta, ou que cruza o contorno mais de duas vezes', () => {
+    expect(() => dobraPeloMeio(molde({ contorno: EM_L }), 'horizontal')).toThrow('mais de dois pontos');
+    // Em pé, pelo meio do "L" (y = 150): cruza a aresta de baixo? Não: só as duas laterais da perna de cima.
+    expect(dobraPeloMeio(molde({ contorno: EM_L }), 'vertical').map((p) => p.ponto)).toEqual([ponto(100, 150), ponto(0, 150)]);
+  });
+
+  it('dobraPelaLinhaInterna: vale a reta inteira da linha, de borda a borda', () => {
+    const comLinha = molde({ linhasInternas: [[ponto(50, 100), ponto(150, 100)], [ponto(10, 10), ponto(60, 30), ponto(110, 10)], [ponto(20, 20), ponto(20, 20)]] });
+
+    expect(dobraPelaLinhaInterna(comLinha, 0)).toEqual([na(1, 200, 100), na(3, 0, 100)]);
+    expect(() => dobraPelaLinhaInterna(comLinha, 1)).toThrow('precisa ser reta');
+    expect(() => dobraPelaLinhaInterna(comLinha, 2)).toThrow('é fechada');
+    expect(() => dobraPelaLinhaInterna(comLinha, 9)).toThrow('não encontrada');
+  });
+
+  it('fioNoCentro leva a seta, sem girar, para o meio da peça', () => {
+    expect(fioNoCentro({ inicio: ponto(10, 20), fim: ponto(10, 120) }, RETANGULO)).toEqual({ inicio: ponto(100, 100), fim: ponto(100, 200) });
+  });
+});
+
+describe('dobrarMolde', () => {
+  const [a, b] = [na(0, 100, 0), na(2, 100, 300)];
+  const SIMPLES = { manter: false, fioNoCentro: false };
+  const MANTENDO = { manter: true, fioNoCentro: false };
+
+  it('fica a metade do lado clicado; a linha interna que estava em cima da dobra sai', () => {
+    const peca = molde({ linhasInternas: [[ponto(100, 0), ponto(100, 300)], [ponto(150, 50), ponto(150, 250)], [ponto(40, 50), ponto(40, 250)]] });
+    const dobrada = dobrarMolde(peca, a, b, ponto(150, 150), SIMPLES);
+
+    expect(area(dobrada.contorno)).toBeCloseTo(30000, 6);
+    expect(dobrada.linhasInternas).toEqual([[ponto(150, 50), ponto(150, 250)]]);
+    expect(dobrada.dobraMantida).toBeUndefined();
+    expect(dobrada).toMatchObject({ id: 'm1', nome: 'Frente' });
+  });
+
+  it('mantendo a dobra, a outra metade fica guardada com o que é dela', () => {
+    const peca = adicionarMarca(molde({ linhasInternas: [[ponto(40, 50), ponto(40, 250)]], furos: [[ponto(20, 20), ponto(30, 20), ponto(30, 30)]] }), ponto(60, 60), 'marca');
+    const dobrada = dobrarMolde(peca, a, b, ponto(150, 150), MANTENDO);
+
+    const guardada = dobrada.dobraMantida!;
+    expect(area(guardada.contorno)).toBeCloseTo(30000, 6);
+    expect([guardada.de, guardada.ate]).toEqual([ponto(100, 0), ponto(100, 300)]);
+    expect(guardada.linhasInternas).toEqual([[ponto(40, 50), ponto(40, 250)]]);
+    expect(guardada.furos).toHaveLength(1);
+    expect(guardada.marcas.map((m) => m.posicao)).toEqual([ponto(60, 60)]);
+    // O que foi guardado não está mais na peça que ficou.
+    expect(dobrada.linhasInternas).toEqual([]);
+    expect(dobrada.furos).toEqual([]);
+    expect(dobrada.marcas).toEqual([]);
+  });
+
+  it('dobrar de novo, sem manter, esquece a metade que estava guardada', () => {
+    const dobrada = dobrarMolde(molde(), a, b, ponto(150, 150), MANTENDO);
+    const deNovo = dobrarMolde(dobrada, na(3, 100, 150), na(1, 200, 150), ponto(150, 50), SIMPLES);
+
+    expect('dobraMantida' in deNovo).toBe(false);
+    expect(area(deNovo.contorno)).toBeCloseTo(15000, 6);
+  });
+});
+
+describe('desdobrarMolde com a metade guardada', () => {
+  // Trapézio: o lado esquerdo tem 200 mm e o direito, 300.
+  const TRAPEZIO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 200)];
+  const dobrada = (): Molde => dobrarMolde(molde({ contorno: TRAPEZIO }), na(0, 100, 0), na(2, 100, 250), ponto(150, 100), { manter: true, fioNoCentro: false });
+  const arestaDaDobra = (peca: Molde, x = 100): number => {
+    const n = peca.contorno.length;
+    return peca.contorno.findIndex((p, i) => Math.abs(p.x - x) < 1e-9 && Math.abs(peca.contorno[(i + 1) % n]!.x - x) < 1e-9);
+  };
+
+  it('a metade guardada volta como era, e a peça é a de antes de dobrar', () => {
+    const peca = dobrada();
+    expect(area(peca.contorno)).toBeCloseTo(27500, 6);
+    expect(desdobraComAMetadeGuardada(peca, arestaDaDobra(peca))).toBe(true);
+
+    const inteira = desdobrarMolde(peca, arestaDaDobra(peca), ids());
+    expect(area(inteira.contorno)).toBeCloseTo(50000, 6);
+    expect(inteira.contorno).toHaveLength(6);
+    for (const canto of TRAPEZIO) expect(inteira.contorno).toContainEqual(canto);
+    expect(inteira.linhasInternas).toEqual([[ponto(100, 250), ponto(100, 0)]]);
+    expect('dobraMantida' in inteira).toBe(false);
+    // O contorno continua girando para o mesmo lado.
+    expect(Math.sign(areaAssinada(inteira.contorno))).toBe(Math.sign(areaAssinada(TRAPEZIO)));
+  });
+
+  it('o que foi mudado na metade que ficou vale; a guardada volta sem mudança', () => {
+    const peca = dobrada();
+    const mudada: Molde = { ...peca, contorno: peca.contorno.map((p) => (p.x === 200 && p.y === 300 ? ponto(200, 280) : p)) };
+
+    const inteira = desdobrarMolde(mudada, arestaDaDobra(mudada), ids());
+    // A metade que ficou perdeu um triângulo de 100 × 20 / 2; a guardada continua com 225 cm².
+    expect(area(inteira.contorno)).toBeCloseTo(50000 - 1000, 6);
+    expect(inteira.contorno).toContainEqual(ponto(0, 200));
+  });
+
+  it('a metade guardada acompanha a peça movida, girada, espelhada e dimensionada', () => {
+    const movida = transladarMolde(dobrada(), ponto(40, 500), 'm1');
+    expect(area(desdobrarMolde(movida, arestaDaDobra(movida, 140), ids()).contorno)).toBeCloseTo(50000, 6);
+
+    for (const transformada of [rotacionarMolde(dobrada(), 90), espelharMolde(dobrada(), 'm1'), dimensionarMolde(dobrada(), 2, 1)]) {
+      const aresta = transformada.contorno.findIndex((_, i) => desdobraComAMetadeGuardada(transformada, i));
+      expect(aresta).toBeGreaterThanOrEqual(0);
+      // Dimensionada, a peça muda de área: a inteira muda na mesma proporção.
+      const fator = area(transformada.contorno) / 27500;
+      expect(area(desdobrarMolde(transformada, aresta, ids()).contorno)).toBeCloseTo(50000 * fator, 4);
+    }
+  });
+
+  it('a metade guardada encaixa mesmo com o contorno da peça guardado no outro sentido', () => {
+    const peca = dobrada();
+    const invertida: Molde = { ...peca, contorno: [...peca.contorno].reverse() };
+
+    const inteira = desdobrarMolde(invertida, arestaDaDobra(invertida), ids());
+    expect(area(inteira.contorno)).toBeCloseTo(50000, 6);
+    for (const canto of TRAPEZIO) expect(inteira.contorno).toContainEqual(canto);
+    // O contorno inteiro segue o sentido da peça que ficou.
+    expect(Math.sign(areaAssinada(inteira.contorno))).toBe(Math.sign(areaAssinada(invertida.contorno)));
+  });
+
+  it('noutra aresta, ou com a dobra mexida, vale o espelho — e a metade guardada continua guardada', () => {
+    const peca = dobrada();
+    const outra = (arestaDaDobra(peca) + 2) % peca.contorno.length;
+    expect(desdobraComAMetadeGuardada(peca, outra)).toBe(false);
+    expect(desdobrarMolde(peca, outra, ids()).dobraMantida).toBeDefined();
+
+    const mexida: Molde = { ...peca, contorno: peca.contorno.map((p) => (p.x === 100 && p.y === 0 ? ponto(100, 10) : p)) };
+    expect(desdobraComAMetadeGuardada(mexida, arestaDaDobra(mexida))).toBe(false);
+    // Espelhada na dobra, a peça fica com o dobro da metade que ficou.
+    expect(area(desdobrarMolde(mexida, arestaDaDobra(mexida), ids()).contorno)).toBeCloseTo(2 * area(mexida.contorno), 6);
+  });
+
+  it('a peça sem metade guardada desdobra como sempre', () => {
+    expect(desdobraComAMetadeGuardada(molde(), 3)).toBe(false);
+    expect(area(desdobrarMolde(molde(), 3, ids()).contorno)).toBeCloseTo(120000, 6);
+  });
+
+  it('fioNoCentro, ao desdobrar, leva a seta para o meio da peça inteira', () => {
+    const inteira = desdobrarMolde(molde(), 3, ids(), { fioNoCentro: true });
+
+    expect(inteira.linhaDeFio).toEqual({ inicio: ponto(0, 50), fim: ponto(0, 250) });
   });
 });

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
 import {
   deslocamentoNoPonto,
-  agruparPonto,
+  agruparTamanhos,
+  ajustarEntre,
   alternarPontoGraduado,
   apagarRegras,
   cantosDoContorno,
@@ -22,7 +23,6 @@ import {
   regraPorPasso,
   removerPontoGraduado,
   semPontosSoltos,
-  somarRegras,
   tamanhoDeReferencia,
   transformarGraduacao,
   verticesGraduados,
@@ -279,8 +279,7 @@ describe('regras prontas', () => {
     expect(regraPeloTamanhoDeReferencia(baseNoG, ponto(-10, -20))).toEqual([ponto(-10, -20), ponto(-5, -10), ZERO]);
   });
 
-  it('soma de regras e regra só num eixo', () => {
-    expect(somarRegras(regra(10, 20), regra(1, 2))).toEqual(regra(11, 22));
+  it('regra só num eixo', () => {
     expect(regraNoEixo(regra(10, 20), regra(1, 2), 'ambos')).toEqual(regra(1, 2));
     expect(regraNoEixo(regra(10, 20), regra(1, 2), 'x')).toEqual(regra(1, 20));
     expect(regraNoEixo(regra(10, 20), regra(1, 2), 'y')).toEqual(regra(10, 2));
@@ -365,53 +364,95 @@ describe('apagarRegras', () => {
   });
 });
 
-describe('agruparPonto', () => {
-  const g = definirRegra(nova(), RETANGULO, 2, regra(10, 20));
-  const grupos = (): (() => string) => {
-    let n = 0;
-    return () => `grupo-${++n}`;
-  };
+describe('agruparTamanhos', () => {
+  // O canto 3 anda (10, 20) no G; o canto 2, (0, 5).
+  const g = definirRegra(definirRegra(nova(), RETANGULO, 2, regra(10, 20)), RETANGULO, 1, regra(0, 5));
 
-  it('o ponto recebe a regra da referência e entra no grupo dela', () => {
-    const { graduacao, agrupou } = agruparPonto(g, RETANGULO, 2, 1, grupos());
-    expect(agrupou).toBe(true);
-    expect(pontoGraduadoEm(graduacao, RETANGULO, 1)).toMatchObject({ deslocamentos: regra(10, 20), grupo: 'grupo-1' });
-    expect(pontoGraduadoEm(graduacao, RETANGULO, 2)).toMatchObject({ grupo: 'grupo-1' });
-    expect(pontoGraduadoEm(graduacao, RETANGULO, 0)!.grupo).toBeUndefined();
+  it('com o passo zero, os tamanhos ficam empilhados no ponto de referência, e a forma de cada um não muda', () => {
+    const agrupada = agruparTamanhos(g, RETANGULO, 2, ZERO, null);
+
+    expect(regraDoVertice(agrupada, RETANGULO, 2)).toEqual([ZERO, ZERO, ZERO]);
+    // A distância entre dois pontos do mesmo tamanho é a de antes: a peça só andou inteira.
+    const lado = (graduacao: Graduacao, tamanho: number): Ponto2D => {
+      const c = contornoDoTamanho(graduacao, RETANGULO, tamanho);
+      return ponto(c[2]!.x - c[1]!.x, c[2]!.y - c[1]!.y);
+    };
+    expect(lado(agrupada, G)).toEqual(lado(g, G));
+    expect(lado(agrupada, P)).toEqual(lado(g, P));
+    expect(regraDoVertice(agrupada, RETANGULO, 1)).toEqual(regra(-10, -15));
   });
 
-  it('a regra dada a um ponto do grupo vale para todos', () => {
-    const { graduacao } = agruparPonto(g, RETANGULO, 2, 1, grupos());
-    const mudada = definirRegra(graduacao, RETANGULO, 1, regra(3, 4));
-    expect(pontoGraduadoEm(mudada, RETANGULO, 1)!.deslocamentos).toEqual(regra(3, 4));
-    expect(pontoGraduadoEm(mudada, RETANGULO, 2)!.deslocamentos).toEqual(regra(3, 4));
-    expect(pontoGraduadoEm(mudada, RETANGULO, 0)!.deslocamentos).toEqual([ZERO, ZERO, ZERO]);
+  it('com um passo, cada tamanho fica afastado do vizinho essa distância, a partir do base', () => {
+    const afastada = agruparTamanhos(g, RETANGULO, 2, ponto(0, 50), null);
+
+    expect(regraDoVertice(afastada, RETANGULO, 2)).toEqual([ponto(0, -50), ZERO, ponto(0, 50)]);
+    expect(regraDoVertice(afastada, RETANGULO, 1)).toEqual([ponto(10, -35), ZERO, ponto(-10, 35)]);
   });
 
-  it('clicar de novo num ponto do grupo tira-o do grupo: fica com a regra, mas passa a ser graduado sozinho', () => {
-    const novoGrupo = grupos();
-    const agrupada = agruparPonto(g, RETANGULO, 2, 1, novoGrupo).graduacao;
-    const { graduacao, agrupou } = agruparPonto(agrupada, RETANGULO, 2, 1, novoGrupo);
-    expect(agrupou).toBe(false);
-    expect(pontoGraduadoEm(graduacao, RETANGULO, 1)!.grupo).toBeUndefined();
-    expect(pontoGraduadoEm(graduacao, RETANGULO, 1)!.deslocamentos).toEqual(regra(10, 20));
-    const mudada = definirRegra(graduacao, RETANGULO, 1, regra(3, 4));
-    expect(pontoGraduadoEm(mudada, RETANGULO, 2)!.deslocamentos).toEqual(regra(10, 20));
+  it('num tamanho só, os outros ficam onde estavam', () => {
+    const soOG = agruparTamanhos(g, RETANGULO, 2, ZERO, G);
+
+    expect(regraDoVertice(soOG, RETANGULO, 2)).toEqual([ponto(-10, -20), ZERO, ZERO]);
+    expect(regraDoVertice(soOG, RETANGULO, 1)[P]).toEqual(ponto(0, -5));
   });
 
-  it('um terceiro ponto entra no mesmo grupo', () => {
-    const novoGrupo = grupos();
-    const comDois = agruparPonto(g, RETANGULO, 2, 1, novoGrupo).graduacao;
-    const comTres = agruparPonto(comDois, RETANGULO, 2, 0, novoGrupo).graduacao;
-    expect(comTres.pontos.filter((p) => p.grupo === 'grupo-1')).toHaveLength(3);
-  });
-
-  it('a referência proporcional vira graduada; e o mesmo ponto não agrupa consigo', () => {
+  it('o ponto de referência pode ser um ponto proporcional', () => {
     const contorno = [ponto(0, 0), ponto(200, 0), ponto(200, 150), ponto(200, 300), ponto(0, 300)];
-    const comRegra = definirRegra(nova(contorno), contorno, 3, regra(10, 20));
-    const { graduacao } = agruparPonto(comRegra, contorno, 2, 0, grupos());
-    esperarPontos(pontoGraduadoEm(graduacao, contorno, 0)!.deslocamentos, regra(5, 10));
-    expect(() => agruparPonto(g, RETANGULO, 2, 2, grupos())).toThrow(/outro ponto/);
-    expect(() => agruparPonto(g, RETANGULO, 2, 9, grupos())).toThrow(/fora do contorno/);
+    const comRegra = definirRegra(nova(contorno), contorno, 3, regra(0, 20));
+    const agrupada = agruparTamanhos(comRegra, contorno, 2, ZERO, null);
+
+    expect(regraDoVertice(agrupada, contorno, 2)[G]!.y).toBeCloseTo(0, 9);
+    expect(regraDoVertice(agrupada, contorno, 3)[G]!.y).toBeCloseTo(10, 9);
+  });
+
+  it('recusa o tamanho base, um tamanho que não existe e um ponto fora do contorno', () => {
+    expect(() => agruparTamanhos(g, RETANGULO, 2, ZERO, 1)).toThrow('O tamanho base');
+    expect(() => agruparTamanhos(g, RETANGULO, 2, ZERO, 7)).toThrow('Tamanho fora da graduação.');
+    expect(() => agruparTamanhos(g, RETANGULO, 9, ZERO, null)).toThrow('Ponto fora do contorno');
+  });
+});
+
+describe('ajustarEntre', () => {
+  // Lado de 300 mm com dois pontos no meio, a 100 e a 250 mm do canto de cima. Os cantos são 1 e 4 (índices 1 e 4).
+  const contorno = [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(200, 250), ponto(200, 300), ponto(0, 300)];
+  const g = definirRegra(definirRegra(nova(contorno), contorno, 1, regra(0, 0)), contorno, 4, regra(30, 60));
+
+  it('os pontos do meio passam a andar na proporção da posição deles no contorno, entre o inicial e o final', () => {
+    const ajustada = ajustarEntre(g, contorno, 1, [2, 3], 4, 'ambos');
+
+    expect(regraDoVertice(ajustada, contorno, 2)[G]).toEqual(ponto(10, 20));
+    expect(regraDoVertice(ajustada, contorno, 3)[G]).toEqual(ponto(25, 50));
+    expect(regraDoVertice(ajustada, contorno, 3)[P]).toEqual(ponto(-25, -50));
+    expect(pontoGraduadoEm(ajustada, contorno, 2)).not.toBeNull();
+  });
+
+  it('vale também indo contra a numeração dos pontos', () => {
+    const ajustada = ajustarEntre(g, contorno, 4, [3], 1, 'ambos');
+
+    // A 50 mm do inicial (o canto de baixo), num caminho de 300: fica com 5/6 da regra dele.
+    expect(regraDoVertice(ajustada, contorno, 3)[G]!.x).toBeCloseTo(25, 9);
+    expect(regraDoVertice(ajustada, contorno, 3)[G]!.y).toBeCloseTo(50, 9);
+  });
+
+  it('só num eixo, o outro fica com o que o ponto tinha', () => {
+    const comRegraPropria = definirRegra(g, contorno, 2, regra(7, 7));
+
+    expect(regraDoVertice(ajustarEntre(comRegraPropria, contorno, 1, [2], 4, 'x'), contorno, 2)[G]).toEqual(ponto(10, 7));
+    expect(regraDoVertice(ajustarEntre(comRegraPropria, contorno, 1, [2], 4, 'y'), contorno, 2)[G]).toEqual(ponto(7, 20));
+  });
+
+  it('pontos espalhados pelos dois lados da peça: vale a projeção na reta do inicial ao final', () => {
+    // Do canto 1 (200, 0) ao canto 4 (200, 300): o ponto 2 fica a 1/3; o canto 5 (0, 300), do outro lado, no fim.
+    const ajustada = ajustarEntre(g, contorno, 1, [2, 5], 4, 'ambos');
+
+    expect(regraDoVertice(ajustada, contorno, 2)[G]!.x).toBeCloseTo(10, 9);
+    expect(regraDoVertice(ajustada, contorno, 5)[G]).toEqual(ponto(30, 60));
+  });
+
+  it('recusa sem pontos a ajustar, com o final igual ao inicial e com um extremo entre os ajustados', () => {
+    expect(() => ajustarEntre(g, contorno, 1, [], 4, 'ambos')).toThrow('pelo menos um ponto a ajustar');
+    expect(() => ajustarEntre(g, contorno, 1, [2], 1, 'ambos')).toThrow('diferente do inicial');
+    expect(() => ajustarEntre(g, contorno, 1, [1, 2], 4, 'ambos')).toThrow('não entram entre os ajustados');
+    expect(() => ajustarEntre(g, contorno, 1, [9], 4, 'ambos')).toThrow('Ponto fora do contorno');
   });
 });

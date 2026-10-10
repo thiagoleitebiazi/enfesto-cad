@@ -19,8 +19,6 @@ export interface PontoGraduado {
   readonly posicao: Ponto2D;
   /** O deslocamento do ponto em cada tamanho, em mm, a partir do base — na ordem de `tamanhos`; no base é zero. */
   readonly deslocamentos: readonly Ponto2D[];
-  /** Pontos do mesmo grupo são graduados juntos: a regra dada a um vale para todos. */
-  readonly grupo?: string;
 }
 
 export interface Graduacao {
@@ -259,8 +257,7 @@ function regraCompleta(graduacao: Graduacao, deslocamentos: readonly Ponto2D[]):
 
 /**
  * Dá ao ponto `indice` do contorno a regra `deslocamentos` (um por tamanho).
- * Se ele era proporcional, passa a ser graduado; se está num grupo, todos do
- * grupo recebem a mesma regra.
+ * Se ele era proporcional, passa a ser graduado.
  */
 export function definirRegra(graduacao: Graduacao, contorno: Contorno, indice: number, deslocamentos: readonly Ponto2D[]): Graduacao {
   const posicao = contorno[indice];
@@ -271,7 +268,7 @@ export function definirRegra(graduacao: Graduacao, contorno: Contorno, indice: n
   if (!atual) return { ...limpa, pontos: [...limpa.pontos, { posicao, deslocamentos: regra }] };
   return {
     ...limpa,
-    pontos: limpa.pontos.map((p) => (p === atual || (atual.grupo !== undefined && p.grupo === atual.grupo) ? { ...p, deslocamentos: regra } : p)),
+    pontos: limpa.pontos.map((p) => (p === atual ? { ...p, deslocamentos: regra } : p)),
   };
 }
 
@@ -309,10 +306,6 @@ export function tamanhoDeReferencia(graduacao: Graduacao): number {
 export function regraPeloTamanhoDeReferencia(graduacao: Graduacao, deslocamento: Ponto2D): Ponto2D[] {
   const passos = tamanhoDeReferencia(graduacao) - graduacao.base;
   return regraPorPasso(graduacao, { x: deslocamento.x / passos, y: deslocamento.y / passos });
-}
-
-export function somarRegras(a: readonly Ponto2D[], b: readonly Ponto2D[]): Ponto2D[] {
-  return a.map((d, t) => somar(d, b[t] ?? ZERO));
 }
 
 /** A regra `atual` com `nova` no eixo dado: nos dois, só no `x` ou só no `y`. */
@@ -371,38 +364,84 @@ export function apagarRegras(graduacao: Graduacao, contorno: Contorno, indice: n
 }
 
 /**
- * "Agrupar": põe o ponto `indice` no grupo do ponto `referencia` (ele recebe
- * a regra da referência, e daí em diante os dois são graduados juntos) — ou
- * tira, se já está nesse grupo. Devolve também o que foi feito.
+ * "Agrupar ou desagrupar": organiza os tamanhos a partir do ponto de
+ * referência `indice`. No tamanho `tamanho` (ou em todos, com `null`), a
+ * peça inteira é levada de modo que o ponto de referência fique a `passo`
+ * vezes a distância desse tamanho ao base. Com o passo zero, os tamanhos ficam
+ * empilhados no ponto (agrupados); com um passo, cada um fica afastado do
+ * vizinho (desagrupados). A forma de cada tamanho não muda.
  */
-export function agruparPonto(
+export function agruparTamanhos(graduacao: Graduacao, contorno: Contorno, indice: number, passo: Ponto2D, tamanho: number | null): Graduacao {
+  if (!contorno[indice]) throw new Error('Ponto fora do contorno da peça.');
+  if (tamanho !== null && (!Number.isInteger(tamanho) || tamanho < 0 || tamanho >= graduacao.tamanhos.length)) {
+    throw new Error('Tamanho fora da graduação.');
+  }
+  if (tamanho === graduacao.base) throw new Error('O tamanho base é o desenhado e não sai do lugar: escolha outro tamanho, ou todos.');
+  const regra = regraDoVertice(graduacao, contorno, indice);
+  const alvo = regraPorPasso(graduacao, passo);
+  const limpa = semPontosSoltos(graduacao, contorno);
+  // O quanto a peça do tamanho `t` anda, inteira, para o ponto de referência chegar ao lugar dele.
+  const anda = (t: number): Ponto2D => (t !== graduacao.base && (tamanho === null || tamanho === t) ? subtrair(alvo[t] ?? ZERO, regra[t] ?? ZERO) : ZERO);
+  return {
+    ...limpa,
+    pontos: limpa.pontos.map((p) => ({ ...p, deslocamentos: p.deslocamentos.map((d, t) => somar(d, anda(t))) })),
+  };
+}
+
+/** A posição de cada ponto a ajustar entre o inicial (0) e o final (1). */
+function proporcoesEntre(contorno: Contorno, inicial: number, ajustados: readonly number[], final: number): number[] {
+  const n = contorno.length;
+  const passos = (de: number, ate: number): number => (ate - de + n) % n;
+  // Todos no caminho que vai do inicial ao final seguindo a numeração, ou todos no caminho contrário?
+  const sentido = ajustados.every((v) => passos(inicial, v) < passos(inicial, final)) ? 1 : ajustados.every((v) => passos(v, inicial) < passos(final, inicial)) ? -1 : 0;
+  if (sentido !== 0) {
+    const ate = (v: number): number => {
+      let soma = 0;
+      for (let i = inicial; i !== v; i = (i + sentido + n) % n) soma += distancia(contorno[i]!, contorno[(i + sentido + n) % n]!);
+      return soma;
+    };
+    const total = ate(final);
+    if (total > 1e-9) return ajustados.map((v) => ate(v) / total);
+  }
+  // Pontos espalhados pelos dois caminhos: vale a projeção de cada um na reta do inicial ao final.
+  const de = contorno[inicial]!;
+  const para = contorno[final]!;
+  const quadrado = (para.x - de.x) ** 2 + (para.y - de.y) ** 2;
+  if (quadrado < 1e-12) throw new Error('O ponto inicial e o final estão no mesmo lugar.');
+  return ajustados.map((v) => {
+    const p = contorno[v]!;
+    return Math.min(1, Math.max(0, ((p.x - de.x) * (para.x - de.x) + (p.y - de.y) * (para.y - de.y)) / quadrado));
+  });
+}
+
+/**
+ * "Ajustar": os pontos `ajustados` passam a andar na proporção entre o ponto
+ * `inicial` e o `final` — cada um conforme a posição dele entre os dois, ao
+ * longo do contorno (ou, se estão espalhados pelos dois lados da peça, pela
+ * projeção na reta que liga o inicial ao final). `eixo` limita o ajuste a um
+ * eixo; no outro, o ponto fica com o que tinha.
+ */
+export function ajustarEntre(
   graduacao: Graduacao,
   contorno: Contorno,
-  referencia: number,
-  indice: number,
-  novoGrupo: () => string,
-): { readonly graduacao: Graduacao; readonly agrupou: boolean } {
-  if (!contorno[referencia] || !contorno[indice]) throw new Error('Ponto fora do contorno da peça.');
-  if (referencia === indice) throw new Error('Clique em outro ponto para agrupar com o primeiro.');
-  // A referência precisa ser um ponto graduado, com um grupo.
-  let atual = pontoGraduadoEm(graduacao, contorno, referencia)
-    ? semPontosSoltos(graduacao, contorno)
-    : definirRegra(graduacao, contorno, referencia, regraDoVertice(graduacao, contorno, referencia));
-  const daReferencia = pontoGraduadoEm(atual, contorno, referencia)!;
-  const grupo = daReferencia.grupo ?? novoGrupo();
-  if (daReferencia.grupo === undefined) {
-    atual = { ...atual, pontos: atual.pontos.map((p) => (p === daReferencia ? { ...p, grupo } : p)) };
-  }
-  const doPonto = pontoGraduadoEm(atual, contorno, indice);
-  if (doPonto && doPonto.grupo === grupo) {
-    return {
-      graduacao: { ...atual, pontos: atual.pontos.map((p) => (p === doPonto ? { posicao: p.posicao, deslocamentos: p.deslocamentos } : p)) },
-      agrupou: false,
-    };
-  }
-  const membro: PontoGraduado = { posicao: contorno[indice]!, deslocamentos: [...daReferencia.deslocamentos], grupo };
-  return {
-    graduacao: { ...atual, pontos: doPonto ? atual.pontos.map((p) => (p === doPonto ? membro : p)) : [...atual.pontos, membro] },
-    agrupou: true,
-  };
+  inicial: number,
+  ajustados: readonly number[],
+  final: number,
+  eixo: EixoDaGraduacao,
+): Graduacao {
+  if (!contorno[inicial] || !contorno[final] || ajustados.some((v) => !contorno[v])) throw new Error('Ponto fora do contorno da peça.');
+  if (inicial === final) throw new Error('O ponto final precisa ser outro, diferente do inicial.');
+  if (ajustados.length === 0) throw new Error('Indique pelo menos um ponto a ajustar entre o inicial e o final.');
+  if (ajustados.includes(inicial) || ajustados.includes(final)) throw new Error('O ponto inicial e o final não entram entre os ajustados.');
+  const doInicial = regraDoVertice(graduacao, contorno, inicial);
+  const doFinal = regraDoVertice(graduacao, contorno, final);
+  const proporcoes = proporcoesEntre(contorno, inicial, ajustados, final);
+  return ajustados.reduce((g, v, k) => {
+    const t = proporcoes[k]!;
+    const naProporcao = doInicial.map((d, tamanho) => {
+      const f = doFinal[tamanho] ?? ZERO;
+      return { x: d.x + (f.x - d.x) * t, y: d.y + (f.y - d.y) * t };
+    });
+    return definirRegra(g, contorno, v, regraNoEixo(regraDoVertice(g, contorno, v), naProporcao, eixo));
+  }, graduacao);
 }

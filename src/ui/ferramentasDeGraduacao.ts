@@ -1,6 +1,7 @@
 import { distancia, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
 import {
-  agruparPonto,
+  agruparTamanhos,
+  ajustarEntre,
   alternarPontoGraduado,
   apagarRegras,
   contornoDoTamanho,
@@ -13,7 +14,6 @@ import {
   regraNoEixo,
   regraPeloTamanhoDeReferencia,
   regraPorPasso,
-  somarRegras,
   tamanhoDeReferencia,
   verticesGraduados,
   type EixoDaGraduacao,
@@ -80,7 +80,9 @@ export type EixoNaTela = 'dx-dy' | 'dx' | 'dy';
 /** O que os diálogos deixaram escolhido; cada um abre com o que foi usado por último. */
 export interface OpcoesDaGraduacao {
   readonly automatico: { readonly dxMm: number; readonly dyMm: number };
-  readonly ajustar: { readonly dxMm: number; readonly dyMm: number };
+  readonly ajustar: { readonly eixo: EixoNaTela };
+  /** A distância de um tamanho ao vizinho, no ponto de referência (zero empilha), e o tamanho a mexer (ou "todos"). */
+  readonly agrupar: { readonly dxMm: number; readonly dyMm: number; readonly tamanho: string };
   readonly mouse: { readonly modo: 'absoluto' | 'incremental' };
   readonly tangente: { readonly distanciaMm: number; readonly inverter: boolean };
   readonly remover: { readonly onde: 'pontos' | 'molde'; readonly eixo: EixoNaTela };
@@ -98,7 +100,8 @@ export const TODOS_OS_TAMANHOS = 'todos';
 
 export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
   automatico: { dxMm: 10, dyMm: 0 },
-  ajustar: { dxMm: 0, dyMm: 0 },
+  ajustar: { eixo: 'dx-dy' },
+  agrupar: { dxMm: 0, dyMm: 0, tamanho: TODOS_OS_TAMANHOS },
   mouse: { modo: 'absoluto' },
   tangente: { distanciaMm: 5, inverter: false },
   remover: { onde: 'pontos', eixo: 'dx-dy' },
@@ -207,13 +210,31 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
     case 'ajustar-graduacao':
       return {
         titulo: 'Ajustar graduação',
-        campos: [
-          { tipo: 'medida', id: 'dx', rotulo: 'Acréscimo de DX por tamanho (mm, + para a direita)', inicial: paraOCampo(opcoes.ajustar.dxMm) },
-          { tipo: 'medida', id: 'dy', rotulo: 'Acréscimo de DY por tamanho (mm, + para baixo)', inicial: paraOCampo(opcoes.ajustar.dyMm) },
-        ],
-        nota: 'Depois de confirmar, clique nos pontos do contorno. O acréscimo é somado à regra que o ponto já tem (para mexer só no DX, deixe o DY em zero). O manual da referência não descreve a construção desta ferramenta; esta é a leitura natural.',
+        campos: [{ tipo: 'escolha', id: 'eixo', rotulo: 'O que ajustar', opcoes: EIXOS, inicial: opcoes.ajustar.eixo }],
+        nota: 'Depois de confirmar, clique no ponto inicial, nos pontos a ajustar e, por último, no ponto final; um segundo clique no ponto final confirma. Os pontos do meio passam a andar na proporção entre o inicial e o final, pela posição de cada um no contorno. O manual da referência dá esses passos, mas não a conta; a proporção é a nossa leitura.',
         rotuloDoBotao: INDICAR,
       };
+    case 'agrupar-graduacao': {
+      const graduacao = peca.graduacao;
+      if (!graduacao) return null;
+      const outros = graduacao.tamanhos.filter((_, t) => t !== graduacao.base);
+      return {
+        titulo: 'Agrupar ou desagrupar',
+        campos: [
+          { tipo: 'medida', id: 'dx', rotulo: 'DX ponto: distância de um tamanho ao outro, na horizontal (mm)', inicial: paraOCampo(opcoes.agrupar.dxMm) },
+          { tipo: 'medida', id: 'dy', rotulo: 'DY ponto: distância de um tamanho ao outro, na vertical (mm)', inicial: paraOCampo(opcoes.agrupar.dyMm) },
+          {
+            tipo: 'escolha',
+            id: 'tamanho',
+            rotulo: 'Aplicar no tamanho',
+            opcoes: [{ valor: TODOS_OS_TAMANHOS, rotulo: 'Todos' }, ...outros.map((nome) => ({ valor: nome, rotulo: nome }))],
+            inicial: outros.includes(opcoes.agrupar.tamanho) ? opcoes.agrupar.tamanho : TODOS_OS_TAMANHOS,
+          },
+        ],
+        nota: 'Depois de confirmar, clique no ponto de referência. Com DX e DY em zero, os tamanhos ficam empilhados nesse ponto (agrupados); com um valor, cada tamanho fica afastado do vizinho essa distância (desagrupados). A forma de cada tamanho não muda.',
+        rotuloDoBotao: INDICAR,
+      };
+    }
     case 'graduar-mouse':
       return {
         titulo: 'Graduar: mouse',
@@ -317,8 +338,9 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
     case 'graduar-automatico':
       return { ...opcoes, automatico: { dxMm: numero('dx'), dyMm: numero('dy') } };
     case 'ajustar-graduacao':
-      if (numero('dx') === 0 && numero('dy') === 0) throw new Error('Informe um acréscimo de DX ou de DY diferente de zero.');
-      return { ...opcoes, ajustar: { dxMm: numero('dx'), dyMm: numero('dy') } };
+      return { ...opcoes, ajustar: { eixo: String(valores.eixo) as EixoNaTela } };
+    case 'agrupar-graduacao':
+      return { ...opcoes, agrupar: { dxMm: numero('dx'), dyMm: numero('dy'), tamanho: String(valores.tamanho) } };
     case 'graduar-mouse':
       return { ...opcoes, mouse: { modo: valores.modo === 'incremental' ? 'incremental' : 'absoluto' } };
     case 'graduar-tangente':
@@ -423,10 +445,14 @@ export interface CliqueDeGraduacao {
   readonly abrir?: DialogoPedidoPeloClique;
 }
 
-/** O que a ferramenta precisa além das opções: a regra escolhida em "Regras" e quem dá nome aos grupos. */
+/** O que a ferramenta precisa além das opções: a regra escolhida em "Regras". */
 export interface ContextoDaGraduacao {
   readonly regra: RegraCadastrada | null;
-  readonly novoGrupo: () => string;
+}
+
+/** "Ajustar": os pontos já clicados depois do inicial, pelo número (a partir de 0) — o último é, por enquanto, o final. */
+function clicadosNoAjuste(peca: Molde, estado: TrechoEmEdicao): number[] {
+  return estado.livres.map((p) => peca.contorno.findIndex((v) => distancia(v, p) < MESMO_PONTO_MM)).filter((i) => i >= 0);
 }
 
 /** A regra da origem como chega ao destino em "Copiar graduação": com os sinais invertidos, se pedido. */
@@ -486,9 +512,25 @@ export function cliqueDeGraduacao(
       return com(definirRegra(graduacao, contorno, i, regra), `${ponto} graduado: DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} por tamanho.`);
     }
     case 'ajustar-graduacao': {
-      const acrescimo = regraPorPasso(graduacao, paraOMundo({ dx: opcoes.ajustar.dxMm, dy: opcoes.ajustar.dyMm }));
-      const regra = somarRegras(regraDoVertice(graduacao, contorno, i), acrescimo);
-      return com(definirRegra(graduacao, contorno, i, regra), `${ponto} ajustado: agora anda, ${descreverRegra(graduacao, regra)}.`);
+      if (!estado.inicio) return { estado: noVertice, recado: null };
+      const inicial = estado.inicio.indiceAresta;
+      if (i === inicial) return { estado, recado: `O ponto ${i + 1} é o inicial: clique nos pontos a ajustar e, por último, no ponto final.` };
+      const clicados = clicadosNoAjuste(peca, estado);
+      if (i !== clicados.at(-1)) {
+        // Um ponto novo entra na fila; um que já estava nela (e não é o último) sai.
+        const fila = clicados.includes(i) ? clicados.filter((v) => v !== i) : [...clicados, i];
+        return { estado: { ...estado, livres: fila.map((v) => contorno[v]!) }, recado: null };
+      }
+      // Segundo clique no último ponto: ele é o final, e os anteriores são os ajustados.
+      const ajustados = clicados.slice(0, -1);
+      if (ajustados.length === 0) return { estado, recado: 'Antes do ponto final, clique em pelo menos um ponto a ajustar.' };
+      try {
+        const nova = ajustarEntre(graduacao, contorno, inicial, ajustados, i, EIXO_DO_MUNDO[opcoes.ajustar.eixo]);
+        const quantos = ajustados.length === 1 ? `O ponto ${ajustados[0]! + 1} foi ajustado` : `${ajustados.length} pontos (${lista(ajustados.map((v) => String(v + 1)))}) foram ajustados`;
+        return com(nova, `${quantos} entre o ponto ${inicial + 1} e o ponto ${i + 1} (${NOME_DO_EIXO[opcoes.ajustar.eixo]}): andam na proporção da posição deles entre os dois.`, SEM_TRECHO);
+      } catch (e) {
+        return { estado, recado: e instanceof Error ? e.message : String(e) };
+      }
     }
     case 'graduar-tangente': {
       const n = contorno.length;
@@ -531,15 +573,17 @@ export function cliqueDeGraduacao(
       );
     }
     case 'agrupar-graduacao': {
-      if (!estado.inicio) return { estado: noVertice, recado: null };
-      const referencia = estado.inicio.indiceAresta;
+      const { dxMm, dyMm, tamanho } = opcoes.agrupar;
+      const qual = tamanho === TODOS_OS_TAMANHOS ? null : indiceDoTamanho(graduacao.tamanhos, tamanho);
+      if (qual !== null && qual < 0) return { estado, recado: `A peça não tem o tamanho “${tamanho}”: abra “Agrupar” de novo e escolha outro.` };
       try {
-        const { graduacao: nova, agrupou } = agruparPonto(graduacao, contorno, referencia, i, contexto.novoGrupo);
+        const nova = agruparTamanhos(graduacao, contorno, i, paraOMundo({ dx: dxMm, dy: dyMm }), qual);
+        const quais = qual === null ? 'Os tamanhos' : `O tamanho ${tamanho}`;
         return com(
           nova,
-          agrupou
-            ? `${ponto} agrupado com o ponto ${referencia + 1}: recebeu a regra dele, e os dois passam a ser graduados juntos.`
-            : `${ponto} saiu do grupo do ponto ${referencia + 1}: fica com a regra, mas passa a ser graduado sozinho.`,
+          dxMm === 0 && dyMm === 0
+            ? `${quais} ${qual === null ? 'ficaram empilhados' : 'ficou empilhado'} no ponto ${i + 1} (agrupados): ele não anda mais de um tamanho para o outro.`
+            : `${quais} ${qual === null ? 'ficaram afastados' : 'ficou afastado'} a partir do ponto ${i + 1} (desagrupados): DX ${mm(dxMm)} e DY ${mm(dyMm)} de um tamanho ao vizinho.`,
         );
       } catch (e) {
         return { estado, recado: e instanceof Error ? e.message : String(e) };
@@ -584,6 +628,18 @@ export function previaDaGraduacao(
   const graduacao = peca.graduacao;
   if (!graduacao) return {};
   const marcas = verticesGraduados(graduacao, peca.contorno).map((i) => peca.contorno[i]!);
+  if (modo === 'ajustar-graduacao' && estado.inicio) {
+    // A projeção: o tamanho da ponta como ficaria com os pontos já clicados ajustados (o último é o final).
+    const clicados = clicadosNoAjuste(peca, estado);
+    const substituido = [estado.inicio.ponto, ...estado.livres];
+    if (clicados.length < 2) return { marcas, substituido };
+    try {
+      const ajustada = ajustarEntre(graduacao, peca.contorno, estado.inicio.indiceAresta, clicados.slice(0, -1), clicados.at(-1)!, EIXO_DO_MUNDO[opcoes.ajustar.eixo]);
+      return { novo: contornoDoTamanho(ajustada, peca.contorno, tamanhoDeReferencia(graduacao)), novoFechado: true, marcas, substituido };
+    } catch {
+      return { marcas, substituido };
+    }
+  }
   if (modo !== 'graduar-mouse' || !estado.inicio || !mouse) return { marcas };
   const i = estado.inicio.indiceAresta;
   const anda = { x: mouse.x - peca.contorno[i]!.x, y: mouse.y - peca.contorno[i]!.y };
@@ -604,7 +660,10 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
     case 'graduar-automatico':
       return `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} por tamanho.` + ESC;
     case 'ajustar-graduacao':
-      return `Ajustar: clique nos pontos que devem ganhar DX ${mm(opcoes.ajustar.dxMm)} e DY ${mm(opcoes.ajustar.dyMm)} por tamanho, além do que já andam.` + ESC;
+      if (!estado.inicio) return `Ajustar (${NOME_DO_EIXO[opcoes.ajustar.eixo]}): clique no ponto inicial.` + ESC;
+      return estado.livres.length < 2
+        ? `Ajustar: a partir do ponto ${numero}, clique nos pontos a ajustar e, por último, no ponto final.` + ESC
+        : `Ajustar: o tracejado mostra o tamanho da ponta com ${estado.livres.length - 1} ponto(s) ajustado(s). Clique de novo no último ponto para confirmar — ou em mais pontos; o último clicado é o final.` + ESC;
     case 'graduar-mouse':
       return !estado.inicio
         ? 'Mouse: clique no ponto do contorno a graduar.' + ESC
@@ -618,9 +677,9 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
     case 'remover-graduacao':
       return `Remover graduação (${NOME_DO_EIXO[opcoes.remover.eixo]}): clique nos pontos que devem ficar parados.` + ESC;
     case 'agrupar-graduacao':
-      return !estado.inicio
-        ? 'Agrupar: clique no ponto de referência — o que dá a regra ao grupo.' + ESC
-        : `Agrupar: clique nos pontos que entram no grupo do ponto ${numero} (um clique num ponto do grupo tira-o dele).` + ESC;
+      return opcoes.agrupar.dxMm === 0 && opcoes.agrupar.dyMm === 0
+        ? 'Agrupar: clique no ponto de referência — os tamanhos ficam empilhados nele.' + ESC
+        : `Desagrupar: clique no ponto de referência — cada tamanho fica a DX ${mm(opcoes.agrupar.dxMm)} e DY ${mm(opcoes.agrupar.dyMm)} do vizinho, a partir dele.` + ESC;
     case 'deduzir-graduacao':
       return 'Deduzir: clique no ponto que deve ficar fixo — a graduação dele é descontada de todos os pontos.' + ESC;
     case 'copiar-graduacao':

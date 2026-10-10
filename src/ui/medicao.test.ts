@@ -5,9 +5,7 @@ import {
   alvoDaMedicao,
   cliqueDePerimetro,
   descreverComparacao,
-  descreverConferencia,
   descreverMedicao,
-  FOLGA_DA_CONFERENCIA_MM,
   posicaoNoContornoPerto,
   resolverMedicao,
   SEM_MEDICAO,
@@ -213,40 +211,5 @@ describe('descreverMedicao e descreverComparacao', () => {
     );
     expect(descreverComparacao(dasCostas, daFrente)).toContain('diferença: 200,0 mm (a 2ª é maior)');
     expect(descreverComparacao(daFrente, daFrente)).toContain('diferença: 0,0 mm (iguais)');
-  });
-});
-
-describe('descreverConferencia', () => {
-  const trechoDe = (peca: typeof frente, ate: number) =>
-    resolverMedicao(
-      {
-        tipo: 'trecho',
-        pecaId: peca.id,
-        contorno: peca.contorno,
-        de: { indiceAresta: 1, ponto: peca.contorno[1]! },
-        ate: { indiceAresta: 1, ponto: ponto(peca.contorno[1]!.x, ate) },
-      },
-      pecas,
-    )!;
-
-  it('duas costuras do mesmo comprimento conferem', () => {
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 300))).toBe(
-      'As duas costuras conferem — 1ª: 300,0 mm (trecho de “Frente”) · 2ª: 300,0 mm (trecho de “Costas”)',
-    );
-  });
-
-  it('quando não conferem, diz qual sobra, de quanto e quanto isso é da menor', () => {
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 240))).toBe(
-      'Não conferem: a 1ª é 60,0 mm maior (25,0%) — 1ª: 300,0 mm (trecho de “Frente”) · 2ª: 240,0 mm (trecho de “Costas”)',
-    );
-    expect(descreverConferencia(trechoDe(costas, 240), trechoDe(frente, 300))).toContain('Não conferem: a 2ª é 60,0 mm maior (25,0%)');
-  });
-
-  it('a folga é de meio milímetro: até ela confere, acima dela não', () => {
-    expect(FOLGA_DA_CONFERENCIA_MM).toBe(0.5);
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 299.5))).toContain('As duas costuras conferem');
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 300.5))).toContain('As duas costuras conferem');
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 299.4))).toContain('Não conferem: a 1ª é 0,6 mm maior (0,2%)');
-    expect(descreverConferencia(trechoDe(frente, 300), trechoDe(costas, 300.6))).toContain('Não conferem: a 2ª é 0,6 mm maior (0,2%)');
   });
 });

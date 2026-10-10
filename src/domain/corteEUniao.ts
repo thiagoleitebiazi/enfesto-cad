@@ -12,7 +12,7 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { ancoraDoRotulo, type Cota } from './cota';
-import { piquesQueFicamNoContorno, rotacionarMolde, transladarMolde, type LinhaDeFio, type Molde } from './molde';
+import { piquesQueFicamNoContorno, rotacionarMolde, semCampo, transladarMolde, type LinhaDeFio, type MetadeGuardada, type Molde } from './molde';
 
 /**
  * Operações que cortam, dobram e unem moldes inteiros (grupos "Cortar e
@@ -143,6 +143,115 @@ export function metadeDoMolde(
   return partes[ladoClicado === 'fica' ? clicada : 1 - clicada]!;
 }
 
+/** Onde a reta que passa por `p` e `q` cruza (ou toca) o contorno, na ordem dos pontos dele. */
+export function cruzamentosDaReta(contorno: Contorno, p: Ponto2D, q: Ponto2D): PosicaoNoContorno[] {
+  const comprimento = distancia(p, q);
+  if (comprimento < MESMO_PONTO_MM) return [];
+  const n = contorno.length;
+  // Distância (com sinal) de cada ponto do contorno à reta.
+  const d = contorno.map((v) => ((q.x - p.x) * (v.y - p.y) - (q.y - p.y) * (v.x - p.x)) / comprimento);
+  const cruzamentos: PosicaoNoContorno[] = [];
+  for (let i = 0; i < n; i++) {
+    const d0 = d[i]!;
+    const d1 = d[(i + 1) % n]!;
+    if (Math.abs(d0) <= TOLERANCIA_DA_DOBRA_MM) {
+      cruzamentos.push({ indiceAresta: i, ponto: contorno[i]! });
+    } else if (Math.abs(d1) > TOLERANCIA_DA_DOBRA_MM && d0 * d1 < 0) {
+      const t = d0 / (d0 - d1);
+      const a = contorno[i]!;
+      const b = contorno[(i + 1) % n]!;
+      cruzamentos.push({ indiceAresta: i, ponto: ponto(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t) });
+    }
+  }
+  return cruzamentos;
+}
+
+/** As duas pontas da dobra feita pela reta que passa por `p` e `q`; recusa a reta que não cruza o contorno em exatamente dois pontos. */
+function pontasDaDobra(contorno: Contorno, p: Ponto2D, q: Ponto2D): readonly [PosicaoNoContorno, PosicaoNoContorno] {
+  const cruzamentos = cruzamentosDaReta(contorno, p, q);
+  if (cruzamentos.length !== 2) {
+    throw new Error(
+      cruzamentos.length < 2
+        ? 'Essa linha não atravessa a peça: não serve de linha de dobra.'
+        : 'Essa linha cruza o contorno em mais de dois pontos: use o modo “Dois pontos do contorno” e indique a dobra.',
+    );
+  }
+  return [cruzamentos[0]!, cruzamentos[1]!];
+}
+
+/**
+ * A linha de dobra pelo meio da peça, como a tela a mostra: `horizontal` é a
+ * linha deitada (o X do mundo constante) e `vertical`, a linha em pé (o Y
+ * constante), as duas pelo centro do retângulo que envolve a peça.
+ */
+export function dobraPeloMeio(molde: Molde, sentido: 'horizontal' | 'vertical'): readonly [PosicaoNoContorno, PosicaoNoContorno] {
+  const caixa = retanguloEnvolvente(molde.contorno);
+  const meioX = (caixa.minX + caixa.maxX) / 2;
+  const meioY = (caixa.minY + caixa.maxY) / 2;
+  return sentido === 'horizontal'
+    ? pontasDaDobra(molde.contorno, ponto(meioX, caixa.minY), ponto(meioX, caixa.maxY))
+    : pontasDaDobra(molde.contorno, ponto(caixa.minX, meioY), ponto(caixa.maxX, meioY));
+}
+
+/** A linha de dobra dada por uma linha interna reta da peça (o "elemento" indicado): vale a reta inteira dela, de borda a borda. */
+export function dobraPelaLinhaInterna(molde: Molde, indiceDaLinha: number): readonly [PosicaoNoContorno, PosicaoNoContorno] {
+  const linha = molde.linhasInternas[indiceDaLinha];
+  if (!linha || linha.length < 2) throw new Error('Linha interna não encontrada na peça.');
+  const de = linha[0]!;
+  const ate = linha.at(-1)!;
+  if (distancia(de, ate) < MESMO_PONTO_MM) throw new Error('Essa linha interna é fechada: não serve de linha de dobra.');
+  if (!estaNaReta(linha, de, ate)) throw new Error('A linha interna precisa ser reta para servir de linha de dobra.');
+  return pontasDaDobra(molde.contorno, de, ate);
+}
+
+/** Todos os pontos da linha estão sobre a reta que passa por `a` e `b`. */
+function estaNaReta(linha: Contorno, a: Ponto2D, b: Ponto2D): boolean {
+  const comprimento = distancia(a, b);
+  return linha.every((p) => Math.abs(((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / comprimento) <= TOLERANCIA_DA_DOBRA_MM);
+}
+
+/** A linha de fio levada, sem girar, até o meio do retângulo que envolve a peça. */
+export function fioNoCentro(fio: LinhaDeFio, contorno: Contorno): LinhaDeFio {
+  const caixa = retanguloEnvolvente(contorno);
+  const dx = (caixa.minX + caixa.maxX) / 2 - (fio.inicio.x + fio.fim.x) / 2;
+  const dy = (caixa.minY + caixa.maxY) / 2 - (fio.inicio.y + fio.fim.y) / 2;
+  return { inicio: ponto(fio.inicio.x + dx, fio.inicio.y + dy), fim: ponto(fio.fim.x + dx, fio.fim.y + dy) };
+}
+
+export interface OpcoesDeDobra {
+  /** "Manter dobra do molde": a metade que sai fica guardada, e o "Desdobrar" a traz de volta como era. */
+  readonly manter: boolean;
+  /** "Fio no centro do molde": a linha de fio vai para o meio da peça que fica. */
+  readonly fioNoCentro: boolean;
+}
+
+/**
+ * "Dobrar": fica só a metade da peça do lado de `pontoDoLado`, e a reta de
+ * `a` a `b` passa a ser uma aresta dela — a linha de dobra. A linha interna
+ * que estava em cima da dobra sai (virou a aresta). Com `manter`, a outra
+ * metade fica guardada na peça.
+ */
+export function dobrarMolde(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno, pontoDoLado: Ponto2D, opcoes: OpcoesDeDobra): Molde {
+  const semALinhaDaDobra: Molde = {
+    ...semCampo(molde, 'dobraMantida'),
+    linhasInternas: molde.linhasInternas.filter((l) => !estaNaReta(l, a.ponto, b.ponto)),
+  };
+  const fica = metadeDoMolde(semALinhaDaDobra, a, b, pontoDoLado, 'fica');
+  const dobrada = opcoes.fioNoCentro ? { ...fica, linhaDeFio: fioNoCentro(fica.linhaDeFio, fica.contorno) } : fica;
+  if (!opcoes.manter) return dobrada;
+  const sai = metadeDoMolde(semALinhaDaDobra, a, b, pontoDoLado, 'sai');
+  const dobraMantida: MetadeGuardada = {
+    de: a.ponto,
+    ate: b.ponto,
+    contorno: sai.contorno,
+    furos: sai.furos,
+    linhasInternas: sai.linhasInternas,
+    marcas: sai.marcas,
+    piques: sai.piques,
+  };
+  return { ...dobrada, dobraMantida };
+}
+
 function espelharNaReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -159,8 +268,40 @@ function espelharNaReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
  * dobra é feita de várias arestas seguidas na mesma reta, vale a dobra
  * inteira. Recusa a peça que passa para os dois lados da reta da dobra, ou
  * que volta a encostar nela.
+ *
+ * Se a peça guarda a outra metade dessa dobra ("Manter dobra do molde"), é
+ * ela que volta, como era, no lugar do espelho. `fioNoCentro` leva a linha
+ * de fio para o meio da peça inteira.
  */
-export function desdobrarMolde(molde: Molde, indiceAresta: number, novoId: () => string): Molde {
+export function desdobrarMolde(molde: Molde, indiceAresta: number, novoId: () => string, opcoes: { readonly fioNoCentro?: boolean } = {}): Molde {
+  const inteira = desdobrada(molde, indiceAresta, novoId);
+  return opcoes.fioNoCentro ? { ...inteira, linhaDeFio: fioNoCentro(inteira.linhaDeFio, inteira.contorno) } : inteira;
+}
+
+/** A metade guardada encaixa na dobra que vai de `pontaInicial` a `pontaFinal`? Devolve o miolo dela, de uma ponta à outra. */
+function mioloDaMetadeGuardada(guardada: MetadeGuardada, pontaInicial: Ponto2D, pontaFinal: Ponto2D): Ponto2D[] | null {
+  const mesmo = (p: Ponto2D, q: Ponto2D): boolean => distancia(p, q) <= TOLERANCIA_DA_DOBRA_MM;
+  const casa = (mesmo(guardada.de, pontaInicial) && mesmo(guardada.ate, pontaFinal)) || (mesmo(guardada.de, pontaFinal) && mesmo(guardada.ate, pontaInicial));
+  if (!casa) return null;
+  const g = guardada.contorno;
+  const m = g.length;
+  const noInicio = g.findIndex((p) => mesmo(p, pontaInicial));
+  const noFim = g.findIndex((p) => mesmo(p, pontaFinal));
+  if (noInicio < 0 || noFim < 0) return null;
+  // A dobra é uma aresta da metade guardada; o miolo é o resto dela, de uma ponta à outra.
+  if ((noFim + 1) % m === noInicio) return Array.from({ length: m - 2 }, (_, j) => g[(noInicio + 1 + j) % m]!);
+  if ((noInicio + 1) % m === noFim) return Array.from({ length: m - 2 }, (_, j) => g[(noFim + 1 + j) % m]!).reverse();
+  return null;
+}
+
+/** A dobra inteira a que a aresta pertence: as arestas vizinhas na mesma reta entram nela. */
+function dobraInteira(molde: Molde, indiceAresta: number): {
+  readonly inicio: number;
+  readonly fim: number;
+  readonly lado: (p: Ponto2D) => number;
+  readonly a: Ponto2D;
+  readonly b: Ponto2D;
+} {
   const n = molde.contorno.length;
   if (!Number.isInteger(indiceAresta) || indiceAresta < 0 || indiceAresta >= n) {
     throw new Error('Aresta fora do contorno da peça.');
@@ -177,9 +318,49 @@ export function desdobrarMolde(molde: Molde, indiceAresta: number, novoId: () =>
   let fim = indiceAresta + 1;
   while (fim - inicio < n - 1 && naReta(inicio - 1)) inicio--;
   while (fim - inicio < n - 1 && naReta(fim + 1)) fim++;
+  return { inicio, fim, lado, a, b };
+}
+
+/** "Desdobrar" na aresta indicada traz de volta a metade guardada (em vez de espelhar a que ficou)? */
+export function desdobraComAMetadeGuardada(molde: Molde, indiceAresta: number): boolean {
+  if (!molde.dobraMantida) return false;
+  const n = molde.contorno.length;
+  const { inicio, fim } = dobraInteira(molde, indiceAresta);
+  return mioloDaMetadeGuardada(molde.dobraMantida, molde.contorno[((inicio % n) + n) % n]!, molde.contorno[fim % n]!) !== null;
+}
+
+function desdobrada(molde: Molde, indiceAresta: number, novoId: () => string): Molde {
+  const n = molde.contorno.length;
+  const { inicio, fim, lado, a, b } = dobraInteira(molde, indiceAresta);
   const foraDaDobra = Array.from({ length: n - (fim - inicio + 1) }, (_, j) => molde.contorno[(fim + 1 + j) % n]!);
   const lados = foraDaDobra.map(lado);
   if (lados.length === 0) throw new Error('A peça não tem área fora dessa aresta.');
+
+  const guardada = molde.dobraMantida;
+  const miolo = guardada ? mioloDaMetadeGuardada(guardada, molde.contorno[((inicio % n) + n) % n]!, molde.contorno[fim % n]!) : null;
+  if (guardada && miolo) {
+    const pontaInicial = molde.contorno[((inicio % n) + n) % n]!;
+    const pontaFinal = molde.contorno[fim % n]!;
+    // Uma volta: da ponta final da dobra, a metade que ficou até a ponta inicial; dali, a metade guardada, como era.
+    const volta = [
+      { ponto: pontaFinal, original: fim % n },
+      ...foraDaDobra.map((p, j) => ({ ponto: p, original: (fim + 1 + j) % n })),
+      { ponto: pontaInicial, original: ((inicio % n) + n) % n },
+      ...miolo.map((p) => ({ ponto: p, original: n })),
+    ];
+    const comeco = volta.reduce((menor, v, i) => (v.original < volta[menor]!.original ? i : menor), 0);
+    const contorno = [...volta.slice(comeco), ...volta.slice(0, comeco)].map((v) => v.ponto);
+    if (!(area(contorno) > AREA_MINIMA_DE_UMA_PARTE_MM2)) throw new Error('A metade guardada não fecha uma peça com a que ficou.');
+    return {
+      ...semCampo(molde, 'dobraMantida'),
+      contorno,
+      furos: [...molde.furos, ...guardada.furos],
+      linhasInternas: [...molde.linhasInternas, ...guardada.linhasInternas, [pontaInicial, pontaFinal]],
+      marcas: [...molde.marcas, ...guardada.marcas],
+      piques: piquesQueFicamNoContorno([...molde.piques, ...guardada.piques], contorno),
+    };
+  }
+
   if (lados.some((d) => d > TOLERANCIA_DA_DOBRA_MM) && lados.some((d) => d < -TOLERANCIA_DA_DOBRA_MM)) {
     throw new Error('A peça passa para os dois lados dessa aresta: não dá para desdobrar nela.');
   }
