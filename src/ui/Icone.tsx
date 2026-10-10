@@ -143,7 +143,8 @@ export type NomeDoIcone =
   | 'arco-tangente-reta'
   | 'arco-tangente-2-retas'
   | 'arco-tangente-arco-reta'
-  | 'arco-tangente-2-arcos';
+  | 'arco-tangente-2-arcos'
+  | 'programas';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -990,6 +991,15 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M3 14a5.5 5.5 0 0 1 5.5-5.5" />
       <path d="M11.5 8.5a5.5 5.5 0 0 1 5.5 5.5" />
       <path d="M8.5 8.5a1.5 1.5 0 0 0 3 0" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  programas: (
+    <>
+      <rect x="2.5" y="2.5" width="6" height="6" rx="1" />
+      <rect x="11.5" y="2.5" width="6" height="6" rx="1" />
+      <rect x="2.5" y="11.5" width="6" height="6" rx="1" />
+      <path d="M12 17.5h5.5V12" />
+      <path d="M17.5 17.5 12 12" />
     </>
   ),
 };

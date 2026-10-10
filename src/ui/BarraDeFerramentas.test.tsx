@@ -113,6 +113,9 @@ function propsBase(): Props {
     onUsarFerramentaDeMolde: vi.fn(),
     temOutraPeca: true,
     onUsarFerramentaDeAnotacao: vi.fn(),
+    onAbrirImagens: vi.fn(),
+    onAbrirProgramas: vi.fn(),
+    podeAbrirProgramas: true,
     onUsarFerramentaDeElemento: vi.fn(),
     onUsarFerramentaDeArco: vi.fn(),
     onEntrarModoCotaRaio: vi.fn(),
@@ -172,7 +175,7 @@ describe('BarraDeFerramentas: abas', () => {
     expect(screen.getByRole('tab', { name: 'Início' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('Início: Desenho, Editar, Selecionar e Restauração', () => {
+  it('Início: Desenho, Editar, Selecionar, Restauração e Programas', () => {
     renderizar('Início');
 
     expect(gruposDaAba()).toEqual({
@@ -180,6 +183,7 @@ describe('BarraDeFerramentas: abas', () => {
       Editar: ['Colar', 'Recortar', 'Copiar', 'Excluir'],
       Selecionar: ['Selecionar', 'Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes'],
       Restauração: ['Ponto de restauração', 'Restaurar'],
+      Programas: ['Programas'],
     });
   });
 
@@ -260,7 +264,7 @@ describe('BarraDeFerramentas: abas', () => {
   });
 });
 
-describe('BarraDeFerramentas: ferramentas que não existem neste programa', () => {
+describe('BarraDeFerramentas: ferramentas desligadas', () => {
   afterEach(() => cleanup());
 
   const ABAS = ['Início', 'Construção', 'Produção', 'Marcações', 'Graduação', 'Manipulação', 'Conferência', 'Modelo', 'Encaixe'];
@@ -285,7 +289,7 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
     }
   });
 
-  it('com peça selecionada, só continuam desligadas as duas que dependem do que o programa não tem', () => {
+  it('com peça selecionada e tudo à mão, nenhuma ferramenta fica desligada: não há mais ferramenta que o programa não tenha', () => {
     const desligadas: Record<string, string[]> = {};
     for (const aba of ABAS.filter((a) => a !== 'Graduação')) {
       renderizar(aba, { podeAlinhar: true, podeVistaAnterior: true, podeProximaVista: true, temCerca: true });
@@ -294,16 +298,38 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
       cleanup();
     }
 
-    expect(desligadas).toEqual({ Produção: ['Digitalizar'], Modelo: ['Imagens'] });
+    expect(desligadas).toEqual({});
   });
 
-  it('os motivos das duas que continuam desligadas', () => {
-    renderizar('Produção');
-    expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
+  it('Digitalizar e Imagens abrem as imagens do modelo, cada um do seu jeito, mesmo sem peça nenhuma', () => {
+    const onAbrirImagens = vi.fn();
+    const semPecas = { onAbrirImagens, temSelecao: false, temSelecaoUnica: false, podeSelecionarTudo: false };
+
+    renderizar('Produção', semPecas);
+    fireEvent.click(botao('Digitalizar'));
+    cleanup();
+    renderizar('Modelo', semPecas);
+    fireEvent.click(botao('Imagens'));
+
+    expect(onAbrirImagens.mock.calls).toEqual([['digitalizar'], ['imagens']]);
+  });
+
+  it('Programas abre os atalhos; no navegador, fica desligado e diz que é só no programa instalado', () => {
+    const props = renderizar('Início', { temSelecao: false, temSelecaoUnica: false, podeSelecionarTudo: false });
+    fireEvent.click(botao('Programas'));
+    expect(props.onAbrirProgramas).toHaveBeenCalledTimes(1);
     cleanup();
 
-    renderizar('Modelo');
-    expect(botao('Imagens').title).toContain('não guarda imagens');
+    renderizar('Início', { podeAbrirProgramas: false });
+    expect(botao('Programas')).toBeDisabled();
+    expect(botao('Programas').title).toBe('Programas — disponível só no programa instalado, não no navegador');
+  });
+
+  it('Digitalizar fica pressionado enquanto se calibra a escala da imagem', () => {
+    renderizar('Produção', { modo: 'calibrar-imagem' });
+
+    expect(botao('Digitalizar')).toHaveAttribute('aria-pressed', 'true');
+    expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
   });
 
   it('Graduação: a aba explica, sem precisar do mouse, que a peça desenhada é o tamanho base', () => {

@@ -110,6 +110,22 @@ import {
 import { definirAutor } from './domain/projeto';
 import type { FerramentaDeAnotacao } from './ui/BarraDeFerramentas';
 import {
+  adicionarImagem,
+  calibrarImagem,
+  descreverEscalaDaImagem,
+  imagensDoProjeto,
+  novaImagem,
+  origemParaImagemNova,
+  removerImagem,
+  retanguloDaImagem,
+  substituirImagem,
+  type ImagemDoModelo,
+} from './domain/imagens';
+import { lerImagemDoArquivo } from './ui/carregarImagem';
+import { PainelDeImagens } from './ui/PainelDeImagens';
+import { PainelDeProgramas } from './ui/PainelDeProgramas';
+import type { Programa } from './domain/programas';
+import {
   apagarElementoEscolhido,
   aplicarPontoPorCoordenada,
   cliqueDeElemento,
@@ -289,10 +305,14 @@ function tecidoDeDemonstracao(): Tecido {
  */
 const TAMANHO_PROVISORIO_DA_TELA = { largura: 900, altura: 600 } as const;
 
-/** O que "Ajustar à tela" enquadra: a mesa (com enfesto configurado) e todas as peças. `null` se não houver nenhuma das duas. */
+/**
+ * O que "Ajustar à tela" enquadra: a mesa (com enfesto configurado), todas as
+ * peças e as imagens do modelo que estão à mostra. `null` se não houver nada disso.
+ */
 function retanguloDoDesenho(
   pecas: readonly Molde[],
   enfesto: ConfiguracaoDeEnfesto | null,
+  imagens: readonly ImagemDoModelo[],
 ): { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } | null {
   let minX = enfesto ? 0 : Infinity;
   let minY = enfesto ? 0 : Infinity;
@@ -300,6 +320,14 @@ function retanguloDoDesenho(
   let maxY = enfesto ? enfesto.comprimentoMm : -Infinity;
   for (const peca of pecas) {
     const b = retanguloEnvolvente(peca.contorno);
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  for (const imagem of imagens) {
+    if (!imagem.visivel) continue;
+    const b = retanguloDaImagem(imagem);
     minX = Math.min(minX, b.minX);
     minY = Math.min(minY, b.minY);
     maxX = Math.max(maxX, b.maxX);
@@ -372,6 +400,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'editar-texto'; readonly id: string }
   | { readonly tipo: 'codigo-do-pique'; readonly id: string }
   | { readonly tipo: 'autor' }
+  | { readonly tipo: 'escala-da-imagem' }
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
@@ -533,6 +562,21 @@ export default function App(): React.JSX.Element {
     }),
   );
   const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
+  // Imagens do modelo: o painel aberto (pelo "Imagens" ou pelo "Digitalizar"), o
+  // erro a mostrar nele e a calibração em curso (os pontos já clicados na imagem).
+  const imagens = imagensDoProjeto(projetoAtual);
+  const [painelDeImagens, setPainelDeImagens] = useState<'imagens' | 'digitalizar' | null>(null);
+  const [erroDasImagens, setErroDasImagens] = useState<string | null>(null);
+  const [calibracao, setCalibracao] = useState<{
+    readonly imagemId: string;
+    readonly pontos: readonly Ponto2D[];
+    /** Aberta pelo "Digitalizar": depois de calibrar, liga o "Criar molde" para contornar. */
+    readonly contornarDepois: boolean;
+  } | null>(null);
+  const arquivoDeImagemRef = useRef<HTMLInputElement | null>(null);
+  // Atalhos para outros programas: a lista (`null` com o painel fechado) e o erro a mostrar nele.
+  const [programas, setProgramas] = useState<readonly Programa[] | null>(null);
+  const [erroDosProgramas, setErroDosProgramas] = useState<string | null>(null);
   const [mostrarBiblioteca, setMostrarBiblioteca] = useState(false);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
@@ -764,10 +808,11 @@ export default function App(): React.JSX.Element {
     const novo = novoProjetoVazio({ pecas, tecido, enfesto });
     const agora = new Date().toISOString();
     // A cópia é do mesmo modelo: o autor vai junto.
-    const renomeado = definirAutor(renomearProjeto(novo, nome, agora), projetoAtual.autor ?? '', agora);
+    const comAutor = definirAutor(renomearProjeto(novo, nome, agora), projetoAtual.autor ?? '', agora);
+    const renomeado = projetoAtual.imagens ? { ...comAutor, imagens: projetoAtual.imagens } : comAutor;
     setProjetoAtual(renomeado);
     persistirProjeto(renomeado);
-  }, [pecas, tecido, enfesto, projetoAtual.nome, projetoAtual.autor, persistirProjeto]);
+  }, [pecas, tecido, enfesto, projetoAtual.nome, projetoAtual.autor, projetoAtual.imagens, persistirProjeto]);
 
   const abrirBiblioteca = useCallback(() => {
     carregarListaDeProjetos();
@@ -797,7 +842,7 @@ export default function App(): React.JSX.Element {
       setMostrarBiblioteca(false);
       // Enquadra o projeto aberto, como "Ajustar à tela". As vistas guardadas
       // eram do projeto anterior e deixam de valer.
-      const retangulo = retanguloDoDesenho(projeto.estadoAtual.pecas, projeto.estadoAtual.enfesto);
+      const retangulo = retanguloDoDesenho(projeto.estadoAtual.pecas, projeto.estadoAtual.enfesto, imagensDoProjeto(projeto));
       if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela));
       setVistasAnteriores([]);
       setVistasSeguintes([]);
@@ -994,13 +1039,13 @@ export default function App(): React.JSX.Element {
     // mantém o reset antigo. Com enfesto configurado, a mesa real (mesmo
     // vazia) é o retângulo de referência, para aparecer inteira e retangular
     // assim que o projeto é criado, sem precisar de "Ajustar" manual.
-    const retangulo = retanguloDoDesenho(pecas, enfesto);
+    const retangulo = retanguloDoDesenho(pecas, enfesto, imagens);
     mudarVistaPara(
       retangulo
         ? enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela)
         : { escalaPxPorMm: 1, offsetXPx: 80, offsetYPx: 80 },
     );
-  }, [pecas, enfesto, tamanhoDaTela, mudarVistaPara]);
+  }, [pecas, enfesto, imagens, tamanhoDaTela, mudarVistaPara]);
 
   // A área de desenho avisa o tamanho real assim que é montada (e a cada
   // redimensionamento). Na primeira medida de verdade, a vista inicial —
@@ -1012,10 +1057,10 @@ export default function App(): React.JSX.Element {
       setTamanhoDaTela(tamanho);
       if (vistaInicialEnquadradaRef.current || tamanho.largura < 50 || tamanho.altura < 50) return;
       vistaInicialEnquadradaRef.current = true;
-      const retangulo = retanguloDoDesenho(pecas, enfesto);
+      const retangulo = retanguloDoDesenho(pecas, enfesto, imagens);
       if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanho));
     },
-    [pecas, enfesto],
+    [pecas, enfesto, imagens],
   );
 
   const pecaSelecionada = useMemo(() => pecas.find((p) => p.id === selecionadoId) ?? null, [pecas, selecionadoId]);
@@ -1032,6 +1077,7 @@ export default function App(): React.JSX.Element {
     setTrecho(SEM_TRECHO);
     setDialogoDeFerramenta(null);
     setRecadoDaFerramenta(null);
+    setCalibracao(null);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -1086,6 +1132,7 @@ export default function App(): React.JSX.Element {
     setModo('novo-molde');
     setPontosEmEdicao([]);
     setContornoPendente(null);
+    setRecadoDaFerramenta(null);
   }, []);
 
   const entrarModoRetangulo = useCallback(() => {
@@ -1289,6 +1336,91 @@ export default function App(): React.JSX.Element {
     },
     [selecionadoId, idsSelecionadosEmLote, entrarModoDeMedida, entrarModoDeConstrucao],
   );
+
+  /** "Programas": lê a lista de atalhos deste computador e abre o painel. */
+  const abrirProgramas = useCallback(() => {
+    const api = window.enfestoCad;
+    if (!api) return;
+    setErroDosProgramas(null);
+    void api.listarProgramas().then(setProgramas, () => setProgramas([]));
+  }, []);
+
+  /** Um pedido sobre os atalhos (adicionar, remover): fica a lista que voltou e a mensagem do que o impediu. */
+  const mudarProgramas = useCallback((pedido: Promise<{ readonly lista: Programa[]; readonly erro: string | null } | null> | undefined) => {
+    void pedido?.then(
+      (resultado) => {
+        // `null`: o usuário desistiu na escolha do arquivo.
+        if (!resultado) return;
+        setProgramas(resultado.lista);
+        setErroDosProgramas(resultado.erro);
+      },
+      (e: unknown) => setErroDosProgramas(e instanceof Error ? e.message : String(e)),
+    );
+  }, []);
+
+  /** Guarda no projeto (e no arquivo dele) uma mudança nas imagens; devolve a mensagem do erro, se houver. */
+  const mudarImagens = useCallback(
+    (mudar: (projeto: Projeto) => Projeto): string | null => {
+      try {
+        const atualizado = mudar(projetoAtual);
+        setProjetoAtual(atualizado);
+        persistirProjeto(atualizado);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [projetoAtual, persistirProjeto],
+  );
+
+  /** "Imagens" e "Digitalizar" abrem o mesmo painel; pelo "Digitalizar", com os passos para copiar um molde de papel. */
+  const abrirImagens = useCallback(
+    (como: 'imagens' | 'digitalizar') => {
+      cancelarModo();
+      setErroDasImagens(null);
+      setPainelDeImagens(como);
+    },
+    [cancelarModo],
+  );
+
+  /** A foto ou o desenho escolhido entra no projeto, à mostra, e a vista vai até ele. */
+  const receberArquivoDeImagem = useCallback(
+    async (arquivo: File) => {
+      try {
+        const lida = await lerImagemDoArquivo(arquivo);
+        const imagem = novaImagem(proximoId(), lida.nome, lida.dados, lida.larguraPx, lida.alturaPx, origemParaImagemNova(pecas));
+        const erro = mudarImagens((projeto) => adicionarImagem(projeto, imagem, new Date().toISOString()));
+        setErroDasImagens(erro);
+        if (!erro) mudarVistaPara(enquadrarRetanguloDoMundo(retanguloDaImagem(imagem), tamanhoDaTela));
+      } catch (e) {
+        setErroDasImagens(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [pecas, mudarImagens, mudarVistaPara, tamanhoDaTela],
+  );
+
+  /** "Calibrar escala": fecha o painel e pede dois cliques sobre a imagem, nas pontas de uma medida conhecida. */
+  const iniciarCalibracao = useCallback(
+    (imagemId: string) => {
+      const imagem = imagens.find((i) => i.id === imagemId);
+      if (!imagem) return;
+      const contornarDepois = painelDeImagens === 'digitalizar';
+      // Os cliques são sobre a imagem: ela precisa estar à mostra.
+      if (!imagem.visivel) mudarImagens((projeto) => substituirImagem(projeto, { ...imagem, visivel: true }, new Date().toISOString()));
+      setPainelDeImagens(null);
+      entrarModoDeConstrucao('calibrar-imagem');
+      setCalibracao({ imagemId, pontos: [], contornarDepois });
+      mudarVistaPara(enquadrarRetanguloDoMundo(retanguloDaImagem(imagem), tamanhoDaTela));
+    },
+    [imagens, painelDeImagens, mudarImagens, entrarModoDeConstrucao, mudarVistaPara, tamanhoDaTela],
+  );
+
+  /** "Contornar o molde" (Digitalizar): liga o "Criar molde" por cima da imagem já na escala. */
+  const contornarAImagem = useCallback(() => {
+    setPainelDeImagens(null);
+    entrarModoNovoMolde();
+    setRecadoDaFerramenta('Digitalizar: contorne o molde sobre a imagem');
+  }, [entrarModoNovoMolde]);
 
   /** Retas e pontos de construção: as que têm opções pedem-nas antes, num diálogo; as outras ligam direto. */
   const usarFerramentaDeElemento = useCallback(
@@ -2019,6 +2151,14 @@ export default function App(): React.JSX.Element {
         );
         return;
       }
+      if (modo === 'calibrar-imagem') {
+        if (!calibracao) return;
+        // O ponto exato sob o mouse: o ímã prende nas peças, e a medida é da imagem.
+        const pontos = calibracao.pontos.length >= 2 ? [semCaptura] : [...calibracao.pontos, semCaptura];
+        setCalibracao({ ...calibracao, pontos });
+        if (pontos.length === 2) setDialogoDeFerramenta({ tipo: 'escala-da-imagem' });
+        return;
+      }
       if (modo === 'inserir-texto' || modo === 'editar-texto' || modo === 'linha-de-simetria' || modo === 'relacionar-piques') {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2309,6 +2449,7 @@ export default function App(): React.JSX.Element {
       regraEscolhida,
       opcoesDeElemento,
       textoAInserir,
+      calibracao,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2643,6 +2784,12 @@ export default function App(): React.JSX.Element {
   // Prévia das ferramentas de curva e arco: o trecho que sai, a linha que entra
   // e os pontos já indicados; no círculo e na espiral, o contorno novo inteiro.
   const previaNoDesenho = useMemo<PreviaNoDesenho | null>(() => {
+    if (modo === 'calibrar-imagem' && calibracao) {
+      // Os pontos já clicados e a medida que eles marcam (até o mouse, enquanto falta o segundo).
+      const [primeiro, segundo] = calibracao.pontos;
+      const ate = segundo ?? cursorMundo;
+      return { marcas: calibracao.pontos, ...(primeiro && ate ? { linhas: [[primeiro, ate]] } : {}) };
+    }
     if (ehFerramentaDeTrecho(modo) && pecaSelecionada) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
@@ -2708,6 +2855,7 @@ export default function App(): React.JSX.Element {
     opcoesDaGraduacao,
     opcoesDeElemento,
     pontosEmEdicao,
+    calibracao,
     transform.escalaPxPorMm,
   ]);
 
@@ -2717,6 +2865,13 @@ export default function App(): React.JSX.Element {
     if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
+    if (modo === 'calibrar-imagem') {
+      return (
+        (calibracao?.pontos.length === 1
+          ? 'Calibrar escala: agora clique na outra ponta da medida.'
+          : 'Calibrar escala: clique numa ponta de uma medida que você conhece na imagem (o zero de uma régua, por exemplo).') + fim
+      );
+    }
     if (modo === 'inserir-texto') return `Inserir texto: clique onde o texto “${textoAInserir.texto.trim()}” deve ficar, na peça selecionada.` + fim;
     if (modo === 'editar-texto') return 'Editar texto: clique em cima de um texto da peça selecionada.' + fim;
     if (modo === 'linha-de-simetria') {
@@ -2845,7 +3000,7 @@ export default function App(): React.JSX.Element {
     if (textoDaConstrucao) return recadoDaFerramenta ? `${recadoDaFerramenta} — ${textoDaConstrucao}` : textoDaConstrucao;
     switch (modo) {
       case 'novo-molde':
-        return 'Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.';
+        return `${recadoDaFerramenta ? `${recadoDaFerramenta} — ` : ''}Clique para adicionar pontos do contorno. Enter fecha o contorno (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.`;
       case 'novo-furo':
         return 'Clique para adicionar pontos do furo. Enter fecha o furo (com o Ímã ligado, clicar no primeiro ponto também fecha); Esc cancela.';
       case 'retangulo':
@@ -3049,6 +3204,9 @@ export default function App(): React.JSX.Element {
         onUsarFerramentaDeMolde={usarFerramentaDeMolde}
         temOutraPeca={pecas.length >= 2}
         onUsarFerramentaDeAnotacao={usarFerramentaDeAnotacao}
+        onAbrirImagens={abrirImagens}
+        onAbrirProgramas={abrirProgramas}
+        podeAbrirProgramas={typeof window.enfestoCad?.listarProgramas === 'function'}
         onUsarFerramentaDeElemento={usarFerramentaDeElemento}
         onUsarFerramentaDeGraduacao={usarFerramentaDeGraduacao}
         temGraduacao={pecaSelecionada?.graduacao !== undefined}
@@ -3400,6 +3558,104 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta(null)}
         />
       )}
+      <input
+        ref={arquivoDeImagemRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/bmp,image/gif"
+        hidden
+        tabIndex={-1}
+        aria-label="Arquivo de imagem do modelo"
+        onChange={(e) => {
+          const arquivo = e.target.files?.[0];
+          // Esvazia o campo: escolher de novo o mesmo arquivo tem de valer outra vez.
+          e.target.value = '';
+          if (arquivo) void receberArquivoDeImagem(arquivo);
+        }}
+      />
+      {programas && (
+        <PainelDeProgramas
+          programas={programas}
+          erro={erroDosProgramas}
+          onAbrir={(id) => {
+            void window.enfestoCad?.abrirPrograma(id).then(setErroDosProgramas, (e: unknown) => setErroDosProgramas(e instanceof Error ? e.message : String(e)));
+          }}
+          onRemover={(id) => mudarProgramas(window.enfestoCad?.removerPrograma(id))}
+          onAdicionarArquivo={(nome) => mudarProgramas(window.enfestoCad?.adicionarArquivoDePrograma(nome))}
+          onAdicionarEndereco={(nome, endereco) => mudarProgramas(window.enfestoCad?.adicionarEnderecoDePrograma(nome, endereco))}
+          onFechar={() => setProgramas(null)}
+        />
+      )}
+      {painelDeImagens && (
+        <PainelDeImagens
+          imagens={imagens}
+          digitalizando={painelDeImagens === 'digitalizar'}
+          erro={erroDasImagens}
+          onAdicionar={() => arquivoDeImagemRef.current?.click()}
+          onMostrar={(id, visivel) => {
+            const imagem = imagens.find((i) => i.id === id);
+            if (imagem) setErroDasImagens(mudarImagens((projeto) => substituirImagem(projeto, { ...imagem, visivel }, new Date().toISOString())));
+          }}
+          onOpacidade={(id, opacidade) => {
+            const imagem = imagens.find((i) => i.id === id);
+            if (imagem) setErroDasImagens(mudarImagens((projeto) => substituirImagem(projeto, { ...imagem, opacidade }, new Date().toISOString())));
+          }}
+          onCalibrar={iniciarCalibracao}
+          onRemover={(id) => {
+            const imagem = imagens.find((i) => i.id === id);
+            // Fora do desfazer: a imagem é do projeto, não do desenho das peças.
+            if (!imagem || !window.confirm(`Remover a imagem “${imagem.nome}” do projeto? Isto não pode ser desfeito.`)) return;
+            setErroDasImagens(mudarImagens((projeto) => removerImagem(projeto, id, new Date().toISOString())));
+          }}
+          onContornar={contornarAImagem}
+          onFechar={() => setPainelDeImagens(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'escala-da-imagem' &&
+        calibracao?.pontos.length === 2 &&
+        (() => {
+          const imagem = imagens.find((i) => i.id === calibracao.imagemId);
+          const [a, b] = calibracao.pontos as readonly [Ponto2D, Ponto2D];
+          if (!imagem) return null;
+          return (
+            <DialogoDeCampos
+              titulo="Escala da imagem"
+              resumo={[
+                ['Imagem', imagem.nome],
+                ['Entre os dois pontos, na escala de agora', formatarMm(Math.hypot(b.x - a.x, b.y - a.y))],
+              ]}
+              campos={[{ tipo: 'medida', id: 'distancia', rotulo: 'Distância real entre os dois pontos (mm)', inicial: '' }]}
+              nota="A imagem cresce ou encolhe a partir do canto de cima à esquerda, até os dois pontos ficarem à distância digitada. Dá para calibrar de novo quando quiser."
+              rotuloDoBotao="Calibrar"
+              onAplicar={(valores) => {
+                let calibrada: ImagemDoModelo;
+                try {
+                  calibrada = calibrarImagem(imagem, a, b, Number(valores.distancia));
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+                const erro = mudarImagens((projeto) => substituirImagem(projeto, calibrada, new Date().toISOString()));
+                if (erro) return erro;
+                // A imagem mudou de tamanho: a vista vai até ela, para o contorno começar à vista.
+                mudarVistaPara(enquadrarRetanguloDoMundo(retanguloDaImagem(calibrada), tamanhoDaTela));
+                const recado = `Imagem “${calibrada.nome}” na escala (${descreverEscalaDaImagem(calibrada)})`;
+                if (calibracao.contornarDepois) {
+                  entrarModoNovoMolde();
+                  setRecadoDaFerramenta(`${recado}. Agora contorne o molde`);
+                } else {
+                  cancelarModo();
+                  avisar(`${recado}.`);
+                }
+                setCalibracao(null);
+                return null;
+              }}
+              onFechar={() => {
+                setDialogoDeFerramenta(null);
+                // Fechado sem calibrar: os dois pontos são esquecidos, para clicar de novo.
+                setCalibracao((atual) => (atual ? { ...atual, pontos: [] } : null));
+              }}
+            />
+          );
+        })()}
       {dialogoDeFerramenta?.tipo === 'cor' && (
         <DialogoDeCampos
           titulo="Cor da peça"
@@ -3760,6 +4016,7 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
           <AreaDeDesenho
+            imagens={imagens}
             pecas={pecas}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}

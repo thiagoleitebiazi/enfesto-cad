@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell } from 'electron';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -237,6 +238,84 @@ ipcMain.handle('excluir-projeto', async (_evento, id: string) => {
   const dir = await garantirDiretorioDeProjetos();
   await unlink(path.join(dir, `${id}.json`));
   return true;
+});
+
+/**
+ * Atalhos para outros programas (aba Início > Programas). A lista mora aqui,
+ * no processo principal, em <userData>/programas.json: a interface só pede
+ * "abra o atalho tal", pelo id — nunca manda um caminho para abrir. Um
+ * arquivo só entra na lista pela janela de escolha do sistema, e um endereço,
+ * só se for http ou https.
+ */
+function arquivoDeProgramas(): string {
+  return path.join(app.getPath('userData'), 'programas.json');
+}
+
+async function lerListaDeProgramas(): Promise<Programa[]> {
+  try {
+    return lerProgramas(JSON.parse(await readFile(arquivoDeProgramas(), 'utf-8')));
+  } catch {
+    // Sem arquivo ainda, ou ilegível: começa da lista vazia.
+    return [];
+  }
+}
+
+async function gravarListaDeProgramas(lista: readonly Programa[]): Promise<void> {
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await writeFile(arquivoDeProgramas(), JSON.stringify(lista, null, 2), 'utf-8');
+}
+
+function novoIdDePrograma(): string {
+  return `programa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** A lista depois da mudança, ou a de antes com a mensagem do que impediu. */
+async function mudarProgramas(mudar: (lista: Programa[]) => Programa[]): Promise<{ lista: Programa[]; erro: string | null }> {
+  const lista = await lerListaDeProgramas();
+  try {
+    const nova = mudar(lista);
+    await gravarListaDeProgramas(nova);
+    return { lista: nova, erro: null };
+  } catch (e) {
+    return { lista, erro: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+ipcMain.handle('programas-listar', () => lerListaDeProgramas());
+
+ipcMain.handle('programas-adicionar-arquivo', async (_evento, nome: unknown) => {
+  const resultado = await dialog.showOpenDialog({
+    title: 'Escolher o programa ou o arquivo do atalho',
+    properties: ['openFile'],
+  });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  const alvo = resultado.filePaths[0]!;
+  return mudarProgramas((lista) => adicionarPrograma(lista, novoPrograma(novoIdDePrograma(), String(nome ?? ''), 'arquivo', alvo)));
+});
+
+ipcMain.handle('programas-adicionar-endereco', (_evento, dados: { nome?: unknown; endereco?: unknown }) =>
+  mudarProgramas((lista) =>
+    adicionarPrograma(lista, novoPrograma(novoIdDePrograma(), String(dados?.nome ?? ''), 'endereco', String(dados?.endereco ?? ''))),
+  ),
+);
+
+ipcMain.handle('programas-remover', (_evento, id: unknown) => mudarProgramas((lista) => removerPrograma(lista, String(id))));
+
+/** Abre o atalho; devolve a mensagem do erro, ou `null` se abriu. */
+ipcMain.handle('programas-abrir', async (_evento, id: unknown) => {
+  const programa = (await lerListaDeProgramas()).find((p) => p.id === id);
+  if (!programa) return 'Atalho não encontrado.';
+  try {
+    if (programa.tipo === 'endereco') {
+      await shell.openExternal(enderecoValido(programa.alvo));
+      return null;
+    }
+    if (!path.isAbsolute(programa.alvo)) return 'O caminho do atalho não é válido. Remova-o e cadastre de novo.';
+    const erro = await shell.openPath(programa.alvo);
+    return erro === '' ? null : `Não foi possível abrir “${programa.nome}”: ${erro}`;
+  } catch (e) {
+    return `Não foi possível abrir “${programa.nome}”: ${e instanceof Error ? e.message : String(e)}`;
+  }
 });
 
 app.whenReady().then(() => {

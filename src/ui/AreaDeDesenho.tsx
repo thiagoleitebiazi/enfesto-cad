@@ -37,6 +37,7 @@ import {
 import { capturarComIma, pontosDeCapturaDasPecas, type TipoDeCaptura } from './ima';
 import { formatarMm } from './medidas';
 import type { MedicaoResolvida } from './medicao';
+import type { ImagemDoModelo } from '../domain/imagens';
 
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#dde1e6';
@@ -171,7 +172,8 @@ export type ModoDeDesenho =
   | 'editar-texto'
   | 'linha-de-simetria'
   | 'relacionar-piques'
-  | 'conferir';
+  | 'conferir'
+  | 'calibrar-imagem';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -342,6 +344,8 @@ interface AreaDeDesenhoProps {
   readonly cotaEmPrevia?: Cota | null;
   /** Prévia de uma ferramenta que mexe no contorno: o que entra, o que sai e os pontos já indicados. */
   readonly previa?: PreviaNoDesenho | null;
+  /** Imagens do modelo, desenhadas por baixo das peças (só as que estão à mostra). */
+  readonly imagens?: readonly ImagemDoModelo[];
 }
 
 /** O que uma ferramenta de contorno mostra antes de aplicar. Tudo em mm do mundo. */
@@ -358,6 +362,7 @@ export interface PreviaNoDesenho {
 }
 
 const SEM_MEDICOES: readonly MedicaoResolvida[] = [];
+const SEM_IMAGENS: readonly ImagemDoModelo[] = [];
 
 function traçarContorno(ctx: CanvasRenderingContext2D, contorno: readonly Ponto2D[], transform: TransformacaoDeTela): void {
   contorno.forEach((p, i) => {
@@ -423,6 +428,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     inicioDoTrecho = null,
     cotaEmPrevia = null,
     previa = null,
+    imagens = SEM_IMAGENS,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
   // O que prende o cursor agora: os vértices, com o ímã ligado ou num modo de
@@ -436,6 +442,21 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [tamanho, setTamanho] = useState({ largura: 800, altura: 600 });
   const [cursorLocal, setCursorLocal] = useState<Ponto2D | null>(null);
+  // Imagens do modelo: cada uma é carregada uma vez (pelo id e pelo conteúdo),
+  // e o desenho é refeito quando ela fica pronta.
+  const imagensCarregadasRef = useRef(new Map<string, { readonly dados: string; readonly img: HTMLImageElement }>());
+  const [imagensProntas, setImagensProntas] = useState(0);
+  useEffect(() => {
+    const carregadas = imagensCarregadasRef.current;
+    for (const id of [...carregadas.keys()]) if (!imagens.some((i) => i.id === id)) carregadas.delete(id);
+    for (const imagem of imagens) {
+      if (carregadas.get(imagem.id)?.dados === imagem.dados) continue;
+      const img = new Image();
+      img.onload = () => setImagensProntas((n) => n + 1);
+      img.src = imagem.dados;
+      carregadas.set(imagem.id, { dados: imagem.dados, img });
+    }
+  }, [imagens]);
   const [capturaDoCursor, setCapturaDoCursor] = useState<TipoDeCaptura | null>(null);
   const panRef = useRef<{ ativo: boolean; ultimoX: number; ultimoY: number; vistaGuardada: boolean }>({
     ativo: false,
@@ -782,6 +803,25 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           ctx.fillRect(x - 1, Math.round(primeiro.y + linha * passoPx) - 1, 2, 2);
         }
       }
+    }
+
+    // Imagens do modelo, por baixo das peças: o canto de cima à esquerda em
+    // `origem`, a largura correndo na horizontal da tela (o Y do mundo).
+    for (const imagem of imagens) {
+      const carregada = imagensCarregadasRef.current.get(imagem.id);
+      if (!imagem.visivel || !carregada || !carregada.img.complete || carregada.img.naturalWidth === 0) continue;
+      const canto = mundoParaTela(imagem.origem, transform);
+      const pxDaTelaPorPx = imagem.mmPorPx * transform.escalaPxPorMm;
+      const largura = imagem.larguraPx * pxDaTelaPorPx;
+      const altura = imagem.alturaPx * pxDaTelaPorPx;
+      ctx.globalAlpha = imagem.opacidade;
+      ctx.drawImage(carregada.img, canto.x, canto.y, largura, altura);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = COR_BORDA_MESA;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(canto.x, canto.y, largura, altura);
+      ctx.setLineDash([]);
     }
 
     for (const pecaOriginal of pecas) {
@@ -1438,6 +1478,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     desenharCota,
     cotaEmPrevia,
     previa,
+    imagens,
+    imagensProntas,
   ]);
 
   // Desenha a régua horizontal.

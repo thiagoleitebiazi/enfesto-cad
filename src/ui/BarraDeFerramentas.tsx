@@ -136,6 +136,11 @@ interface BarraDeFerramentasProps {
   /** Retas e pontos de construção, que aqui são as linhas internas e as marcas da peça selecionada. */
   readonly onUsarFerramentaDeElemento: (ferramenta: FerramentaDeElemento) => void;
   readonly onUsarFerramentaDeAnotacao: (ferramenta: FerramentaDeAnotacao) => void;
+  /** Atalhos para outros programas (aba Início). Só há como abri-los no programa instalado, não no navegador. */
+  readonly onAbrirProgramas: () => void;
+  readonly podeAbrirProgramas: boolean;
+  /** Abre as imagens do modelo: pelo "Imagens", ou pelo "Digitalizar" (com os passos para copiar um molde de papel). */
+  readonly onAbrirImagens: (como: 'imagens' | 'digitalizar') => void;
   /** As ferramentas da aba Graduação, na peça selecionada. */
   readonly onUsarFerramentaDeGraduacao: (ferramenta: FerramentaDeGraduacao) => void;
   /** A peça selecionada já tem tamanhos definidos (é graduada). */
@@ -177,8 +182,6 @@ interface FerramentaProps {
   readonly icone: NomeDoIcone;
   /** A dica com a ferramenta disponível. */
   readonly dica?: string;
-  /** Motivo fixo de a ferramenta não existir neste programa: o botão fica sempre desligado, e a dica diz por quê. */
-  readonly indisponivel?: string;
   /** O que falta agora para usar a ferramenta ("selecione uma peça primeiro"); `null` quando não falta nada. */
   readonly falta?: string | null;
   /** Ferramenta de modo: `true` enquanto é ela que está ligada. */
@@ -194,7 +197,7 @@ interface FerramentaProps {
  */
 function Ferramenta(props: FerramentaProps): React.JSX.Element {
   const nome = typeof props.rotulo === 'string' ? props.rotulo : props.rotulo.join(' ');
-  const motivo = props.indisponivel ?? props.falta ?? null;
+  const motivo = props.falta ?? null;
   return (
     <button
       className={`${props.tamanho === 'icone' ? 'botao-pequeno botao-so-icone' : `botao-${props.tamanho}`}${props.pressionado ? ' item-selecionado' : ''}`}
@@ -586,6 +589,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   onClick={props.onRestaurar}
                 />
               </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Programas">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Programas"
+                  icone="programas"
+                  dica="Programas: atalhos para os outros programas que você usa junto com este (plotter, máquina de corte, planilhas, sites) — é você quem escolhe quais"
+                  falta={props.podeAbrirProgramas ? null : 'disponível só no programa instalado, não no navegador'}
+                  onClick={props.onAbrirProgramas}
+                />
+              </div>
             </>
           )}
 
@@ -878,7 +892,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Digitalizar"
                     icone="digitalizar"
-                    indisponivel="indisponível neste programa: depende de uma mesa digitalizadora"
+                    pressionado={props.modo === 'calibrar-imagem'}
+                    dica="Digitalizar: copia um molde de papel a partir de uma foto ou de um escaneado — a imagem entra por baixo do desenho, você calibra a escala com uma medida conhecida e contorna o molde"
+                    onClick={() => props.onAbrirImagens('digitalizar')}
                   />
                   <Ferramenta
                     tamanho="pequeno"
@@ -1679,7 +1695,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Imagens"
                     icone="imagens"
-                    indisponivel="indisponível neste programa: o projeto não guarda imagens"
+                    dica="Imagens: guarda no projeto fotos e desenhos do modelo e mostra-os por baixo das peças, na opacidade que você escolher"
+                    onClick={() => props.onAbrirImagens('imagens')}
                   />
                   <Ferramenta
                     tamanho="pequeno"

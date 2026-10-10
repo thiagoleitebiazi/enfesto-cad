@@ -1,6 +1,7 @@
 import type { Molde } from './molde';
 import type { Tecido } from './tecido';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
+import type { ImagemDoModelo } from './imagens';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -70,6 +71,11 @@ export interface Projeto {
   readonly varianteDe?: string;
   /** Quem fez o modelo (aba Modelo > Autor). Ausente enquanto não for informado. */
   readonly autor?: string;
+  /**
+   * Fotos e desenhos do modelo (aba Modelo > Imagens). Ficam no projeto, e não
+   * no estado de cada versão, para o histórico não repetir a imagem a cada evento.
+   */
+  readonly imagens?: readonly ImagemDoModelo[];
 }
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;
@@ -204,8 +210,9 @@ export function criarVariante(
   return {
     ...criarProjeto(nome, id, codigo, agoraIso, estado),
     varianteDe: origem.varianteDe ?? origem.id,
-    // A variante é do mesmo modelo: o autor vai junto.
+    // A variante é do mesmo modelo: o autor e as imagens vão junto.
     ...(origem.autor ? { autor: origem.autor } : {}),
+    ...(origem.imagens ? { imagens: origem.imagens } : {}),
   };
 }
 
