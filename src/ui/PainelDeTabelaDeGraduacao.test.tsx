@@ -3,7 +3,7 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import { ponto, type Ponto2D } from '../core/geometria';
 import { PainelDeTabelaDeGraduacao } from './PainelDeTabelaDeGraduacao';
 import { PainelDeRegras } from './PainelDeRegras';
-import type { RegraCadastrada } from './regrasDeGraduacao';
+import type { ConjuntoDeRegras, RegraCadastrada } from './regrasDeGraduacao';
 
 const ZERO = ponto(0, 0);
 // O ponto anda, no mundo, (10, 20) no G e (−10, −20) no P: na tela, DX 20 e DY 10.
@@ -166,6 +166,71 @@ describe('PainelDeTabelaDeGraduacao', () => {
     expect(onAplicar).not.toHaveBeenCalled();
     expect(onFechar).toHaveBeenCalledTimes(1);
   });
+
+  it('“Distância e ângulo” mostra e aceita a regra em distância e ângulo', () => {
+    const { onAplicar } = renderizar();
+    fireEvent.click(screen.getByLabelText(/Distância e ângulo/));
+
+    // No G o ponto anda DX 20 e DY 10 (para baixo): distância √500 e ângulo de −26,57°, isto é, 333,43°.
+    expect(campo('Distância do tamanho G').value).toBe('22,361');
+    expect(campo('Ângulo do tamanho G').value).toBe('333,435');
+    expect(screen.queryByLabelText('DX do tamanho G')).toBeNull();
+
+    fireEvent.change(campo('Distância do tamanho G'), { target: { value: '10' } });
+    fireEvent.change(campo('Ângulo do tamanho G'), { target: { value: '90' } });
+    aplicar();
+    // 10 mm a 90° é para cima: DY −10 na tela, que é x −10 no mundo.
+    const regra = onAplicar.mock.calls[0]![0];
+    expect(regra[2]!.x).toBeCloseTo(-10, 6);
+    expect(regra[2]!.y).toBeCloseTo(0, 6);
+  });
+
+  it('de volta para DX e DY, os números são os mesmos de antes', () => {
+    renderizar();
+    fireEvent.click(screen.getByLabelText(/Distância e ângulo/));
+    fireEvent.click(screen.getByLabelText(/Distância e ângulo/));
+
+    expect(Number(campo('DX do tamanho G').value.replace(',', '.'))).toBeCloseTo(20, 2);
+    expect(Number(campo('DY do tamanho G').value.replace(',', '.'))).toBeCloseTo(10, 2);
+  });
+
+  it('o ângulo que não é número é recusado com a unidade certa', () => {
+    renderizar();
+    fireEvent.click(screen.getByLabelText(/Distância e ângulo/));
+    fireEvent.change(campo('Ângulo do tamanho P'), { target: { value: 'x' } });
+    aplicar();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('O ângulo do tamanho P precisa ser um número em graus.');
+  });
+
+  it('uma seta preenche a coluna com o valor por tamanho, os maiores para o lado dela', () => {
+    const { onAplicar } = renderizar();
+    fireEvent.change(campo('Valor da seta (mm por tamanho)'), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Seta para a direita' }));
+
+    expect(campo('DX do tamanho P').value).toBe('-7');
+    expect(campo('DX do tamanho G').value).toBe('7');
+    // A outra coluna fica como estava.
+    expect(campo('DY do tamanho G').value).toBe('10');
+    expect(screen.getByRole('status')).toHaveTextContent('DX preenchido: 7 mm por tamanho, com os tamanhos maiores para a direita.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Seta para cima' }));
+    expect(campo('DY do tamanho G').value).toBe('-7');
+    aplicar();
+    expect(onAplicar).toHaveBeenCalledWith([ponto(7, -7), ZERO, ponto(-7, 7)]);
+  });
+
+  it('sem valor, a seta pede o valor; o zero zera a graduação do ponto', () => {
+    const { onAplicar } = renderizar();
+    fireEvent.click(screen.getByRole('button', { name: 'Seta para baixo' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Digite o valor da seta');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zerar a graduação do ponto' }));
+    expect(campo('DX do tamanho G').value).toBe('0');
+    expect(campo('DY do tamanho P').value).toBe('0');
+    aplicar();
+    expect(onAplicar).toHaveBeenCalledWith([ZERO, ZERO, ZERO]);
+  });
 });
 
 describe('PainelDeRegras', () => {
@@ -225,5 +290,92 @@ describe('PainelDeRegras', () => {
 
     expect(onExcluir).toHaveBeenCalledWith('r1');
     expect(onFechar).not.toHaveBeenCalled();
+  });
+});
+
+describe('PainelDeRegras: código e conjuntos de regras', () => {
+  afterEach(() => cleanup());
+
+  const OMBRO: RegraCadastrada = { id: 'r1', nome: 'Ombro', codigo: 'A12', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: [ponto(-3, -6), ZERO, ponto(3, 6)] };
+  const CAVA: RegraCadastrada = { id: 'r2', nome: 'Cava', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: [ponto(0, -4), ZERO, ponto(0, 4)] };
+  const BLUSA: ConjuntoDeRegras = { id: 'c1', nome: 'Blusa', regras: ['r2', 'r1'] };
+
+  function renderizarComConjuntos(conjuntos: readonly ConjuntoDeRegras[], criar: (nome: string, regras: readonly string[]) => string | null = () => null) {
+    const onEscolher = vi.fn();
+    const onEscolherConjunto = vi.fn();
+    const onCriarConjunto = vi.fn(criar);
+    const onExcluirConjunto = vi.fn();
+    const onFechar = vi.fn();
+    render(
+      <PainelDeRegras
+        regras={[OMBRO, CAVA]}
+        idInicial={null}
+        onEscolher={onEscolher}
+        onExcluir={vi.fn()}
+        onFechar={onFechar}
+        conjuntos={conjuntos}
+        onEscolherConjunto={onEscolherConjunto}
+        onCriarConjunto={onCriarConjunto}
+        onExcluirConjunto={onExcluirConjunto}
+      />,
+    );
+    return { onEscolher, onEscolherConjunto, onCriarConjunto, onExcluirConjunto, onFechar };
+  }
+
+  it('a regra com código mostra o código na lista', () => {
+    renderizarComConjuntos([]);
+    expect(screen.getByText('código A12 — P, M, G (base M) — no G: DX 6,0 mm, DY 3,0 mm')).toBeInTheDocument();
+  });
+
+  it('em “Conjunto de regras”, lista os conjuntos com as regras na ordem e usa o escolhido', () => {
+    const { onEscolherConjunto, onEscolher, onFechar } = renderizarComConjuntos([BLUSA]);
+    fireEvent.click(screen.getByLabelText('Conjunto de regras'));
+
+    expect(screen.getByText('Blusa')).toBeInTheDocument();
+    expect(screen.getByText('1. Cava · 2. Ombro')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Usar este conjunto' }));
+    expect(onEscolherConjunto).toHaveBeenCalledWith(BLUSA);
+    expect(onEscolher).not.toHaveBeenCalled();
+    expect(onFechar).toHaveBeenCalledTimes(1);
+  });
+
+  it('monta um conjunto novo com as regras na ordem em que foram marcadas', () => {
+    const { onCriarConjunto } = renderizarComConjuntos([]);
+    fireEvent.click(screen.getByLabelText('Conjunto de regras'));
+    expect(screen.getByText(/Nenhum conjunto cadastrado ainda/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Usar este conjunto' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Nome do conjunto'), { target: { value: 'Calça' } });
+    fireEvent.click(screen.getByLabelText('Cava'));
+    fireEvent.click(screen.getByLabelText('Ombro'));
+    expect(screen.getByLabelText('1. Cava')).toBeChecked();
+    expect(screen.getByLabelText('2. Ombro')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conjunto' }));
+
+    expect(onCriarConjunto).toHaveBeenCalledWith('Calça', ['r2', 'r1']);
+  });
+
+  it('o conjunto que acabou de ser criado já fica escolhido, pronto para usar', () => {
+    // O painel abre sem conjuntos; quem cuida do cadastro devolve a lista com o novo.
+    const propriedades = { regras: [OMBRO, CAVA], idInicial: null, onEscolher: vi.fn(), onExcluir: vi.fn(), onFechar: vi.fn(), onCriarConjunto: () => null, onExcluirConjunto: vi.fn() };
+    const onEscolherConjunto = vi.fn();
+    const { rerender } = render(<PainelDeRegras {...propriedades} conjuntos={[]} onEscolherConjunto={onEscolherConjunto} />);
+    fireEvent.click(screen.getByLabelText('Conjunto de regras'));
+    expect(screen.getByRole('button', { name: 'Usar este conjunto' })).toBeDisabled();
+
+    rerender(<PainelDeRegras {...propriedades} conjuntos={[BLUSA]} onEscolherConjunto={onEscolherConjunto} />);
+    expect(screen.getByRole('button', { name: 'Usar este conjunto' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Usar este conjunto' }));
+    expect(onEscolherConjunto).toHaveBeenCalledWith(BLUSA);
+  });
+
+  it('o erro de criar aparece no painel; excluir um conjunto avisa quem cuida do cadastro', () => {
+    const { onExcluirConjunto } = renderizarComConjuntos([BLUSA], () => 'Dê um nome ao conjunto.');
+    fireEvent.click(screen.getByLabelText('Conjunto de regras'));
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conjunto' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Dê um nome ao conjunto.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir o conjunto Blusa' }));
+    expect(onExcluirConjunto).toHaveBeenCalledWith('c1');
   });
 });

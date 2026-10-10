@@ -33,6 +33,8 @@ import {
   aplicarReta,
   dialogoDeCortar,
   dialogoDeRemoverRegiao,
+  dialogoDeUnir,
+  lerDialogoDeUnir,
   instrucaoDaReta,
   lerDialogoDeCortar,
   lerDialogoDeRemoverRegiao,
@@ -87,13 +89,19 @@ import {
   type OpcoesDaGraduacao,
 } from './ui/ferramentasDeGraduacao';
 import {
+  criarConjuntoDeRegras,
+  gravarConjuntosDeRegras,
   gravarRegrasCadastradas,
+  lerConjuntosDeRegras,
   lerRegrasCadastradas,
+  regraDaVez,
   regraDoPonto,
   regraParaAGraduacao,
+  type ConjuntoDeRegras,
   type RegraCadastrada,
 } from './ui/regrasDeGraduacao';
 import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
+import { aplicarDialogoDoPique, dialogoDoPique } from './ui/graduacaoDePiques';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
 import { expandirTamanhos } from './domain/tamanhosGraduados';
@@ -186,7 +194,7 @@ import {
   type OpcoesDeElemento,
 } from './ui/ferramentasDeElemento';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
-import { CORTE_SEM_COSTURA, type OpcoesDeCorte } from './domain/corteEUniao';
+import { CORTE_SEM_COSTURA, UNIAO_PADRAO, type OpcoesDeCorte, type OpcoesDeUniao } from './domain/corteEUniao';
 import {
   curvaDoTrecho,
   CURVAS_DE_FABRICA,
@@ -458,6 +466,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
+  | { readonly tipo: 'tabela-do-pique'; readonly id: string }
   | { readonly tipo: 'nome-da-regra'; readonly indice: number }
   | { readonly tipo: 'escolher-regra' };
 
@@ -562,6 +571,7 @@ export default function App(): React.JSX.Element {
   // "Dobrar": o modo e as opções da janela; "Fio no centro" vale também para o "Desdobrar".
   const [opcoesDeDobrar, setOpcoesDeDobrar] = useState<OpcoesDeDobrar>(OPCOES_INICIAIS_DE_DOBRAR);
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
+  const [opcoesDeUniao, setOpcoesDeUniao] = useState<OpcoesDeUniao>(UNIAO_PADRAO);
   // Pences e pregas: o que cada diálogo deixou escolhido.
   const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
   // "Inserir texto": o texto e a altura que o próximo clique põe na peça.
@@ -575,6 +585,16 @@ export default function App(): React.JSX.Element {
     lerRegrasCadastradas(window.localStorage),
   );
   const [regraEscolhida, setRegraEscolhida] = useState<RegraCadastrada | null>(null);
+  const [conjuntosDeRegras, setConjuntosDeRegras] = useState<readonly ConjuntoDeRegras[]>(() => lerConjuntosDeRegras(window.localStorage));
+  // O conjunto de regras em uso e qual regra dele é a da vez (cada clique que aplica passa para a seguinte).
+  const [conjuntoEmUso, setConjuntoEmUso] = useState<{ readonly id: string; readonly posicao: number } | null>(null);
+  const vezDoConjunto = useMemo(() => {
+    const conjunto = conjuntoEmUso ? conjuntosDeRegras.find((c) => c.id === conjuntoEmUso.id) : undefined;
+    const vez = conjunto && conjuntoEmUso ? regraDaVez(conjunto, regrasDoUsuario, conjuntoEmUso.posicao) : null;
+    return conjunto && vez ? { ...vez, nome: conjunto.nome } : null;
+  }, [conjuntoEmUso, conjuntosDeRegras, regrasDoUsuario]);
+  /** A regra que o próximo clique do "Regras" aplica: a da vez do conjunto em uso, ou a regra escolhida. */
+  const regraEmUso = vezDoConjunto?.regra ?? regraEscolhida;
   const [regraCopiada, setRegraCopiada] = useState<RegraCadastrada | null>(null);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
@@ -2435,12 +2455,18 @@ export default function App(): React.JSX.Element {
           peca,
           trecho,
           { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
-          { regra: regraEscolhida },
+          { regra: regraEmUso, raioMm },
         );
         setTrecho(resultado.estado);
         setRecadoDaFerramenta(resultado.recado);
         if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
-        if (resultado.abrir) {
+        // Com um conjunto de regras em uso, a regra aplicada dá a vez à seguinte.
+        if (resultado.pecas && modo === 'graduar-regras' && conjuntoEmUso) {
+          setConjuntoEmUso({ id: conjuntoEmUso.id, posicao: conjuntoEmUso.posicao + 1 });
+        }
+        if (resultado.abrir?.tipo === 'tabela-do-pique') {
+          setDialogoDeFerramenta({ tipo: 'tabela-do-pique', id: resultado.abrir.id });
+        } else if (resultado.abrir) {
           setDialogoDeFerramenta({
             tipo: resultado.abrir.tipo === 'tabela' ? 'tabela-do-ponto' : 'nome-da-regra',
             indice: resultado.abrir.indice,
@@ -2522,7 +2548,7 @@ export default function App(): React.JSX.Element {
         if (!alvo) return;
         setTrecho(SEM_TRECHO);
         try {
-          const resultado = aplicarUniao(pecas, peca, trecho.inicio.indiceAresta, alvo.peca, alvo.indiceAresta, unirApenasMovendo);
+          const resultado = aplicarUniao(pecas, peca, trecho.inicio.indiceAresta, alvo.peca, alvo.indiceAresta, unirApenasMovendo, opcoesDeUniao);
           aplicarMudanca([...resultado.pecas]);
           // A peça que foi unida deixa de existir: sai também da seleção em lote.
           if (!unirApenasMovendo) {
@@ -2618,9 +2644,11 @@ export default function App(): React.JSX.Element {
       espiralPendente,
       opcoesDeBainha,
       unirApenasMovendo,
+      opcoesDeUniao,
       opcoesDasPences,
       opcoesDaGraduacao,
-      regraEscolhida,
+      regraEmUso,
+      conjuntoEmUso,
       opcoesDeElemento,
       textoAInserir,
       calibracao,
@@ -3090,7 +3118,7 @@ export default function App(): React.JSX.Element {
         pecaSelecionada ? pregasDaPeca(pecaSelecionada).length > 0 : false,
       );
     }
-    if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
+    if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEmUso, vezDoConjunto);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
     if (modo === 'conferir') return textoDaConferencia(opcoesDaConferencia, conferencia, cursorMundo);
     if (modo === 'calibrar-imagem') {
@@ -3714,19 +3742,14 @@ export default function App(): React.JSX.Element {
         <DialogoDeCampos
           titulo="Unir moldes"
           resumo={[['Primeira peça', pecaSelecionada.nome]]}
-          campos={[
-            {
-              tipo: 'caixa',
-              id: 'apenasMover',
-              rotulo: 'Apenas mover: a outra peça encosta, mas as duas continuam separadas',
-              inicial: unirApenasMovendo,
-            },
-          ]}
-          nota="Depois de confirmar, clique na aresta desta peça por onde as duas se juntam e, em seguida, na aresta da outra peça. A outra gira e encosta, aresta com aresta, centralizada. Unidas, as duas viram uma peça só, com o nome e a linha de fio desta."
+          campos={dialogoDeUnir(unirApenasMovendo, opcoesDeUniao).campos}
+          nota={dialogoDeUnir(unirApenasMovendo, opcoesDeUniao).nota}
           rotuloDoBotao="Indicar no desenho"
           onAplicar={(valores) => {
+            const lido = lerDialogoDeUnir(valores);
             entrarModoDeConstrucao('unir');
-            setUnirApenasMovendo(valores.apenasMover === true);
+            setUnirApenasMovendo(lido.apenasMover);
+            setOpcoesDeUniao(lido.uniao);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta(null)}
@@ -4233,8 +4256,30 @@ export default function App(): React.JSX.Element {
           onEscolher={(regra) => {
             entrarModoDeConstrucao('graduar-regras');
             setRegraEscolhida(regra);
+            setConjuntoEmUso(null);
           }}
           onExcluir={excluirRegraCadastrada}
+          conjuntos={conjuntosDeRegras}
+          onEscolherConjunto={(conjunto) => {
+            entrarModoDeConstrucao('graduar-regras');
+            setConjuntoEmUso({ id: conjunto.id, posicao: 0 });
+          }}
+          onCriarConjunto={(nome, regras) => {
+            try {
+              const novos = [...conjuntosDeRegras, criarConjuntoDeRegras(proximoId(), nome, regras)];
+              if (!gravarConjuntosDeRegras(window.localStorage, novos)) return 'Não foi possível guardar o conjunto neste computador.';
+              setConjuntosDeRegras(novos);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onExcluirConjunto={(id) => {
+            const novos = conjuntosDeRegras.filter((c) => c.id !== id);
+            gravarConjuntosDeRegras(window.localStorage, novos);
+            setConjuntosDeRegras(novos);
+            if (conjuntoEmUso?.id === id) setConjuntoEmUso(null);
+          }}
           onFechar={() => setDialogoDeFerramenta(null)}
         />
       )}
@@ -4264,6 +4309,33 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta(null)}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'tabela-do-pique' &&
+        pecaSelecionada &&
+        (() => {
+          const dialogo = dialogoDoPique(pecaSelecionada, dialogoDeFerramenta.id);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={dialogoDeFerramenta.id}
+              titulo={dialogo.titulo}
+              resumo={dialogo.resumo.map(([nome, valor]) => [nome, valor] as [string, string])}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao="Aplicar"
+              onAplicar={(valores) => {
+                try {
+                  const resultado = aplicarDialogoDoPique(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores);
+                  aplicarMudanca([...resultado.pecas]);
+                  setRecadoDaFerramenta(resultado.recado);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
       {dialogoDeFerramenta?.tipo === 'nome-da-regra' && pontoDaGraduacao && pecaSelecionada && (
         <DialogoDeCampos
           titulo="Criar regra"
@@ -4272,12 +4344,21 @@ export default function App(): React.JSX.Element {
             ['Ponto', String(pontoDaGraduacao.indice + 1)],
             ['Tamanhos', pontoDaGraduacao.graduacao.tamanhos.join(', ')],
           ]}
-          campos={[{ tipo: 'texto', id: 'nome', rotulo: 'Nome da regra', inicial: '' }]}
-          nota="A regra guarda o que este ponto anda em cada tamanho. Fica no cadastro deste computador, em “Regras”, e vale para as peças que têm esses tamanhos."
+          campos={[
+            { tipo: 'texto', id: 'nome', rotulo: 'Nome da regra', inicial: '' },
+            { tipo: 'texto', id: 'codigo', rotulo: 'Código (opcional): um rótulo curto para achar a regra', inicial: '', opcional: true },
+          ]}
+          nota="A regra guarda o que este ponto anda em cada tamanho. Fica no cadastro deste computador, em “Regras”, e vale para as peças que têm esses tamanhos. O código aparece na lista, ao lado do nome; não muda as contas."
           rotuloDoBotao="Criar regra"
           onAplicar={(valores) => {
             try {
-              const regra = regraDoPonto(proximoId(), String(valores.nome), pontoDaGraduacao.graduacao, pontoDaGraduacao.regra);
+              const regra = regraDoPonto(
+                proximoId(),
+                String(valores.nome),
+                pontoDaGraduacao.graduacao,
+                pontoDaGraduacao.regra,
+                valores.codigo === undefined ? '' : String(valores.codigo),
+              );
               const novas = [...regrasDoUsuario, regra];
               if (!gravarRegrasCadastradas(window.localStorage, novas)) return 'Não foi possível guardar a regra neste computador.';
               setRegrasDoUsuario(novas);

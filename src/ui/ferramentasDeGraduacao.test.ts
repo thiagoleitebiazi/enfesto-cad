@@ -722,3 +722,58 @@ describe('prévia e instruções', () => {
     expect(instrucaoDaGraduacao('graduar-regras', O, SEM_TRECHO, guardada)).toMatch(/Regras \(“Ombro”\)/);
   });
 });
+
+describe('Copiar graduação para outra peça', () => {
+  // A outra peça fica 400 mm à direita, com os mesmos tamanhos.
+  const outra = (tamanhos = ['P', 'M', 'G']): Molde => definirTamanhosDoMolde(molde({ contorno: RETANGULO.map((p) => ponto(p.x, p.y + 400)), linhaDeFio: { inicio: ponto(50, 450), fim: ponto(50, 650) } }, 'o'), tamanhos, 'M');
+  const COPIAR = com({ copiar: { eixo: 'dx-dy', inverterDx: false, inverterDy: false, destino: 'cliques' } });
+  const comOrigem = (): TrechoEmEdicao => ({ ...SEM_TRECHO, inicio: { indiceAresta: 2, ponto: RETANGULO[2]! } });
+
+  it('com a origem indicada, o clique num ponto de outra peça graduada copia a regra para ele', () => {
+    const peca = comRegraNoCanto();
+    const destino = outra();
+    const resultado = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, destino], peca, comOrigem(), solto(201, 699), { regra: null, raioMm: 6 });
+
+    // O ponto 3 da outra peça é (200, 700): fica com a regra do ponto 3 desta.
+    const copiada = resultado.pecas!.find((p) => p.id === 'o')!;
+    expect(regraDoVertice(copiada.graduacao!, copiada.contorno, 2)).toEqual(regraDoVertice(peca.graduacao!, peca.contorno, 2));
+    expect(resultado.pecas!.find((p) => p.id === 'f')).toBe(peca);
+    expect(resultado.recado).toBe('DX e DY do ponto 3 de “Frente” copiado para o ponto 3 de “Frente”.');
+    // A origem continua indicada: dá para copiar para mais pontos.
+    expect(resultado.estado.inicio).not.toBeNull();
+  });
+
+  it('a outra peça precisa ter tamanhos, e todos os desta', () => {
+    const peca = comRegraNoCanto();
+    const semTamanhos = molde({ contorno: RETANGULO.map((p) => ponto(p.x, p.y + 400)) }, 'o');
+    const sem = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, semTamanhos], peca, comOrigem(), solto(200, 700), { regra: null, raioMm: 6 });
+    expect(sem.pecas).toBeUndefined();
+    expect(sem.recado).toMatch(/ainda não tem tamanhos/);
+
+    const comOutros = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, outra(['P', 'M', 'G', 'GG'])], peca, comOrigem(), solto(200, 700), { regra: null, raioMm: 6 });
+    expect(comOutros.pecas).toBeUndefined();
+    expect(comOutros.recado).toMatch(/não tem o tamanho GG/);
+  });
+
+  it('longe de qualquer ponto, ou sem o raio, o clique fora da peça é recusado como antes', () => {
+    const peca = comRegraNoCanto();
+    const longe = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, outra()], peca, comOrigem(), solto(100, 550), { regra: null, raioMm: 6 });
+    expect(longe.pecas).toBeUndefined();
+    const semRaio = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, outra()], peca, comOrigem(), solto(200, 700), { regra: null });
+    expect(semRaio.pecas).toBeUndefined();
+    // Antes da origem, o clique na outra peça não escolhe nada.
+    const semOrigem = cliqueDeGraduacao('copiar-graduacao', COPIAR, [peca, outra()], peca, SEM_TRECHO, solto(200, 700), { regra: null, raioMm: 6 });
+    expect(semOrigem.pecas).toBeUndefined();
+    expect(semOrigem.estado).toBe(SEM_TRECHO);
+    // É a recusa de sempre para o clique fora do contorno da peça selecionada, e não um erro de conta.
+    expect(semOrigem.recado).toBe(longe.recado);
+  });
+
+  it('com um conjunto de regras em uso, a instrução diz qual é a regra da vez', () => {
+    const regraDaVez: RegraCadastrada = { id: 'r1', nome: 'Ombro', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: regra(3, 6) };
+    expect(instrucaoDaGraduacao('graduar-regras', O, SEM_TRECHO, regraDaVez, { nome: 'Blusa', numero: 2, total: 5 })).toMatch(
+      /^Regras \(conjunto “Blusa”, regra 2 de 5: “Ombro”\): clique no ponto que deve receber essa regra — o clique seguinte aplica a próxima\. Esc sai\.$/,
+    );
+    expect(instrucaoDaGraduacao('graduar-regras', O, SEM_TRECHO, regraDaVez)).toMatch(/^Regras \(“Ombro”\): clique nos pontos/);
+  });
+});

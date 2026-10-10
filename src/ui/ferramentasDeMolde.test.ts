@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type DadosDeNovoMolde, type Molde } from '../domain/molde';
+import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
 import {
   aplicarBainha,
   aplicarDesdobrar,
@@ -11,11 +12,13 @@ import {
   cliqueDeReta,
   dialogoDeCortar,
   dialogoDeRemoverRegiao,
+  dialogoDeUnir,
   ehFerramentaDeMolde,
   ehFerramentaDeReta,
   instrucaoDaReta,
   lerDialogoDeCortar,
   lerDialogoDeRemoverRegiao,
+  lerDialogoDeUnir,
   nomeDaParteNova,
   retaPeloElemento,
   previaDaBainha,
@@ -311,7 +314,7 @@ describe('achar a aresta sob o mouse', () => {
 });
 
 describe('Cortar e Remover região: as opções das janelas', () => {
-  const COM_COSTURA = { costuraMm: 10, costuraNasDuas: false, piques: true, modo: 'reta' as const };
+  const COM_COSTURA = { costuraMm: 10, costuraNasDuas: false, piques: true, modo: 'reta' as const, manterDistancias: true };
   const comLinha = (linhas: readonly (readonly { x: number; y: number }[])[]): Molde => molde('f', 'Frente', FRENTE, { linhasInternas: linhas });
 
   it('a janela do Cortar lê a costura, os dois moldes, o pique e o modo', () => {
@@ -322,8 +325,17 @@ describe('Cortar e Remover região: as opções das janelas', () => {
       ['costuraNasDuas', false],
       ['piques', true],
       ['modo', 'reta'],
+      ['manterDistancias', true],
     ]);
-    expect(lerDialogoDeCortar({ costura: 7.5, costuraNasDuas: true, piques: false, modo: 'tangente' })).toEqual({ costuraMm: 7.5, costuraNasDuas: true, piques: false, modo: 'tangente' });
+    expect(lerDialogoDeCortar({ costura: 7.5, costuraNasDuas: true, piques: false, modo: 'tangente', manterDistancias: false })).toEqual({
+      costuraMm: 7.5,
+      costuraNasDuas: true,
+      piques: false,
+      modo: 'tangente',
+      manterDistancias: false,
+    });
+    // Sem o campo, vale o de sempre: manter.
+    expect(lerDialogoDeCortar({ costura: 0, costuraNasDuas: false, piques: false, modo: 'reta' }).manterDistancias).toBe(true);
     expect(lerDialogoDeCortar({ costura: 0, costuraNasDuas: false, piques: false, modo: 'outro' }).modo).toBe('tangente');
     expect(() => lerDialogoDeCortar({ costura: -2, costuraNasDuas: false, piques: false, modo: 'reta' })).toThrow(/zero ou maior/);
   });
@@ -438,5 +450,36 @@ describe('Cortar e Remover região: as opções das janelas', () => {
     expect(instrucaoDaReta('remover-regiao', AO_MEIO)).toMatch(/na região que deve sair/);
     expect(instrucaoDaReta('remover-regiao', AO_MEIO, { manter: false, unir: true })).toMatch(/agora a segunda reta/);
     expect(instrucaoDaReta('remover-regiao', { ...AO_MEIO, livres: [ponto(140, 0)] }, { manter: false, unir: true })).toMatch(/na outra ponta da segunda reta/);
+  });
+});
+
+describe('Unir moldes: a janela e a graduação das duas peças', () => {
+  it('a janela pergunta “Apenas mover”, “Unir tamanhos” e o giro', () => {
+    const dialogo = dialogoDeUnir(false, { unirTamanhos: true, giro: 'base' });
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['apenasMover', false],
+      ['unirTamanhos', true],
+      ['giro', 'base'],
+    ]);
+    expect(lerDialogoDeUnir({ apenasMover: true, unirTamanhos: false, giro: 'tamanho' })).toEqual({ apenasMover: true, uniao: { unirTamanhos: false, giro: 'tamanho' } });
+    expect(lerDialogoDeUnir({})).toEqual({ apenasMover: false, uniao: { unirTamanhos: true, giro: 'base' } });
+  });
+
+  it('a mensagem diz o que foi feito da graduação', () => {
+    const graduar = (peca: Molde, tamanhos = ['M', 'G']): Molde => definirTamanhosDoMolde(peca, tamanhos, 'M');
+    const [f, l] = [graduar(frente()), graduar(lateral())];
+    const unir = (a: Molde, b: Molde, uniao?: { unirTamanhos: boolean; giro: 'base' | 'tamanho' }): string => aplicarUniao([a, b], a, 1, b, 3, false, uniao).recado;
+    // A opção chega à união: com "Unir tamanhos", os pontos graduados das duas; sem, só os quatro da primeira.
+    const pontosGraduados = (uniao?: { unirTamanhos: boolean; giro: 'base' | 'tamanho' }): number => aplicarUniao([f, l], f, 1, l, 3, false, uniao).pecas[0]!.graduacao!.pontos.length;
+    expect(pontosGraduados()).toBe(8);
+    expect(pontosGraduados({ unirTamanhos: false, giro: 'base' })).toBe(4);
+
+    expect(unir(f, l)).toMatch(/Os tamanhos foram unidos, todos girados como o tamanho base\.$/);
+    expect(unir(f, l, { unirTamanhos: true, giro: 'tamanho' })).toMatch(/cada tamanho de “Lateral” encostado no mesmo tamanho de “Frente”\.$/);
+    expect(unir(f, l, { unirTamanhos: false, giro: 'base' })).toMatch(/Sem “Unir tamanhos”, ficou só a graduação de “Frente”\.$/);
+    expect(unir(f, graduar(lateral(), ['P', 'M', 'G']))).toMatch(/A graduação de “Lateral” não entrou: os tamanhos \(ou o base\) não são os mesmos de “Frente”\.$/);
+    expect(unir(frente(), l)).toMatch(/A graduação de “Lateral” não entrou: “Frente” não é graduada\.$/);
+    // Sem graduação em nenhuma, a mensagem é a de sempre.
+    expect(unir(frente(), lateral())).toMatch(/com a linha de fio de “Frente”\.$/);
   });
 });

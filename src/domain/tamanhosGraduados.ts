@@ -10,7 +10,8 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { pregasLevadas, reancorarPiques, semGraduacao, transladarMolde, type Molde } from './molde';
+import { pregasLevadas, semGraduacao, transladarMolde, type Molde } from './molde';
+import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
  * O que a graduação faz com a peça inteira: definir os tamanhos, tirar um
@@ -64,7 +65,8 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
     furos: molde.furos.map((furo) => furo.map(levar)),
     linhasInternas: molde.linhasInternas.map((linha) => linha.map(levar)),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: levar(m.posicao) })),
-    piques: reancorarPiques(molde.piques, base, contorno),
+    // O pique graduado fica à distância certa do ponto de referência dele; os outros, na mesma proporção da aresta.
+    piques: piquesNoTamanho(molde, contorno, tamanho),
     linhaDeFio: {
       inicio: { x: fio.inicio.x + doFio.x, y: fio.inicio.y + doFio.y },
       fim: { x: fio.fim.x + doFio.x, y: fio.fim.y + doFio.y },
@@ -134,7 +136,11 @@ export function definirTamanhosDoMolde(molde: Molde, tamanhos: readonly string[]
       }),
     };
   });
-  return { ...naForma, tamanho: tamanhos[base]!, graduacao: { tamanhos: [...tamanhos], base, pontos } };
+  // Os piques graduados passam a contar os "perímetros" deles a partir do base de agora, nos tamanhos de agora.
+  const piques = naForma.piques.map((q) =>
+    q.graduacao ? { ...q, graduacao: { ...q.graduacao, perimetros: perimetrosNosTamanhosNovos(q.graduacao.perimetros, antigoDe, antigoDoBase) } } : q,
+  );
+  return { ...naForma, piques, tamanho: tamanhos[base]!, graduacao: { tamanhos: [...tamanhos], base, pontos } };
 }
 
 /**
@@ -151,7 +157,8 @@ export function moldeDoTamanho(molde: Molde, tamanho: number, novoId: string): M
   if (!(area(naForma.contorno) > AREA_MINIMA_MM2)) {
     throw new Error(`O tamanho “${graduacao.tamanhos[tamanho]}” de “${molde.nome}” ficaria sem área.`);
   }
-  return { ...semGraduacao(naForma), id: novoId, tamanho: graduacao.tamanhos[tamanho]! };
+  // A peça solta não é graduada: os piques dela ficam onde caíram neste tamanho, sem a tabela.
+  return { ...semGraduacao(naForma), piques: naForma.piques.map(piqueSemGraduacao), id: novoId, tamanho: graduacao.tamanhos[tamanho]! };
 }
 
 /**

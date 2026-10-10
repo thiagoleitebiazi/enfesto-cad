@@ -83,7 +83,12 @@ export function levarOQueEstaNaRegiao(
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),
     linhasInternas: molde.linhasInternas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
     marcas: molde.marcas.map((m) => (dentro(m.posicao) ? { ...m, posicao: movimento.ponto(m.posicao) } : m)),
-    piques: molde.piques.map((p) => (naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p)),
+    piques: molde.piques.map((p) => {
+      const levado = naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p;
+      // A referência da graduação do pique é um ponto do contorno: anda se estiver na borda que anda.
+      const referencia = p.graduacao?.referencia;
+      return referencia && naBordaQueAnda(referencia) ? { ...levado, graduacao: { ...p.graduacao!, referencia: movimento.ponto(referencia) } } : levado;
+    }),
     ...(molde.graduacao
       ? {
           graduacao: {

@@ -2,10 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { ponto } from '../core/geometria';
 import { iniciarGraduacao } from '../domain/graduacao';
 import {
+  criarConjuntoDeRegras,
+  gravarConjuntosDeRegras,
   gravarRegrasCadastradas,
+  lerConjuntosDeRegras,
   lerRegrasCadastradas,
+  regraDaVez,
   regraDoPonto,
   regraParaAGraduacao,
+  regrasDoConjunto,
   type RegraCadastrada,
 } from './regrasDeGraduacao';
 import { paraAbsoluto, paraATela, paraIncremental, paraOCampo, paraOMundo } from './tabelaDeGraduacao';
@@ -123,5 +128,58 @@ describe('tabela: tela e mundo, absoluto e incremental', () => {
     expect(paraOCampo(-0)).toBe('0');
     expect(paraOCampo(-0.0001)).toBe('0');
     expect(paraOCampo(-3.25)).toBe('-3,25');
+  });
+});
+
+describe('código da regra e conjuntos de regras', () => {
+  const CAVA: RegraCadastrada = { id: 'r2', nome: 'Cava', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: [ponto(0, -4), ZERO, ponto(0, 4)] };
+  const graduacao = iniciarGraduacao(RETANGULO, ['P', 'M', 'G'], 1);
+
+  it('a regra guarda o código, sem espaços sobrando; sem código, não guarda nada', () => {
+    expect(regraDoPonto('r9', 'Gola', graduacao, OMBRO.deslocamentos, '  G-7 ').codigo).toBe('G-7');
+    expect('codigo' in regraDoPonto('r9', 'Gola', graduacao, OMBRO.deslocamentos)).toBe(false);
+    expect('codigo' in regraDoPonto('r9', 'Gola', graduacao, OMBRO.deslocamentos, '   ')).toBe(false);
+  });
+
+  it('o código vai e volta do cadastro; o de antes, sem código, continua lido', () => {
+    const a = armazenamento();
+    gravarRegrasCadastradas(a, [{ ...OMBRO, codigo: 'A12' }, CAVA]);
+    const lidas = lerRegrasCadastradas(a);
+
+    expect(lidas[0]!.codigo).toBe('A12');
+    expect('codigo' in lidas[1]!).toBe(false);
+  });
+
+  it('um conjunto pede nome e pelo menos duas regras, e guarda a ordem', () => {
+    expect(criarConjuntoDeRegras('c1', ' Blusa ', ['r2', 'r1'])).toEqual({ id: 'c1', nome: 'Blusa', regras: ['r2', 'r1'] });
+    expect(() => criarConjuntoDeRegras('c1', '  ', ['r1', 'r2'])).toThrow('Dê um nome ao conjunto');
+    expect(() => criarConjuntoDeRegras('c1', 'Blusa', ['r1'])).toThrow('pelo menos duas regras');
+    expect(() => criarConjuntoDeRegras('c1', 'Blusa', Array.from({ length: 41 }, (_, i) => 'r' + i))).toThrow('no máximo, 40 regras');
+  });
+
+  it('os conjuntos vão e voltam do cadastro, numa chave própria; o que não dá para ler vale como lista vazia', () => {
+    const a = armazenamento();
+    expect(gravarConjuntosDeRegras(a, [criarConjuntoDeRegras('c1', 'Blusa', ['r2', 'r1'])])).toBe(true);
+    expect(lerConjuntosDeRegras(a)).toEqual([{ id: 'c1', nome: 'Blusa', regras: ['r2', 'r1'] }]);
+    // As regras continuam onde estavam.
+    expect(lerRegrasCadastradas(a)).toEqual([]);
+    expect(lerConjuntosDeRegras(armazenamento({ 'enfesto-cad:conjuntos-de-regras': 'isto não é JSON' }))).toEqual([]);
+    expect(lerConjuntosDeRegras(armazenamento({ 'enfesto-cad:conjuntos-de-regras': '[{"id":"c1","nome":"X","regras":[1]}]' }))).toEqual([]);
+  });
+
+  it('as regras do conjunto saem na ordem dele, sem as que já foram apagadas do cadastro', () => {
+    const conjunto = criarConjuntoDeRegras('c1', 'Blusa', ['r2', 'apagada', 'r1']);
+
+    expect(regrasDoConjunto(conjunto, [OMBRO, CAVA]).map((r) => r.nome)).toEqual(['Cava', 'Ombro']);
+    expect(regrasDoConjunto(conjunto, [])).toEqual([]);
+  });
+
+  it('a regra da vez segue a ordem e dá a volta quando o conjunto acaba', () => {
+    const conjunto = criarConjuntoDeRegras('c1', 'Blusa', ['r2', 'r1']);
+
+    expect(regraDaVez(conjunto, [OMBRO, CAVA], 0)).toEqual({ regra: CAVA, numero: 1, total: 2 });
+    expect(regraDaVez(conjunto, [OMBRO, CAVA], 1)).toEqual({ regra: OMBRO, numero: 2, total: 2 });
+    expect(regraDaVez(conjunto, [OMBRO, CAVA], 2)!.regra).toBe(CAVA);
+    expect(regraDaVez(conjunto, [], 0)).toBeNull();
   });
 });

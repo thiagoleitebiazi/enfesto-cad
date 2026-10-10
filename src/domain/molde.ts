@@ -60,6 +60,25 @@ export interface Pique {
   readonly indiceAresta: number;
   /** Código de relacionamento: piques de peças diferentes com o mesmo código se encontram na costura. */
   readonly codigo?: string;
+  /** A graduação do pique (a "tabela dos piques"); sem ela, ele fica na mesma proporção da aresta em cada tamanho. */
+  readonly graduacao?: GraduacaoDoPique;
+}
+
+/** Como um pique anda de um tamanho para o outro: a uma distância certa de um ponto de referência, medida sobre o contorno. */
+export interface GraduacaoDoPique {
+  /** O ponto do contorno (no tamanho base) a partir do qual a distância do pique é contada. Vale enquanto for um ponto do contorno. */
+  readonly referencia: Ponto2D;
+  /** Quanto essa distância muda em cada tamanho (mm), na ordem dos tamanhos da peça; no base é zero. */
+  readonly perimetros: readonly number[];
+}
+
+/** O pique com a posição dele — e a referência da graduação, se tem — levada por `f`. */
+export function piqueLevado(pique: Pique, f: (p: Ponto2D) => Ponto2D): Pique {
+  return {
+    ...pique,
+    posicao: f(pique.posicao),
+    ...(pique.graduacao ? { graduacao: { ...pique.graduacao, referencia: f(pique.graduacao.referencia) } } : {}),
+  };
 }
 
 /** Um texto escrito sobre a peça, centrado em `posicao`, com a altura das letras em mm. */
@@ -447,7 +466,7 @@ export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: str
     contorno: transladarContorno(molde.contorno, deslocamento),
     linhasInternas: molde.linhasInternas.map((l) => transladarContorno(l, deslocamento)),
     furos: molde.furos.map((f) => transladarContorno(f, deslocamento)),
-    piques: molde.piques.map((p) => ({ ...p, posicao: somar(p.posicao, deslocamento) })),
+    piques: molde.piques.map((p) => piqueLevado(p, (q) => somar(q, deslocamento))),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: somar(m.posicao, deslocamento) })),
     linhaDeFio: {
       inicio: somar(molde.linhaDeFio.inicio, deslocamento),
@@ -482,7 +501,7 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
     contorno: rotacionarContorno(molde.contorno, pivo, anguloGraus),
     linhasInternas: molde.linhasInternas.map((l) => rotacionarContorno(l, pivo, anguloGraus)),
     furos: molde.furos.map((f) => rotacionarContorno(f, pivo, anguloGraus)),
-    piques: molde.piques.map((p) => ({ ...p, posicao: rotacionar(p.posicao, pivo, anguloGraus) })),
+    piques: molde.piques.map((p) => piqueLevado(p, (q) => rotacionar(q, pivo, anguloGraus))),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: rotacionar(m.posicao, pivo, anguloGraus) })),
     linhaDeFio: {
       inicio: rotacionar(molde.linhaDeFio.inicio, pivo, anguloGraus),
@@ -518,7 +537,7 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
     contorno: espelharContornoHorizontal(molde.contorno, centroX),
     linhasInternas: molde.linhasInternas.map((l) => espelharContornoHorizontal(l, centroX)),
     furos: molde.furos.map((f) => espelharContornoHorizontal(f, centroX)),
-    piques: molde.piques.map((p) => ({ ...p, posicao: espelharHorizontal(p.posicao, centroX) })),
+    piques: molde.piques.map((p) => piqueLevado(p, (q) => espelharHorizontal(q, centroX))),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: espelharHorizontal(m.posicao, centroX) })),
     linhaDeFio: {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
@@ -566,7 +585,16 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
 export function reancorarPiques(piques: readonly Pique[], contornoAntigo: Contorno, contornoNovo: Contorno): readonly Pique[] {
   if (contornoAntigo === contornoNovo || contornoAntigo.length !== contornoNovo.length) return piques;
   const n = contornoAntigo.length;
-  return piques.map((pique) => {
+  // A referência da graduação de um pique é um ponto do contorno: acompanha-o quando ele muda de lugar.
+  const comAReferencia = (pique: Pique): Pique => {
+    const referencia = pique.graduacao?.referencia;
+    if (!referencia) return pique;
+    const r = contornoAntigo.findIndex((v) => Math.abs(v.x - referencia.x) <= 1e-9 && Math.abs(v.y - referencia.y) <= 1e-9);
+    const nova = r >= 0 ? contornoNovo[r]! : referencia;
+    return nova.x === referencia.x && nova.y === referencia.y ? pique : { ...pique, graduacao: { ...pique.graduacao!, referencia: nova } };
+  };
+  return piques.map((original) => {
+    const pique = comAReferencia(original);
     const i = pique.indiceAresta;
     const j = (i + 1) % n;
     const a = contornoAntigo[i];
@@ -788,7 +816,7 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
     contorno: escalarContorno(molde.contorno, origem, fatorX, fatorY),
     linhasInternas: molde.linhasInternas.map((l) => escalarContorno(l, origem, fatorX, fatorY)),
     furos: molde.furos.map((f) => escalarContorno(f, origem, fatorX, fatorY)),
-    piques: molde.piques.map((p) => ({ ...p, posicao: escalarPonto(p.posicao, origem, fatorX, fatorY) })),
+    piques: molde.piques.map((p) => piqueLevado(p, (q) => escalarPonto(q, origem, fatorX, fatorY))),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: escalarPonto(m.posicao, origem, fatorX, fatorY) })),
     linhaDeFio: {
       inicio: escalarPonto(molde.linhaDeFio.inicio, origem, fatorX, fatorY),

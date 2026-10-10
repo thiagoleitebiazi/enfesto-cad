@@ -19,9 +19,11 @@ import {
   metadeDoMolde,
   removerFaixaDoMolde,
   separarRegiaoDoMolde,
+  UNIAO_PADRAO,
   unirMoldes,
   type OpcoesDeCorte,
   type OpcoesDeDobra,
+  type OpcoesDeUniao,
 } from '../domain/corteEUniao';
 import { rotacaoEhPermitida, type Molde } from '../domain/molde';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
@@ -256,6 +258,46 @@ export function aplicarReta(
   };
 }
 
+/** O que a mensagem do "Unir" diz da graduação das duas peças (nada, se nenhuma é graduada). */
+function oQueFoiFeitoDaGraduacao(primeira: Molde, segunda: Molde, uniao: OpcoesDeUniao): string {
+  const [gA, gB] = [primeira.graduacao, segunda.graduacao];
+  if (!gA && !gB) return '';
+  if (!gA) return ` A graduação de “${segunda.nome}” não entrou: “${primeira.nome}” não é graduada.`;
+  if (!gB) return '';
+  const mesmos = gA.base === gB.base && gA.tamanhos.length === gB.tamanhos.length && gA.tamanhos.every((t, i) => t === gB.tamanhos[i]);
+  if (!mesmos) return ` A graduação de “${segunda.nome}” não entrou: os tamanhos (ou o base) não são os mesmos de “${primeira.nome}”.`;
+  if (!uniao.unirTamanhos) return ` Sem “Unir tamanhos”, ficou só a graduação de “${primeira.nome}”.`;
+  return uniao.giro === 'tamanho'
+    ? ` Os tamanhos foram unidos, cada tamanho de “${segunda.nome}” encostado no mesmo tamanho de “${primeira.nome}”.`
+    : ` Os tamanhos foram unidos, todos girados como o tamanho base.`;
+}
+
+/** O que a janela do "Unir moldes" pergunta. */
+export function dialogoDeUnir(apenasMover: boolean, uniao: OpcoesDeUniao): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
+  return {
+    titulo: 'Unir moldes',
+    campos: [
+      { tipo: 'caixa', id: 'apenasMover', rotulo: 'Apenas mover: a outra peça encosta, mas as duas continuam separadas', inicial: apenasMover },
+      { tipo: 'caixa', id: 'unirTamanhos', rotulo: 'Unir tamanhos: a peça unida fica com a graduação das duas (mesmos tamanhos e mesmo base)', inicial: uniao.unirTamanhos },
+      {
+        tipo: 'escolha',
+        id: 'giro',
+        rotulo: 'Giro dos tamanhos da outra peça',
+        opcoes: [
+          { valor: 'base', rotulo: 'Igual base: todos giram como o tamanho base' },
+          { valor: 'tamanho', rotulo: 'Igual tamanho: cada tamanho encosta no mesmo tamanho desta peça' },
+        ],
+        inicial: uniao.giro,
+      },
+    ],
+    nota: 'Depois de confirmar, clique na aresta desta peça por onde as duas se juntam e, em seguida, na aresta da outra peça. A outra gira e encosta, aresta com aresta, centralizada. Unidas, as duas viram uma peça só, com o nome e a linha de fio desta. O manual da referência nomeia “Unir tamanhos” e os dois giros sem dizer a conta; a que está aqui é a nossa leitura.',
+  };
+}
+
+export function lerDialogoDeUnir(valores: ValoresDoDialogo): { readonly apenasMover: boolean; readonly uniao: OpcoesDeUniao } {
+  return { apenasMover: valores.apenasMover === true, uniao: { unirTamanhos: valores.unirTamanhos !== false, giro: valores.giro === 'tamanho' ? 'tamanho' : 'base' } };
+}
+
 /** O que a janela do "Cortar" pergunta. */
 export function dialogoDeCortar(opcoes: OpcoesDeCorte): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
   return {
@@ -274,6 +316,12 @@ export function dialogoDeCortar(opcoes: OpcoesDeCorte): { readonly titulo: strin
         ],
         inicial: opcoes.modo,
       },
+      {
+        tipo: 'caixa',
+        id: 'manterDistancias',
+        rotulo: 'Manter distâncias: na peça graduada, as pontas do corte ficam com a graduação que tinham na peça inteira',
+        inicial: opcoes.manterDistancias,
+      },
     ],
     nota: 'Depois de confirmar, clique no contorno da peça, onde o corte começa e onde termina — ou numa linha interna reta dela (o elemento), que vira a reta do corte, de borda a borda. A parte maior continua sendo a peça; a outra vira uma peça nova. A costura entra no contorno, só na borda do corte; no modo tangente, a aresta vizinha que não chega à borda nova em até quatro vezes a costura acaba em esquadro. O manual da referência não diz qual parte ganha a costura sem “2 moldes”; aqui é a peça nova.',
   };
@@ -286,6 +334,7 @@ export function lerDialogoDeCortar(valores: ValoresDoDialogo): OpcoesDeCorte {
     costuraNasDuas: valores.costuraNasDuas === true,
     piques: valores.piques === true,
     modo: valores.modo === 'reta' ? 'reta' : 'tangente',
+    manterDistancias: valores.manterDistancias !== false,
   };
   conferirOpcoesDeCorte(opcoes);
   return opcoes;
@@ -450,13 +499,16 @@ export function aplicarUniao(
   segunda: Molde,
   arestaDaSegunda: number,
   apenasMover: boolean,
+  uniao: OpcoesDeUniao = UNIAO_PADRAO,
 ): ResultadoDeFerramentaDeMolde {
   if (primeira.id === segunda.id) throw new Error('Para unir, indique a aresta de outra peça.');
   if (!apenasMover) {
-    const unida = unirMoldes(primeira, arestaDaPrimeira, segunda, arestaDaSegunda);
+    const unida = unirMoldes(primeira, arestaDaPrimeira, segunda, arestaDaSegunda, uniao);
     return {
       pecas: trocar(pecas, primeira.id, [unida]).filter((p) => p.id !== segunda.id),
-      recado: `“${segunda.nome}” unida a “${primeira.nome}”: agora são uma peça só, de ${cm2(area(unida.contorno))}, com a linha de fio de “${primeira.nome}”.`,
+      recado:
+        `“${segunda.nome}” unida a “${primeira.nome}”: agora são uma peça só, de ${cm2(area(unida.contorno))}, com a linha de fio de “${primeira.nome}”.` +
+        oQueFoiFeitoDaGraduacao(primeira, segunda, uniao),
     };
   }
   const encostada = encostarMolde(primeira, arestaDaPrimeira, segunda, arestaDaSegunda);

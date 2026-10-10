@@ -2,7 +2,17 @@ import { useState } from 'react';
 import type { Ponto2D } from '../core/geometria';
 import { Sobreposicao } from './Sobreposicao';
 import { lerMedida } from './medidas';
-import { paraAbsoluto, paraATela, paraIncremental, paraOCampo, paraOMundo } from './tabelaDeGraduacao';
+import {
+  colunaDaSeta,
+  dePolar,
+  paraAbsoluto,
+  paraATela,
+  paraIncremental,
+  paraOCampo,
+  paraOMundo,
+  paraPolar,
+  type SetaDaTabela,
+} from './tabelaDeGraduacao';
 
 interface PainelDeTabelaDeGraduacaoProps {
   readonly nomeDaPeca: string;
@@ -27,16 +37,26 @@ interface Colunas {
   readonly dy: readonly string[];
 }
 
-/** A regra (em mm do mundo) como as duas colunas da tabela, em absoluto ou incremental. */
-function paraAsColunas(deslocamentos: readonly Ponto2D[], base: number, incremental: boolean): Colunas {
+/**
+ * A regra (em mm do mundo) como as duas colunas da tabela, em absoluto ou
+ * incremental. Em `polar`, a primeira coluna é a distância e a segunda, o
+ * ângulo (de cada linha como ela é mostrada: absoluta ou incremental).
+ */
+function paraAsColunas(deslocamentos: readonly Ponto2D[], base: number, incremental: boolean, polar = false): Colunas {
   const naTela = deslocamentos.map(paraATela);
-  const dx = naTela.map((d) => d.dx);
-  const dy = naTela.map((d) => d.dy);
-  return {
-    dx: (incremental ? paraIncremental(dx, base) : dx).map(paraOCampo),
-    dy: (incremental ? paraIncremental(dy, base) : dy).map(paraOCampo),
-  };
+  const dx = incremental ? paraIncremental(naTela.map((d) => d.dx), base) : naTela.map((d) => d.dx);
+  const dy = incremental ? paraIncremental(naTela.map((d) => d.dy), base) : naTela.map((d) => d.dy);
+  if (!polar) return { dx: dx.map(paraOCampo), dy: dy.map(paraOCampo) };
+  const polares = dx.map((valor, t) => paraPolar({ dx: valor, dy: dy[t]! }));
+  return { dx: polares.map((p) => paraOCampo(p.distancia)), dy: polares.map((p) => paraOCampo(p.angulo)) };
 }
+
+const SETAS: ReadonlyArray<{ readonly seta: SetaDaTabela; readonly simbolo: string; readonly nome: string }> = [
+  { seta: 'esquerda', simbolo: '←', nome: 'para a esquerda' },
+  { seta: 'cima', simbolo: '↑', nome: 'para cima' },
+  { seta: 'baixo', simbolo: '↓', nome: 'para baixo' },
+  { seta: 'direita', simbolo: '→', nome: 'para a direita' },
+];
 
 /**
  * "Graduar via tabela": a regra de um ponto do contorno — quanto ele anda em
@@ -47,27 +67,33 @@ function paraAsColunas(deslocamentos: readonly Ponto2D[], base: number, incremen
 export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps): React.JSX.Element {
   const { base, tamanhos } = props;
   const [incremental, setIncremental] = useState(false);
+  const [polar, setPolar] = useState(false);
+  const [valorDaSeta, setValorDaSeta] = useState('');
   const [colunas, setColunas] = useState<Colunas>(() => paraAsColunas(props.deslocamentos, base, false));
   const [erro, setErro] = useState<string | null>(null);
   const [recado, setRecado] = useState<string | null>(null);
 
   /** A regra digitada, em mm do mundo; `null` (com a mensagem posta) se algum campo não é número. */
   function lerRegra(): Ponto2D[] | null {
-    const ler = (textos: readonly string[], coluna: string): number[] | null => {
+    const ler = (textos: readonly string[], oQue: string): number[] | null => {
       const numeros: number[] = [];
       for (let t = 0; t < tamanhos.length; t++) {
         const numero = t === base ? 0 : lerMedida(textos[t] ?? '');
         if (numero === null) {
-          setErro(`O ${coluna} do tamanho ${tamanhos[t]} precisa ser um número em mm.`);
+          setErro(`${oQue} do tamanho ${tamanhos[t]} precisa ser um número em ${oQue === 'O ângulo' ? 'graus' : 'mm'}.`);
           return null;
         }
         numeros.push(numero);
       }
-      return incremental ? paraAbsoluto(numeros, base) : numeros;
+      return numeros;
     };
-    const dx = ler(colunas.dx, 'DX');
-    const dy = dx && ler(colunas.dy, 'DY');
-    if (!dx || !dy) return null;
+    const primeira = ler(colunas.dx, polar ? 'A distância' : 'O DX');
+    const segunda = primeira && ler(colunas.dy, polar ? 'O ângulo' : 'O DY');
+    if (!primeira || !segunda) return null;
+    // Cada linha, como está mostrada (absoluta ou incremental), vira DX e DY; depois, o incremental vira absoluto.
+    const linhas = primeira.map((valor, t) => (polar ? dePolar({ distancia: valor, angulo: segunda[t]! }) : { dx: valor, dy: segunda[t]! }));
+    const dx = incremental ? paraAbsoluto(linhas.map((l) => l.dx), base) : linhas.map((l) => l.dx);
+    const dy = incremental ? paraAbsoluto(linhas.map((l) => l.dy), base) : linhas.map((l) => l.dy);
     return dx.map((valor, t) => paraOMundo({ dx: valor, dy: dy[t]! }));
   }
 
@@ -81,7 +107,33 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
     const regra = lerRegra();
     if (!regra) return;
     setIncremental(ligado);
-    setColunas(paraAsColunas(regra, base, ligado));
+    setColunas(paraAsColunas(regra, base, ligado, polar));
+  }
+
+  function alternarPolar(ligado: boolean): void {
+    const regra = lerRegra();
+    if (!regra) return;
+    setPolar(ligado);
+    setColunas(paraAsColunas(regra, base, incremental, ligado));
+  }
+
+  /** Uma seta: o valor digitado vai para a coluna DX ou DY, um passo por tamanho, com os tamanhos maiores para o lado da seta. */
+  function aplicarSeta(seta: SetaDaTabela): void {
+    const regra = lerRegra();
+    if (!regra) return;
+    const valor = lerMedida(valorDaSeta);
+    if (valor === null || valor === 0) return setErro('Digite o valor da seta: quanto o ponto anda por tamanho, em mm.');
+    const { coluna, valores } = colunaDaSeta(seta, valor, tamanhos.length, base);
+    const nova = regra.map((d, t) => paraOMundo({ ...paraATela(d), [coluna]: valores[t]! }));
+    setColunas(paraAsColunas(nova, base, incremental, polar));
+    setErro(null);
+    setRecado(`${coluna === 'dx' ? 'DX' : 'DY'} preenchido: ${paraOCampo(Math.abs(valor))} mm por tamanho, com os tamanhos maiores ${SETAS.find((s) => s.seta === seta)!.nome}. Confira e use “Aplicar”.`);
+  }
+
+  function zerar(): void {
+    setColunas(paraAsColunas(tamanhos.map(() => ({ x: 0, y: 0 })), base, incremental, polar));
+    setErro(null);
+    setRecado('Graduação do ponto zerada na tabela. Confira e use “Aplicar”.');
   }
 
   return (
@@ -112,12 +164,36 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
           Incremental: a diferença de cada tamanho para o vizinho, do lado do base
         </label>
 
+        <label className="opcao-em-linha">
+          <input type="checkbox" checked={polar} onChange={(e) => alternarPolar(e.target.checked)} />
+          Distância e ângulo, em vez de DX e DY
+        </label>
+
+        <div className="opcao-em-linha" role="group" aria-label="Preencher pela seta">
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label="Valor da seta (mm por tamanho)"
+            placeholder="mm por tamanho"
+            value={valorDaSeta}
+            onChange={(e) => setValorDaSeta(e.target.value)}
+          />
+          {SETAS.map(({ seta, simbolo, nome }) => (
+            <button key={seta} type="button" aria-label={`Seta ${nome}`} title={`Os tamanhos maiores vão ${nome}`} onClick={() => aplicarSeta(seta)}>
+              {simbolo}
+            </button>
+          ))}
+          <button type="button" aria-label="Zerar a graduação do ponto" title="Zera a graduação deste ponto" onClick={zerar}>
+            0
+          </button>
+        </div>
+
         <table className="tabela-de-graduacao">
           <thead>
             <tr>
               <th scope="col">Tamanho</th>
-              <th scope="col">DX (mm, + para a direita)</th>
-              <th scope="col">DY (mm, + para baixo)</th>
+              <th scope="col">{polar ? 'Distância (mm)' : 'DX (mm, + para a direita)'}</th>
+              <th scope="col">{polar ? 'Ângulo (graus: 0 para a direita, anti-horário)' : 'DY (mm, + para baixo)'}</th>
             </tr>
           </thead>
           <tbody>
@@ -129,7 +205,7 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
                     <input
                       type="text"
                       inputMode="decimal"
-                      aria-label={`${coluna === 'dx' ? 'DX' : 'DY'} do tamanho ${tamanho}`}
+                      aria-label={`${coluna === 'dx' ? (polar ? 'Distância' : 'DX') : polar ? 'Ângulo' : 'DY'} do tamanho ${tamanho}`}
                       value={t === base ? '0' : (colunas[coluna][t] ?? '')}
                       disabled={t === base}
                       onChange={(e) => mudar(coluna, t, e.target.value)}
@@ -177,7 +253,7 @@ export function PainelDeTabelaDeGraduacao(props: PainelDeTabelaDeGraduacaoProps)
             title={props.copiada ? undefined : 'Não há regra copiada que sirva para os tamanhos desta peça'}
             onClick={() => {
               if (!props.copiada) return;
-              setColunas(paraAsColunas(props.copiada, base, incremental));
+              setColunas(paraAsColunas(props.copiada, base, incremental, polar));
               setErro(null);
               setRecado('Regra colada: confira e use “Aplicar”.');
             }}

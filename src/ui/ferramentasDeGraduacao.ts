@@ -22,13 +22,14 @@ import {
   type EixoDaGraduacao,
   type Graduacao,
 } from '../domain/graduacao';
+import { piquePerto } from '../domain/anotacoes';
 import { semGraduacao, type Molde } from '../domain/molde';
 import { definirTamanhosDoMolde, separarTamanhos, unirTamanhos } from '../domain/tamanhosGraduados';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
 import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
 import { formatarMm } from './medidas';
-import { regraParaAGraduacao, type RegraCadastrada } from './regrasDeGraduacao';
+import { regraDoPonto, regraParaAGraduacao, type RegraCadastrada } from './regrasDeGraduacao';
 import { paraATela, paraOCampo, paraOMundo } from './tabelaDeGraduacao';
 
 /**
@@ -339,7 +340,7 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
             inicial: opcoes.copiar.destino,
           },
         ],
-        nota: 'Depois de confirmar, clique no ponto de onde copiar e, em seguida, nos pontos que devem receber a regra.',
+        nota: 'Depois de confirmar, clique no ponto de onde copiar e, em seguida, nos pontos que devem receber a regra — desta peça ou de outra peça graduada, que precisa ter todos os tamanhos desta.',
         rotuloDoBotao: INDICAR,
       };
     case 'unir-tamanhos':
@@ -491,12 +492,14 @@ export function aplicarRemoverDoMolde(opcoes: OpcoesDaGraduacao, pecas: readonly
 // Cliques no desenho
 // ---------------------------------------------------------------------------
 
-/** O que o clique pede além de mudar a peça: a tabela do ponto, ou o nome da regra a criar. */
-export interface DialogoPedidoPeloClique {
-  readonly tipo: 'tabela' | 'nome-da-regra';
-  /** O número (a partir de 0) do ponto do contorno. */
-  readonly indice: number;
-}
+/** O que o clique pede além de mudar a peça: a tabela do ponto, o nome da regra a criar, ou a tabela de um pique. */
+export type DialogoPedidoPeloClique =
+  | {
+      readonly tipo: 'tabela' | 'nome-da-regra';
+      /** O número (a partir de 0) do ponto do contorno. */
+      readonly indice: number;
+    }
+  | { readonly tipo: 'tabela-do-pique'; readonly id: string };
 
 export interface CliqueDeGraduacao {
   readonly estado: TrechoEmEdicao;
@@ -507,9 +510,30 @@ export interface CliqueDeGraduacao {
   readonly abrir?: DialogoPedidoPeloClique;
 }
 
-/** O que a ferramenta precisa além das opções: a regra escolhida em "Regras". */
+/** O conjunto de regras em uso: o nome dele e a regra da vez. */
+export interface ConjuntoEmUso {
+  readonly nome: string;
+  readonly numero: number;
+  readonly total: number;
+}
+
+/** O que a ferramenta precisa além das opções: a regra escolhida em "Regras" e o raio (mm) em que um clique pega um ponto de outra peça. */
 export interface ContextoDaGraduacao {
   readonly regra: RegraCadastrada | null;
+  readonly raioMm?: number;
+}
+
+/** Das outras peças, o ponto do contorno mais perto de `p`, a até `raioMm`. */
+function pontoDeOutraPeca(pecas: readonly Molde[], excetoId: string, p: Ponto2D, raioMm: number): { readonly peca: Molde; readonly indice: number } | null {
+  let melhor: { peca: Molde; indice: number; distancia: number } | null = null;
+  for (const peca of pecas) {
+    if (peca.id === excetoId) continue;
+    peca.contorno.forEach((v, indice) => {
+      const d = distancia(v, p);
+      if (d <= raioMm && (!melhor || d < melhor.distancia)) melhor = { peca, indice, distancia: d };
+    });
+  }
+  return melhor ? { peca: (melhor as { peca: Molde }).peca, indice: (melhor as { indice: number }).indice } : null;
 }
 
 /** "Ajustar": os pontos já clicados depois do inicial, pelo número (a partir de 0) — o último é, por enquanto, o final. */
@@ -583,7 +607,34 @@ export function cliqueDeGraduacao(
     return com(definirRegra(graduacao, contorno, i, regra), `Ponto ${i + 1} graduado pelo mouse: ${descreverRegra(graduacao, regra)}.`, SEM_TRECHO);
   }
 
+  // "Copiar", com a origem já indicada: o clique num ponto de OUTRA peça graduada copia a regra para ela.
+  if (modo === 'copiar-graduacao' && estado.inicio && !clique.noContorno && contexto.raioMm !== undefined) {
+    const destino = pontoDeOutraPeca(pecas, peca.id, clique.livre, contexto.raioMm);
+    if (destino) {
+      const daOutra = destino.peca.graduacao;
+      if (!daOutra) return { estado, recado: `“${destino.peca.nome}” ainda não tem tamanhos: defina-os nela (Tabela) antes de copiar a graduação para lá.` };
+      try {
+        const de = estado.inicio.indiceAresta;
+        const copiada = regraDoPonto('copiada', 'copiada', graduacao, regraCopiada(regraDoVertice(graduacao, contorno, de), opcoes.copiar));
+        const origem = regraParaAGraduacao({ ...copiada, nome: `do ponto ${de + 1} de “${peca.nome}”` }, daOutra);
+        const regra = regraNoEixo(regraDoVertice(daOutra, destino.peca.contorno, destino.indice), origem, EIXO_DO_MUNDO[opcoes.copiar.eixo]);
+        return {
+          estado,
+          pecas: trocar(pecas, destino.peca.id, { ...destino.peca, graduacao: definirRegra(daOutra, destino.peca.contorno, destino.indice, regra) }),
+          recado: `${NOME_DO_EIXO[opcoes.copiar.eixo]} do ponto ${de + 1} de “${peca.nome}” copiado para o ponto ${destino.indice + 1} de “${destino.peca.nome}”.`,
+        };
+      } catch (e) {
+        return { estado, recado: e instanceof Error ? e.message : String(e) };
+      }
+    }
+  }
+
   const i = verticeClicado(peca, clique);
+  // A "Tabela" serve também para os piques: o clique num pique, fora de um ponto do contorno, abre a tabela dele.
+  if (i === null && modo === 'graduar-tabela' && contexto.raioMm !== undefined) {
+    const pique = piquePerto(peca, clique.livre, contexto.raioMm);
+    if (pique) return { estado, recado: null, abrir: { tipo: 'tabela-do-pique', id: pique.id } };
+  }
   if (i === null) return { estado, recado: NO_PONTO };
   const ponto = `Ponto ${i + 1}`;
   const noVertice: TrechoEmEdicao = { ...SEM_TRECHO, inicio: { indiceAresta: i, ponto: contorno[i]! } };
@@ -769,11 +820,17 @@ export function previaDaGraduacao(
 const ESC = ' Esc sai.';
 
 /** A instrução do próximo clique, para a faixa de mensagens. */
-export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGraduacao, estado: TrechoEmEdicao, regra: RegraCadastrada | null): string {
+export function instrucaoDaGraduacao(
+  modo: ModoDeGraduacao,
+  opcoes: OpcoesDaGraduacao,
+  estado: TrechoEmEdicao,
+  regra: RegraCadastrada | null,
+  conjunto: ConjuntoEmUso | null = null,
+): string {
   const numero = estado.inicio ? estado.inicio.indiceAresta + 1 : 0;
   switch (modo) {
     case 'graduar-tabela':
-      return 'Tabela: clique num ponto do contorno da peça selecionada para ver e mudar a graduação dele (os anéis marcam os pontos graduados).' + ESC;
+      return 'Tabela: clique num ponto do contorno da peça selecionada para ver e mudar a graduação dele (os anéis marcam os pontos graduados) — ou num pique, para a tabela dele.' + ESC;
     case 'graduar-automatico':
       return (
         `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} ${opcoes.automatico.tamanho === TODOS_OS_TAMANHOS ? 'por tamanho' : `no tamanho ${opcoes.automatico.tamanho}`}.` + ESC
@@ -800,6 +857,9 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
         `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} ${opcoes.tangente.tamanho === TODOS_OS_TAMANHOS ? (opcoes.tangente.incremental ? 'por tamanho' : 'a partir do base') : `no tamanho ${opcoes.tangente.tamanho}`}, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um.` + ESC
       );
     case 'graduar-regras':
+      if (regra && conjunto) {
+        return `Regras (conjunto “${conjunto.nome}”, regra ${conjunto.numero} de ${conjunto.total}: “${regra.nome}”): clique no ponto que deve receber essa regra — o clique seguinte aplica a próxima.` + ESC;
+      }
       return (regra ? `Regras (“${regra.nome}”): clique nos pontos que devem receber essa regra.` : 'Regras: escolha antes uma regra.') + ESC;
     case 'criar-regra':
       return 'Criar regra: clique no ponto cuja graduação deve ser guardada como regra.' + ESC;

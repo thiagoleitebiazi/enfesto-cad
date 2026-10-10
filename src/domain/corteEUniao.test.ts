@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { area, areaAssinada, ponto, retanguloEnvolvente, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { cotaDeDistancia } from './cota';
-import { definirRegra } from './graduacao';
+import { definirRegra, pontoGraduadoEm, regraDoVertice } from './graduacao';
 import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 import {
   conferirOpcoesDeCorte,
@@ -681,7 +681,7 @@ describe('cruzamentosDaReta nos moldes reais', () => {
 describe('cortarMoldeComOpcoes', () => {
   // O corte em pé, em x = 50: a parte maior vai de x = 50 a 200, e a nova, de 0 a 50.
   const [a, b] = [na(0, 50, 0), na(2, 50, 300)];
-  const COSTURA: OpcoesDeCorte = { costuraMm: 10, costuraNasDuas: false, piques: false, modo: 'reta' };
+  const COSTURA: OpcoesDeCorte = { costuraMm: 10, costuraNasDuas: false, piques: false, modo: 'reta', manterDistancias: true };
   const contem = (contorno: readonly Ponto2D[], x: number, y: number): boolean => contorno.some((p) => Math.abs(p.x - x) < 1e-6 && Math.abs(p.y - y) < 1e-6);
 
   it('sem costura, é o corte de sempre — e a linha interna que estava em cima da reta sai', () => {
@@ -831,5 +831,79 @@ describe('remover região: manter a região e unir o que sobra', () => {
     const peca = molde({ linhaDeFio: FIO_A_ESQUERDA });
     expect(() => removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(50, 0), ponto(150, 300), 'faixa')).toThrow('de um lado da primeira');
     expect(() => removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 10), ponto(140, 290), 'faixa')).toThrow('de um lado da primeira');
+  });
+});
+
+describe('graduação no Cortar e no Unir', () => {
+  const SEM_COSTURA: OpcoesDeCorte = { costuraMm: 0, costuraNasDuas: false, piques: false, modo: 'tangente', manterDistancias: true };
+  const em = (peca: Molde, x: number, y: number): number => peca.contorno.findIndex((p) => Math.abs(p.x - x) < 1e-6 && Math.abs(p.y - y) < 1e-6);
+  /** A peça com dois tamanhos (M, o base, e G) e a regra dada, no G, em cada canto indicado. */
+  const graduada = (peca: Molde, regras: ReadonlyArray<readonly [number, number, number, number]>): Molde => {
+    let nova = definirTamanhosDoMolde(peca, ['M', 'G'], 'M');
+    for (const [x, y, dx, dy] of regras) nova = { ...nova, graduacao: definirRegra(nova.graduacao!, nova.contorno, em(nova, x, y), [ponto(0, 0), ponto(dx, dy)]) };
+    return nova;
+  };
+
+  it('Cortar com “Manter distâncias”: as pontas do corte levam a regra que tinham na aresta inteira', () => {
+    // No G, o canto (200, 0) vai 20 mm para a direita: o ponto (50, 0), a um quarto da aresta, vai 5.
+    const peca = graduada(molde(), [[200, 0, 20, 0]]);
+    const [maior, menor] = cortarMoldeComOpcoes(peca, na(0, 50, 0), na(2, 50, 300), ids(), SEM_COSTURA);
+
+    for (const parte of [maior, menor]) {
+      expect(pontoGraduadoEm(parte.graduacao!, parte.contorno, em(parte, 50, 0))).not.toBeNull();
+      expect(regraDoVertice(parte.graduacao!, parte.contorno, em(parte, 50, 0))[1]).toEqual(ponto(5, 0));
+      expect(regraDoVertice(parte.graduacao!, parte.contorno, em(parte, 50, 300))[1]).toEqual(ponto(0, 0));
+    }
+  });
+
+  it('sem “Manter distâncias”, as pontas andam na proporção do contorno de cada parte', () => {
+    const peca = graduada(molde(), [[200, 0, 20, 0]]);
+    const [, menor] = cortarMoldeComOpcoes(peca, na(0, 50, 0), na(2, 50, 300), ids(), { ...SEM_COSTURA, manterDistancias: false });
+
+    expect(pontoGraduadoEm(menor.graduacao!, menor.contorno, em(menor, 50, 0))).toBeNull();
+    // Na parte pequena, os vizinhos graduados do ponto não andam: ele também não.
+    expect(regraDoVertice(menor.graduacao!, menor.contorno, em(menor, 50, 0))[1]).toEqual(ponto(0, 0));
+  });
+
+  it('com costura no modo tangente, o ponto graduado da ponta vai para a ponta estendida', () => {
+    const peca = graduada(molde(), [[200, 0, 20, 0]]);
+    const [, menor] = cortarMoldeComOpcoes(peca, na(0, 50, 0), na(2, 50, 300), ids(), { ...SEM_COSTURA, costuraMm: 10 });
+
+    expect(em(menor, 50, 0)).toBe(-1);
+    expect(regraDoVertice(menor.graduacao!, menor.contorno, em(menor, 60, 0))[1]).toEqual(ponto(5, 0));
+    expect(pontoGraduadoEm(menor.graduacao!, menor.contorno, em(menor, 60, 0))).not.toBeNull();
+  });
+
+  // A Frente e a Lateral, lado a lado; a união é pela aresta direita da Frente e a esquerda da Lateral.
+  const LATERAL = [ponto(500, 0), ponto(600, 0), ponto(600, 300), ponto(500, 300)];
+  // No G, a aresta de união da Frente cresce 40 mm para cima; a da Lateral, 20. O canto de fora da Lateral vai (10, 20).
+  const frente = (): Molde => graduada(molde(), [[200, 300, 0, 40]]);
+  const lateral = (): Molde => graduada(molde({ contorno: LATERAL, linhaDeFio: { inicio: ponto(550, 50), fim: ponto(550, 250) } }, 'm2'), [[500, 300, 0, 20], [600, 300, 10, 20]]);
+
+  it('Unir, giro “igual base”: os tamanhos da segunda peça vão como o base foi', () => {
+    const unida = unirMoldes(frente(), 1, lateral(), 3);
+
+    expect(area(unida.contorno)).toBeCloseTo(90000, 6);
+    expect(regraDoVertice(unida.graduacao!, unida.contorno, em(unida, 300, 300))[1]).toEqual(ponto(10, 20));
+    expect(regraDoVertice(unida.graduacao!, unida.contorno, em(unida, 300, 0))[1]).toEqual(ponto(0, 0));
+  });
+
+  it('Unir, giro “igual tamanho”: cada tamanho da segunda peça é encostado no mesmo tamanho da primeira', () => {
+    const unida = unirMoldes(frente(), 1, lateral(), 3, { unirTamanhos: true, giro: 'tamanho' });
+
+    // No G, a aresta da Frente tem o meio em y = 170 e a da Lateral, em y = 160: a Lateral sobe 10 mm para encostar.
+    const fora = regraDoVertice(unida.graduacao!, unida.contorno, em(unida, 300, 300))[1]!;
+    expect(fora.x).toBeCloseTo(10, 9);
+    expect(fora.y).toBeCloseTo(30, 9);
+    const deBaixo = regraDoVertice(unida.graduacao!, unida.contorno, em(unida, 300, 0))[1]!;
+    expect(deBaixo.x).toBeCloseTo(0, 9);
+    expect(deBaixo.y).toBeCloseTo(10, 9);
+  });
+
+  it('Unir sem “Unir tamanhos”: fica só a graduação da primeira peça', () => {
+    const unida = unirMoldes(frente(), 1, lateral(), 3, { unirTamanhos: false, giro: 'base' });
+
+    expect(pontoGraduadoEm(unida.graduacao!, unida.contorno, em(unida, 300, 300))).toBeNull();
+    expect(pontoGraduadoEm(unida.graduacao!, unida.contorno, em(unida, 0, 0))).not.toBeNull();
   });
 });

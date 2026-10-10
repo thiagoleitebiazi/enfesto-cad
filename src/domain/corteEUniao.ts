@@ -5,6 +5,7 @@ import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
   retanguloEnvolvente,
+  rotacionar,
   segmentosSeIntersectam,
   trechoDoContorno,
   type Contorno,
@@ -12,6 +13,7 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { ancoraDoRotulo, type Cota } from './cota';
+import { contornoDoTamanho, definirRegra, deslocamentosDoContorno, semPontosSoltos, type Graduacao } from './graduacao';
 import {
   piquesQueFicamNoContorno,
   rotacionarMolde,
@@ -489,6 +491,59 @@ export function encostarMolde(moldeA: Molde, arestaA: number, moldeB: Molde, are
   );
 }
 
+/** O que o "Unir moldes" faz com a graduação das duas peças. */
+export interface OpcoesDeUniao {
+  /** "Unir tamanhos": a peça unida fica com a graduação das duas (precisam ter os mesmos tamanhos e o mesmo base). Sem isso, só com a da primeira. */
+  readonly unirTamanhos: boolean;
+  /** "Giro tamanho": 'base' gira todos os tamanhos da segunda peça como o base; 'tamanho' encosta cada tamanho dela no mesmo tamanho da primeira. */
+  readonly giro: 'base' | 'tamanho';
+}
+
+export const UNIAO_PADRAO: OpcoesDeUniao = { unirTamanhos: true, giro: 'base' };
+
+/** O movimento rígido que leva a aresta de `b0` a `b1` para cima da de `a0` a `a1`, meio com meio, com as peças de lados opostos. */
+function movimentoDeEncosto(a0: Ponto2D, a1: Ponto2D, b0: Ponto2D, b1: Ponto2D, mesmoSentido: boolean): (p: Ponto2D) => Ponto2D {
+  const giro = (mesmoSentido ? anguloDe(a1, a0) : anguloDe(a0, a1)) - anguloDe(b0, b1);
+  const meioDeB = ponto((b0.x + b1.x) / 2, (b0.y + b1.y) / 2);
+  const meioDeA = ponto((a0.x + a1.x) / 2, (a0.y + a1.y) / 2);
+  return (p) => {
+    const girado = rotacionar(p, meioDeB, giro);
+    return ponto(girado.x + meioDeA.x - meioDeB.x, girado.y + meioDeA.y - meioDeB.y);
+  };
+}
+
+/**
+ * Os pontos graduados da segunda peça depois da união com o giro "igual
+ * tamanho": em cada tamanho, a peça dela é encostada na aresta que a primeira
+ * tem nesse tamanho, e o deslocamento do ponto é a diferença para onde ele
+ * ficou no base.
+ */
+function pontosGraduadosEncostandoCadaTamanho(moldeA: Molde, arestaA: number, moldeB: Molde, arestaB: number, graduacaoEncostada: Graduacao): Graduacao['pontos'] {
+  const gA = moldeA.graduacao!;
+  const gB = semPontosSoltos(moldeB.graduacao!, moldeB.contorno);
+  const nA = moldeA.contorno.length;
+  const nB = moldeB.contorno.length;
+  const mesmoSentido = Math.sign(areaAssinada(moldeA.contorno)) === Math.sign(areaAssinada(moldeB.contorno));
+  const encosto = (contornoA: Contorno, contornoB: Contorno): ((p: Ponto2D) => Ponto2D) =>
+    movimentoDeEncosto(contornoA[arestaA]!, contornoA[(arestaA + 1) % nA]!, contornoB[arestaB]!, contornoB[(arestaB + 1) % nB]!, mesmoSentido);
+  const noBase = encosto(moldeA.contorno, moldeB.contorno);
+  const porTamanho = gA.tamanhos.map((_, t) => encosto(contornoDoTamanho(gA, moldeA.contorno, t), contornoDoTamanho(gB, moldeB.contorno, t)));
+  // A graduação já encostada tem os mesmos pontos, na mesma ordem, no lugar em que ficaram no contorno unido.
+  const encostados = semPontosSoltos({ ...graduacaoEncostada, pontos: graduacaoEncostada.pontos }, graduacaoEncostada.pontos.map((p) => p.posicao));
+  return gB.pontos.map((p, k) => {
+    const noLugar = noBase(p.posicao);
+    return {
+      posicao: encostados.pontos[k]?.posicao ?? noLugar,
+      deslocamentos: gA.tamanhos.map((_, t) => {
+        if (t === gA.base) return ponto(0, 0);
+        const d = p.deslocamentos[t] ?? ponto(0, 0);
+        const noTamanho = porTamanho[t]!(ponto(p.posicao.x + d.x, p.posicao.y + d.y));
+        return ponto(noTamanho.x - noLugar.x, noTamanho.y - noLugar.y);
+      }),
+    };
+  });
+}
+
 /**
  * "Unir": as duas peças viram uma só, coladas pela aresta `arestaA` da
  * primeira e `arestaB` da segunda (que é girada e movida até encostar). A
@@ -497,7 +552,7 @@ export function encostarMolde(moldeA: Molde, arestaA: number, moldeB: Molde, are
  * comprimentos diferentes são centralizadas uma na outra, e a sobra fica como
  * degrau no contorno.
  */
-export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, arestaB: number): Molde {
+export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, arestaB: number, opcoes: OpcoesDeUniao = UNIAO_PADRAO): Molde {
   const b = encostarMolde(moldeA, arestaA, moldeB, arestaB);
   const nA = moldeA.contorno.length;
   const nB = b.contorno.length;
@@ -520,9 +575,18 @@ export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, aresta
   const gB = b.graduacao;
   const mesmosTamanhos =
     gA !== undefined && gB !== undefined && gA.base === gB.base && gA.tamanhos.length === gB.tamanhos.length && gA.tamanhos.every((t, i) => t === gB.tamanhos[i]);
+  // "Unir tamanhos": a graduação da segunda peça entra na unida. No giro "igual base", os tamanhos dela giram
+  // todos como o base girou (o que o movimento da peça já fez); no "igual tamanho", cada tamanho dela é encostado
+  // no mesmo tamanho da primeira, aresta com aresta.
+  const pontosDeB =
+    gA && gB && mesmosTamanhos && opcoes.unirTamanhos
+      ? opcoes.giro === 'tamanho'
+        ? pontosGraduadosEncostandoCadaTamanho(moldeA, arestaA, moldeB, arestaB, gB)
+        : gB.pontos
+      : null;
   return {
     ...moldeA,
-    ...(gA && gB && mesmosTamanhos ? { graduacao: { ...gA, pontos: [...gA.pontos, ...gB.pontos] } } : {}),
+    ...(gA && pontosDeB ? { graduacao: { ...gA, pontos: [...gA.pontos, ...pontosDeB] } } : {}),
     contorno,
     furos: [...moldeA.furos, ...b.furos],
     linhasInternas: [...moldeA.linhasInternas, ...b.linhasInternas],
@@ -546,9 +610,36 @@ export interface OpcoesDeCorte {
   readonly piques: boolean;
   /** Como a costura acaba nas pontas: seguindo as arestas vizinhas ('tangente') ou em esquadro com o corte ('reta'). */
   readonly modo: 'tangente' | 'reta';
+  /**
+   * "Manter distâncias": na peça graduada, as duas pontas do corte ficam com a
+   * regra que tinham na peça inteira (a proporção entre os pontos vizinhos da
+   * aresta), e a linha do corte fica no mesmo lugar de cada tamanho nas duas
+   * partes. Sem isso, as pontas andam na proporção do contorno de cada parte.
+   */
+  readonly manterDistancias: boolean;
 }
 
-export const CORTE_SEM_COSTURA: OpcoesDeCorte = { costuraMm: 0, costuraNasDuas: false, piques: false, modo: 'tangente' };
+export const CORTE_SEM_COSTURA: OpcoesDeCorte = { costuraMm: 0, costuraNasDuas: false, piques: false, modo: 'tangente', manterDistancias: true };
+
+/** O que o ponto do contorno anda em cada tamanho, na peça inteira: num ponto do contorno, a regra dele; no meio de uma aresta, a proporção entre as duas pontas dela. */
+function regraNaPosicao(graduacao: Graduacao, contorno: Contorno, posicao: PosicaoNoContorno): Ponto2D[] {
+  const deslocamentos = deslocamentosDoContorno(graduacao, contorno);
+  const i = posicao.indiceAresta;
+  const j = (i + 1) % contorno.length;
+  const comprimento = distancia(contorno[i]!, contorno[j]!);
+  const k = comprimento < MESMO_PONTO_MM ? 0 : Math.min(1, distancia(contorno[i]!, posicao.ponto) / comprimento);
+  return graduacao.tamanhos.map((_, t) => {
+    const de = deslocamentos[i]?.[t] ?? ponto(0, 0);
+    const ate = deslocamentos[j]?.[t] ?? ponto(0, 0);
+    return ponto(de.x + (ate.x - de.x) * k, de.y + (ate.y - de.y) * k);
+  });
+}
+
+/** A parte com a regra dada no ponto dela que está em `p` (se há graduação e o ponto é um ponto do contorno). */
+function comRegraEm(parte: Molde, p: Ponto2D, regra: readonly Ponto2D[]): Molde {
+  const i = parte.contorno.findIndex((v) => distancia(v, p) <= NO_CONTORNO_DA_PARTE_MM);
+  return parte.graduacao && i >= 0 ? { ...parte, graduacao: definirRegra(parte.graduacao, parte.contorno, i, regra) } : parte;
+}
 
 /** No modo tangente, a aresta vizinha é estendida no máximo este tanto de vezes a costura; além disso, a ponta acaba em esquadro. */
 const LIMITE_DA_PONTA_DA_COSTURA = 4;
@@ -619,7 +710,14 @@ function comCosturaNoCorte(parte: Molde, p: Ponto2D, q: Ponto2D, opcoes: OpcoesD
         return { id: novoId(), posicao: noContorno.ponto, indiceAresta: noContorno.indiceAresta };
       })
     : [];
-  return { ...parte, contorno: novo, piques: [...piquesQueFicamNoContorno(parte.piques, novo), ...piques] };
+  // No modo tangente a ponta do corte dá lugar à ponta estendida: o ponto graduado que estava nela vai junto.
+  const levar = (p: Ponto2D): Ponto2D => (pontaDe && distancia(p, de) <= NO_CONTORNO_DA_PARTE_MM ? pontaDe : pontaAte && distancia(p, ate) <= NO_CONTORNO_DA_PARTE_MM ? pontaAte : p);
+  return {
+    ...parte,
+    contorno: novo,
+    piques: [...piquesQueFicamNoContorno(parte.piques, novo), ...piques],
+    ...(parte.graduacao ? { graduacao: { ...parte.graduacao, pontos: parte.graduacao.pontos.map((q) => ({ ...q, posicao: levar(q.posicao) })) } } : {}),
+  };
 }
 
 /**
@@ -635,7 +733,13 @@ export function cortarMoldeComOpcoes(
   opcoes: OpcoesDeCorte = CORTE_SEM_COSTURA,
 ): readonly [Molde, Molde] {
   conferirOpcoesDeCorte(opcoes);
-  const [maior, menor] = cortarMolde(semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId());
+  const cortadas = cortarMolde(semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId());
+  // "Manter distâncias": as pontas do corte levam, para as duas partes, a regra que tinham na peça inteira.
+  const g = molde.graduacao;
+  const [maior, menor] =
+    g && opcoes.manterDistancias
+      ? (cortadas.map((parte) => comRegraEm(comRegraEm(parte, a.ponto, regraNaPosicao(g, molde.contorno, a)), b.ponto, regraNaPosicao(g, molde.contorno, b))) as [Molde, Molde])
+      : cortadas;
   if (!(opcoes.costuraMm > 0)) return [maior, menor];
   return [
     opcoes.costuraNasDuas ? comCosturaNoCorte(maior, a.ponto, b.ponto, opcoes, novoId) : maior,
