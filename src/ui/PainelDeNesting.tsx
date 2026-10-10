@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import type { ResultadoDeNesting } from '../domain/nesting';
+import { arestaDeSimetria } from '../domain/anotacoes';
 import { rotacoesPermitidas, type Molde } from '../domain/molde';
 
 export interface OpcoesAvancadasDeNesting {
@@ -8,6 +9,8 @@ export interface OpcoesAvancadasDeNesting {
   readonly aproveitamentoDesejadoPercentual?: number;
   /** Cada tamanho das peças graduadas entra no encaixe como uma peça própria (só vem quando há peças graduadas). */
   readonly todosOsTamanhos?: boolean;
+  /** As peças com linha de simetria entram no encaixe abertas, inteiras (só vem quando há peças assim). */
+  readonly abrirSimetrias?: boolean;
 }
 
 interface PainelDeNestingProps {
@@ -26,6 +29,8 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [aproveitamentoDesejadoPercentual, setAproveitamentoDesejadoPercentual] = useState('');
   const temGraduadas = props.pecas.some((p) => p.graduacao !== undefined);
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
+  const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
+  const [abrirSimetrias, setAbrirSimetrias] = useState(true);
   /** Os tamanhos com que a peça entra no encaixe: todos os da graduação, só o base, ou o dela. */
   const tamanhosDa = (p: Molde): string => {
     if (!p.graduacao) return p.tamanho.trim() === '' ? '—' : p.tamanho;
@@ -41,6 +46,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
         ? { aproveitamentoDesejadoPercentual: aproveitamento }
         : {}),
       ...(temGraduadas ? { todosOsTamanhos } : {}),
+      ...(temSimetria ? { abrirSimetrias } : {}),
     });
   }
 
@@ -81,6 +87,19 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por
                 posicionar.
               </p>
+              {temSimetria && (
+                <>
+                  <label className="opcao-em-linha">
+                    <input type="checkbox" checked={abrirSimetrias} onChange={(e) => setAbrirSimetrias(e.target.checked)} />
+                    Abrir as peças com linha de simetria
+                  </label>
+                  <p className="legenda-inline">
+                    {abrirSimetrias
+                      ? 'A peça dobrada entra no encaixe aberta, inteira. Ao aplicar, passa a ser a peça inteira (Ctrl+Z desfaz).'
+                      : 'A peça com linha de simetria entra como está desenhada: meia peça.'}
+                  </p>
+                </>
+              )}
               {temGraduadas && (
                 <>
                   <label className="opcao-em-linha">

@@ -222,6 +222,22 @@ function rotuloCurto(medicao: MedicaoResolvida): string {
 const DIFERENCA_VISIVEL_MM = 0.05;
 
 /** "Comparar perímetros": as duas medidas e a diferença entre elas. */
+/** Até esta diferença (mm) duas costuras conferem: é menos do que se corta ou se costura com precisão. */
+export const FOLGA_DA_CONFERENCIA_MM = 0.5;
+
+/**
+ * "Conferir": o veredito sobre duas costuras que vão ser unidas — conferem,
+ * ou uma sobra em relação à outra, e de quanto (em mm e em % da menor).
+ */
+export function descreverConferencia(primeira: MedicaoResolvida, segunda: MedicaoResolvida): string {
+  const diferenca = segunda.valorMm - primeira.valorMm;
+  const medidas = `1ª: ${formatarMm(primeira.valorMm)} (${rotuloCurto(primeira)}) · 2ª: ${formatarMm(segunda.valorMm)} (${rotuloCurto(segunda)})`;
+  if (Math.abs(diferenca) <= FOLGA_DA_CONFERENCIA_MM) return `As duas costuras conferem — ${medidas}`;
+  const menor = Math.min(primeira.valorMm, segunda.valorMm);
+  const porcento = menor > 0 ? ` (${((Math.abs(diferenca) / menor) * 100).toFixed(1).replace('.', ',')}%)` : '';
+  return `Não conferem: a ${diferenca > 0 ? '2ª' : '1ª'} é ${formatarMm(Math.abs(diferenca))} maior${porcento} — ${medidas}`;
+}
+
 export function descreverComparacao(primeira: MedicaoResolvida, segunda: MedicaoResolvida): string {
   const diferenca = segunda.valorMm - primeira.valorMm;
   const qualEMaior =

@@ -3,6 +3,7 @@ import { cleanup, render, screen, fireEvent, within } from '@testing-library/rea
 import { ponto } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
 import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
+import { definirLinhaDeSimetria } from '../domain/anotacoes';
 import { PainelDeNesting, type OpcoesAvancadasDeNesting } from './PainelDeNesting';
 
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -67,5 +68,42 @@ describe('PainelDeNesting: tamanhos das peças graduadas', () => {
     expect(screen.getByText(/Só o tamanho base de cada peça graduada entra no encaixe/)).toBeInTheDocument();
     calcular();
     expect(onCalcular).toHaveBeenCalledWith({ todosOsTamanhos: false });
+  });
+});
+
+describe('PainelDeNesting: peças com linha de simetria', () => {
+  afterEach(() => cleanup());
+
+  it('sem peça com linha de simetria, a opção não aparece', () => {
+    renderizar([molde('Frente', 'f', 'M')]);
+
+    expect(screen.queryByLabelText(/Abrir as peças com linha de simetria/)).not.toBeInTheDocument();
+  });
+
+  it('com peça dobrada, vem marcado para abrir, e diz o que acontece ao aplicar', () => {
+    const { onCalcular } = renderizar([definirLinhaDeSimetria(molde('Frente', 'f', 'M'), 3), molde('Bolso', 'b')]);
+
+    expect(screen.getByLabelText(/Abrir as peças com linha de simetria/)).toBeChecked();
+    expect(screen.getByText(/entra no encaixe aberta, inteira/)).toBeInTheDocument();
+
+    calcular();
+    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: true });
+  });
+
+  it('desmarcando, a peça entra como está desenhada', () => {
+    const { onCalcular } = renderizar([definirLinhaDeSimetria(molde('Frente', 'f', 'M'), 3)]);
+
+    fireEvent.click(screen.getByLabelText(/Abrir as peças com linha de simetria/));
+
+    expect(screen.getByText(/entra como está desenhada: meia peça/)).toBeInTheDocument();
+    calcular();
+    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: false });
+  });
+
+  it('a marca que deixou de valer (a aresta mudou) não oferece a opção', () => {
+    const marcada = definirLinhaDeSimetria(molde('Frente', 'f', 'M'), 3);
+    renderizar([{ ...marcada, contorno: [ponto(-20, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)] }]);
+
+    expect(screen.queryByLabelText(/Abrir as peças com linha de simetria/)).not.toBeInTheDocument();
   });
 });

@@ -95,6 +95,21 @@ import {
 } from './ui/ferramentasDeArco';
 import { valorDaCotaDeRaio } from './domain/cota';
 import {
+  abrirSimetrias,
+  adicionarTexto,
+  alterarTexto,
+  arestaDeSimetria,
+  CORES_DE_PECA,
+  definirCodigoDoPique,
+  definirCor,
+  definirLinhaDeSimetria,
+  piquePerto,
+  piquesComOCodigo,
+  textoPerto,
+} from './domain/anotacoes';
+import { definirAutor } from './domain/projeto';
+import type { FerramentaDeAnotacao } from './ui/BarraDeFerramentas';
+import {
   apagarElementoEscolhido,
   aplicarPontoPorCoordenada,
   cliqueDeElemento,
@@ -124,6 +139,7 @@ import {
   cliqueDePerimetro,
   posicaoNoContornoPerto,
   descreverComparacao,
+  descreverConferencia,
   descreverMedicao,
   registrarMedicao,
   resolverMedicao,
@@ -351,6 +367,11 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
+  | { readonly tipo: 'cor' }
+  | { readonly tipo: 'texto-novo' }
+  | { readonly tipo: 'editar-texto'; readonly id: string }
+  | { readonly tipo: 'codigo-do-pique'; readonly id: string }
+  | { readonly tipo: 'autor' }
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
@@ -362,7 +383,7 @@ function paraCampo(valor: number): string {
   return String(valor).replace('.', ',');
 }
 
-type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias';
+type FerramentaDeMedida = 'medir-distancia' | 'medir-perimetro' | 'comparar-perimetros' | 'comparar-distancias' | 'conferir';
 type FerramentaDeCota = FerramentaDeCotaPorPontos | 'cota-perimetro';
 
 function ehFerramentaDeCotaPorPontos(modo: ModoDeDesenho): modo is FerramentaDeCotaPorPontos {
@@ -451,6 +472,8 @@ export default function App(): React.JSX.Element {
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
   // Pences e pregas: o que cada diálogo deixou escolhido.
   const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
+  // "Inserir texto": o texto e a altura que o próximo clique põe na peça.
+  const [textoAInserir, setTextoAInserir] = useState<{ readonly texto: string; readonly alturaMm: number }>({ texto: '', alturaMm: 10 });
   // Retas e pontos de construção (linhas internas e marcas): o que cada diálogo deixou escolhido.
   const [opcoesDeElemento, setOpcoesDeElemento] = useState<OpcoesDeElemento>(OPCOES_INICIAIS_DE_ELEMENTO);
   // Graduação: as opções dos diálogos, o cadastro de regras deste computador, a
@@ -739,10 +762,12 @@ export default function App(): React.JSX.Element {
     const nome = window.prompt('Nome do novo projeto:', `${projetoAtual.nome} (cópia)`);
     if (!nome) return;
     const novo = novoProjetoVazio({ pecas, tecido, enfesto });
-    const renomeado = renomearProjeto(novo, nome, new Date().toISOString());
+    const agora = new Date().toISOString();
+    // A cópia é do mesmo modelo: o autor vai junto.
+    const renomeado = definirAutor(renomearProjeto(novo, nome, agora), projetoAtual.autor ?? '', agora);
     setProjetoAtual(renomeado);
     persistirProjeto(renomeado);
-  }, [pecas, tecido, enfesto, projetoAtual.nome, persistirProjeto]);
+  }, [pecas, tecido, enfesto, projetoAtual.nome, projetoAtual.autor, persistirProjeto]);
 
   const abrirBiblioteca = useCallback(() => {
     carregarListaDeProjetos();
@@ -1251,6 +1276,20 @@ export default function App(): React.JSX.Element {
   }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
 
   /** "Converter em contorno": a linha de corte das peças selecionadas vira o contorno, e a costura volta a zero. */
+  /** Cor, textos, linha de simetria, código de pique, autor e conferência de costuras. */
+  const usarFerramentaDeAnotacao = useCallback(
+    (ferramenta: FerramentaDeAnotacao) => {
+      if (ferramenta === 'autor') setDialogoDeFerramenta({ tipo: 'autor' });
+      else if (ferramenta === 'conferir') entrarModoDeMedida('conferir');
+      else if (ferramenta === 'cor') {
+        if (selecionadoId !== null || idsSelecionadosEmLote.size > 0) setDialogoDeFerramenta({ tipo: 'cor' });
+      } else if (!selecionadoId) return;
+      else if (ferramenta === 'inserir-texto') setDialogoDeFerramenta({ tipo: 'texto-novo' });
+      else entrarModoDeConstrucao(ferramenta);
+    },
+    [selecionadoId, idsSelecionadosEmLote, entrarModoDeMedida, entrarModoDeConstrucao],
+  );
+
   /** Retas e pontos de construção: as que têm opções pedem-nas antes, num diálogo; as outras ligam direto. */
   const usarFerramentaDeElemento = useCallback(
     (ferramenta: FerramentaDeElemento) => {
@@ -1655,7 +1694,12 @@ export default function App(): React.JSX.Element {
   }, [enfesto, pecas.length]);
 
   const calcularNestingAutomatico = useCallback(
-    (opcoesAvancadas: { limiteDeTempoMinutos?: number; aproveitamentoDesejadoPercentual?: number; todosOsTamanhos?: boolean }) => {
+    (opcoesAvancadas: {
+      limiteDeTempoMinutos?: number;
+      aproveitamentoDesejadoPercentual?: number;
+      todosOsTamanhos?: boolean;
+      abrirSimetrias?: boolean;
+    }) => {
       if (!enfesto || pecas.length === 0) return;
       // Com todos os tamanhos, cada peça graduada entra como uma peça comum por tamanho.
       let paraEncaixar: readonly Molde[] = pecas;
@@ -1667,6 +1711,8 @@ export default function App(): React.JSX.Element {
           return;
         }
       }
+      // As peças com linha de simetria entram abertas, inteiras.
+      if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
       setResultadoNesting(null);
       setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
       setNestingExecutando(true);
@@ -1962,15 +2008,52 @@ export default function App(): React.JSX.Element {
         setDonoDaCota(null);
         return;
       }
-      if (modo === 'medir-perimetro' || modo === 'comparar-perimetros') {
+      if (modo === 'medir-perimetro' || modo === 'comparar-perimetros' || modo === 'conferir') {
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
         setMedicao((atual) =>
           cliqueDePerimetro(
             atual,
             alvoDaMedicao(mundo, pecas, raioMm, atual.inicioDoTrecho?.pecaId ?? null),
-            modo === 'comparar-perimetros',
+            modo !== 'medir-perimetro',
           ),
         );
+        return;
+      }
+      if (modo === 'inserir-texto' || modo === 'editar-texto' || modo === 'linha-de-simetria' || modo === 'relacionar-piques') {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        try {
+          if (modo === 'inserir-texto') {
+            aplicarMudanca(
+              pecas.map((p) => (p.id === peca.id ? adicionarTexto(p, semCaptura, textoAInserir.texto, textoAInserir.alturaMm, proximoId()) : p)),
+            );
+            setRecadoDaFerramenta(`Texto “${textoAInserir.texto.trim()}” posto em “${peca.nome}”.`);
+          } else if (modo === 'editar-texto') {
+            const texto = textoPerto(peca, semCaptura, raioMm);
+            setRecadoDaFerramenta(texto ? null : 'Clique em cima de um texto da peça selecionada.');
+            if (texto) setDialogoDeFerramenta({ tipo: 'editar-texto', id: texto.id });
+          } else if (modo === 'relacionar-piques') {
+            const pique = piquePerto(peca, semCaptura, raioMm);
+            setRecadoDaFerramenta(pique ? null : 'Clique em cima de um pique da peça selecionada.');
+            if (pique) setDialogoDeFerramenta({ tipo: 'codigo-do-pique', id: pique.id });
+          } else {
+            const aresta = arestaPerto(semCaptura, peca.contorno, raioMm);
+            if (aresta === null) {
+              setRecadoDaFerramenta('Clique sobre uma aresta do contorno da peça selecionada.');
+              return;
+            }
+            const nova = definirLinhaDeSimetria(peca, aresta);
+            aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
+            setRecadoDaFerramenta(
+              arestaDeSimetria(nova) === null
+                ? `Linha de simetria tirada de “${peca.nome}”.`
+                : `Linha de simetria marcada em “${peca.nome}”: a peça desenhada é meia peça, dobrada nessa aresta.`,
+            );
+          }
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
         return;
       }
       if (ehFerramentaDeTrecho(modo)) {
@@ -2225,6 +2308,7 @@ export default function App(): React.JSX.Element {
       opcoesDaGraduacao,
       regraEscolhida,
       opcoesDeElemento,
+      textoAInserir,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2536,7 +2620,8 @@ export default function App(): React.JSX.Element {
     modo === 'medir-distancia' ||
     modo === 'medir-perimetro' ||
     modo === 'comparar-perimetros' ||
-    modo === 'comparar-distancias';
+    modo === 'comparar-distancias' ||
+    modo === 'conferir';
   // A cota como ficaria com o próximo clique: só quando falta o clique que a posiciona.
   const cotaEmPrevia = useMemo(
     () => (ehFerramentaDeCotaPorPontos(modo) ? previaDaCota(modo, pontosEmEdicao, cursorMundo) : null),
@@ -2632,6 +2717,12 @@ export default function App(): React.JSX.Element {
     if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
+    if (modo === 'inserir-texto') return `Inserir texto: clique onde o texto “${textoAInserir.texto.trim()}” deve ficar, na peça selecionada.` + fim;
+    if (modo === 'editar-texto') return 'Editar texto: clique em cima de um texto da peça selecionada.' + fim;
+    if (modo === 'linha-de-simetria') {
+      return 'Linha de simetria: clique na aresta em que a peça selecionada é dobrada (clicar de novo na mesma aresta tira a marca).' + fim;
+    }
+    if (modo === 'relacionar-piques') return 'Relacionamento piques: clique em cima de um pique da peça selecionada para dar o código dele.' + fim;
     switch (modo) {
       case 'curva':
         if (!trecho.inicio) return 'Curva: clique no contorno da peça selecionada, onde a curva começa.' + fim;
@@ -2818,6 +2909,13 @@ export default function App(): React.JSX.Element {
         ][Math.min(pontosEmEdicao.length, 3)]!;
       case 'cota-perimetro':
         return 'Cota perímetro: clique dentro de uma peça, onde o perímetro dela deve ficar escrito. Para apagar uma cota, clique no número dela. Esc sai.';
+      case 'conferir': {
+        const [primeira, segunda] = medicoesResolvidas;
+        if (inicioDoTrecho) return 'Conferir: clique no segundo ponto do contorno — o trecho segue a numeração dos pontos. Esc sai.';
+        if (primeira && segunda) return `${descreverConferencia(primeira, segunda)} — clique para conferir de novo; Esc sai.`;
+        if (primeira) return `${descreverMedicao(primeira)} — agora meça a costura da outra peça. Esc sai.`;
+        return 'Conferir: meça a 1ª costura — clique em dois pontos do contorno de uma peça (ou dentro dela, para o perímetro inteiro). Esc sai.';
+      }
       case 'comparar-perimetros': {
         const [primeira, segunda] = medicoesResolvidas;
         if (inicioDoTrecho) {
@@ -2950,6 +3048,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoCirculo={() => entrarModoDeConstrucao('circulo')}
         onUsarFerramentaDeMolde={usarFerramentaDeMolde}
         temOutraPeca={pecas.length >= 2}
+        onUsarFerramentaDeAnotacao={usarFerramentaDeAnotacao}
         onUsarFerramentaDeElemento={usarFerramentaDeElemento}
         onUsarFerramentaDeGraduacao={usarFerramentaDeGraduacao}
         temGraduacao={pecaSelecionada?.graduacao !== undefined}
@@ -3293,6 +3392,161 @@ export default function App(): React.JSX.Element {
               } else if (ehModoDeElemento(ferramenta)) {
                 entrarModoDeConstrucao(ferramenta);
               }
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'cor' && (
+        <DialogoDeCampos
+          titulo="Cor da peça"
+          resumo={[['Peças', alvosDeCostura.length === 1 ? alvosDeCostura[0]!.nome : `${alvosDeCostura.length} selecionadas`]]}
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'cor',
+              rotulo: 'Cor de fundo no desenho',
+              opcoes: [{ valor: '', rotulo: 'Sem cor (a padrão)' }, ...CORES_DE_PECA.map((c) => ({ valor: c.valor, rotulo: c.nome }))],
+              inicial: alvosDeCostura[0]?.cor ?? '',
+            },
+          ]}
+          nota="A cor é só do desenho na tela, para distinguir as peças. O contorno continua mostrando se a peça está selecionada ou com problema."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            try {
+              const cor = String(valores.cor) === '' ? null : String(valores.cor);
+              const ids = new Set(alvosDeCostura.map((p) => p.id));
+              aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? definirCor(p, cor) : p)));
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'texto-novo' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Inserir texto"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[
+            { tipo: 'texto', id: 'texto', rotulo: 'Texto', inicial: textoAInserir.texto },
+            { tipo: 'medida', id: 'altura', rotulo: 'Altura das letras (mm)', inicial: String(textoAInserir.alturaMm).replace('.', ',') },
+          ]}
+          nota="Depois de confirmar, clique onde o texto deve ficar. Ele fica preso à peça: anda, gira e é salvo com ela, e sai no PDF."
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            const alturaMm = Number(valores.altura);
+            try {
+              // Confere o texto e a altura antes de ligar a ferramenta.
+              adicionarTexto(pecaSelecionada, { x: 0, y: 0 }, String(valores.texto), alturaMm, 'conferencia');
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            entrarModoDeConstrucao('inserir-texto');
+            setTextoAInserir({ texto: String(valores.texto), alturaMm });
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'editar-texto' && pecaSelecionada && (
+        <DialogoDeCampos
+          key={dialogoDeFerramenta.id}
+          titulo="Editar texto"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[
+            {
+              tipo: 'texto',
+              id: 'texto',
+              rotulo: 'Texto (em branco, apaga)',
+              inicial: pecaSelecionada.textos?.find((t) => t.id === dialogoDeFerramenta.id)?.texto ?? '',
+              opcional: true,
+            },
+            {
+              tipo: 'medida',
+              id: 'altura',
+              rotulo: 'Altura das letras (mm)',
+              inicial: String(pecaSelecionada.textos?.find((t) => t.id === dialogoDeFerramenta.id)?.alturaMm ?? 10).replace('.', ','),
+            },
+          ]}
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            try {
+              const texto = valores.texto === undefined ? '' : String(valores.texto);
+              const nova = alterarTexto(pecaSelecionada, dialogoDeFerramenta.id, texto, Number(valores.altura));
+              aplicarMudanca(pecas.map((p) => (p.id === pecaSelecionada.id ? nova : p)));
+              setRecadoDaFerramenta(texto.trim() === '' ? 'Texto apagado.' : 'Texto alterado.');
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'codigo-do-pique' && pecaSelecionada && (
+        <DialogoDeCampos
+          key={dialogoDeFerramenta.id}
+          titulo="Relacionamento de piques"
+          resumo={[
+            ['Peça', pecaSelecionada.nome],
+            [
+              'Códigos em uso',
+              [...new Set(pecas.flatMap((p) => p.piques.flatMap((q) => (q.codigo ? [q.codigo] : []))))]
+                .map((codigo) => `${codigo} (${piquesComOCodigo(pecas, codigo).map((r) => `${r.peca.nome}: ${r.quantos}`).join(', ')})`)
+                .join(' · ') || 'nenhum ainda',
+            ],
+          ]}
+          campos={[
+            {
+              tipo: 'texto',
+              id: 'codigo',
+              rotulo: 'Código deste pique (em branco, tira o código)',
+              inicial: pecaSelecionada.piques.find((q) => q.id === dialogoDeFerramenta.id)?.codigo ?? '',
+              opcional: true,
+            },
+          ]}
+          nota="Dê o mesmo código aos piques que se encontram na costura, um em cada peça. O código aparece escrito na ponta do pique."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            try {
+              const codigo = valores.codigo === undefined ? '' : String(valores.codigo);
+              const nova = definirCodigoDoPique(pecaSelecionada, dialogoDeFerramenta.id, codigo);
+              const novasPecas = pecas.map((p) => (p.id === pecaSelecionada.id ? nova : p));
+              aplicarMudanca(novasPecas);
+              const onde = piquesComOCodigo(novasPecas, codigo).filter((r) => r.peca.id !== pecaSelecionada.id);
+              setRecadoDaFerramenta(
+                codigo.trim() === ''
+                  ? 'Código tirado do pique.'
+                  : onde.length > 0
+                    ? `Pique com o código “${codigo.trim()}”: o mesmo de ${onde.map((r) => `“${r.peca.nome}”`).join(', ')}.`
+                    : `Pique com o código “${codigo.trim()}”: ainda não há outro pique com esse código em outra peça.`,
+              );
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'autor' && (
+        <DialogoDeCampos
+          titulo="Autor do modelo"
+          resumo={[['Projeto', `${projetoAtual.nome} (${projetoAtual.codigo})`]]}
+          campos={[{ tipo: 'texto', id: 'autor', rotulo: 'Nome de quem fez o modelo (em branco, tira o autor)', inicial: projetoAtual.autor ?? '', opcional: true }]}
+          nota="O autor fica guardado no projeto, junto com o nome e o código dele."
+          rotuloDoBotao="Guardar"
+          onAplicar={(valores) => {
+            try {
+              const atualizado = definirAutor(projetoAtual, valores.autor === undefined ? '' : String(valores.autor), new Date().toISOString());
+              setProjetoAtual(atualizado);
+              persistirProjeto(atualizado);
+              avisar(atualizado.autor ? `Autor do projeto: ${atualizado.autor}.` : 'O projeto ficou sem autor.');
               return null;
             } catch (e) {
               return e instanceof Error ? e.message : String(e);

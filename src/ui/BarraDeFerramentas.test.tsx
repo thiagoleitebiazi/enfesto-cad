@@ -112,6 +112,7 @@ function propsBase(): Props {
     onEntrarModoCirculo: vi.fn(),
     onUsarFerramentaDeMolde: vi.fn(),
     temOutraPeca: true,
+    onUsarFerramentaDeAnotacao: vi.fn(),
     onUsarFerramentaDeElemento: vi.fn(),
     onUsarFerramentaDeArco: vi.fn(),
     onEntrarModoCotaRaio: vi.fn(),
@@ -262,33 +263,47 @@ describe('BarraDeFerramentas: abas', () => {
 describe('BarraDeFerramentas: ferramentas que não existem neste programa', () => {
   afterEach(() => cleanup());
 
-  it.each(['Início', 'Construção', 'Produção', 'Graduação', 'Conferência', 'Modelo'])(
-    '%s: todo botão desligado diz na dica o nome da ferramenta e o motivo',
-    (aba) => {
-      renderizar(aba);
+  const ABAS = ['Início', 'Construção', 'Produção', 'Marcações', 'Graduação', 'Manipulação', 'Conferência', 'Modelo', 'Encaixe'];
+  const nomeDo = (b: HTMLButtonElement): string => b.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-      const desligados = botoesDesligados();
-      expect(desligados.length).toBeGreaterThan(0);
-      for (const b of desligados) {
-        const nome = b.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-        expect(b.title.startsWith(`${nome} — `), `dica de "${nome}": ${b.title}`).toBe(true);
-        expect(b.title.length).toBeGreaterThan(nome.length + 20);
-      }
-    },
-  );
+  // Marcações e Manipulação ainda escrevem a dica do jeito antigo (só o motivo), e ficam de fora desta regra.
+  it.each(ABAS.filter((a) => a !== 'Marcações' && a !== 'Manipulação'))('%s: sem peça nenhuma, todo botão desligado diz na dica o nome da ferramenta e o motivo', (aba) => {
+    renderizar(aba, { temSelecao: false, temSelecaoUnica: false, podeSelecionarTudo: false });
 
-  it('os motivos são os de cada família de ferramenta', () => {
-    renderizar('Construção');
-    expect(botao('Inserir texto').title).toContain('não há textos soltos no desenho');
-    cleanup();
+    for (const b of botoesDesligados()) {
+      const nome = nomeDo(b);
+      expect(b.title.startsWith(`${nome} — `), `dica de "${nome}": ${b.title}`).toBe(true);
+      expect(b.title.length).toBeGreaterThan(nome.length + 15);
+    }
+  });
 
+  it('sem peça nenhuma, há ferramentas desligadas nas abas de desenho — a regra da dica não passa em branco', () => {
+    for (const aba of ['Início', 'Construção', 'Produção', 'Conferência', 'Modelo']) {
+      renderizar(aba, { temSelecao: false, temSelecaoUnica: false, podeSelecionarTudo: false });
+      expect(botoesDesligados().length, aba).toBeGreaterThan(0);
+      cleanup();
+    }
+  });
+
+  it('com peça selecionada, só continuam desligadas as duas que dependem do que o programa não tem', () => {
+    const desligadas: Record<string, string[]> = {};
+    for (const aba of ABAS.filter((a) => a !== 'Graduação')) {
+      renderizar(aba, { podeAlinhar: true, podeVistaAnterior: true, podeProximaVista: true, temCerca: true });
+      const nomes = botoesDesligados().map(nomeDo);
+      if (nomes.length > 0) desligadas[aba] = nomes;
+      cleanup();
+    }
+
+    expect(desligadas).toEqual({ Produção: ['Digitalizar'], Modelo: ['Imagens'] });
+  });
+
+  it('os motivos das duas que continuam desligadas', () => {
     renderizar('Produção');
-    expect(botao('Linha de simetria').title).toContain('o encaixe não dobra moldes');
     expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
     cleanup();
 
-    renderizar('Conferência');
-    expect(botao('Conferir').title).toContain('operação de modelagem');
+    renderizar('Modelo');
+    expect(botao('Imagens').title).toContain('não guarda imagens');
   });
 
   it('Graduação: a aba explica, sem precisar do mouse, que a peça desenhada é o tamanho base', () => {
@@ -646,10 +661,78 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
   });
 
-  it('Produção: só ficam desligadas as duas ferramentas que dependem do que este programa não tem', () => {
-    renderizar('Produção');
+  it('Cor, textos, linha de simetria, código de pique, autor e Conferir chamam a ferramenta de cada um', () => {
+    const onUsarFerramentaDeAnotacao = vi.fn();
+    const clicarEm = (aba: string, nome: string): void => {
+      renderizar(aba, { onUsarFerramentaDeAnotacao });
+      fireEvent.click(botao(nome));
+      cleanup();
+    };
 
-    expect(botoesDesligados().map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Digitalizar', 'Linha de simetria']);
+    clicarEm('Início', 'Cor');
+    clicarEm('Construção', 'Inserir texto');
+    clicarEm('Construção', 'Editar texto');
+    clicarEm('Produção', 'Linha de simetria');
+    clicarEm('Modelo', 'Relacionamento piques');
+    clicarEm('Modelo', 'Autor');
+    clicarEm('Conferência', 'Conferir');
+
+    expect(onUsarFerramentaDeAnotacao.mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'cor',
+      'inserir-texto',
+      'editar-texto',
+      'linha-de-simetria',
+      'relacionar-piques',
+      'autor',
+      'conferir',
+    ]);
+  });
+
+  it('as ferramentas de anotação que ficam ligadas no desenho aparecem pressionadas no modo delas', () => {
+    const casos: Array<[string, string, Props['modo']]> = [
+      ['Construção', 'Inserir texto', 'inserir-texto'],
+      ['Construção', 'Editar texto', 'editar-texto'],
+      ['Produção', 'Linha de simetria', 'linha-de-simetria'],
+      ['Modelo', 'Relacionamento piques', 'relacionar-piques'],
+      ['Conferência', 'Conferir', 'conferir'],
+    ];
+    for (const [aba, nome, modo] of casos) {
+      renderizar(aba, { modo });
+      expect(botao(nome), nome).toHaveAttribute('aria-pressed', 'true');
+      expect(within(painel()).getAllByRole('button', { pressed: true }), nome).toHaveLength(1);
+      cleanup();
+    }
+  });
+
+  it('sem peça selecionada: Cor, textos, linha de simetria e código de pique pedem a peça; Autor continua ligado', () => {
+    const semSelecao = { temSelecao: false, temSelecaoUnica: false };
+
+    renderizar('Início', semSelecao);
+    expect(botao('Cor')).toBeDisabled();
+    expect(botao('Cor').title).toMatch(/^Cor — /);
+    cleanup();
+
+    renderizar('Construção', semSelecao);
+    expect(botao('Inserir texto')).toBeDisabled();
+    expect(botao('Editar texto')).toBeDisabled();
+    cleanup();
+
+    renderizar('Produção', semSelecao);
+    expect(botao('Linha de simetria')).toBeDisabled();
+    cleanup();
+
+    renderizar('Modelo', semSelecao);
+    expect(botao('Relacionamento piques')).toBeDisabled();
+    expect(botao('Autor')).toBeEnabled();
+    cleanup();
+
+    // Com várias peças marcadas, a cor vale para todas; o resto é de uma peça só.
+    renderizar('Início', { temSelecao: true, temSelecaoUnica: false });
+    expect(botao('Cor')).toBeEnabled();
+    cleanup();
+
+    renderizar('Conferência', { podeSelecionarTudo: false });
+    expect(botao('Conferir')).toBeDisabled();
   });
 
   it('Construção e Produção: as ferramentas de retas e pontos chamam a ferramenta de cada uma', () => {

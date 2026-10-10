@@ -5,6 +5,16 @@ import type { FerramentaDeMolde } from './ferramentasDeMolde';
 import type { FerramentaDePence } from './ferramentasDePence';
 import type { FerramentaDeGraduacao } from './ferramentasDeGraduacao';
 import type { FerramentaDeElemento } from './ferramentasDeElemento';
+
+/** Cor, textos, linha de simetria, código de pique, autor e conferência de costuras. */
+export type FerramentaDeAnotacao =
+  | 'cor'
+  | 'inserir-texto'
+  | 'editar-texto'
+  | 'linha-de-simetria'
+  | 'relacionar-piques'
+  | 'autor'
+  | 'conferir';
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
@@ -125,6 +135,7 @@ interface BarraDeFerramentasProps {
   readonly temOutraPeca: boolean;
   /** Retas e pontos de construção, que aqui são as linhas internas e as marcas da peça selecionada. */
   readonly onUsarFerramentaDeElemento: (ferramenta: FerramentaDeElemento) => void;
+  readonly onUsarFerramentaDeAnotacao: (ferramenta: FerramentaDeAnotacao) => void;
   /** As ferramentas da aba Graduação, na peça selecionada. */
   readonly onUsarFerramentaDeGraduacao: (ferramenta: FerramentaDeGraduacao) => void;
   /** A peça selecionada já tem tamanhos definidos (é graduada). */
@@ -134,8 +145,6 @@ interface BarraDeFerramentasProps {
 }
 
 
-const SEM_TEXTO =
-  'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
 const SEM_PECA = 'selecione uma peça primeiro';
 const SEM_PECAS = 'não há peças no projeto';
 const SEM_TAMANHOS = 'defina os tamanhos primeiro, em “Tabela”';
@@ -461,7 +470,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo="Cor"
                   icone="cor"
-                  indisponivel="indisponível neste programa: as peças não têm cor própria; a cor do contorno mostra o estado da peça (selecionada ou com problema)"
+                  dica="Cor: dá uma cor de fundo às peças selecionadas, para distingui-las no desenho (o contorno continua mostrando se a peça está selecionada ou com problema)"
+                  falta={props.temSelecao ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeAnotacao('cor')}
                 />
               </div>
 
@@ -819,8 +830,24 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Texto">
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Inserir texto" icone="inserir-texto" indisponivel={SEM_TEXTO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Editar texto" icone="editar-texto" indisponivel={SEM_TEXTO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Inserir texto"
+                    icone="inserir-texto"
+                    pressionado={props.modo === 'inserir-texto'}
+                    dica="Inserir texto: escreve um texto sobre a peça selecionada — digite o texto e a altura das letras, e clique onde ele deve ficar"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeAnotacao('inserir-texto')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Editar texto"
+                    icone="editar-texto"
+                    pressionado={props.modo === 'editar-texto'}
+                    dica="Editar texto: clique num texto da peça selecionada para mudar o que está escrito ou a altura — ou para apagá-lo, deixando o texto em branco"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeAnotacao('editar-texto')}
+                  />
                 </div>
               </div>
             </>
@@ -870,7 +897,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo={['Linha de', 'simetria']}
                   icone="linha-de-simetria"
-                  indisponivel="indisponível neste programa: o encaixe não dobra moldes numa linha de simetria"
+                  pressionado={props.modo === 'linha-de-simetria'}
+                  dica="Linha de simetria: marca a aresta em que a peça é dobrada (a peça desenhada é meia peça) — clique na aresta; de novo, tira a marca. No encaixe automático, a peça pode entrar aberta"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeAnotacao('linha-de-simetria')}
                 />
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
@@ -1487,7 +1517,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo="Conferir"
                   icone="conferir"
-                  indisponivel="indisponível neste programa: conferir um molde deslizando sobre o outro é operação de modelagem. Para comparar duas medidas, use Comparar perímetros"
+                  pressionado={props.modo === 'conferir'}
+                  dica="Conferir: confere duas costuras que vão ser unidas — meça um trecho do contorno em cada peça (dois cliques em cada), e a faixa diz se conferem ou quanto uma sobra"
+                  falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                  onClick={() => props.onUsarFerramentaDeAnotacao('conferir')}
                 />
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
@@ -1611,7 +1644,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Autor"
                     icone="autor"
-                    indisponivel="indisponível neste programa: o projeto não guarda dados de autor"
+                    dica="Autor: guarda no projeto o nome de quem fez o modelo"
+                    onClick={() => props.onUsarFerramentaDeAnotacao('autor')}
                   />
                 </div>
                 <Ferramenta
@@ -1636,7 +1670,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Relacionamento piques"
                     icone="relacionamento-piques"
-                    indisponivel="indisponível neste programa: os piques não têm código para relacionar um molde ao outro"
+                    pressionado={props.modo === 'relacionar-piques'}
+                    dica="Relacionamento piques: dá um código a um pique da peça selecionada — piques de peças diferentes com o mesmo código são os que se encontram na costura"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeAnotacao('relacionar-piques')}
                   />
                   <Ferramenta
                     tamanho="pequeno"

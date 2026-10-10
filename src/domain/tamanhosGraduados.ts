@@ -50,6 +50,8 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
       fim: { x: fio.fim.x + doFio.x, y: fio.fim.y + doFio.y },
     },
     ...(molde.cotas ? { cotas: molde.cotas.map((c) => transformarCota(c, levar, (v) => v)) } : {}),
+    ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: levar(t.posicao) })) } : {}),
+    ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: levar(molde.linhaDeSimetria.de), ate: levar(molde.linhaDeSimetria.ate) } } : {}),
   };
 }
 

@@ -57,6 +57,16 @@ export interface Pique {
   readonly id: string;
   readonly posicao: Ponto2D;
   readonly indiceAresta: number;
+  /** Código de relacionamento: piques de peças diferentes com o mesmo código se encontram na costura. */
+  readonly codigo?: string;
+}
+
+/** Um texto escrito sobre a peça, centrado em `posicao`, com a altura das letras em mm. */
+export interface TextoDaPeca {
+  readonly id: string;
+  readonly posicao: Ponto2D;
+  readonly texto: string;
+  readonly alturaMm: number;
 }
 
 /** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). */
@@ -90,6 +100,15 @@ export interface Molde {
    * olham para ele. Ausente em peças sem graduação.
    */
   readonly graduacao?: Graduacao;
+  /** Textos escritos sobre a peça (aba Construção). */
+  readonly textos?: readonly TextoDaPeca[];
+  /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
+  readonly cor?: string;
+  /**
+   * Linha de simetria (aba Produção): a aresta em que a peça é dobrada, guardada
+   * pelas duas pontas. Só vale enquanto as duas forem pontos seguidos do contorno.
+   */
+  readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
 }
 
 export interface DadosDeNovoMolde {
@@ -197,11 +216,27 @@ function graduacaoAcompanhando(molde: Molde, contornoNovo: Contorno): { readonly
   return molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contornoNovo) } : {};
 }
 
+/** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
+export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos'): Molde {
+  const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
+  delete copia[campo];
+  return copia;
+}
+
 /** A peça sem graduação: fica só o tamanho base, como uma peça comum. */
 export function semGraduacao(molde: Molde): Molde {
-  const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
-  delete copia.graduacao;
-  return copia;
+  return semCampo(molde, 'graduacao');
+}
+
+/** Os textos e a linha de simetria da peça levados por uma transformação, prontos para espalhar no molde novo. */
+function anotacoesTransformadas(
+  molde: Molde,
+  ponto: (p: Ponto2D) => Ponto2D,
+): { readonly textos?: readonly TextoDaPeca[]; readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D } } {
+  return {
+    ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),
+    ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: ponto(molde.linhaDeSimetria.de), ate: ponto(molde.linhaDeSimetria.ate) } } : {}),
+  };
 }
 
 /** Prende uma cota à peça. */
@@ -248,6 +283,7 @@ export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: str
       (p) => somar(p, deslocamento),
       (v) => v,
     ),
+    ...anotacoesTransformadas(molde, (p) => somar(p, deslocamento)),
   };
 }
 
@@ -283,6 +319,7 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
       (p) => rotacionar(p, pivo, anguloGraus),
       (v) => rotacionar(v, ORIGEM, anguloGraus),
     ),
+    ...anotacoesTransformadas(molde, (p) => rotacionar(p, pivo, anguloGraus)),
   };
 }
 
@@ -317,6 +354,7 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
       (p) => espelharHorizontal(p, centroX),
       (v) => ({ x: -v.x, y: v.y }),
     ),
+    ...anotacoesTransformadas(molde, (p) => espelharHorizontal(p, centroX)),
   };
 }
 
@@ -561,6 +599,7 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
       (p) => escalarPonto(p, origem, fatorX, fatorY),
       (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
     ),
+    ...anotacoesTransformadas(molde, (p) => escalarPonto(p, origem, fatorX, fatorY)),
   };
 }
 

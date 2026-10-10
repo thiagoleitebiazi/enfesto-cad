@@ -6,6 +6,7 @@ import Helvetica from 'pdfkit/standard-fonts/Helvetica';
 import blobStream from 'blob-stream';
 import type { Molde } from '../domain/molde';
 import { contornoDeCorte } from '../domain/molde';
+import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 
@@ -118,9 +119,26 @@ function desenharPique(doc: PDFKit.PDFDocument, peca: Molde, indice: number, ori
     .moveTo(mmParaPontos(p1.x - origem.x), mmParaPontos(p1.y - origem.y))
     .lineTo(mmParaPontos(p2.x - origem.x), mmParaPontos(p2.y - origem.y))
     .stroke();
+  // O código de relacionamento, escrito do lado de dentro da peça, em frente ao pique.
+  if (pique.codigo) {
+    doc.save();
+    doc.fillColor('#8e24aa').fontSize(mmParaPontos(3));
+    escreverCentrado(doc, pique.codigo, ondeEscreverOCodigo(peca, pique, 4), origem);
+    doc.restore();
+  }
 }
 
-/** Desenha uma peça completa (contorno, furos, linhas internas, linha de corte, piques, fio, rótulo). */
+/** Escreve o texto centrado no ponto (mm), no tamanho de letra já escolhido no documento. */
+function escreverCentrado(doc: PDFKit.PDFDocument, texto: string, centro: Ponto2D, origem: Ponto2D): void {
+  const x = mmParaPontos(centro.x - origem.x) - doc.widthOfString(texto) / 2;
+  const y = mmParaPontos(centro.y - origem.y) - doc.currentLineHeight() / 2;
+  doc.text(texto, x, y, { lineBreak: false });
+}
+
+/**
+ * Desenha uma peça completa (contorno, furos, linhas internas, linha de corte,
+ * linha de simetria, piques com o código, fio, textos, rótulo).
+ */
 function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): void {
   doc.lineWidth(mmParaPontos(0.25));
 
@@ -156,6 +174,23 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
     doc.restore();
   }
 
+  // Linha de simetria: traço e ponto por cima da aresta em que a peça dobra.
+  const simetria = arestaDeSimetria(peca);
+  if (simetria !== null) {
+    const de = peca.contorno[simetria]!;
+    const ate = peca.contorno[(simetria + 1) % peca.contorno.length]!;
+    doc.save();
+    doc.lineWidth(mmParaPontos(0.6));
+    // @ts-expect-error @types/pdfkit só declara o traço simples; o pdfkit aceita o padrão inteiro (traço, vão, ponto, vão)
+    doc.dash([mmParaPontos(6), mmParaPontos(2), mmParaPontos(1), mmParaPontos(2)], {});
+    doc
+      .moveTo(mmParaPontos(de.x - origem.x), mmParaPontos(de.y - origem.y))
+      .lineTo(mmParaPontos(ate.x - origem.x), mmParaPontos(ate.y - origem.y))
+      .stroke('#6a1b9a');
+    doc.undash();
+    doc.restore();
+  }
+
   doc.save();
   doc.fillColor('#c62828').strokeColor('#c62828');
   desenharSeta(doc, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, origem);
@@ -173,6 +208,14 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
     doc.circle(p.x, p.y, mmParaPontos(1.2)).fill();
   }
   doc.restore();
+
+  // Textos da peça: centrados no ponto em que foram postos, com as letras na altura pedida.
+  for (const texto of peca.textos ?? []) {
+    doc.save();
+    doc.fillColor('#000000').fontSize(mmParaPontos(texto.alturaMm));
+    escreverCentrado(doc, texto.texto, texto.posicao, origem);
+    doc.restore();
+  }
 
   const bbox = retanguloEnvolvente(peca.contorno);
   const centroTexto = { x: mmParaPontos(bbox.minX - origem.x + 2), y: mmParaPontos(bbox.minY - origem.y + 2) };

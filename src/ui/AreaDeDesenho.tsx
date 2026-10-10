@@ -10,6 +10,7 @@ import {
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos } from '../domain/graduacao';
+import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import {
   perimetro,
   pontoDentroDoContorno,
@@ -65,6 +66,12 @@ const COR_MEDICAO = '#e65100';
 const COR_COTA = '#455a64';
 /** Os contornos dos outros tamanhos de uma peça graduada, em volta do base. */
 const COR_TAMANHO_GRADUADO = 'rgba(0, 121, 107, 0.8)';
+/** A linha de simetria: traço e ponto, por cima da aresta em que a peça dobra. */
+const COR_SIMETRIA = '#6a1b9a';
+/** Distância (px) entre o contorno e o meio do código do pique, escrito do lado de dentro. */
+const AFASTAMENTO_DO_CODIGO_DO_PIQUE_PX = 10;
+/** Abaixo disso (px) um texto da peça não se lê: é desenhado nesse tamanho mínimo. */
+const ALTURA_MINIMA_DO_TEXTO_PX = 7;
 
 // Numeração de vértices: peças simples numeram todos; contornos com muitos
 // pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
@@ -159,7 +166,12 @@ export type ModoDeDesenho =
   | 'manipulacao-rapida'
   | 'dividir-linha'
   | 'transformar-em-elementos'
-  | 'copiar-elemento';
+  | 'copiar-elemento'
+  | 'inserir-texto'
+  | 'editar-texto'
+  | 'linha-de-simetria'
+  | 'relacionar-piques'
+  | 'conferir';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -797,7 +809,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       for (const furo of peca.furos) {
         traçarContorno(ctx, furo, transform);
       }
-      ctx.fillStyle = COR_TECIDO;
+      ctx.fillStyle = peca.cor ?? COR_TECIDO;
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
@@ -871,6 +883,36 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.strokeStyle = COR_PIQUE;
         ctx.lineWidth = 2;
         ctx.stroke();
+        // O código de relacionamento, escrito do lado de dentro da peça, em frente ao pique:
+        // assim a peça vizinha no encaixe nunca o cobre.
+        if (pique.codigo) {
+          const dentro = mundoParaTela(
+            ondeEscreverOCodigo(peca, pique, AFASTAMENTO_DO_CODIGO_DO_PIQUE_PX / transform.escalaPxPorMm),
+            transform,
+          );
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillStyle = COR_PIQUE;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(pique.codigo, dentro.x, dentro.y);
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
+        }
+      }
+
+      // Linha de simetria: traço e ponto por cima da aresta em que a peça dobra.
+      const simetria = arestaDeSimetria(peca);
+      if (simetria !== null) {
+        const de = mundoParaTela(peca.contorno[simetria]!, transform);
+        const ate = mundoParaTela(peca.contorno[(simetria + 1) % peca.contorno.length]!, transform);
+        ctx.beginPath();
+        ctx.moveTo(de.x, de.y);
+        ctx.lineTo(ate.x, ate.y);
+        ctx.strokeStyle = COR_SIMETRIA;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([12, 4, 2, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       for (const marca of peca.marcas) {
@@ -905,6 +947,20 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.font = 'bold 12px sans-serif';
       desenharRotuloComFundo(ctx, peca.nome, 0, -7, corDaPeca);
       ctx.restore();
+
+      // Textos da peça: centrados no ponto em que foram postos, na altura pedida.
+      // Vêm depois do nome, para o que o usuário escreveu nunca ficar escondido atrás dele.
+      for (const texto of peca.textos ?? []) {
+        const tela = mundoParaTela(texto.posicao, transform);
+        const altura = Math.max(ALTURA_MINIMA_DO_TEXTO_PX, texto.alturaMm * transform.escalaPxPorMm);
+        ctx.font = `${altura}px sans-serif`;
+        ctx.fillStyle = COR_CONTORNO;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(texto.texto, tela.x, tela.y);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+      }
 
       // Vértices: marcador quadrado e o número real do vértice (o mesmo que
       // "Mover ponto"/"Excluir ponto" usam). Em curvas amostradas (centenas de

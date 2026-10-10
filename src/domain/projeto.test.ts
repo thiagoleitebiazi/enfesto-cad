@@ -11,6 +11,8 @@ import {
   criarVariante,
   variantesDoProjeto,
   nomeDaProximaVariante,
+  definirAutor,
+  TAMANHO_MAXIMO_DO_AUTOR,
   type EstadoDoProjeto,
   type Projeto,
 } from './projeto';
@@ -96,6 +98,39 @@ describe('alterarStatus / renomearProjeto', () => {
     const atualizado = renomearProjeto(projeto, 'Nome novo', '2026-09-28T11:00:00.000Z');
     expect(atualizado.nome).toBe('Nome novo');
     expect(atualizado.historico).toHaveLength(1);
+  });
+});
+
+describe('definirAutor', () => {
+  const projeto = criarProjeto('Camisa', 'p1', 'ENF-001', '2026-09-28T10:00:00.000Z', ESTADO_VAZIO);
+
+  it('guarda o autor sem os espaços das pontas e marca a data da mudança', () => {
+    const comAutor = definirAutor(projeto, '  Maria Souza ', '2026-10-10T12:00:00.000Z');
+
+    expect(comAutor.autor).toBe('Maria Souza');
+    expect(comAutor.modificadoEmIso).toBe('2026-10-10T12:00:00.000Z');
+    expect(comAutor.historico).toBe(projeto.historico);
+    expect(comAutor.estadoAtual).toBe(projeto.estadoAtual);
+  });
+
+  it('em branco, o projeto fica sem o campo', () => {
+    const comAutor = definirAutor(projeto, 'Maria', '2026-10-10T12:00:00.000Z');
+    const semAutor = definirAutor(comAutor, '   ', '2026-10-11T12:00:00.000Z');
+
+    expect('autor' in semAutor).toBe(false);
+    expect(semAutor.modificadoEmIso).toBe('2026-10-11T12:00:00.000Z');
+  });
+
+  it('a variante do modelo leva o autor; a de um modelo sem autor fica sem o campo', () => {
+    const comAutor = definirAutor(projeto, 'Maria', '2026-10-10T12:00:00.000Z');
+
+    expect(criarVariante(comAutor, 'Camisa — variante 2', 'p2', 'ENF-002', '2026-10-11T12:00:00.000Z', ESTADO_VAZIO).autor).toBe('Maria');
+    expect('autor' in criarVariante(projeto, 'Camisa — variante 2', 'p2', 'ENF-002', '2026-10-11T12:00:00.000Z', ESTADO_VAZIO)).toBe(false);
+  });
+
+  it('aceita até o tamanho máximo e recusa acima dele', () => {
+    expect(definirAutor(projeto, 'a'.repeat(TAMANHO_MAXIMO_DO_AUTOR), '2026-10-10T12:00:00.000Z').autor).toHaveLength(80);
+    expect(() => definirAutor(projeto, 'a'.repeat(TAMANHO_MAXIMO_DO_AUTOR + 1), '2026-10-10T12:00:00.000Z')).toThrow('até 80 caracteres');
   });
 });
 

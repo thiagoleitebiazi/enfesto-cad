@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ponto } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
+import { adicionarTexto, definirCodigoDoPique, definirLinhaDeSimetria } from '../domain/anotacoes';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import {
   gerarPdfDeEncaixe,
@@ -137,6 +138,53 @@ describe('gerarPdfDeMoldesIndividuais — estrutura real do arquivo', () => {
     const textoDecodificado = decodificarTextoDoPdf(texto);
     expect(textoDecodificado).toMatch(/Frente/);
     expect(textoDecodificado).toMatch(/REF-Frente/);
+  });
+});
+
+describe('gerarPdfDeMoldesIndividuais — o que foi anotado na peça', () => {
+  const OPCOES = { formato: 'A4', orientacao: 'retrato', margemMm: 10 } as const;
+
+  it('os textos da peça saem escritos, com as letras na altura pedida em mm', async () => {
+    const peca = adicionarTexto(pecaRetangular('Frente', 80, 80), ponto(40, 40), 'DOBRA', 12, 't1');
+
+    const texto = await paraTexto(await gerarPdfDeMoldesIndividuais([peca], OPCOES));
+
+    expect(decodificarTextoDoPdf(texto)).toMatch(/DOBRA/);
+    // "/F1 34.016 Tf": o tamanho da letra é 12 mm em pontos.
+    const tamanhos = [...texto.matchAll(/\/F\d+ ([\d.]+) Tf/g)].map((m) => Number.parseFloat(m[1]!));
+    expect(tamanhos.some((t) => Math.abs(t - mmParaPontos(12)) < 0.01)).toBe(true);
+  });
+
+  it('sem textos, nenhuma letra sai nesse tamanho', async () => {
+    const texto = await paraTexto(await gerarPdfDeMoldesIndividuais([pecaRetangular('Frente', 80, 80)], OPCOES));
+
+    expect(decodificarTextoDoPdf(texto)).not.toMatch(/DOBRA/);
+    const tamanhos = [...texto.matchAll(/\/F\d+ ([\d.]+) Tf/g)].map((m) => Number.parseFloat(m[1]!));
+    expect(tamanhos.some((t) => Math.abs(t - mmParaPontos(12)) < 0.01)).toBe(false);
+  });
+
+  it('o código do pique sai escrito ao lado dele', async () => {
+    const comPique: Molde = { ...pecaRetangular('Frente', 80, 80), piques: [{ id: 'q1', posicao: ponto(80, 40), indiceAresta: 1 }] };
+
+    const semCodigo = decodificarTextoDoPdf(await paraTexto(await gerarPdfDeMoldesIndividuais([comPique], OPCOES)));
+    const comCodigo = decodificarTextoDoPdf(
+      await paraTexto(await gerarPdfDeMoldesIndividuais([definirCodigoDoPique(comPique, 'q1', 'K7')], OPCOES)),
+    );
+
+    expect(semCodigo).not.toMatch(/K7/);
+    expect(comCodigo).toMatch(/K7/);
+  });
+
+  it('a linha de simetria sai em traço e ponto por cima da aresta', async () => {
+    const semLinha = await paraTexto(await gerarPdfDeMoldesIndividuais([pecaRetangular('Frente', 80, 80)], OPCOES));
+    const comLinha = await paraTexto(
+      await gerarPdfDeMoldesIndividuais([definirLinhaDeSimetria(pecaRetangular('Frente', 80, 80), 3)], OPCOES),
+    );
+
+    // O padrão de traço de quatro medidas (traço, vão, ponto, vão) só existe na linha de simetria.
+    const tracoEPonto = /\[[\d.]+ [\d.]+ [\d.]+ [\d.]+\] 0 d/;
+    expect(semLinha).not.toMatch(tracoEPonto);
+    expect(comLinha).toMatch(tracoEPonto);
   });
 });
 

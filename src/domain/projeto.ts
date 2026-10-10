@@ -68,6 +68,20 @@ export interface Projeto {
   readonly historico: readonly EventoDeHistorico[];
   /** Id do projeto original de que este é uma variante. Ausente no original e em projetos sem variantes. */
   readonly varianteDe?: string;
+  /** Quem fez o modelo (aba Modelo > Autor). Ausente enquanto não for informado. */
+  readonly autor?: string;
+}
+
+export const TAMANHO_MAXIMO_DO_AUTOR = 80;
+
+/** "Autor": guarda no projeto o nome de quem fez o modelo; vazio, tira o autor. */
+export function definirAutor(projeto: Projeto, autor: string, agoraIso: string): Projeto {
+  const limpo = autor.trim();
+  if (limpo.length > TAMANHO_MAXIMO_DO_AUTOR) throw new Error(`O nome do autor pode ter até ${TAMANHO_MAXIMO_DO_AUTOR} caracteres.`);
+  if (limpo !== '') return { ...projeto, autor: limpo, modificadoEmIso: agoraIso };
+  const copia: { -readonly [K in keyof Projeto]: Projeto[K] } = { ...projeto, modificadoEmIso: agoraIso };
+  delete copia.autor;
+  return copia;
 }
 
 export function gerarCodigoDeProjeto(dataIso: string, sequencial: number): string {
@@ -187,7 +201,12 @@ export function criarVariante(
   agoraIso: string,
   estado: EstadoDoProjeto,
 ): Projeto {
-  return { ...criarProjeto(nome, id, codigo, agoraIso, estado), varianteDe: origem.varianteDe ?? origem.id };
+  return {
+    ...criarProjeto(nome, id, codigo, agoraIso, estado),
+    varianteDe: origem.varianteDe ?? origem.id,
+    // A variante é do mesmo modelo: o autor vai junto.
+    ...(origem.autor ? { autor: origem.autor } : {}),
+  };
 }
 
 /** O projeto e as variantes da mesma família, da mais antiga à mais nova (o original vem primeiro). */
