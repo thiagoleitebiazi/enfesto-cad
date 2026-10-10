@@ -321,11 +321,10 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
 }
 
 /**
- * Ferramentas de edição de forma (seção "Manipulação", inspiradas no
- * Audaces Moldes mas restritas ao que faz sentido no domínio deste app:
- * edição de vértices e transformações manuais de uma peça já desenhada.
- * Fora de escopo deliberadamente: graduação de tamanhos e curvas Bézier —
- * ver ADR correspondente.
+ * Ferramentas de edição de forma (aba "Manipulação"): edição de vértices e
+ * transformações manuais de uma peça já desenhada. Curvas e arcos entram
+ * como pontos do contorno (ADR 0037), e a graduação de tamanhos fica em
+ * `graduacao.ts` (ADR 0040).
  *
  * Nota sobre piques nas funções de edição de contorno abaixo: um pique
  * (`Pique.indiceAresta`) referencia a aresta do contorno pelo índice. Editar
