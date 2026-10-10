@@ -77,6 +77,20 @@ export interface Marca {
 }
 
 /**
+ * Uma curva ou um arco feito por ferramenta, guardado pelos pontos por onde
+ * passa. Com o registro, dá para mexer num desses pontos depois e ter a curva
+ * refeita por ele.
+ */
+export interface CurvaDaPeca {
+  readonly id: string;
+  readonly tipo: 'curva' | 'arco';
+  /** Por onde a curva passa: a ponta inicial, os pontos de passagem e a ponta final (o arco tem um só ponto de passagem). */
+  readonly controles: readonly Ponto2D[];
+  /** Os pontos do contorno que a curva gerou, de uma ponta à outra. O registro vale enquanto forem pontos seguidos do contorno. */
+  readonly pontos: readonly Ponto2D[];
+}
+
+/**
  * Uma pence feita por ferramenta, guardada pelos pontos dela. Com o registro,
  * dá para mudar as medidas depois, apagar a pence e fechá-la ou transferi-la
  * sem adivinhar qual canto do contorno é a pence. O registro só vale enquanto
@@ -153,6 +167,8 @@ export interface Molde {
   readonly dobraMantida?: MetadeGuardada;
   /** As pences feitas pelas ferramentas de pence (aba Produção), para mudar as medidas depois. */
   readonly pences?: readonly PenceDaPeca[];
+  /** As curvas e os arcos feitos pelas ferramentas da aba Construção, para mexer nos pontos de passagem depois. */
+  readonly curvas?: readonly CurvaDaPeca[];
 }
 
 export interface DadosDeNovoMolde {
@@ -278,7 +294,10 @@ function acompanhandoOsPontos(molde: Molde, contornoNovo: Contorno): { readonly 
 }
 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
-export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences'): Molde {
+export function semCampo(
+  molde: Molde,
+  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas',
+): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
   return copia;
@@ -289,7 +308,7 @@ export function semGraduacao(molde: Molde): Molde {
   return semCampo(molde, 'graduacao');
 }
 
-/** Os textos, a linha de simetria, a metade guardada e as pences da peça levados por uma transformação, prontos para espalhar no molde novo. */
+/** Os textos, a linha de simetria, a metade guardada, as pences e as curvas da peça levados por uma transformação, prontos para espalhar no molde novo. */
 function anotacoesTransformadas(
   molde: Molde,
   ponto: (p: Ponto2D) => Ponto2D,
@@ -298,9 +317,13 @@ function anotacoesTransformadas(
   readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
   readonly dobraMantida?: MetadeGuardada;
   readonly pences?: readonly PenceDaPeca[];
+  readonly curvas?: readonly CurvaDaPeca[];
 } {
   const guardada = molde.dobraMantida;
   return {
+    ...(molde.curvas
+      ? { curvas: molde.curvas.map((curva) => ({ ...curva, controles: curva.controles.map(ponto), pontos: curva.pontos.map(ponto) })) }
+      : {}),
     ...(molde.pences
       ? {
           pences: molde.pences.map((pence) => ({

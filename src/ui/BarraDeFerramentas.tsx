@@ -717,7 +717,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Editar pontos de curva"
                     icone="editar-pontos-de-curva"
                     pressionado={props.modo === 'editar-pontos-de-curva'}
-                    dica="Editar pontos de curva: muda quantos pontos um trecho do contorno tem — clique no começo e no fim do trecho e digite o número"
+                    dica="Editar pontos de curva: muda quantos pontos um trecho do contorno tem — clique no começo e no fim do trecho e digite o número. Na curva ou no arco feito por ferramenta, clique num ponto de passagem (os anéis) e, depois, onde ele deve ficar: a curva é refeita por ele"
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={props.onEntrarModoEditarPontosDeCurva}
                   />

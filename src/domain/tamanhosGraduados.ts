@@ -52,6 +52,9 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
     ...(molde.cotas ? { cotas: molde.cotas.map((c) => transformarCota(c, levar, (v) => v)) } : {}),
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: levar(t.posicao) })) } : {}),
     ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: levar(molde.linhaDeSimetria.de), ate: levar(molde.linhaDeSimetria.ate) } } : {}),
+    ...(molde.curvas
+      ? { curvas: molde.curvas.map((curva) => ({ ...curva, controles: curva.controles.map(levar), pontos: curva.pontos.map(levar) })) }
+      : {}),
     ...(molde.pences
       ? {
           pences: molde.pences.map((pence) => ({

@@ -137,6 +137,8 @@ import {
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
 import { pencePerto, pencesDaPeca } from './domain/pences';
+import { comCurvaRegistrada } from './domain/curvasDaPeca';
+import { avisoDasAlcas, cliqueNaAlca, INSTRUCAO_COM_ALCA, previaDasAlcas, type AlcaEscolhida } from './ui/ferramentasDeCurva';
 import {
   cliqueDaConferencia,
   dialogoDaConferencia,
@@ -524,6 +526,8 @@ export default function App(): React.JSX.Element {
   );
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
+  // "Editar pontos de curva": o ponto de passagem escolhido, à espera do clique que diz onde ele fica.
+  const [alcaDeCurva, setAlcaDeCurva] = useState<AlcaEscolhida | null>(null);
   // "Conferir": as opções da janela e as costuras já indicadas no desenho.
   const [opcoesDaConferencia, setOpcoesDaConferencia] = useState<OpcoesDaConferencia>(OPCOES_INICIAIS_DA_CONFERENCIA);
   const [conferencia, setConferencia] = useState<EstadoDaConferencia>(SEM_CONFERENCIA);
@@ -1110,6 +1114,7 @@ export default function App(): React.JSX.Element {
     setRecadoDaFerramenta(null);
     setCalibracao(null);
     setConferencia(SEM_CONFERENCIA);
+    setAlcaDeCurva(null);
   }, []);
 
   const alternarFerramentaDeVista = useCallback((ferramenta: FerramentaDeVista) => {
@@ -1533,7 +1538,10 @@ export default function App(): React.JSX.Element {
       try {
         const linha = linhaNovaDoTrecho(ferramenta, peca.contorno, estado.inicio, estado.fim.ponto, estado.livres, opcoes, estado.fim);
         if (!linha) return 'Faltam pontos para montar a curva.';
-        const nova = substituirTrechoDoMolde(peca, estado.inicio, estado.fim, linha.slice(1, -1));
+        const trocada = substituirTrechoDoMolde(peca, estado.inicio, estado.fim, linha.slice(1, -1));
+        // A curva e os arcos por pontos ficam registrados, com os pontos por onde passam: dá para mexer neles depois.
+        const tipo = ferramenta === 'curva' ? 'curva' : ferramenta === 'arco-2-pontos' || ferramenta === 'arco-3-pontos' ? 'arco' : null;
+        const nova = tipo ? comCurvaRegistrada(trocada, tipo, [estado.inicio.ponto, ...estado.livres, estado.fim.ponto], linha, proximoId()) : trocada;
         aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
         return null;
       } catch (e) {
@@ -2235,6 +2243,17 @@ export default function App(): React.JSX.Element {
         }
         return;
       }
+      if (modo === 'editar-pontos-de-curva' && !trecho.inicio) {
+        // Antes de indicar um trecho: o clique num ponto de passagem de uma curva registrada escolhe-o; o seguinte põe-no no lugar.
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const alcas = peca ? cliqueNaAlca(pecas, peca, alcaDeCurva, semCaptura, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm) : null;
+        if (alcas?.tratou) {
+          setAlcaDeCurva(alcas.alca);
+          if (alcas.pecas) aplicarMudanca([...alcas.pecas]);
+          setRecadoDaFerramenta(alcas.recado);
+          return;
+        }
+      }
       if (ehFerramentaDeTrecho(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2519,6 +2538,7 @@ export default function App(): React.JSX.Element {
       opcoesDeDobrar,
       opcoesDaConferencia,
       conferencia,
+      alcaDeCurva,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2858,6 +2878,11 @@ export default function App(): React.JSX.Element {
       const ate = segundo ?? cursorMundo;
       return { marcas: calibracao.pontos, ...(primeiro && ate ? { linhas: [[primeiro, ate]] } : {}) };
     }
+    if (modo === 'editar-pontos-de-curva' && pecaSelecionada && !trecho.inicio) {
+      // As alças das curvas registradas e, com uma escolhida, a curva como ficaria com ela no lugar do mouse.
+      const alcas = previaDasAlcas(pecaSelecionada, alcaDeCurva, cursorMundo);
+      if (alcas) return alcas;
+    }
     if (ehFerramentaDeTrecho(modo) && pecaSelecionada) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
@@ -2940,6 +2965,7 @@ export default function App(): React.JSX.Element {
     opcoesDeElemento,
     opcoesDeDobrar,
     conferencia,
+    alcaDeCurva,
     pontosEmEdicao,
     calibracao,
     transform.escalaPxPorMm,
@@ -2996,8 +3022,9 @@ export default function App(): React.JSX.Element {
       case 'cota-raio':
         return 'Raio: clique sobre um arco do contorno de uma peça. Para apagar uma cota, clique no número dela.' + fim;
       case 'editar-pontos-de-curva':
+        if (alcaDeCurva) return INSTRUCAO_COM_ALCA + fim;
         return !trecho.inicio
-          ? 'Editar pontos de curva: clique no contorno da peça selecionada, no começo do trecho.' + fim
+          ? 'Editar pontos de curva: clique no contorno da peça selecionada, no começo do trecho.' + avisoDasAlcas(pecaSelecionada) + fim
           : 'Editar pontos de curva: clique no fim do trecho — os pontos entre os dois serão redistribuídos.' + fim;
       case 'cadastrar-curva':
         return !trecho.inicio
