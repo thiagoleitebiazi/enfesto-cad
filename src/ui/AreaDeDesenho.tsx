@@ -145,7 +145,21 @@ export type ModoDeDesenho =
   | 'deduzir-graduacao'
   | 'copiar-graduacao'
   | 'ajustar-graduacao'
-  | 'graduar-curva';
+  | 'graduar-curva'
+  | 'reta-por-angulo'
+  | 'estender-reta'
+  | 'estender-ate-elemento'
+  | 'estender-duas-retas'
+  | 'ponto-por-intersecao'
+  | 'ponto-no-centro-do-arco'
+  | 'ponto-no-perimetro'
+  | 'ponto-por-distancia'
+  | 'extrair-molde'
+  | 'mover-ponto-de-construcao'
+  | 'manipulacao-rapida'
+  | 'dividir-linha'
+  | 'transformar-em-elementos'
+  | 'copiar-elemento';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima

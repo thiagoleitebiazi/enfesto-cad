@@ -112,6 +112,7 @@ function propsBase(): Props {
     onEntrarModoCirculo: vi.fn(),
     onUsarFerramentaDeMolde: vi.fn(),
     temOutraPeca: true,
+    onUsarFerramentaDeElemento: vi.fn(),
     onUsarFerramentaDeArco: vi.fn(),
     onEntrarModoCotaRaio: vi.fn(),
     onUsarFerramentaDeGraduacao: vi.fn(),
@@ -278,12 +279,10 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
 
   it('os motivos são os de cada família de ferramenta', () => {
     renderizar('Construção');
-    expect(botao('Estender reta').title).toContain('trabalha sobre elementos de modelagem');
     expect(botao('Inserir texto').title).toContain('não há textos soltos no desenho');
     cleanup();
 
     renderizar('Produção');
-    expect(botao('Extrair molde').title).toContain('trabalha sobre elementos de modelagem');
     expect(botao('Linha de simetria').title).toContain('o encaixe não dobra moldes');
     expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
     cleanup();
@@ -647,10 +646,77 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
   });
 
-  it('Produção: só ficam desligadas as três ferramentas que dependem do que este programa não tem', () => {
+  it('Produção: só ficam desligadas as duas ferramentas que dependem do que este programa não tem', () => {
     renderizar('Produção');
 
-    expect(botoesDesligados().map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Extrair molde', 'Digitalizar', 'Linha de simetria']);
+    expect(botoesDesligados().map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Digitalizar', 'Linha de simetria']);
+  });
+
+  it('Construção e Produção: as ferramentas de retas e pontos chamam a ferramenta de cada uma', () => {
+    const props = renderizar('Construção');
+    const nomes = [
+      'Por ângulo',
+      'Estender reta',
+      'Estender até elemento',
+      'Estender duas retas',
+      'Por coordenada',
+      'Por interseção',
+      'No centro do arco',
+      'No perímetro',
+      'Por distância',
+    ];
+    for (const nome of nomes) fireEvent.click(botao(nome));
+    expect(vi.mocked(props.onUsarFerramentaDeElemento).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'reta-por-angulo',
+      'estender-reta',
+      'estender-ate-elemento',
+      'estender-duas-retas',
+      'ponto-por-coordenada',
+      'ponto-por-intersecao',
+      'ponto-no-centro-do-arco',
+      'ponto-no-perimetro',
+      'ponto-por-distancia',
+    ]);
+    cleanup();
+
+    const naProducao = renderizar('Produção');
+    fireEvent.click(botao('Extrair molde'));
+    expect(naProducao.onUsarFerramentaDeElemento).toHaveBeenCalledWith('extrair-molde');
+  });
+
+  it('Manipulação: as cinco ferramentas de elementos chamam a ferramenta de cada uma e mostram quando estão ligadas', () => {
+    const props = renderizar('Manipulação');
+    const pares = [
+      ['Manipular pontos', 'mover-ponto-de-construcao'],
+      ['Manipulação rápida', 'manipulacao-rapida'],
+      ['Dividir elementos', 'dividir-linha'],
+      ['Transformar em elementos', 'transformar-em-elementos'],
+      ['Copiar ou trocar elemento', 'copiar-elemento'],
+    ] as const;
+    for (const [nome] of pares) fireEvent.click(botao(nome));
+    expect(vi.mocked(props.onUsarFerramentaDeElemento).mock.calls.map(([ferramenta]) => ferramenta)).toEqual(pares.map(([, modo]) => modo));
+    cleanup();
+
+    for (const [nome, modo] of pares) {
+      renderizar('Manipulação', { modo });
+      expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+      cleanup();
+    }
+  });
+
+  it('as ferramentas de retas e pontos pedem uma peça selecionada', () => {
+    const semSelecao = { temSelecao: false, temSelecaoUnica: false };
+    renderizar('Construção', semSelecao);
+    for (const nome of ['Por ângulo', 'Estender reta', 'Por coordenada', 'No centro do arco']) {
+      expect(botao(nome)).toBeDisabled();
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
+    cleanup();
+    renderizar('Manipulação', semSelecao);
+    for (const nome of ['Manipular pontos', 'Manipulação rápida', 'Dividir elementos', 'Transformar em elementos', 'Copiar ou trocar elemento']) {
+      expect(botao(nome)).toBeDisabled();
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
   });
 
   it('Produção: Dobrar e Desdobrar avisam na dica que o manual da referência não os descreve', () => {

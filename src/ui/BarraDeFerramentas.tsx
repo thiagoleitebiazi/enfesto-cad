@@ -4,6 +4,7 @@ import { ajustarCompactacao } from './compactacaoDaFita';
 import type { FerramentaDeMolde } from './ferramentasDeMolde';
 import type { FerramentaDePence } from './ferramentasDePence';
 import type { FerramentaDeGraduacao } from './ferramentasDeGraduacao';
+import type { FerramentaDeElemento } from './ferramentasDeElemento';
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
@@ -122,6 +123,8 @@ interface BarraDeFerramentasProps {
   readonly onUsarFerramentaDeMolde: (ferramenta: FerramentaDeMolde | FerramentaDePence) => void;
   /** Há pelo menos duas peças no projeto (Unir precisa de outra além da selecionada). */
   readonly temOutraPeca: boolean;
+  /** Retas e pontos de construção, que aqui são as linhas internas e as marcas da peça selecionada. */
+  readonly onUsarFerramentaDeElemento: (ferramenta: FerramentaDeElemento) => void;
   /** As ferramentas da aba Graduação, na peça selecionada. */
   readonly onUsarFerramentaDeGraduacao: (ferramenta: FerramentaDeGraduacao) => void;
   /** A peça selecionada já tem tamanhos definidos (é graduada). */
@@ -130,8 +133,6 @@ interface BarraDeFerramentasProps {
   readonly temOutrasMarcadas: boolean;
 }
 
-const SO_PARA_ELEMENTOS =
-  'indisponível neste programa: trabalha sobre elementos de modelagem (linhas soltas), e aqui só existem peças fechadas';
 
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
@@ -597,21 +598,43 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     dica="Retângulo: cria um molde retangular — clique num canto e depois no canto oposto (as medidas aparecem no desenho); depois, dois cliques marcam a linha de fio"
                     onClick={props.onEntrarModoRetangulo}
                   />
-                  <Ferramenta tamanho="pequeno" rotulo="Por ângulo" icone="por-angulo" indisponivel={SO_PARA_ELEMENTOS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Por ângulo"
+                    icone="por-angulo"
+                    pressionado={props.modo === 'reta-por-angulo'}
+                    dica="Por ângulo: desenha uma reta (linha interna da peça selecionada) com o ângulo e o comprimento digitados, a partir do ponto clicado"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('reta-por-angulo')}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Estender reta" icone="estender-reta" indisponivel={SO_PARA_ELEMENTOS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Estender reta"
+                    icone="estender-reta"
+                    pressionado={props.modo === 'estender-reta'}
+                    dica="Estender reta: faz crescer uma linha interna pela medida digitada — clique perto da ponta que deve andar"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('estender-reta')}
+                  />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Estender até elemento"
                     icone="estender-ate-elemento"
-                    indisponivel={SO_PARA_ELEMENTOS}
+                    pressionado={props.modo === 'estender-ate-elemento'}
+                    dica="Estender até elemento: faz crescer uma linha interna até o contorno ou até outra linha — clique perto da ponta que deve andar"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('estender-ate-elemento')}
                   />
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Estender duas retas"
                     icone="estender-duas-retas"
-                    indisponivel={SO_PARA_ELEMENTOS}
+                    pressionado={props.modo === 'estender-duas-retas'}
+                    dica="Estender duas retas: leva as pontas de duas linhas internas ao ponto em que elas se encontram — clique perto da ponta de cada uma"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('estender-duas-retas')}
                   />
                 </div>
               </div>
@@ -678,21 +701,50 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Pontos">
                 <Ferramenta
-                  tamanho="grande"
-                  rotulo={['Por', 'coordenada']}
-                  icone="ponto-por-coordenada"
-                  indisponivel={SO_PARA_ELEMENTOS}
-                />
+                    tamanho="grande"
+                    rotulo={['Por', 'coordenada']}
+                    icone="ponto-por-coordenada"
+                    dica="Ponto por coordenada: cria um ponto (uma marca da peça selecionada) nas coordenadas X e Y digitadas"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('ponto-por-coordenada')}
+                  />
                 <Ferramenta
-                  tamanho="grande"
-                  rotulo={['Por', 'interseção']}
-                  icone="ponto-por-intersecao"
-                  indisponivel={SO_PARA_ELEMENTOS}
-                />
+                    tamanho="grande"
+                    rotulo={['Por', 'interseção']}
+                    icone="ponto-por-intersecao"
+                    pressionado={props.modo === 'ponto-por-intersecao'}
+                    dica="Ponto por interseção: cria um ponto onde se encontram as retas de dois elementos — clique em duas arestas do contorno ou linhas internas"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('ponto-por-intersecao')}
+                  />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="No centro do arco" icone="ponto-no-centro" indisponivel={SO_PARA_ELEMENTOS} />
-                  <Ferramenta tamanho="pequeno" rotulo="No perímetro" icone="ponto-no-perimetro" indisponivel={SO_PARA_ELEMENTOS} />
-                  <Ferramenta tamanho="pequeno" rotulo="Por distância" icone="ponto-por-distancia" indisponivel={SO_PARA_ELEMENTOS} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="No centro do arco"
+                    icone="ponto-no-centro"
+                    pressionado={props.modo === 'ponto-no-centro-do-arco'}
+                    dica="Ponto no centro do arco: clique sobre um arco do contorno — o ponto fica no centro dele"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('ponto-no-centro-do-arco')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="No perímetro"
+                    icone="ponto-no-perimetro"
+                    pressionado={props.modo === 'ponto-no-perimetro'}
+                    dica="Ponto no perímetro: cria um ponto sobre o contorno, à distância digitada do ponto clicado"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('ponto-no-perimetro')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Por distância"
+                    icone="ponto-por-distancia"
+                    pressionado={props.modo === 'ponto-por-distancia'}
+                    dica="Ponto por distância: cria um ponto à distância digitada do primeiro ponto clicado, na direção do segundo"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('ponto-por-distancia')}
+                  />
                 </div>
               </div>
 
@@ -778,11 +830,14 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Definir moldes">
                 <Ferramenta
-                  tamanho="grande"
-                  rotulo={['Extrair', 'molde']}
-                  icone="extrair-molde"
-                  indisponivel={SO_PARA_ELEMENTOS}
-                />
+                    tamanho="grande"
+                    rotulo={['Extrair', 'molde']}
+                    icone="extrair-molde"
+                    pressionado={props.modo === 'extrair-molde'}
+                    dica="Extrair molde: cria uma peça nova com a região da peça selecionada delimitada pelas linhas internas — clique dentro da região"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeElemento('extrair-molde')}
+                  />
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
                     tamanho="pequeno"
@@ -1173,7 +1228,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <span>Modificar</span>
                 </button>
                 <div className="coluna-de-ferramenta">
-                  <button className="botao-pequeno" disabled title={`Manipular pontos — ${SO_PARA_ELEMENTOS}`}>
+                  <button
+                    aria-pressed={props.modo === 'mover-ponto-de-construcao'}
+                    className={`botao-pequeno${props.modo === 'mover-ponto-de-construcao' ? ' item-selecionado' : ''}`}
+                    onClick={() => props.onUsarFerramentaDeElemento('mover-ponto-de-construcao')}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Manipular pontos: move um ponto (marca) da peça selecionada — clique nele e depois onde ele deve ficar' : semPecaSelecionada('Manipular pontos')}
+                  >
                     <Icone nome="manipular-pontos" />
                     <span>Manipular pontos</span>
                   </button>
@@ -1203,7 +1264,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   </button>
                 </div>
                 <div className="coluna-de-ferramenta">
-                  <button className="botao-pequeno" disabled title={`Manipulação rápida — ${SO_PARA_ELEMENTOS}`}>
+                  <button
+                    aria-pressed={props.modo === 'manipulacao-rapida'}
+                    className={`botao-pequeno${props.modo === 'manipulacao-rapida' ? ' item-selecionado' : ''}`}
+                    onClick={() => props.onUsarFerramentaDeElemento('manipulacao-rapida')}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Manipulação rápida: move ou apaga uma linha interna ou um ponto (marca) — clique no elemento e depois onde ele deve ficar, ou tecle Delete' : semPecaSelecionada('Manipulação rápida')}
+                  >
                     <Icone nome="manipulacao-rapida" />
                     <span>Manipulação rápida</span>
                   </button>
@@ -1221,7 +1288,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="redefinir-perimetro" />
                     <span>Redefinir perímetro</span>
                   </button>
-                  <button className="botao-pequeno" disabled title={`Dividir elementos — ${SO_PARA_ELEMENTOS}`}>
+                  <button
+                    aria-pressed={props.modo === 'dividir-linha'}
+                    className={`botao-pequeno${props.modo === 'dividir-linha' ? ' item-selecionado' : ''}`}
+                    onClick={() => props.onUsarFerramentaDeElemento('dividir-linha')}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Dividir elementos: divide uma linha interna em duas, no ponto clicado' : semPecaSelecionada('Dividir elementos')}
+                  >
                     <Icone nome="dividir" />
                     <span>Dividir elementos</span>
                   </button>
@@ -1344,7 +1417,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="excluir-ponto" />
                     <span>Excluir ponto</span>
                   </button>
-                  <button className="botao-pequeno" disabled title={`Transformar em elementos — ${SO_PARA_ELEMENTOS}`}>
+                  <button
+                    aria-pressed={props.modo === 'transformar-em-elementos'}
+                    className={`botao-pequeno${props.modo === 'transformar-em-elementos' ? ' item-selecionado' : ''}`}
+                    onClick={() => props.onUsarFerramentaDeElemento('transformar-em-elementos')}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Transformar em elementos: o contorno de outra peça entra na peça selecionada como linha interna — clique na outra peça' : semPecaSelecionada('Transformar em elementos')}
+                  >
                     <Icone nome="transformar-elementos" />
                     <span>Transformar em elementos</span>
                   </button>
@@ -1363,7 +1442,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="alinhar" />
                     <span>Alinhar</span>
                   </button>
-                  <button className="botao-pequeno" disabled title={`Copiar ou trocar elemento — ${SO_PARA_ELEMENTOS}`}>
+                  <button
+                    aria-pressed={props.modo === 'copiar-elemento'}
+                    className={`botao-pequeno${props.modo === 'copiar-elemento' ? ' item-selecionado' : ''}`}
+                    onClick={() => props.onUsarFerramentaDeElemento('copiar-elemento')}
+                    disabled={!props.temSelecaoUnica}
+                    title={props.temSelecaoUnica ? 'Copiar ou trocar elemento: traz para a peça selecionada uma linha interna ou um ponto (marca) de outra peça' : semPecaSelecionada('Copiar ou trocar elemento')}
+                  >
                     <Icone nome="trocar-elemento" />
                     <span>Copiar ou trocar elemento</span>
                   </button>

@@ -72,7 +72,7 @@ function contornoMaisProximo(p: Ponto2D, contornos: readonly Contorno[]): number
 }
 
 /** A linha de fio da parte: a original, se cabe inteira nela; senão, a mesma seta levada ao meio da parte. */
-function fioDaParte(fio: LinhaDeFio, contorno: Contorno): LinhaDeFio {
+export function fioDaParte(fio: LinhaDeFio, contorno: Contorno): LinhaDeFio {
   if (pontoDentroDoContorno(fio.inicio, contorno) && pontoDentroDoContorno(fio.fim, contorno)) return fio;
   const caixa = retanguloEnvolvente(contorno);
   const dx = (caixa.minX + caixa.maxX) / 2 - (fio.inicio.x + fio.fim.x) / 2;

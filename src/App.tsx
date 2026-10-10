@@ -94,6 +94,19 @@ import {
   type FerramentaDeCanto,
 } from './ui/ferramentasDeArco';
 import { valorDaCotaDeRaio } from './domain/cota';
+import {
+  apagarElementoEscolhido,
+  aplicarPontoPorCoordenada,
+  cliqueDeElemento,
+  dialogoDoElemento,
+  ehModoDeElemento,
+  instrucaoDoElemento,
+  lerDialogoDoElemento,
+  OPCOES_INICIAIS_DE_ELEMENTO,
+  previaDoElemento,
+  type FerramentaDeElemento,
+  type OpcoesDeElemento,
+} from './ui/ferramentasDeElemento';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
 import {
   curvaDoTrecho,
@@ -337,6 +350,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
+  | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
@@ -437,6 +451,8 @@ export default function App(): React.JSX.Element {
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
   // Pences e pregas: o que cada diálogo deixou escolhido.
   const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
+  // Retas e pontos de construção (linhas internas e marcas): o que cada diálogo deixou escolhido.
+  const [opcoesDeElemento, setOpcoesDeElemento] = useState<OpcoesDeElemento>(OPCOES_INICIAIS_DE_ELEMENTO);
   // Graduação: as opções dos diálogos, o cadastro de regras deste computador, a
   // regra escolhida em "Regras" e a regra guardada pelo "Copiar" da tabela.
   const [opcoesDaGraduacao, setOpcoesDaGraduacao] = useState<OpcoesDaGraduacao>(OPCOES_INICIAIS_DA_GRADUACAO);
@@ -1235,6 +1251,16 @@ export default function App(): React.JSX.Element {
   }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
 
   /** "Converter em contorno": a linha de corte das peças selecionadas vira o contorno, e a costura volta a zero. */
+  /** Retas e pontos de construção: as que têm opções pedem-nas antes, num diálogo; as outras ligam direto. */
+  const usarFerramentaDeElemento = useCallback(
+    (ferramenta: FerramentaDeElemento) => {
+      if (!selecionadoId) return;
+      if (dialogoDoElemento(ferramenta, opcoesDeElemento)) setDialogoDeFerramenta({ tipo: 'elemento', ferramenta });
+      else if (ehModoDeElemento(ferramenta)) entrarModoDeConstrucao(ferramenta);
+    },
+    [selecionadoId, opcoesDeElemento, entrarModoDeConstrucao],
+  );
+
   /**
    * Ferramentas da aba Graduação. "Tabela" começa pelos tamanhos; "Unir" age
    * na hora; as que têm opções pedem-nas antes; as outras ligam direto.
@@ -2004,6 +2030,25 @@ export default function App(): React.JSX.Element {
         }
         return;
       }
+      if (ehModoDeElemento(modo)) {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const resultado = cliqueDeElemento(
+          modo,
+          opcoesDeElemento,
+          pecas,
+          peca,
+          trecho,
+          { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
+          raioMm,
+          proximoId,
+        );
+        setTrecho(resultado.estado);
+        setRecadoDaFerramenta(resultado.recado);
+        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
+        return;
+      }
       if (ehModoDeGraduacao(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2179,6 +2224,7 @@ export default function App(): React.JSX.Element {
       opcoesDasPences,
       opcoesDaGraduacao,
       regraEscolhida,
+      opcoesDeElemento,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2398,6 +2444,16 @@ export default function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicarSelecionado();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && modo === 'manipulacao-rapida' && trecho.livres.length > 0) {
+        // Com um elemento escolhido na "Manipulação rápida", Delete apaga o elemento, e não a peça.
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const apagado = peca && apagarElementoEscolhido(pecas, peca, trecho, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+        setTrecho(SEM_TRECHO);
+        if (apagado) {
+          aplicarMudanca([...apagado.pecas]);
+          setRecadoDaFerramenta(apagado.recado);
+        }
       } else if (e.key === 'Backspace' && modo === 'curva' && trecho.livres.length > 0) {
         e.preventDefault();
         setTrecho((atual) => ({ ...atual, livres: atual.livres.slice(0, -1) }));
@@ -2448,7 +2504,11 @@ export default function App(): React.JSX.Element {
     },
     [
       modo,
-      trecho.livres.length,
+      trecho,
+      pecas,
+      selecionadoId,
+      transform.escalaPxPorMm,
+      aplicarMudanca,
       ferramentaDeVista,
       cancelarModo,
       finalizarContornoEmEdicao,
@@ -2463,7 +2523,6 @@ export default function App(): React.JSX.Element {
       abrirBiblioteca,
       novoProjeto,
       importarDxfHandler,
-      pecas.length,
       selecionarTudo,
       copiarSelecionado,
       recortarSelecionado,
@@ -2513,6 +2572,13 @@ export default function App(): React.JSX.Element {
     if (pecaSelecionada && ehModoDeGraduacao(modo)) {
       return previaDaGraduacao(modo, opcoesDaGraduacao, pecaSelecionada, trecho, cursorMundo);
     }
+    if (pecaSelecionada && ehModoDeElemento(modo)) {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const mouse = cursorMundo
+        ? { noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm), livre: cursorMundo }
+        : null;
+      return previaDoElemento(modo, opcoesDeElemento, pecas, pecaSelecionada, trecho, mouse, raioMm);
+    }
     if (pecaSelecionada && ehFerramentaDePence(modo)) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
@@ -2555,6 +2621,7 @@ export default function App(): React.JSX.Element {
     opcoesDeBainha,
     opcoesDasPences,
     opcoesDaGraduacao,
+    opcoesDeElemento,
     pontosEmEdicao,
     transform.escalaPxPorMm,
   ]);
@@ -2564,6 +2631,7 @@ export default function App(): React.JSX.Element {
     const fim = ' Esc sai.';
     if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
+    if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
     switch (modo) {
       case 'curva':
         if (!trecho.inicio) return 'Curva: clique no contorno da peça selecionada, onde a curva começa.' + fim;
@@ -2667,6 +2735,10 @@ export default function App(): React.JSX.Element {
       return null;
     }
   })();
+
+  // O diálogo de opções da ferramenta de reta ou ponto que foi pedida.
+  const dialogoDeElemento =
+    dialogoDeFerramenta?.tipo === 'elemento' ? dialogoDoElemento(dialogoDeFerramenta.ferramenta, opcoesDeElemento) : null;
 
   // O diálogo de opções da ferramenta de pence ou prega que foi pedida.
   const dialogoDePence =
@@ -2878,6 +2950,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoCirculo={() => entrarModoDeConstrucao('circulo')}
         onUsarFerramentaDeMolde={usarFerramentaDeMolde}
         temOutraPeca={pecas.length >= 2}
+        onUsarFerramentaDeElemento={usarFerramentaDeElemento}
         onUsarFerramentaDeGraduacao={usarFerramentaDeGraduacao}
         temGraduacao={pecaSelecionada?.graduacao !== undefined}
         temOutrasMarcadas={[...idsSelecionadosEmLote].some((id) => id !== selecionadoId)}
@@ -3188,6 +3261,38 @@ export default function App(): React.JSX.Element {
               const novas = lerDialogoDaPence(dialogoDeFerramenta.ferramenta, opcoesDasPences, valores);
               entrarModoDeConstrucao(dialogoDeFerramenta.ferramenta);
               setOpcoesDasPences(novas);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'elemento' && dialogoDeElemento && pecaSelecionada && (
+        <DialogoDeCampos
+          key={dialogoDeFerramenta.ferramenta}
+          titulo={dialogoDeElemento.titulo}
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeElemento.campos}
+          nota={dialogoDeElemento.nota}
+          rotuloDoBotao={dialogoDeElemento.rotuloDoBotao}
+          onAplicar={(valores) => {
+            const ferramenta = dialogoDeFerramenta.ferramenta;
+            try {
+              const novas = lerDialogoDoElemento(ferramenta, opcoesDeElemento, valores);
+              setOpcoesDeElemento(novas);
+              // "Por coordenada" cria o ponto na hora; as outras ligam a ferramenta.
+              if (ferramenta === 'ponto-por-coordenada') {
+                const resultado = aplicarPontoPorCoordenada(novas, pecas, pecaSelecionada, proximoId);
+                const novasPecas = [...resultado.pecas];
+                aplicarMudanca(novasPecas);
+                // Sai da ferramenta que estava ligada, para a confirmação aparecer na faixa de mensagens.
+                cancelarModo();
+                avisar(resultado.recado, novasPecas);
+              } else if (ehModoDeElemento(ferramenta)) {
+                entrarModoDeConstrucao(ferramenta);
+              }
               return null;
             } catch (e) {
               return e instanceof Error ? e.message : String(e);
