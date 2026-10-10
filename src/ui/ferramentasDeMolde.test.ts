@@ -10,7 +10,12 @@ import {
   arestaDeOutraPecaPerto,
   arestaPerto,
   cliqueDeReta,
+  cliqueNoElementoDoCorte,
+  confirmarCortePelosElementos,
   dialogoDeCortar,
+  elementosDoCorte,
+  lerContornoDoCorte,
+  previaDoCortePelosElementos,
   dialogoDeRemoverRegiao,
   dialogoDeUnir,
   ehFerramentaDeMolde,
@@ -321,6 +326,7 @@ describe('Cortar e Remover região: as opções das janelas', () => {
     const dialogo = dialogoDeCortar(COM_COSTURA);
     expect(dialogo.titulo).toBe('Cortar molde');
     expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['contorno', 'automatico'],
       ['costura', '10'],
       ['costuraNasDuas', false],
       ['piques', true],
@@ -443,13 +449,149 @@ describe('Cortar e Remover região: as opções das janelas', () => {
   });
 
   it('as instruções acompanham cada passo, com e sem “Unir moldes”', () => {
-    expect(instrucaoDaReta('cortar', SEM_TRECHO)).toMatch(/onde o corte começa\. Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda\. Esc sai\.$/);
+    expect(instrucaoDaReta('cortar', SEM_TRECHO)).toMatch(/onde o corte começa\. Ou clique numa linha interna da peça \(reta ou curva\): ela vira a linha do corte, de borda a borda\. Esc sai\.$/);
+    expect(instrucaoDaReta('remover-regiao', SEM_TRECHO)).toMatch(/Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda\. Esc sai\.$/);
     expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, inicio: na(0, 50, 0) })).toMatch(/onde o corte termina/);
     expect(instrucaoDaReta('remover-regiao', SEM_TRECHO)).toMatch(/numa ponta da reta que separa a região/);
     expect(instrucaoDaReta('remover-regiao', { ...SEM_TRECHO, inicio: na(0, 50, 0) })).toMatch(/na outra ponta da reta/);
     expect(instrucaoDaReta('remover-regiao', AO_MEIO)).toMatch(/na região que deve sair/);
     expect(instrucaoDaReta('remover-regiao', AO_MEIO, { manter: false, unir: true })).toMatch(/agora a segunda reta/);
     expect(instrucaoDaReta('remover-regiao', { ...AO_MEIO, livres: [ponto(140, 0)] }, { manter: false, unir: true })).toMatch(/na outra ponta da segunda reta/);
+  });
+});
+
+describe('Cortar por elementos: uma linha interna curva, ou várias emendadas', () => {
+  // A linha quebrada de borda a borda (sobe de (0, 100) a (100, 150) e desce a (200, 100)) e, separadas, as duas metades dela.
+  const QUEBRADA = [ponto(0, 100), ponto(100, 150), ponto(200, 100)];
+  const ESQUERDA = [ponto(0, 100), ponto(100, 150)];
+  const DIREITA = [ponto(100, 150), ponto(200, 100)];
+  const comLinhas = (linhas: readonly (readonly { x: number; y: number }[])[]): Molde => molde('f', 'Frente', FRENTE, { linhasInternas: linhas });
+  const COSTURA = { costuraMm: 10, costuraNasDuas: false, piques: false, modo: 'reta' as const, manterDistancias: true };
+
+  it('a janela guarda o contorno escolhido: automático ou manual', () => {
+    expect(dialogoDeCortar(COSTURA, true).campos[0]).toMatchObject({ id: 'contorno', tipo: 'escolha', inicial: 'manual' });
+    expect(dialogoDeCortar(COSTURA).campos[0]).toMatchObject({ id: 'contorno', inicial: 'automatico' });
+    expect(lerContornoDoCorte({ contorno: 'manual' })).toBe(true);
+    expect(lerContornoDoCorte({ contorno: 'automatico' })).toBe(false);
+    expect(lerContornoDoCorte({})).toBe(false);
+    // A janela diz que a emenda e o prolongamento são leitura nossa.
+    expect(dialogoDeCortar(COSTURA).nota).toMatch(/nem o que se faz com o que não chega à borda: é a nossa leitura\.$/);
+  });
+
+  it('contorno automático: o clique na linha corta por ela na hora', () => {
+    const peca = comLinhas([QUEBRADA]);
+    const feito = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids())!;
+
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.pecas).toHaveLength(2);
+    expect(feito.pecas!.map((p) => p.nome)).toEqual(['Frente', 'Frente (2)']);
+    expect(feito.pecas!.flatMap((p) => p.linhasInternas)).toEqual([]);
+    expect(feito.recado).toBe('“Frente” cortada em duas, pelo elemento indicado: 350,0 cm² continuam nela e 250,0 cm² são a peça nova “Frente (2)”.');
+  });
+
+  it('com costura, a mensagem manda conferir a costura do corte que não é reto', () => {
+    const peca = comLinhas([QUEBRADA]);
+    const feito = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+
+    expect(feito.recado).toMatch(/A borda do corte ganhou 10,0 mm de costura na peça nova\. Num corte que não é reto, confira a costura: ela é a borda do corte deslocada\.$/);
+    expect(area(feito.pecas![1]!.contorno)).toBeGreaterThan(25000);
+    // O corte por um elemento reto também não ganha o aviso: a costura dele é a de sempre.
+    const comReta = comLinhas([[ponto(50, 100), ponto(150, 100)]]);
+    const peloReto = cliqueNoElementoDoCorte([comReta], comReta, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+    expect(peloReto.recado).toMatch(/pelo elemento indicado: .* de costura na peça nova\.$/);
+    // O corte reto pelos dois pontos não ganha esse aviso.
+    const reto = aplicarReta('cortar', [peca], peca, { inicio: na(0, 50, 0), fim: na(2, 50, 300), livres: [] }, ids(), undefined, { corte: COSTURA });
+    expect(reto.recado).not.toMatch(/confira a costura/);
+  });
+
+  it('a linha que não serve deixa tudo como está e diz por quê', () => {
+    const fechada = comLinhas([[ponto(50, 50), ponto(150, 50), ponto(100, 120), ponto(50, 50)]]);
+    const recusado = cliqueNoElementoDoCorte([fechada], fechada, SEM_TRECHO, 0, false, ids())!;
+
+    expect(recusado.pecas).toBeUndefined();
+    expect(recusado.estado).toBe(SEM_TRECHO);
+    expect(recusado.recado).toMatch(/fecham uma volta/);
+  });
+
+  it('o clique que não é num elemento, ou com a reta já começada, não é disso', () => {
+    const peca = comLinhas([QUEBRADA]);
+    expect(cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, null, false, ids())).toBeNull();
+    expect(cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 7, false, ids())).toBeNull();
+    expect(cliqueNoElementoDoCorte([peca], peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, 0, false, ids())).toBeNull();
+    expect(cliqueNoElementoDoCorte([peca], peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, 0, true, ids())).toBeNull();
+  });
+
+  it('contorno manual: cada clique indica um elemento, o clique repetido tira, e o Enter corta', () => {
+    const peca = comLinhas([ESQUERDA, [ponto(20, 20), ponto(60, 20)], DIREITA]);
+    const um = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, true, ids())!;
+    expect(um.pecas).toBeUndefined();
+    expect(elementosDoCorte(peca, um.estado)).toEqual([0]);
+    expect(um.recado).toBe('1 elemento indicado para o corte. Enter corta; o clique num elemento já indicado tira ele da lista.');
+
+    const dois = cliqueNoElementoDoCorte([peca], peca, um.estado, 2, true, ids())!;
+    expect(elementosDoCorte(peca, dois.estado)).toEqual([0, 2]);
+    expect(dois.recado).toMatch(/^2 elementos indicados para o corte\./);
+
+    // O clique de novo no primeiro tira ele da lista.
+    const semOPrimeiro = cliqueNoElementoDoCorte([peca], peca, dois.estado, 0, true, ids())!;
+    expect(elementosDoCorte(peca, semOPrimeiro.estado)).toEqual([2]);
+    const nenhum = cliqueNoElementoDoCorte([peca], peca, semOPrimeiro.estado, 2, true, ids())!;
+    expect(nenhum.estado.livres).toEqual([]);
+    expect(nenhum.recado).toBeNull();
+
+    const cortado = confirmarCortePelosElementos([peca], peca, dois.estado, ids())!;
+    expect(cortado.estado).toBe(SEM_TRECHO);
+    expect(cortado.pecas).toHaveLength(2);
+    expect(cortado.recado).toMatch(/cortada em duas, pelos 2 elementos indicados: 350,0 cm² continuam nela e 250,0 cm²/);
+    // A linha que não foi indicada continua na parte em que está.
+    expect(cortado.pecas!.flatMap((p) => p.linhasInternas)).toEqual([[ponto(20, 20), ponto(60, 20)]]);
+  });
+
+  it('o Enter sem elementos não faz nada; com elementos que não dão a linha, eles continuam indicados', () => {
+    const peca = comLinhas([ESQUERDA, [ponto(20, 20), ponto(60, 20)], DIREITA]);
+    expect(confirmarCortePelosElementos([peca], peca, SEM_TRECHO, ids())).toBeNull();
+    // Com a reta de dois pontos começada, os pontos soltos do estado não são elementos.
+    expect(elementosDoCorte(peca, { ...AO_MEIO, livres: [ponto(50, 125)] })).toEqual([]);
+
+    const soltos = cliqueNoElementoDoCorte([peca], peca, cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, true, ids())!.estado, 1, true, ids())!;
+    const recusado = confirmarCortePelosElementos([peca], peca, soltos.estado, ids())!;
+    expect(recusado.pecas).toBeUndefined();
+    expect(recusado.estado).toBe(soltos.estado);
+    expect(recusado.recado).toMatch(/não se emendam/);
+  });
+
+  it('a prévia mostra os elementos em jogo e a linha do corte que eles dão, de borda a borda', () => {
+    // A linha para antes da borda: a prévia já mostra o corte prolongado.
+    const curta = comLinhas([[ponto(50, 100), ponto(100, 150), ponto(150, 100)]]);
+    const automatica = previaDoCortePelosElementos(curta, SEM_TRECHO, 0, false)!;
+    expect(automatica.linhas).toEqual([curta.linhasInternas[0]]);
+    expect(automatica.novo).toHaveLength(3);
+    expect(automatica.novo![0]!.x).toBeCloseTo(0, 9);
+    expect(automatica.novo![0]!.y).toBeCloseTo(50, 9);
+    expect(automatica.marcas).toHaveLength(2);
+
+    // No manual: os indicados mais o que está sob o mouse; enquanto não fecham a linha, só os elementos em destaque.
+    const peca = comLinhas([ESQUERDA, [ponto(20, 20), ponto(60, 20)], DIREITA]);
+    const um = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, true, ids())!.estado;
+    expect(previaDoCortePelosElementos(peca, um, 2, true)!.novo).toEqual(QUEBRADA);
+    expect(previaDoCortePelosElementos(peca, um, 2, true)!.linhas).toEqual([ESQUERDA, DIREITA]);
+    const naoEmenda = previaDoCortePelosElementos(peca, um, 1, true)!;
+    expect(naoEmenda.novo).toBeUndefined();
+    expect(naoEmenda.linhas).toHaveLength(2);
+    // Com o mouse em cima de um já indicado, ele não entra duas vezes.
+    expect(previaDoCortePelosElementos(peca, um, 0, true)!.linhas).toEqual([ESQUERDA]);
+    // No automático, o que está sob o mouse é o corte, e os indicados não contam.
+    expect(previaDoCortePelosElementos(peca, um, 2, false)!.linhas).toEqual([DIREITA]);
+    // Sem elemento nenhum em jogo, ou com a reta de dois pontos começada, a prévia é a da reta.
+    expect(previaDoCortePelosElementos(peca, SEM_TRECHO, null, true)).toBeNull();
+    expect(previaDoCortePelosElementos(peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, 0, false)).toBeNull();
+  });
+
+  it('as instruções do contorno manual dizem quantos elementos já foram indicados', () => {
+    expect(instrucaoDaReta('cortar', SEM_TRECHO, undefined, true)).toMatch(/^Cortar \(contorno manual\): clique nas linhas internas que formam a linha do corte, uma a uma, e aperte Enter\./);
+    expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, livres: [ponto(1, 1)] }, undefined, true)).toMatch(/1 elemento indicado — clique nos outros, ou aperte Enter para cortar\. Esc sai\.$/);
+    expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, livres: [ponto(1, 1), ponto(2, 2)] }, undefined, true)).toMatch(/2 elementos indicados/);
+    expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, inicio: na(0, 50, 0) }, undefined, true)).toMatch(/onde o corte termina/);
   });
 });
 

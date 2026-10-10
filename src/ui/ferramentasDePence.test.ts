@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
+import { area, distancia, ponto, rotacionar, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
 import { abrirPence, comPenceReconhecida, criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
 import { criarPregas, medidasDaPrega, pregasDaPeca } from '../domain/pregas';
@@ -16,6 +16,7 @@ import {
   lerDialogoDaPence,
   OPCOES_INICIAIS_DAS_PENCES,
   penceCompleta,
+  pontasIndicadas,
   penceSemRegistroSobOClique,
   ID_DA_PENCE_RECONHECIDA,
   previaDaPence,
@@ -316,10 +317,205 @@ describe('instrucaoDaPence', () => {
   });
 });
 
+describe('Fechar e Transferir com o início, o vértice e o fim indicados (a pence de pernas curvas)', () => {
+  // O retângulo com uma pence de pernas curvas no alto: início (120, 300), um ponto na perna, o vértice (100, 200), outro ponto na perna e o fim (80, 300).
+  const CURVA = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(112, 250), ponto(100, 200), ponto(88, 250), ponto(80, 300), ponto(0, 300)];
+  const INICIO = na(3, 120, 300);
+  const DO_VERTICE = na(5, 100, 200);
+  const FIM = na(7, 80, 300);
+  const P = com({ indicarPontas: true });
+  const peca = (): Molde => molde(CURVA);
+
+  it('os três primeiros cliques são pontos do contorno: o início, o vértice e o fim; o quarto, a nova posição', () => {
+    const um = cliqueDePence('transferir-pence', P, peca(), SEM_TRECHO, noContorno(INICIO));
+    expect(um.estado).toEqual({ inicio: null, fim: null, livres: [ponto(120, 300)] });
+    // No meio de uma aresta não vale: as pontas e o vértice são pontos do contorno.
+    const fora = cliqueDePence('transferir-pence', P, peca(), um.estado, noContorno(na(2, 150, 300)));
+    expect(fora.estado).toBe(um.estado);
+    expect(fora.recusa).toMatch(/Clique num ponto do contorno/);
+    // Fora do contorno, ou no ponto já indicado, o clique não conta.
+    expect(cliqueDePence('transferir-pence', P, peca(), um.estado, solto(100, 100)).estado).toBe(um.estado);
+    expect(cliqueDePence('transferir-pence', P, peca(), um.estado, noContorno(INICIO)).estado).toBe(um.estado);
+
+    const dois = cliqueDePence('transferir-pence', P, peca(), um.estado, noContorno(DO_VERTICE)).estado;
+    expect(dois.inicio).toEqual(DO_VERTICE);
+    expect(pontasIndicadas(peca(), dois)).toBeUndefined();
+    const tres = cliqueDePence('transferir-pence', P, peca(), dois, noContorno(FIM)).estado;
+    expect(tres.livres).toEqual([ponto(120, 300), ponto(80, 300)]);
+    expect(pontasIndicadas(peca(), tres)).toEqual({ inicio: 3, fim: 7 });
+    expect(penceCompleta('transferir-pence', P, tres)).toBe(false);
+
+    // A nova posição pode ser no meio de uma aresta; no próprio vértice, não.
+    expect(cliqueDePence('transferir-pence', P, peca(), tres, noContorno(DO_VERTICE)).estado).toBe(tres);
+    const quatro = cliqueDePence('transferir-pence', P, peca(), tres, noContorno(na(1, 200, 150))).estado;
+    expect(quatro.fim).toEqual(na(1, 200, 150));
+    expect(penceCompleta('transferir-pence', P, quatro)).toBe(true);
+    expect(cliqueDePence('transferir-pence', P, peca(), quatro, noContorno(na(0, 50, 0))).estado).toBe(quatro);
+  });
+
+  it('o fim que não fecha uma pence com os outros dois é recusado, e diz por quê', () => {
+    const dois = clicar('transferir-pence', P, peca(), [noContorno(INICIO), noContorno(DO_VERTICE)]);
+    const errado = cliqueDePence('transferir-pence', P, peca(), dois, noContorno(na(2, 200, 300)));
+
+    expect(errado.estado).toBe(dois);
+    expect(errado.recusa).toMatch(/não formam uma pence recortada/);
+  });
+
+  it('o início e o fim servem em qualquer ordem', () => {
+    const aoContrario = clicar('fechar-pence', com({ indicarPontas: true, fecharSomenteORecorte: true }), peca(), [noContorno(FIM), noContorno(DO_VERTICE), noContorno(INICIO)]);
+    expect(pontasIndicadas(peca(), aoContrario)).toEqual({ inicio: 7, fim: 3 });
+    const fechada = aplicarPence('fechar-pence', com({ indicarPontas: true, fecharSomenteORecorte: true }), [peca()], peca(), aoContrario, ids());
+    expect(area(fechada.pecas[0]!.contorno)).toBeCloseTo(60000, 6);
+  });
+
+  it('Fechar “somente o recorte”: bastam os três pontos; o contorno passa reto e a pence inteira fica desenhada', () => {
+    const opcoes = com({ indicarPontas: true, fecharSomenteORecorte: true });
+    const estado = clicar('fechar-pence', opcoes, peca(), [noContorno(INICIO), noContorno(DO_VERTICE), noContorno(FIM)]);
+    expect(penceCompleta('fechar-pence', opcoes, estado)).toBe(true);
+    const fechada = aplicarPence('fechar-pence', opcoes, [peca()], peca(), estado, ids());
+
+    expect(fechada.pecas[0]!.contorno).toEqual([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(80, 300), ponto(0, 300)]);
+    expect(fechada.pecas[0]!.linhasInternas).toEqual([[ponto(120, 300), ponto(112, 250), ponto(100, 200), ponto(88, 250), ponto(80, 300)]]);
+    expect(pencesDaPeca(fechada.pecas[0]!)).toHaveLength(0);
+    expect(fechada.recado).toBe(
+      'Recorte da pence fechado em “Frente”: o contorno passa reto, e a pence ficou marcada. A peça passou de 578,0 cm² para 600,0 cm². O início, o vértice e o fim da pence foram os pontos indicados.',
+    );
+  });
+
+  it('Fechar por pivô: o lado sem a linha de fio gira até o início encontrar o fim, e as pernas saem do contorno', () => {
+    const pivo = na(0, 100, 0);
+    const estado = clicar('fechar-pence', P, peca(), [noContorno(INICIO), noContorno(DO_VERTICE), noContorno(FIM), noContorno(pivo)]);
+    expect(penceCompleta('fechar-pence', P, estado)).toBe(true);
+    const fechada = aplicarPence('fechar-pence', P, [peca()], peca(), estado, ids());
+    const contorno = fechada.pecas[0]!.contorno;
+    // O giro que leva o início (120, 300) para cima do fim (80, 300), vistos do pivô.
+    const graus = ((Math.atan2(300, -20) - Math.atan2(300, 20)) * 180) / Math.PI;
+    const tem = (x: number, y: number): boolean => contorno.some((p) => distancia(p, ponto(x, y)) < 1e-6);
+    const temGirado = (x: number, y: number): boolean => contorno.some((p) => distancia(p, rotacionar(ponto(x, y), pivo.ponto, graus)) < 1e-6);
+
+    expect(contorno).toHaveLength(6);
+    for (const [x, y] of [[0, 0], [0, 300], [80, 300], [100, 0]] as const) expect(tem(x, y)).toBe(true);
+    for (const [x, y] of [[200, 0], [200, 300]] as const) expect(temGirado(x, y)).toBe(true);
+    // O vértice e os pontos das pernas não estão mais no contorno.
+    for (const [x, y] of [[100, 200], [112, 250], [88, 250], [120, 300]] as const) expect(tem(x, y)).toBe(false);
+    expect(fechada.recado).toMatch(/^Pence fechada em “Frente”, girando em torno do pivô\./);
+    expect(fechada.recado).toMatch(/O início, o vértice e o fim da pence foram os pontos indicados\.$/);
+    // As duas pontas estão à mesma distância do pivô: não sobra degrau.
+    expect(fechada.recado).not.toMatch(/degrau/);
+  });
+
+  it('o degrau do Fechar por pivô é medido entre as pontas indicadas, e não entre os vizinhos do vértice', () => {
+    // As pontas estão à mesma distância do pivô; os pontos das pernas, não (112 de um lado, 86 do outro).
+    const torta = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(112, 250), ponto(100, 200), ponto(86, 250), ponto(80, 300), ponto(0, 300)]);
+    const estado = clicar('fechar-pence', P, torta, [noContorno(INICIO), noContorno(DO_VERTICE), noContorno(FIM), noContorno(na(0, 100, 0))]);
+
+    expect(aplicarPence('fechar-pence', P, [torta], torta, estado, ids()).recado).not.toMatch(/degrau/);
+  });
+
+  it('Transferir: a pence fecha onde estava e abre na nova posição, com pernas retas', () => {
+    const estado = clicar('transferir-pence', P, peca(), [noContorno(INICIO), noContorno(DO_VERTICE), noContorno(FIM), noContorno(na(1, 200, 150))]);
+    const transferida = aplicarPence('transferir-pence', P, [peca()], peca(), estado, ids());
+    const contorno = transferida.pecas[0]!.contorno;
+    const tem = (x: number, y: number): boolean => contorno.some((p) => distancia(p, ponto(x, y)) < 1e-6);
+
+    expect(contorno).toHaveLength(8);
+    // O vértice continua; a nova pence abre em (200, 150); as pernas curvas saíram.
+    expect(tem(100, 200)).toBe(true);
+    expect(tem(200, 150)).toBe(true);
+    expect(tem(112, 250)).toBe(false);
+    expect(tem(88, 250)).toBe(false);
+    // A peça com a pence de pernas retas no lugar da curva: 600 cm² menos 20 cm².
+    expect(area(contorno)).toBeCloseTo(58000, 6);
+    expect(transferida.recado).toBe(
+      'Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. As pernas da pence nova são retas: a peça passou de 578,0 cm² para 580,0 cm². O início, o vértice e o fim da pence foram os pontos indicados.',
+    );
+  });
+
+  it('sem indicar as pontas, o clique no vértice dessa pence pegaria só os pontos vizinhos dele', () => {
+    const soORecorte = com({ fecharSomenteORecorte: true });
+    const fechada = aplicarPence('fechar-pence', soORecorte, [peca()], peca(), clicar('fechar-pence', soORecorte, peca(), [noContorno(DO_VERTICE)]), ids());
+    // Só o vértice saiu: os pontos das pernas ficaram, e a peça não voltou a ser o retângulo.
+    expect(fechada.pecas[0]!.contorno).toHaveLength(8);
+    expect(area(fechada.pecas[0]!.contorno)).toBeLessThan(60000);
+  });
+
+  it('a prévia marca os pontos já indicados e mostra a peça como ficaria; as instruções acompanham cada clique', () => {
+    const um = clicar('transferir-pence', P, peca(), [noContorno(INICIO)]);
+    expect(previaDaPence('transferir-pence', P, peca(), um, solto(50, 50)).marcas).toContainEqual(ponto(120, 300));
+    const tres = clicar('transferir-pence', P, peca(), [noContorno(INICIO), noContorno(DO_VERTICE), noContorno(FIM)]);
+    const previa = previaDaPence('transferir-pence', P, peca(), tres, noContorno(na(1, 200, 150)));
+    expect(previa.novoFechado).toBe(true);
+    expect(previa.novo).toHaveLength(8);
+    expect(previa.marcas).toContainEqual(ponto(80, 300));
+    // Sem a opção, os pontos soltos do estado não são marcas.
+    expect(previaDaPence('transferir-pence', O, peca(), um, solto(50, 50)).marcas).not.toContainEqual(ponto(120, 300));
+
+    expect(instrucaoDaPence('transferir-pence', P, SEM_TRECHO)).toBe('Transferir pence (pontas indicadas): clique no ponto do contorno onde a pence começa. Esc sai.');
+    expect(instrucaoDaPence('transferir-pence', P, um)).toMatch(/clique no vértice da pence, o ponto de dentro do recorte/);
+    expect(instrucaoDaPence('fechar-pence', P, clicar('fechar-pence', P, peca(), [noContorno(INICIO), noContorno(DO_VERTICE)]))).toBe(
+      'Fechar pence (pontas indicadas): clique no ponto do contorno onde a pence termina. Esc sai.',
+    );
+    expect(instrucaoDaPence('transferir-pence', P, tres)).toMatch(/na nova posição/);
+    expect(instrucaoDaPence('fechar-pence', P, tres)).toMatch(/no pivô/);
+  });
+
+  it('as duas janelas têm a opção, e dizem a ordem dos cliques', () => {
+    const transferir = dialogoDaPence('transferir-pence', P)!;
+    expect(transferir.titulo).toBe('Transferir pence');
+    expect(transferir.campos.map((c) => [c.id, c.inicial])).toEqual([['indicarPontas', true]]);
+    expect(transferir.nota).toMatch(/os três primeiros cliques são esses pontos do contorno, nessa ordem \(a do manual da referência; a contrária também serve\)/);
+    expect(dialogoDaPence('fechar-pence', O)!.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['somenteORecorte', false],
+      ['indicarPontas', false],
+    ]);
+  });
+});
+
+describe('Pence aberta com “Cortar intersecções”', () => {
+  // Um "C": a linha em pé em x = 150 entra pelo braço de cima, sai, e entra de novo pelo braço de baixo.
+  const EM_C = [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(100, 100), ponto(100, 200), ponto(200, 200), ponto(200, 300), ponto(0, 300)];
+  const abrir = (cortarIntersecoes: boolean): OpcoesDasPences => com({ pence: { ...O.pence, modo: 'abrir', cortarIntersecoes, piquesLaterais: false, marcaNoVertice: false } });
+  const cliques = [noContorno(na(6, 150, 300)), noContorno(na(0, 150, 0))];
+
+  it('com a opção, a peça abre em todos os trechos da linha, e a mensagem diz que o resultado é uma prega', () => {
+    const peca = molde(EM_C);
+    const aberta = aplicarPence('pence-no-contorno', abrir(true), [peca], peca, clicar('pence-no-contorno', abrir(true), peca, cliques), ids());
+
+    expect(area(aberta.pecas[0]!.contorno)).toBeGreaterThan(50000);
+    expect(aberta.pecas[0]!.linhasInternas).toHaveLength(4);
+    expect(pencesDaPeca(aberta.pecas[0]!)).toHaveLength(0);
+    expect(aberta.recado).toBe(
+      '“Frente” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, 30,0 mm na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. A peça passou de 500,0 cm² para 530,0 cm².',
+    );
+  });
+
+  it('sem a opção, a mesma linha é recusada, e a prévia fica só na reta até o mouse', () => {
+    const peca = molde(EM_C);
+    expect(() => aplicarPence('pence-no-contorno', abrir(false), [peca], peca, clicar('pence-no-contorno', abrir(false), peca, cliques), ids())).toThrow(/Com “Cortar intersecções” ligado/);
+    const umClique = clicar('pence-no-contorno', abrir(false), peca, [cliques[0]!]);
+    expect(previaDaPence('pence-no-contorno', abrir(false), peca, umClique, cliques[1]!).novo).toEqual([ponto(150, 300), ponto(150, 0)]);
+    expect(previaDaPence('pence-no-contorno', abrir(true), peca, umClique, cliques[1]!).novoFechado).toBe(true);
+  });
+
+  it('com a opção e a linha toda dentro da peça, é a pence aberta de sempre', () => {
+    const peca = molde(EM_C);
+    const porDentro = [noContorno(na(6, 50, 300)), noContorno(na(0, 50, 0))];
+    const aberta = aplicarPence('pence-no-contorno', abrir(true), [peca], peca, clicar('pence-no-contorno', abrir(true), peca, porDentro), ids());
+
+    expect(aberta.recado).toMatch(/^Pence aberta em “Frente”: abertura de 30,0 mm, profundidade de 100,0 mm\./);
+    expect(pencesDaPeca(aberta.pecas[0]!)).toHaveLength(1);
+  });
+
+  it('a janela tem a opção e diz que a conta é leitura nossa', () => {
+    const dialogo = dialogoDaPence('pence-no-contorno', abrir(true))!;
+    expect(dialogo.campos.find((c) => c.id === 'cortarIntersecoes')!.inicial).toBe(true);
+    expect(dialogo.nota).toMatch(/uma prega em cunha, sem vértice, com as bordas desenhadas\. O manual da referência tem as duas opções, mas não diz a conta; a que está aqui é a nossa leitura\.$/);
+  });
+});
+
 describe('diálogos', () => {
-  it('cada ferramenta que tem opções abre com o que foi usado por último; "Transferir pence" não pergunta nada', () => {
-    expect(dialogoDaPence('transferir-pence', O)).toBeNull();
-    for (const ferramenta of TODAS.filter((f) => f !== 'transferir-pence')) {
+  it('cada ferramenta abre com o que foi usado por último', () => {
+    for (const ferramenta of TODAS) {
       const dialogo = dialogoDaPence(ferramenta, O)!;
       expect(dialogo.titulo.length).toBeGreaterThan(3);
       expect(dialogo.campos.length).toBeGreaterThan(0);
@@ -346,7 +542,9 @@ describe('diálogos', () => {
       piquesLaterais: true,
       marcaNoVertice: false,
       acabamento: true,
+      cortarIntersecoes: false,
     });
+    expect(lerDialogoDaPence('pence-no-contorno', O, { ...valores, cortarIntersecoes: true }).pence.cortarIntersecoes).toBe(true);
     expect(() => lerDialogoDaPence('pence-no-contorno', O, { ...valores, abertura: 0 })).toThrow(/abertura/);
     // As outras ferramentas não mudam.
     expect(lerDialogoDaPence('pence-no-contorno', O, valores).pregas).toBe(O.pregas);
@@ -358,7 +556,10 @@ describe('diálogos', () => {
     expect(() => lerDialogoDaPence('pence-interna', O, { altura1: 0, altura2: 70, largura: 16, angulo: 0 })).toThrow(/alturas/);
 
     expect(lerDialogoDaPence('fechar-pence', O, { somenteORecorte: true }).fecharSomenteORecorte).toBe(true);
-    expect(lerDialogoDaPence('transferir-pence', O, {})).toBe(O);
+    expect(lerDialogoDaPence('fechar-pence', O, { somenteORecorte: true }).indicarPontas).toBe(false);
+    expect(lerDialogoDaPence('fechar-pence', O, { somenteORecorte: false, indicarPontas: true })).toMatchObject({ fecharSomenteORecorte: false, indicarPontas: true });
+    expect(lerDialogoDaPence('transferir-pence', O, {})).toEqual(O);
+    expect(lerDialogoDaPence('transferir-pence', O, { indicarPontas: true }).indicarPontas).toBe(true);
 
     const valores = { quantidade: 4, distancia: 50, abertura: 20, profundidade: 70, modo: 'marcar', piquesLaterais: false, marcaNoVertice: true };
     expect(lerDialogoDaPence('multiplas-pences', O, valores).multiplas).toEqual({
@@ -726,7 +927,7 @@ describe('“Criar acabamento” no Abrir', () => {
 
   it('o diálogo tem a opção, e ela é lida', () => {
     expect(dialogoDaPence('pence-no-contorno', O)!.campos.map((c) => c.id)).toContain('acabamento');
-    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta não é recortada/);
+    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada/);
     expect(lerDialogoDaPence('pence-no-contorno', O, { modo: 'abrir', abertura: 40, profundidade: 100, perpendicular: true, piquesLaterais: false, marcaNoVertice: false }).pence.acabamento).toBe(false);
   });
 

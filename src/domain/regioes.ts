@@ -75,9 +75,26 @@ export function levarOQueEstaNaRegiao(
   cadeiaQueFica: readonly Ponto2D[],
   movimento: Transformacao,
 ): Molde {
-  const dentro = (p: Ponto2D): boolean => pontoDentroDoContorno(p, regiao);
+  return levarOQueEstaNasRegioes(molde, [regiao], [cadeiaQueAnda], [cadeiaQueFica], movimento);
+}
+
+/**
+ * O mesmo, quando o que se move são várias regiões da peça de uma vez (a peça
+ * cortada em mais de um trecho da mesma reta): vale estar dentro de qualquer
+ * uma delas, e a borda mais próxima entre todos os trechos do contorno que
+ * andam e todos os que ficam.
+ */
+export function levarOQueEstaNasRegioes(
+  molde: Molde,
+  regioes: readonly Contorno[],
+  cadeiasQueAndam: readonly (readonly Ponto2D[])[],
+  cadeiasQueFicam: readonly (readonly Ponto2D[])[],
+  movimento: Transformacao,
+): Molde {
+  const dentro = (p: Ponto2D): boolean => regioes.some((regiao) => pontoDentroDoContorno(p, regiao));
   const levar = (linha: Contorno): Contorno => linha.map(movimento.ponto);
-  const naBordaQueAnda = (p: Ponto2D): boolean => distanciaAteALinha(p, cadeiaQueAnda) < distanciaAteALinha(p, cadeiaQueFica) - 1e-9;
+  const ate = (p: Ponto2D, cadeias: readonly (readonly Ponto2D[])[]): number => Math.min(...cadeias.map((cadeia) => distanciaAteALinha(p, cadeia)));
+  const naBordaQueAnda = (p: Ponto2D): boolean => ate(p, cadeiasQueAndam) < ate(p, cadeiasQueFicam) - 1e-9;
   return {
     ...molde,
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),

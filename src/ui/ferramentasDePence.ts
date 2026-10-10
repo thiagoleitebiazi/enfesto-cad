@@ -1,6 +1,7 @@
 import { area, distancia, type Ponto2D } from '../core/geometria';
 import { dobraPelaLinhaInterna } from '../domain/corteEUniao';
 import type { Molde, PenceDaPeca } from '../domain/molde';
+import { cruzaOContornoMaisDeDuasVezes } from '../domain/penceComIntersecoes';
 import {
   abrirPence,
   alterarPence,
@@ -8,6 +9,7 @@ import {
   conferirMedidasDaPence,
   conferirMultiplasPences,
   conferirOpcoesDePenceInterna,
+  conferirPontasDaPence,
   criarMultiplasPences,
   criarPence,
   criarPenceInterna,
@@ -24,6 +26,7 @@ import {
   transferirPence,
   type ModoDePence,
   type OpcoesDePenceInterna,
+  type PontasDaPence,
 } from '../domain/pences';
 import {
   alterarPrega,
@@ -84,9 +87,17 @@ export interface OpcoesDasPences {
     readonly marcaNoVertice: boolean;
     /** "Criar acabamento" (só no Abrir): a pence fica desenhada, sem recortar, e o contorno ganha o bico dela. */
     readonly acabamento: boolean;
+    /** "Cortar intersecções" (só no Abrir): a linha até o pivô que sai da peça e volta corta em todos os trechos, e o resultado é uma prega. */
+    readonly cortarIntersecoes: boolean;
   };
   readonly interna: OpcoesDePenceInterna;
   readonly fecharSomenteORecorte: boolean;
+  /**
+   * "Fechar" e "Transferir": o início, o vértice e o fim da pence são indicados
+   * um a um (a pence de pernas curvas). Sem isso, basta o vértice, e as pontas
+   * são os pontos vizinhos dele.
+   */
+  readonly indicarPontas: boolean;
   readonly multiplas: {
     readonly quantidade: number;
     readonly distanciaMm: number;
@@ -100,9 +111,10 @@ export interface OpcoesDasPences {
 }
 
 export const OPCOES_INICIAIS_DAS_PENCES: OpcoesDasPences = {
-  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true, acabamento: false },
+  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true, acabamento: false, cortarIntersecoes: false },
   interna: { altura1Mm: 80, altura2Mm: 80, larguraMm: 20, anguloGraus: 0, linhaAuxiliar: true, marcas: true },
   fecharSomenteORecorte: false,
+  indicarPontas: false,
   multiplas: { quantidade: 2, distanciaMm: 60, aberturaMm: 20, profundidadeMm: 80, modo: 'recortar', piquesLaterais: true, marcaNoVertice: true },
   pregas: { modo: 'simples-direita', quantidade: 1, distanciaMm: 50, larguraMm: 20, piques: true },
 };
@@ -145,8 +157,27 @@ function cliquesPedidos(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences):
   }
 }
 
+/** "Fechar" ou "Transferir" com o início, o vértice e o fim da pence indicados um a um. */
+function comPontasIndicadas(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences): boolean {
+  return opcoes.indicarPontas && (ferramenta === 'fechar-pence' || ferramenta === 'transferir-pence');
+}
+
+/**
+ * As pontas indicadas, pelo número do ponto no contorno. No estado da
+ * ferramenta, o início e o fim ficam nos pontos soltos (nessa ordem) e o
+ * vértice, no primeiro ponto do contorno. `undefined` enquanto não há as duas.
+ */
+export function pontasIndicadas(peca: Molde, estado: TrechoEmEdicao): PontasDaPence | undefined {
+  const [inicio, fim] = estado.livres.map((p) => peca.contorno.findIndex((v) => distancia(v, p) < MESMO_PONTO_MM));
+  return inicio !== undefined && fim !== undefined && inicio >= 0 && fim >= 0 ? { inicio, fim } : undefined;
+}
+
 /** Todos os cliques que a ferramenta pede já foram dados. */
 export function penceCompleta(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, estado: TrechoEmEdicao): boolean {
+  if (comPontasIndicadas(ferramenta, opcoes)) {
+    const pedeDestino = ferramenta === 'transferir-pence' || !opcoes.fecharSomenteORecorte;
+    return estado.inicio !== null && estado.livres.length >= 2 && (!pedeDestino || estado.fim !== null);
+  }
   const pedidos = cliquesPedidos(ferramenta, opcoes);
   return (
     (pedidos.inicio === 'nenhum' || estado.inicio !== null) &&
@@ -191,6 +222,34 @@ export function penceSemRegistroSobOClique(ferramenta: FerramentaDePence, peca: 
 }
 
 const NAO_E_PENCE = 'Esse ponto não é o vértice de uma pence recortada: clique no ponto de dentro do recorte.';
+const NAO_E_PONTO = 'Clique num ponto do contorno: o início, o vértice e o fim da pence são pontos dele.';
+
+/**
+ * O clique do "Fechar" e do "Transferir" com as pontas indicadas: o início,
+ * o vértice e o fim da pence (três pontos do contorno) e, por último, o pivô
+ * ou a nova posição, em qualquer lugar do contorno.
+ */
+function cliqueComPontasIndicadas(peca: Molde, estado: TrechoEmEdicao, clique: CliqueNaPence): CliqueDePence {
+  const igual: CliqueDePence = { estado, recusa: null };
+  const posicao = clique.noContorno;
+  if (!posicao) return igual;
+  if (estado.inicio && estado.livres.length >= 2) {
+    return distancia(posicao.ponto, estado.inicio.ponto) > MESMO_PONTO_MM ? { estado: { ...estado, fim: posicao }, recusa: null } : igual;
+  }
+  if (distancia(posicao.ponto, peca.contorno[posicao.indiceAresta]!) >= MESMO_PONTO_MM) return { estado, recusa: NAO_E_PONTO };
+  const jaIndicado = [estado.inicio?.ponto, ...estado.livres].some((q) => q !== undefined && distancia(q, posicao.ponto) < MESMO_PONTO_MM);
+  if (jaIndicado) return igual;
+  if (estado.livres.length === 0) return { estado: { ...SEM_TRECHO, livres: [posicao.ponto] }, recusa: null };
+  if (!estado.inicio) return { estado: { ...estado, inicio: posicao }, recusa: null };
+  // O fim: com ele, os três pontos precisam formar uma pence recortada.
+  const comOFim: TrechoEmEdicao = { ...estado, livres: [estado.livres[0]!, posicao.ponto] };
+  try {
+    conferirPontasDaPence(peca, estado.inicio.indiceAresta, pontasIndicadas(peca, comOFim)!);
+  } catch (e) {
+    return { estado, recusa: e instanceof Error ? e.message : String(e) };
+  }
+  return { estado: comOFim, recusa: null };
+}
 
 /**
  * O que um clique faz, na ordem que a ferramenta pede: o primeiro ponto (no
@@ -207,6 +266,7 @@ export function cliqueDePence(
   const pedidos = cliquesPedidos(ferramenta, opcoes);
   const igual: CliqueDePence = { estado, recusa: null };
   if (penceCompleta(ferramenta, opcoes, estado)) return igual;
+  if (comPontasIndicadas(ferramenta, opcoes)) return cliqueComPontasIndicadas(peca, estado, clique);
   // Antes de qualquer ponto: o clique numa pence já feita abre as medidas dela.
   if (!estado.inicio && clique.pence) {
     const pence = pencesDaPeca(peca).find((q) => q.id === clique.pence);
@@ -259,6 +319,8 @@ function trocar(pecas: readonly Molde[], id: string, nova: Molde): Molde[] {
 const NOME_DO_MODO: Record<ModoDePenceNoContorno, string> = { recortar: 'recortada', marcar: 'marcada', abrir: 'aberta' };
 /** O que a mensagem acrescenta quando a pence fechada ou transferida não tinha registro. */
 const CANTO_TRATADO_COMO_PENCE = ' Esse canto não foi feito por uma ferramenta de pence: foi tratado como pence por ser um canto que entra na peça.';
+/** O que a mensagem acrescenta quando o início, o vértice e o fim da pence foram indicados um a um. */
+const PONTAS_INDICADAS = ' O início, o vértice e o fim da pence foram os pontos indicados.';
 
 /** Aplica a ferramenta na peça, com os cliques dados. Lança erro, sem mudar nada, quando não dá. */
 export function aplicarPence(
@@ -274,14 +336,25 @@ export function aplicarPence(
   const livre = estado.livres[0];
   const pronto = (nova: Molde, recado: string): ResultadoDeFerramentaDeMolde => ({ pecas: trocar(pecas, peca.id, nova), recado });
   const areaDe = (m: Molde): string => cm2(area(m.contorno));
+  // "Fechar" e "Transferir": as pontas indicadas uma a uma (se foram) e o que a mensagem diz da pence que não tinha registro.
+  const pontas = comPontasIndicadas(ferramenta, opcoes) ? pontasIndicadas(peca, estado) : undefined;
+  const semRegistro = pontas ? PONTAS_INDICADAS : inicio && penceNoVertice(peca, inicio.indiceAresta) ? '' : CANTO_TRATADO_COMO_PENCE;
 
   switch (ferramenta) {
     case 'pence-no-contorno': {
-      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular, acabamento } = opcoes.pence;
+      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular, acabamento, cortarIntersecoes } = opcoes.pence;
       const medidas = `abertura de ${formatarMm(aberturaMm)}, profundidade de ${formatarMm(profundidadeMm)}`;
+      // Com "Cortar intersecções", a linha que sai da peça e volta abre a peça em todos os trechos: uma prega, sem vértice.
+      if (modo === 'abrir' && cortarIntersecoes && cruzaOContornoMaisDeDuasVezes(peca.contorno, inicio!.ponto, fim!.ponto)) {
+        const emPrega = abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento, true);
+        return pronto(
+          emPrega,
+          `“${peca.nome}” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, ${formatarMm(aberturaMm)} na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. A peça passou de ${areaDe(peca)} para ${areaDe(emPrega)}.`,
+        );
+      }
       const nova =
         modo === 'abrir'
-          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento)
+          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento, cortarIntersecoes)
           : criarPence(
               peca,
               inicio!,
@@ -299,15 +372,17 @@ export function aplicarPence(
     case 'pence-interna':
       return pronto(criarPenceInterna(peca, livre!, opcoes.interna, novoId), `Pence interna desenhada em “${peca.nome}”.`);
     case 'fechar-pence': {
-      const nova = fecharPence(peca, inicio!.indiceAresta, opcoes.fecharSomenteORecorte ? null : fim);
-      const mudanca = `A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.${penceNoVertice(peca, inicio!.indiceAresta) ? '' : CANTO_TRATADO_COMO_PENCE}`;
+      const nova = fecharPence(peca, inicio!.indiceAresta, opcoes.fecharSomenteORecorte ? null : fim, pontas);
+      const mudanca = `A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.${semRegistro}`;
       if (opcoes.fecharSomenteORecorte) {
         return pronto(nova, `Recorte da pence fechado em “${peca.nome}”: o contorno passa reto, e a pence ficou marcada. ${mudanca}`);
       }
       // As pontas só se encontram se estiverem à mesma distância do pivô; senão sobra um degrau, e a mensagem diz de quanto.
       const n = peca.contorno.length;
-      const pontas = [peca.contorno[(inicio!.indiceAresta - 1 + n) % n]!, peca.contorno[(inicio!.indiceAresta + 1) % n]!] as const;
-      const degrau = Math.abs(distancia(fim!.ponto, pontas[0]) - distancia(fim!.ponto, pontas[1]));
+      const dasPontas = pontas
+        ? ([peca.contorno[pontas.inicio]!, peca.contorno[pontas.fim]!] as const)
+        : ([peca.contorno[(inicio!.indiceAresta - 1 + n) % n]!, peca.contorno[(inicio!.indiceAresta + 1) % n]!] as const);
+      const degrau = Math.abs(distancia(fim!.ponto, dasPontas[0]) - distancia(fim!.ponto, dasPontas[1]));
       const aviso =
         degrau > DEGRAU_QUE_VALE_AVISAR_MM
           ? ` As pontas da pence estão a distâncias diferentes do pivô: sobrou um degrau de ${formatarMm(degrau)} entre elas, para acertar com Mover ponto.`
@@ -315,11 +390,10 @@ export function aplicarPence(
       return pronto(nova, `Pence fechada em “${peca.nome}”, girando em torno do pivô. ${mudanca}${aviso}`);
     }
     case 'transferir-pence': {
-      const nova = transferirPence(peca, inicio!.indiceAresta, fim!);
-      return pronto(
-        nova,
-        `Pence transferida em “${peca.nome}”, com o mesmo vértice e o mesmo ângulo. A área continua ${areaDe(nova)}.${penceNoVertice(peca, inicio!.indiceAresta) ? '' : CANTO_TRATADO_COMO_PENCE}`,
-      );
+      const nova = transferirPence(peca, inicio!.indiceAresta, fim!, pontas);
+      // Com as pernas indicadas (curvas), a pence nova tem pernas retas: a área pode mudar um pouco.
+      const areas = pontas ? `As pernas da pence nova são retas: a peça passou de ${areaDe(peca)} para ${areaDe(nova)}.` : `A área continua ${areaDe(nova)}.`;
+      return pronto(nova, `Pence transferida em “${peca.nome}”, com o mesmo vértice e o mesmo ângulo. ${areas}${semRegistro}`);
     }
     case 'multiplas-pences': {
       const { quantidade, distanciaMm, ...daPence } = opcoes.multiplas;
@@ -356,7 +430,8 @@ export function previaDaPence(
   const dasPences = ferramenta === 'pregas' || ferramenta === 'multiplas-pences' ? [] : pencesDaPeca(peca).map((pence) => pence.pontos[pence.tipo === 'interna' ? 0 : 1]!);
   // Com "Pregas", o meio de cada prega registrada: é onde se clica para mudá-la.
   const dasPregas = ferramenta === 'pregas' ? pregasDaPeca(peca).map((prega) => meioDaFaixa(faixaDaPrega(prega))) : [];
-  const marcas = [...dasPences, ...dasPregas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
+  const indicadas = comPontasIndicadas(ferramenta, opcoes) ? estado.livres : [];
+  const marcas = [...dasPences, ...dasPregas, ...indicadas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
   if (!mouse) return { marcas };
   const pregaSobOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).editarPrega;
   if (pregaSobOMouse) {
@@ -394,6 +469,13 @@ function meioDaFaixa(faixa: readonly Ponto2D[]): Ponto2D {
 
 const ESC = ' Esc sai.';
 
+/** A instrução dos três primeiros cliques do "Fechar" e do "Transferir" com as pontas indicadas. */
+function instrucaoDasPontas(nome: string, estado: TrechoEmEdicao): string {
+  if (estado.livres.length === 0) return nome + ' (pontas indicadas): clique no ponto do contorno onde a pence começa.' + ESC;
+  if (!estado.inicio) return nome + ' (pontas indicadas): clique no vértice da pence, o ponto de dentro do recorte.' + ESC;
+  return nome + ' (pontas indicadas): clique no ponto do contorno onde a pence termina.' + ESC;
+}
+
 /**
  * A instrução do próximo clique, para a faixa de mensagens. `temPences`: a
  * peça tem pences registradas, que um clique pode abrir. `temPregas`: o mesmo
@@ -418,10 +500,12 @@ export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDa
     case 'pence-interna':
       return 'Pence interna: clique dentro da peça selecionada, no centro da pence.' + ouMudar + ESC;
     case 'fechar-pence':
+      if (comPontasIndicadas(ferramenta, opcoes) && !(estado.inicio && estado.livres.length >= 2)) return instrucaoDasPontas('Fechar pence', estado);
       return !estado.inicio
         ? 'Fechar pence: clique no vértice da pence recortada (o ponto de dentro do recorte).' + ESC
         : 'Fechar pence: clique no contorno, no pivô — o lado sem a linha de fio gira em torno dele até a pence fechar.' + ESC;
     case 'transferir-pence':
+      if (comPontasIndicadas(ferramenta, opcoes) && !(estado.inicio && estado.livres.length >= 2)) return instrucaoDasPontas('Transferir pence', estado);
       return !estado.inicio
         ? 'Transferir pence: clique no vértice da pence recortada (o ponto de dentro do recorte).' + ESC
         : 'Transferir pence: clique no contorno, na nova posição da pence.' + ESC;
@@ -622,7 +706,17 @@ const MODOS_DE_PENCE: ReadonlyArray<{ readonly valor: ModoDePence; readonly rotu
   { valor: 'marcar', rotulo: 'Marcar: a pence fica desenhada, sem cortar' },
 ];
 
-/** O diálogo que a ferramenta abre antes dos cliques; `null` para a que não pergunta nada ("Transferir pence"). */
+/** O campo "indicar as pontas", igual no "Fechar" e no "Transferir". */
+const CAMPO_DE_INDICAR_PONTAS = (inicial: boolean): CampoDoDialogo => ({
+  tipo: 'caixa',
+  id: 'indicarPontas',
+  rotulo: 'Indicar o início, o vértice e o fim da pence, um a um: para a pence de pernas curvas ou de vários pontos',
+  inicial,
+});
+const NOTA_DE_INDICAR_PONTAS =
+  ' Com “Indicar o início, o vértice e o fim”, os três primeiros cliques são esses pontos do contorno, nessa ordem (a do manual da referência; a contrária também serve), e depois vem o pivô ou a nova posição. Os pontos das pernas saem do contorno com a pence.';
+
+/** O diálogo que a ferramenta abre antes dos cliques. */
 export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences): DialogoDePence | null {
   switch (ferramenta) {
     case 'pence-no-contorno':
@@ -652,8 +746,14 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             rotulo: 'Criar acabamento (só no Abrir): a pence fica desenhada, sem recortar, e o contorno ganha o bico dela',
             inicial: opcoes.pence.acabamento,
           },
+          {
+            tipo: 'caixa',
+            id: 'cortarIntersecoes',
+            rotulo: 'Cortar intersecções (só no Abrir): a linha até o pivô que sai da peça e volta corta em todos os trechos; o resultado é uma prega',
+            inicial: opcoes.pence.cortarIntersecoes,
+          },
         ],
-        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta não é recortada: as pernas ficam desenhadas e o contorno, entre as duas pontas, ganha o bico que a pence faz quando é dobrada (a borda de cada lado, espelhada na perna, até a linha do meio). O manual da referência tem a opção, mas não diz a conta; essa é a nossa leitura.',
+        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada (a borda de cada lado, espelhada na perna, até a linha do meio). Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta; a que está aqui é a nossa leitura.',
       };
     case 'pence-interna':
       return {
@@ -688,11 +788,16 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             rotulo: 'Somente o recorte: o contorno passa reto e a pence fica marcada (a peça não gira)',
             inicial: opcoes.fecharSomenteORecorte,
           },
+          CAMPO_DE_INDICAR_PONTAS(opcoes.indicarPontas),
         ],
-        nota: 'Depois de confirmar, clique no vértice da pence recortada. Sem “Somente o recorte”, clique em seguida no pivô, no contorno: a peça é cortada do vértice até ele, e o lado sem a linha de fio gira em torno do pivô até as pontas da pence se encontrarem. O manual da referência só dá a ordem dos cliques; o resultado é a leitura natural dela.',
+        nota: 'Depois de confirmar, clique no vértice da pence recortada. Sem “Somente o recorte”, clique em seguida no pivô, no contorno: a peça é cortada do vértice até ele, e o lado sem a linha de fio gira em torno do pivô até as pontas da pence se encontrarem. O manual da referência só dá a ordem dos cliques; o resultado é a leitura natural dela.' + NOTA_DE_INDICAR_PONTAS,
       };
     case 'transferir-pence':
-      return null;
+      return {
+        titulo: 'Transferir pence',
+        campos: [CAMPO_DE_INDICAR_PONTAS(opcoes.indicarPontas)],
+        nota: 'Depois de confirmar, clique no vértice da pence recortada e, em seguida, no contorno, na nova posição: a peça é cortada do vértice até ela, e o lado sem a linha de fio gira em torno do vértice até a pence antiga fechar. A pence nova tem o mesmo vértice e o mesmo ângulo, e a área da peça não muda.' + NOTA_DE_INDICAR_PONTAS,
+      };
     case 'multiplas-pences':
       return {
         titulo: 'Múltiplas pences',
@@ -772,6 +877,7 @@ export function lerDialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesD
         piquesLaterais: caixa('piquesLaterais'),
         marcaNoVertice: caixa('marcaNoVertice'),
         acabamento: caixa('acabamento'),
+        cortarIntersecoes: caixa('cortarIntersecoes'),
       };
       conferirMedidasDaPence(pence.aberturaMm, pence.profundidadeMm);
       return { ...opcoes, pence };
@@ -789,9 +895,9 @@ export function lerDialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesD
       return { ...opcoes, interna };
     }
     case 'fechar-pence':
-      return { ...opcoes, fecharSomenteORecorte: caixa('somenteORecorte') };
+      return { ...opcoes, fecharSomenteORecorte: caixa('somenteORecorte'), indicarPontas: caixa('indicarPontas') };
     case 'transferir-pence':
-      return opcoes;
+      return { ...opcoes, indicarPontas: caixa('indicarPontas') };
     case 'multiplas-pences': {
       const multiplas = {
         quantidade: numero('quantidade'),

@@ -25,6 +25,7 @@ import {
   type OpcoesDeDobra,
   type OpcoesDeUniao,
 } from '../domain/corteEUniao';
+import { cortarMoldePelosElementos, linhaDeCortePelosElementos } from '../domain/cortePorElementos';
 import { rotacaoEhPermitida, type Molde } from '../domain/molde';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import { caminhoDoTrecho, SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
@@ -171,6 +172,128 @@ export function retaPeloElemento(
   }
 }
 
+/** O ponto que guarda, no estado da ferramenta, um elemento indicado: o meio do primeiro trecho dele. */
+function marcaDoElemento(linha: Contorno): Ponto2D {
+  return { x: (linha[0]!.x + linha[1]!.x) / 2, y: (linha[0]!.y + linha[1]!.y) / 2 };
+}
+
+/** Os elementos (linhas internas, pelo número) indicados para o corte no "Contorno manual", na ordem em que foram indicados. */
+export function elementosDoCorte(peca: Molde, estado: TrechoEmEdicao): number[] {
+  if (estado.inicio) return [];
+  return estado.livres
+    .map((marca) => peca.linhasInternas.findIndex((linha) => linha.length >= 2 && distancia(marcaDoElemento(linha), marca) <= MESMO_PONTO_MM))
+    .filter((i) => i >= 0);
+}
+
+/** O que a mensagem do "Cortar" diz depois do corte. */
+function recadoDoCorte(peca: Molde, maior: Molde, nova: Molde, corte: OpcoesDeCorte, pelosElementos: number, reto = true): string {
+  const costura =
+    corte.costuraMm > 0
+      ? ` A borda do corte ganhou ${formatarMm(corte.costuraMm)} de costura ${corte.costuraNasDuas ? 'nas duas partes' : 'na peça nova'}${corte.piques ? ', com um pique em cada ponta da linha do corte' : ''}.`
+      : '';
+  const como = pelosElementos === 0 ? '' : pelosElementos === 1 ? ', pelo elemento indicado' : `, pelos ${pelosElementos} elementos indicados`;
+  // No corte que não é reto, a costura é a borda deslocada: o manual da referência manda revisar.
+  const revisar = !reto && corte.costuraMm > 0 ? ' Num corte que não é reto, confira a costura: ela é a borda do corte deslocada.' : '';
+  return `“${peca.nome}” cortada em duas${como}: ${cm2(area(maior.contorno))} continuam nela e ${cm2(area(nova.contorno))} são a peça nova “${nova.nome}”.${costura}${revisar}`;
+}
+
+/** "Cortar" pelos elementos indicados (linhas internas da peça, pelo número). Lança erro, sem mudar nada, quando eles não dão uma linha de corte. */
+export function aplicarCortePelosElementos(
+  pecas: readonly Molde[],
+  peca: Molde,
+  elementos: readonly number[],
+  novoId: () => string,
+  corte: OpcoesDeCorte = CORTE_SEM_COSTURA,
+): ResultadoDeFerramentaDeMolde {
+  const reto = linhaDeCortePelosElementos(peca, elementos).miolo.length === 0;
+  const [maior, menor] = cortarMoldePelosElementos(peca, elementos, novoId, corte);
+  const nova = { ...menor, nome: nomeDaParteNova(peca.nome, pecas) };
+  return { pecas: trocar(pecas, peca.id, [maior, nova]), recado: recadoDoCorte(peca, maior, nova, corte, elementos.length, reto) };
+}
+
+/** O que o clique do "Cortar" num elemento faz: o estado novo, o que dizer e, se o corte foi feito, as peças. */
+export interface CliqueNoElementoDoCorte {
+  readonly estado: TrechoEmEdicao;
+  readonly recado: string | null;
+  readonly pecas?: readonly Molde[];
+}
+
+/**
+ * O clique do "Cortar" numa linha interna da peça (o elemento: reta, curva,
+ * arco ou linha quebrada), antes de qualquer ponto do contorno. Com o
+ * contorno automático, corta por ela na hora. Com o manual, ela entra na
+ * lista dos elementos do corte (ou sai, se já estava), e o Enter corta.
+ * `null` quando o clique não é isso.
+ */
+export function cliqueNoElementoDoCorte(
+  pecas: readonly Molde[],
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  linhaInterna: number | null,
+  manual: boolean,
+  novoId: () => string,
+  corte: OpcoesDeCorte = CORTE_SEM_COSTURA,
+): CliqueNoElementoDoCorte | null {
+  const linha = linhaInterna === null ? undefined : peca.linhasInternas[linhaInterna];
+  if (linhaInterna === null || !linha || linha.length < 2 || estado.inicio) return null;
+  if (!manual) {
+    try {
+      const feito = aplicarCortePelosElementos(pecas, peca, [linhaInterna], novoId, corte);
+      return { estado: SEM_TRECHO, recado: feito.recado, pecas: feito.pecas };
+    } catch (e) {
+      return { estado, recado: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  const marca = marcaDoElemento(linha);
+  const jaIndicado = elementosDoCorte(peca, estado).includes(linhaInterna);
+  const livres = jaIndicado ? estado.livres.filter((p) => distancia(p, marca) > MESMO_PONTO_MM) : [...estado.livres, marca];
+  const n = livres.length;
+  return {
+    estado: { ...SEM_TRECHO, livres },
+    recado: n === 0 ? null : `${n} ${n === 1 ? 'elemento indicado' : 'elementos indicados'} para o corte. Enter corta; o clique num elemento já indicado tira ele da lista.`,
+  };
+}
+
+/** O Enter do "Cortar" com o contorno manual: corta pelos elementos indicados. `null` se não há nenhum. */
+export function confirmarCortePelosElementos(
+  pecas: readonly Molde[],
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  novoId: () => string,
+  corte: OpcoesDeCorte = CORTE_SEM_COSTURA,
+): CliqueNoElementoDoCorte | null {
+  const elementos = elementosDoCorte(peca, estado);
+  if (elementos.length === 0) return null;
+  try {
+    const feito = aplicarCortePelosElementos(pecas, peca, elementos, novoId, corte);
+    return { estado: SEM_TRECHO, recado: feito.recado, pecas: feito.pecas };
+  } catch (e) {
+    // Os elementos continuam indicados: dá para tirar o que sobra, ou indicar o que falta.
+    return { estado, recado: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * A prévia do corte por elementos: os elementos indicados (e o que está sob o
+ * mouse) em destaque e, se eles já dão uma linha de corte, a linha, de borda
+ * a borda. `null` quando não há elemento nenhum em jogo.
+ */
+export function previaDoCortePelosElementos(peca: Molde, estado: TrechoEmEdicao, linhaSobOMouse: number | null, manual: boolean): PreviaDeFerramentaDeMolde | null {
+  if (estado.inicio) return null;
+  const indicados = elementosDoCorte(peca, estado);
+  const sobOMouse = linhaSobOMouse !== null && (peca.linhasInternas[linhaSobOMouse]?.length ?? 0) >= 2 ? linhaSobOMouse : null;
+  // No automático, o clique corta pelo elemento sob o mouse; no manual, ele entra na lista (ou sai dela).
+  const emJogo = sobOMouse === null ? indicados : !manual ? [sobOMouse] : indicados.includes(sobOMouse) ? indicados : [...indicados, sobOMouse];
+  if (emJogo.length === 0) return null;
+  const linhas = emJogo.map((i) => peca.linhasInternas[i]!);
+  try {
+    const { a, b, miolo } = linhaDeCortePelosElementos(peca, emJogo);
+    return { novo: [a.ponto, ...miolo, b.ponto], linhas, marcas: [a.ponto, b.ponto] };
+  } catch {
+    return { linhas };
+  }
+}
+
 /** Um nome que nenhuma peça usa: "Nome (2)", "Nome (3)"… */
 export function nomeDaParteNova(nome: string, pecas: readonly Molde[]): string {
   const usados = new Set(pecas.map((p) => p.nome));
@@ -205,14 +328,7 @@ export function aplicarReta(
     const corte = extras.corte ?? CORTE_SEM_COSTURA;
     const [maior, menor] = cortarMoldeComOpcoes(peca, estado.inicio, estado.fim, novoId, corte);
     const nova = { ...menor, nome: nomeDaParteNova(peca.nome, pecas) };
-    const costura =
-      corte.costuraMm > 0
-        ? ` A borda do corte ganhou ${formatarMm(corte.costuraMm)} de costura ${corte.costuraNasDuas ? 'nas duas partes' : 'na peça nova'}${corte.piques ? ', com um pique em cada ponta da linha do corte' : ''}.`
-        : '';
-    return {
-      pecas: trocar(pecas, peca.id, [maior, nova]),
-      recado: `“${peca.nome}” cortada em duas: ${cm2(area(maior.contorno))} continuam nela e ${cm2(area(nova.contorno))} são a peça nova “${nova.nome}”.${costura}`,
-    };
+    return { pecas: trocar(pecas, peca.id, [maior, nova]), recado: recadoDoCorte(peca, maior, nova, corte, 0) };
   }
   const remover = extras.remover ?? REMOVER_REGIAO_SIMPLES;
   if (ferramenta === 'remover-regiao' && remover.unir) {
@@ -298,11 +414,21 @@ export function lerDialogoDeUnir(valores: ValoresDoDialogo): { readonly apenasMo
   return { apenasMover: valores.apenasMover === true, uniao: { unirTamanhos: valores.unirTamanhos !== false, giro: valores.giro === 'tamanho' ? 'tamanho' : 'base' } };
 }
 
-/** O que a janela do "Cortar" pergunta. */
-export function dialogoDeCortar(opcoes: OpcoesDeCorte): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
+/** O que a janela do "Cortar" pergunta; `contornoManual` é o "Contorno" que ficou escolhido da última vez. */
+export function dialogoDeCortar(opcoes: OpcoesDeCorte, contornoManual = false): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
   return {
     titulo: 'Cortar molde',
     campos: [
+      {
+        tipo: 'escolha',
+        id: 'contorno',
+        rotulo: 'Contorno: como o corte por elementos é feito',
+        opcoes: [
+          { valor: 'automatico', rotulo: 'Automático: o clique num elemento corta por ele na hora' },
+          { valor: 'manual', rotulo: 'Manual: indique os elementos que formam a linha do corte e confirme com Enter' },
+        ],
+        inicial: contornoManual ? 'manual' : 'automatico',
+      },
       { tipo: 'medida', id: 'costura', rotulo: 'Costura na borda do corte (mm; 0 = sem costura)', inicial: String(opcoes.costuraMm).replace('.', ',') },
       { tipo: 'caixa', id: 'costuraNasDuas', rotulo: 'Costura 2 moldes: nas duas partes (sem isso, só na peça nova)', inicial: opcoes.costuraNasDuas },
       { tipo: 'caixa', id: 'piques', rotulo: 'Pique em cada ponta da linha do corte, na parte que ganha costura', inicial: opcoes.piques },
@@ -323,8 +449,13 @@ export function dialogoDeCortar(opcoes: OpcoesDeCorte): { readonly titulo: strin
         inicial: opcoes.manterDistancias,
       },
     ],
-    nota: 'Depois de confirmar, clique no contorno da peça, onde o corte começa e onde termina — ou numa linha interna reta dela (o elemento), que vira a reta do corte, de borda a borda. A parte maior continua sendo a peça; a outra vira uma peça nova. A costura entra no contorno, só na borda do corte; no modo tangente, a aresta vizinha que não chega à borda nova em até quatro vezes a costura acaba em esquadro. O manual da referência não diz qual parte ganha a costura sem “2 moldes”; aqui é a peça nova.',
+    nota: 'Depois de confirmar, clique no contorno da peça, onde o corte começa e onde termina — ou numa linha interna dela (o elemento: reta, curva, arco ou linha quebrada), que vira a linha do corte, de borda a borda. No contorno manual, indique os elementos que se emendam ponta com ponta (a até 1 mm) e aperte Enter. O elemento que passa do contorno é aparado nele; o que para antes é prolongado em linha reta até a borda. A parte maior continua sendo a peça; a outra vira uma peça nova. No modo tangente, a aresta vizinha que não chega à borda nova em até quatro vezes a costura acaba em esquadro; num corte que não é reto, confira a costura. O manual da referência não diz qual parte ganha a costura sem “2 moldes” (aqui, a nova), como os elementos se juntam nem o que se faz com o que não chega à borda: é a nossa leitura.',
   };
+}
+
+/** O "Contorno" que a janela do "Cortar" entregou: manual (verdadeiro) ou automático. */
+export function lerContornoDoCorte(valores: ValoresDoDialogo): boolean {
+  return valores.contorno === 'manual';
 }
 
 /** As opções do "Cortar" com o que a janela entregou. Lança erro quando a costura não serve. */
@@ -358,13 +489,23 @@ export function lerDialogoDeRemoverRegiao(valores: ValoresDoDialogo): OpcoesDeRe
 
 const ESC_DA_RETA = ' Esc sai.';
 
-/** A instrução do próximo clique do "Cortar" e do "Remover região". */
-export function instrucaoDaReta(ferramenta: 'cortar' | 'remover-regiao', estado: TrechoEmEdicao, remover: OpcoesDeRemoverRegiao = REMOVER_REGIAO_SIMPLES): string {
+/** A instrução do próximo clique do "Cortar" e do "Remover região"; `corteManual` é o "Contorno manual" do "Cortar". */
+export function instrucaoDaReta(
+  ferramenta: 'cortar' | 'remover-regiao',
+  estado: TrechoEmEdicao,
+  remover: OpcoesDeRemoverRegiao = REMOVER_REGIAO_SIMPLES,
+  corteManual = false,
+): string {
   const ouElemento = ' Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda.';
   if (ferramenta === 'cortar') {
-    return !estado.inicio
-      ? 'Cortar: clique no contorno da peça selecionada, onde o corte começa.' + ouElemento + ESC_DA_RETA
-      : 'Cortar: clique no contorno, onde o corte termina — a peça vira duas, pela reta tracejada.' + ESC_DA_RETA;
+    if (estado.inicio) return 'Cortar: clique no contorno, onde o corte termina — a peça vira duas, pela reta tracejada.' + ESC_DA_RETA;
+    if (!corteManual) {
+      return 'Cortar: clique no contorno da peça selecionada, onde o corte começa. Ou clique numa linha interna da peça (reta ou curva): ela vira a linha do corte, de borda a borda.' + ESC_DA_RETA;
+    }
+    const n = estado.livres.length;
+    return n === 0
+      ? 'Cortar (contorno manual): clique nas linhas internas que formam a linha do corte, uma a uma, e aperte Enter. Ou clique no contorno, onde um corte reto começa.' + ESC_DA_RETA
+      : `Cortar (contorno manual): ${n} ${n === 1 ? 'elemento indicado' : 'elementos indicados'} — clique nos outros, ou aperte Enter para cortar.` + ESC_DA_RETA;
   }
   if (!estado.inicio) return 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região.' + ouElemento + ESC_DA_RETA;
   if (!estado.fim) return 'Remover região: clique no contorno, na outra ponta da reta.' + ESC_DA_RETA;

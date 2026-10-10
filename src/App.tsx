@@ -36,8 +36,12 @@ import {
   dialogoDeUnir,
   lerDialogoDeUnir,
   instrucaoDaReta,
+  lerContornoDoCorte,
   lerDialogoDeCortar,
   lerDialogoDeRemoverRegiao,
+  cliqueNoElementoDoCorte,
+  confirmarCortePelosElementos,
+  previaDoCortePelosElementos,
   REMOVER_REGIAO_SIMPLES,
   retaPeloElemento,
   type OpcoesDeRemoverRegiao,
@@ -562,6 +566,8 @@ export default function App(): React.JSX.Element {
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
   const [opcoesDeCorte, setOpcoesDeCorte] = useState<OpcoesDeCorte>(CORTE_SEM_COSTURA);
+  // O "Contorno" do Cortar: no manual, os elementos do corte são indicados um a um e o Enter confirma.
+  const [corteManual, setCorteManual] = useState(false);
   const [opcoesDeRemover, setOpcoesDeRemover] = useState<OpcoesDeRemoverRegiao>(REMOVER_REGIAO_SIMPLES);
   // "Editar pontos de curva": o ponto de passagem escolhido, à espera do clique que diz onde ele fica.
   const [alcaDeCurva, setAlcaDeCurva] = useState<AlcaEscolhida | null>(null);
@@ -2397,9 +2403,26 @@ export default function App(): React.JSX.Element {
         // "Remover região" com "Unir moldes" pede uma segunda reta em vez do lado.
         const segundaReta = modo === 'remover-regiao' && opcoesDeRemover.unir;
         const noContorno = posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm);
+        // No "Cortar", o clique numa linha interna (reta ou curva), fora do contorno, corta por ela — ou, no contorno manual, indica o elemento.
+        if (modo === 'cortar') {
+          const noElemento = noContorno
+            ? null
+            : cliqueNoElementoDoCorte(pecas, peca, trecho, linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null, corteManual, proximoId, opcoesDeCorte);
+          if (noElemento) {
+            setTrecho(noElemento.estado);
+            if (noElemento.pecas) aplicarMudanca([...noElemento.pecas]);
+            setRecadoDaFerramenta(noElemento.recado);
+            return;
+          }
+          // Com elementos já indicados, o clique fora deles não começa um corte reto por engano.
+          if (!trecho.inicio && trecho.livres.length > 0) {
+            setRecadoDaFerramenta('Há elementos indicados para o corte: aperte Enter para cortar por eles, ou Esc para desistir.');
+            return;
+          }
+        }
         // O clique numa linha interna reta, fora do contorno, é a reta inteira dela (o elemento).
         const peloElemento =
-          modo !== 'bainha' && !noContorno
+          modo === 'remover-regiao' && !noContorno
             ? retaPeloElemento(modo, peca, trecho, linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null, segundaReta)
             : null;
         if (peloElemento?.recado) {
@@ -2633,6 +2656,7 @@ export default function App(): React.JSX.Element {
     [
       modo,
       opcoesDeCorte,
+      corteManual,
       opcoesDeRemover,
       pontosEmEdicao,
       contornoPendente,
@@ -2866,6 +2890,16 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'Enter' && (modo === 'novo-molde' || modo === 'novo-furo')) {
         e.preventDefault();
         finalizarContornoEmEdicao();
+      } else if (e.key === 'Enter' && modo === 'cortar' && !trecho.inicio && trecho.livres.length > 0) {
+        // "Contorno manual" do Cortar: o Enter confirma os elementos indicados.
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const confirmado = peca && confirmarCortePelosElementos(pecas, peca, trecho, proximoId, opcoesDeCorte);
+        if (confirmado) {
+          setTrecho(confirmado.estado);
+          if (confirmado.pecas) aplicarMudanca([...confirmado.pecas]);
+          setRecadoDaFerramenta(confirmado.recado);
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
         desfazer();
@@ -2946,6 +2980,7 @@ export default function App(): React.JSX.Element {
     [
       modo,
       trecho,
+      opcoesDeCorte,
       alcaDeCurva,
       pecas,
       selecionadoId,
@@ -3073,6 +3108,12 @@ export default function App(): React.JSX.Element {
         );
       }
       const mouse = cursorMundo ? { noContorno: posicaoNoContornoPerto(cursorMundo, contorno, raioMm), livre: cursorMundo } : null;
+      if (modo === 'cortar') {
+        // O elemento sob o mouse (fora do contorno) e os já indicados: a linha do corte que eles dão.
+        const sobOMouse = cursorMundo && !mouse?.noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null;
+        const pelosElementos = previaDoCortePelosElementos(pecaSelecionada, trecho, sobOMouse, corteManual);
+        if (pelosElementos) return pelosElementos;
+      }
       return modo === 'bainha'
         ? previaDaBainha(pecaSelecionada, trecho, mouse, opcoesDeBainha)
         : previaDaReta(modo, pecaSelecionada, trecho, mouse, modo === 'remover-regiao' && opcoesDeRemover.unir);
@@ -3086,6 +3127,7 @@ export default function App(): React.JSX.Element {
     return null;
   }, [
     modo,
+    corteManual,
     opcoesDeRemover.unir,
     pecas,
     pecaSelecionada,
@@ -3184,7 +3226,7 @@ export default function App(): React.JSX.Element {
       case 'espiral':
         return 'Espiral: clique onde o centro da espiral deve ficar.' + fim;
       case 'cortar':
-        return instrucaoDaReta('cortar', trecho);
+        return instrucaoDaReta('cortar', trecho, undefined, corteManual);
       case 'remover-regiao':
         return instrucaoDaReta('remover-regiao', trecho, opcoesDeRemover);
       case 'dobrar':
@@ -3965,14 +4007,15 @@ export default function App(): React.JSX.Element {
         })()}
       {dialogoDeFerramenta?.tipo === 'cortar' && pecaSelecionada && (
         <DialogoDeCampos
-          titulo={dialogoDeCortar(opcoesDeCorte).titulo}
+          titulo={dialogoDeCortar(opcoesDeCorte, corteManual).titulo}
           resumo={[['Peça', pecaSelecionada.nome]]}
-          campos={dialogoDeCortar(opcoesDeCorte).campos}
-          nota={dialogoDeCortar(opcoesDeCorte).nota}
+          campos={dialogoDeCortar(opcoesDeCorte, corteManual).campos}
+          nota={dialogoDeCortar(opcoesDeCorte, corteManual).nota}
           rotuloDoBotao="Indicar no desenho"
           onAplicar={(valores) => {
             try {
               setOpcoesDeCorte(lerDialogoDeCortar(valores));
+              setCorteManual(lerContornoDoCorte(valores));
               entrarModoDeConstrucao('cortar');
               return null;
             } catch (e) {

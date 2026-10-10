@@ -17,6 +17,7 @@ import {
 } from '../core/geometria';
 import { exigirCorteValido } from './corteEUniao';
 import { piquesQueFicamNoContorno, semCampo, type Marca, type Molde, type PenceDaPeca, type Pique } from './molde';
+import { abrirPelasIntersecoes, cruzaOContornoMaisDeDuasVezes } from './penceComIntersecoes';
 import {
   comecarPeloMenorPontoOriginal,
   distanciaAteALinha,
@@ -296,6 +297,10 @@ function exigirLinhaPorDentro(molde: Molde, a: Ponto2D, b: Ponto2D, oQue: string
  * recortada ocupa essa abertura até `profundidadeMm`; dali até o pivô o
  * espaço aberto vira tecido da peça. O lado que gira é o que não tem a linha
  * de fio.
+ *
+ * Com `cortarIntersecoes`, a linha que sai da peça e volta no caminho até o
+ * pivô não é recusada: a peça abre em todos os trechos dela, sem vértice — o
+ * resultado é uma prega (`penceComIntersecoes.ts`).
  */
 export function abrirPence(
   molde: Molde,
@@ -307,11 +312,18 @@ export function abrirPence(
   novoId: () => string,
   marcaNoVertice = false,
   acabamento = false,
+  cortarIntersecoes = false,
 ): Molde {
   conferirMedidasDaPence(aberturaMm, profundidadeMm);
   const p = posicao.ponto;
   const q = pivo.ponto;
   if (distancia(p, q) < MESMO_PONTO_MM) throw new Error('O pivô precisa ser outro ponto do contorno, do lado oposto ao da pence.');
+  if (cortarIntersecoes) {
+    const emPrega = abrirPelasIntersecoes(molde, posicao, pivo, aberturaMm, piquesLaterais, novoId);
+    if (emPrega) return comPencesValidas(emPrega);
+  } else if (cruzaOContornoMaisDeDuasVezes(molde.contorno, p, q)) {
+    throw new Error('A linha da posição da pence até o pivô sai da peça no caminho. Com “Cortar intersecções” ligado, a peça é cortada em todos os trechos da linha, e o resultado é uma prega.');
+  }
   exigirLinhaPorDentro(molde, p, q, 'A linha da posição da pence até o pivô');
   const ateOPivo = distancia(p, q);
   if (aberturaMm >= ateOPivo) throw new Error('A abertura é grande demais para a distância até o pivô.');
@@ -410,17 +422,75 @@ export function criarPenceInterna(molde: Molde, centro: Ponto2D, opcoes: OpcoesD
   );
 }
 
-/** A pence recortada cujo vértice é o ponto `indice` do contorno: as duas pontas (os pontos vizinhos) e o vértice. */
+/**
+ * As duas pontas de uma pence recortada indicadas uma a uma, pelo número do
+ * ponto no contorno: serve à pence de pernas curvas (ou de vários pontos), em
+ * que as pontas não são os vizinhos do vértice.
+ */
+export interface PontasDaPence {
+  readonly inicio: number;
+  readonly fim: number;
+}
+
+/**
+ * A pence recortada cujo vértice é o ponto `indice` do contorno: as duas
+ * pontas, o vértice e os pontos do contorno que estão em cada perna, entre a
+ * ponta e o vértice (nenhum, na pence de pernas retas).
+ */
 interface PenceRecortada {
   readonly inicio: PosicaoNoContorno;
   readonly vertice: Ponto2D;
   readonly fim: PosicaoNoContorno;
+  readonly pernaDoInicio: readonly Ponto2D[];
+  readonly pernaDoFim: readonly Ponto2D[];
 }
 
-function penceRecortadaEm(molde: Molde, indice: number): PenceRecortada {
+/** Os pontos do recorte, na ordem do contorno: início, perna, vértice, perna e fim. */
+function recorteDa(pence: PenceRecortada): Ponto2D[] {
+  return [pence.inicio.ponto, ...pence.pernaDoInicio, pence.vertice, ...pence.pernaDoFim, pence.fim.ponto];
+}
+
+/** A pence de pontas indicadas: o vértice fica entre as duas, na ordem do contorno (a que vem antes dele é o início). */
+function penceDePontasIndicadas(molde: Molde, indice: number, pontas: PontasDaPence): PenceRecortada {
+  const contorno = molde.contorno;
+  const n = contorno.length;
+  const valido = (i: number): boolean => Number.isInteger(i) && i >= 0 && i < n;
+  if (!valido(pontas.inicio) || !valido(pontas.fim)) throw new Error('Ponto fora do contorno da peça.');
+  if (pontas.inicio === indice || pontas.fim === indice || pontas.inicio === pontas.fim) {
+    throw new Error('O início, o vértice e o fim da pence precisam ser três pontos diferentes do contorno.');
+  }
+  const passos = (de: number, ate: number): number => (ate - de + n) % n;
+  const [a, b] = passos(pontas.inicio, indice) < passos(pontas.inicio, pontas.fim) ? [pontas.inicio, pontas.fim] : [pontas.fim, pontas.inicio];
+  const entre = (de: number, ate: number): Ponto2D[] => {
+    const pontos: Ponto2D[] = [];
+    for (let i = (de + 1) % n; i !== ate; i = (i + 1) % n) pontos.push(contorno[i]!);
+    return pontos;
+  };
+  const pence: PenceRecortada = {
+    inicio: { indiceAresta: a, ponto: contorno[a]! },
+    vertice: contorno[indice]!,
+    fim: { indiceAresta: b, ponto: contorno[b]! },
+    pernaDoInicio: entre(a, indice),
+    pernaDoFim: entre(indice, b),
+  };
+  // O recorte entra na peça: os pontos dele dão a volta no sentido contrário ao do contorno.
+  if (!(areaAssinada(recorteDa(pence)) * sentidoDe(contorno) < -AREA_MINIMA_MM2)) {
+    throw new Error('Esses três pontos não formam uma pence recortada: o vértice precisa ficar para dentro da peça, entre o início e o fim.');
+  }
+  if (n - pence.pernaDoInicio.length - pence.pernaDoFim.length - 1 < 3) throw new Error('A peça ficaria sem área sem essa pence.');
+  return pence;
+}
+
+/** Recusa os três pontos que não formam uma pence recortada (o vértice `indice`, com as pontas indicadas). */
+export function conferirPontasDaPence(molde: Molde, indice: number, pontas: PontasDaPence): void {
+  penceRecortadaEm(molde, indice, pontas);
+}
+
+function penceRecortadaEm(molde: Molde, indice: number, pontas?: PontasDaPence): PenceRecortada {
   const contorno = molde.contorno;
   const n = contorno.length;
   if (!Number.isInteger(indice) || indice < 0 || indice >= n) throw new Error('Ponto fora do contorno da peça.');
+  if (pontas) return penceDePontasIndicadas(molde, indice, pontas);
   const indiceDoInicio = (indice - 1 + n) % n;
   const indiceDoFim = (indice + 1) % n;
   const a = contorno[indiceDoInicio]!;
@@ -431,7 +501,7 @@ function penceRecortadaEm(molde: Molde, indice: number): PenceRecortada {
   if (!(giro < -1e-9)) {
     throw new Error('Esse ponto não é o vértice de uma pence recortada: clique no ponto de dentro do recorte.');
   }
-  return { inicio: { indiceAresta: indiceDoInicio, ponto: a }, vertice: v, fim: { indiceAresta: indiceDoFim, ponto: b } };
+  return { inicio: { indiceAresta: indiceDoInicio, ponto: a }, vertice: v, fim: { indiceAresta: indiceDoFim, ponto: b }, pernaDoInicio: [], pernaDoFim: [] };
 }
 
 /** Verdadeiro se o ponto `indice` do contorno é o vértice de uma pence recortada (um canto que entra na peça). */
@@ -450,11 +520,16 @@ export function ehVerticeDePence(molde: Molde, indice: number): boolean {
  * cortada do vértice até a nova posição e um dos lados gira em torno do
  * vértice até as pernas da pence antiga se encontrarem. O tecido é o mesmo: a
  * área não muda. Gira o lado que não tem a linha de fio.
+ *
+ * Com `pontas`, o início e o fim da pence são os pontos indicados (a pence de
+ * pernas curvas): o giro é o que leva o fim para a direção do início, vistos
+ * do vértice, e os pontos das pernas saem do contorno com a pence antiga.
  */
-export function transferirPence(molde: Molde, indice: number, novaPosicao: PosicaoNoContorno): Molde {
-  const { inicio, vertice, fim } = penceRecortadaEm(molde, indice);
+export function transferirPence(molde: Molde, indice: number, novaPosicao: PosicaoNoContorno, pontas?: PontasDaPence): Molde {
+  const antigaNoContorno = penceRecortadaEm(molde, indice, pontas);
+  const { inicio, vertice, fim, pernaDoInicio, pernaDoFim } = antigaNoContorno;
   const nova = novaPosicao.ponto;
-  if (distanciaAteALinha(nova, [inicio.ponto, vertice, fim.ponto]) < MESMO_PONTO_MM) {
+  if (distanciaAteALinha(nova, recorteDa(antigaNoContorno)) < MESMO_PONTO_MM) {
     throw new Error('Indique a nova posição fora da pence atual.');
   }
   exigirLinhaPorDentro(molde, vertice, nova, 'A linha do vértice da pence até a nova posição');
@@ -462,8 +537,8 @@ export function transferirPence(molde: Molde, indice: number, novaPosicao: Posic
   const depoisDaPence = trechoDoContorno(contorno, fim, novaPosicao);
   const antesDaPence = trechoDoContorno(contorno, novaPosicao, inicio);
   const regioes = [
-    [vertice, ...depoisDaPence],
-    [vertice, ...antesDaPence],
+    [vertice, ...pernaDoFim, ...depoisDaPence],
+    [vertice, ...antesDaPence, ...pernaDoInicio],
   ] as const;
   const anda = regiaoQueAnda(molde, regioes[0], regioes[1]);
   // O giro que leva a perna do fim para cima da perna do início.
@@ -499,14 +574,20 @@ export function transferirPence(molde: Molde, indice: number, novaPosicao: Posic
  * - Sem pivô ("somente o recorte"): nada gira; o contorno passa reto de uma
  *   ponta à outra e a pence fica marcada, como linha interna.
  */
-export function fecharPence(molde: Molde, indice: number, pivo: PosicaoNoContorno | null): Molde {
-  const { inicio, vertice, fim } = penceRecortadaEm(molde, indice);
+export function fecharPence(molde: Molde, indice: number, pivo: PosicaoNoContorno | null, pontas?: PontasDaPence): Molde {
+  const recortada = penceRecortadaEm(molde, indice, pontas);
+  const { inicio, vertice, fim, pernaDoInicio, pernaDoFim } = recortada;
   const contorno = molde.contorno;
   if (!pivo) {
-    const semVertice = contorno.filter((_, i) => i !== indice);
+    // Saem do contorno o vértice e os pontos das pernas: os que estão entre o início e o fim.
+    const n = contorno.length;
+    const doRecorte = new Set<number>();
+    for (let i = (inicio.indiceAresta + 1) % n; i !== fim.indiceAresta; i = (i + 1) % n) doRecorte.add(i);
+    const semVertice = contorno.filter((_, i) => !doRecorte.has(i));
     if (semVertice.length < 3 || !(area(semVertice) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área sem essa pence.');
-    const pontos = [inicio.ponto, vertice, fim.ponto];
-    const antiga = penceNoVertice(molde, indice);
+    const pontos = recorteDa(recortada);
+    // O registro é da pence de pernas retas: a de pernas curvas fica só desenhada.
+    const antiga = pernaDoInicio.length + pernaDoFim.length === 0 ? penceNoVertice(molde, indice) : null;
     const marcada: Molde = {
       ...molde,
       contorno: semVertice,
@@ -521,15 +602,15 @@ export function fecharPence(molde: Molde, indice: number, pivo: PosicaoNoContorn
     );
   }
   const centro = pivo.ponto;
-  if (distanciaAteALinha(centro, [inicio.ponto, vertice, fim.ponto]) < MESMO_PONTO_MM) {
+  if (distanciaAteALinha(centro, recorteDa(recortada)) < MESMO_PONTO_MM) {
     throw new Error('O pivô precisa ficar fora da pence, do outro lado da peça.');
   }
   exigirLinhaPorDentro(molde, vertice, centro, 'A linha do vértice da pence até o pivô');
   const depoisDaPence = trechoDoContorno(contorno, fim, pivo);
   const antesDaPence = trechoDoContorno(contorno, pivo, inicio);
   const regioes = [
-    [vertice, ...depoisDaPence],
-    [vertice, ...antesDaPence],
+    [vertice, ...pernaDoFim, ...depoisDaPence],
+    [vertice, ...antesDaPence, ...pernaDoInicio],
   ] as const;
   const anda = regiaoQueAnda(molde, regioes[0], regioes[1]);
   const fechar = anguloDe(centro, inicio.ponto) - anguloDe(centro, fim.ponto);

@@ -58,21 +58,40 @@ function arestas(contorno: Contorno): Array<readonly [Ponto2D, Ponto2D]> {
   return contorno.map((p, i) => [p, contorno[(i + 1) % contorno.length]!] as const);
 }
 
-/** Recusa o corte que não é uma reta inteira por dentro da peça, de um ponto do contorno a outro. */
-export function exigirCorteValido(molde: Molde, a: Ponto2D, b: Ponto2D): void {
-  const comprimento = distancia(a, b);
-  if (comprimento < FOLGA_DAS_PONTAS_DO_CORTE_MM * 4) {
+/**
+ * Recusa o corte que não é uma linha inteira por dentro da peça, de um ponto
+ * do contorno a outro: a reta de `a` a `b` ou, com `miolo`, a linha que passa
+ * por esses pontos no caminho (o corte por uma curva ou por vários elementos).
+ */
+export function exigirCorteValido(molde: Molde, a: Ponto2D, b: Ponto2D, miolo: readonly Ponto2D[] = []): void {
+  if (distancia(a, b) < FOLGA_DAS_PONTAS_DO_CORTE_MM * 4) {
     throw new Error('O corte precisa de dois pontos diferentes do contorno.');
   }
-  const k = FOLGA_DAS_PONTAS_DO_CORTE_MM / comprimento;
-  const a1 = ponto(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k);
-  const b1 = ponto(b.x + (a.x - b.x) * k, b.y + (a.y - b.y) * k);
-  const meio = ponto((a.x + b.x) / 2, (a.y + b.y) / 2);
-  if (!pontoDentroDoContorno(meio, molde.contorno) || arestas(molde.contorno).some(([p, q]) => segmentosSeIntersectam(a1, b1, p, q))) {
-    throw new Error('A reta de corte precisa ficar toda dentro da peça, de um ponto do contorno a outro.');
+  const oQue = miolo.length > 0 ? 'A linha de corte' : 'A reta de corte';
+  const linha = [a, ...miolo, b];
+  const ultimo = linha.length - 2;
+  // Cada trecho da linha; o primeiro e o último, encurtados na ponta que está no contorno.
+  const trechos = linha.slice(1).map((ate, i) => {
+    const de = linha[i]!;
+    const comprimento = distancia(de, ate);
+    if (comprimento < FOLGA_DAS_PONTAS_DO_CORTE_MM * 4) throw new Error('A linha de corte tem dois pontos seguidos no mesmo lugar.');
+    const k = FOLGA_DAS_PONTAS_DO_CORTE_MM / comprimento;
+    return {
+      de: i === 0 ? ponto(de.x + (ate.x - de.x) * k, de.y + (ate.y - de.y) * k) : de,
+      ate: i === ultimo ? ponto(ate.x + (de.x - ate.x) * k, ate.y + (de.y - ate.y) * k) : ate,
+      meio: ponto((de.x + ate.x) / 2, (de.y + ate.y) / 2),
+    };
+  });
+  const cruza = (contorno: Contorno): boolean => trechos.some((t) => arestas(contorno).some(([p, q]) => segmentosSeIntersectam(t.de, t.ate, p, q)));
+  if (trechos.some((t) => !pontoDentroDoContorno(t.meio, molde.contorno)) || cruza(molde.contorno)) {
+    throw new Error(`${oQue} precisa ficar toda dentro da peça, de um ponto do contorno a outro.`);
   }
-  if (molde.furos.some((furo) => arestas(furo).some(([p, q]) => segmentosSeIntersectam(a1, b1, p, q)))) {
-    throw new Error('A reta de corte passa por um furo da peça.');
+  if (molde.furos.some(cruza)) {
+    throw new Error(`${oQue} passa por um furo da peça.`);
+  }
+  // Dois trechos que não são vizinhos não podem se encontrar.
+  if (trechos.some((t, i) => trechos.some((u, j) => j > i + 1 && segmentosSeIntersectam(t.de, t.ate, u.de, u.ate)))) {
+    throw new Error('A linha de corte cruza a si mesma.');
   }
 }
 
@@ -124,11 +143,16 @@ export function fioDaParte(fio: LinhaDeFio, contorno: Contorno): LinhaDeFio {
  * As duas partes em que a reta de `a` a `b` divide a peça, cada uma com o que
  * é dela: os furos, as linhas internas e as marcas que ficam do lado dela, os
  * piques das arestas que herdou e as cotas mais próximas. A linha de fio vai
- * com cada parte (no lugar, se cabe; senão, no meio dela).
+ * com cada parte (no lugar, se cabe; senão, no meio dela). Com `miolo`, o
+ * corte não é reto: passa por esses pontos, de `a` para `b`.
  */
-function partesDoCorte(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno): readonly [Molde, Molde] {
-  exigirCorteValido(molde, a.ponto, b.ponto);
-  const contornos = [trechoDoContorno(molde.contorno, a, b), trechoDoContorno(molde.contorno, b, a)] as const;
+function partesDoCorte(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno, miolo: readonly Ponto2D[] = []): readonly [Molde, Molde] {
+  exigirCorteValido(molde, a.ponto, b.ponto, miolo);
+  // Cada parte fecha pela linha do corte: a primeira volta de `b` para `a`; a segunda vai de `a` para `b`.
+  const contornos = [
+    [...trechoDoContorno(molde.contorno, a, b), ...[...miolo].reverse()],
+    [...trechoDoContorno(molde.contorno, b, a), ...miolo],
+  ] as const;
   if (contornos.some((c) => c.length < 3 || !(area(c) > AREA_MINIMA_DE_UMA_PARTE_MM2))) {
     throw new Error('O corte deixaria uma das partes sem área.');
   }
@@ -150,12 +174,13 @@ function partesDoCorte(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno)
 }
 
 /**
- * "Cortar": divide a peça em duas pela reta entre dois pontos do contorno. A
- * parte maior continua sendo a peça (mesmo id e nome); a outra é uma peça
- * nova, com o id dado e o nome seguido de "(2)".
+ * "Cortar": divide a peça em duas pela reta entre dois pontos do contorno
+ * (ou, com `miolo`, pela linha que passa por esses pontos). A parte maior
+ * continua sendo a peça (mesmo id e nome); a outra é uma peça nova, com o id
+ * dado e o nome seguido de "(2)".
  */
-export function cortarMolde(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno, novoId: string): readonly [Molde, Molde] {
-  const [p0, p1] = partesDoCorte(molde, a, b);
+export function cortarMolde(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoContorno, novoId: string, miolo: readonly Ponto2D[] = []): readonly [Molde, Molde] {
+  const [p0, p1] = partesDoCorte(molde, a, b, miolo);
   const [maior, menor] = area(p0.contorno) >= area(p1.contorno) ? [p0, p1] : [p1, p0];
   return [maior, { ...menor, id: novoId, nome: `${molde.nome} (2)` }];
 }
@@ -661,6 +686,37 @@ function arestaEntre(contorno: Contorno, p: Ponto2D, q: Ponto2D): number {
   });
 }
 
+/**
+ * Onde a linha do corte está no contorno da parte: o número de cada ponto
+ * dela, na ordem em que o contorno passa por eles (a linha pode estar num
+ * sentido ou no outro); `null` se não está.
+ */
+function linhaNoContorno(contorno: Contorno, linha: readonly Ponto2D[]): number[] | null {
+  const n = contorno.length;
+  if (linha.length < 2 || linha.length > n) return null;
+  const igual = (a: Ponto2D, b: Ponto2D): boolean => distancia(a, b) <= NO_CONTORNO_DA_PARTE_MM;
+  for (let i = 0; i < n; i++) {
+    if (!igual(contorno[i]!, linha[0]!)) continue;
+    const adiante = linha.map((_, j) => (i + j) % n);
+    if (adiante.every((k, j) => igual(contorno[k]!, linha[j]!))) return adiante;
+    const paraTras = linha.map((_, j) => (((i - j) % n) + n) % n);
+    if (paraTras.every((k, j) => igual(contorno[k]!, linha[j]!))) return paraTras.reverse();
+  }
+  return null;
+}
+
+/** Verdadeiro se duas arestas do contorno que não são vizinhas se encontram. */
+function contornoSeCruza(contorno: Contorno): boolean {
+  const n = contorno.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      if (segmentosSeIntersectam(contorno[i]!, contorno[(i + 1) % n]!, contorno[j]!, contorno[(j + 1) % n]!)) return true;
+    }
+  }
+  return false;
+}
+
 /** A peça sem as linhas internas que estão em cima da reta: elas viram a borda do corte (ou a linha da prega). */
 export function semAsLinhasDaReta(molde: Molde, a: Ponto2D, b: Ponto2D): Molde {
   const linhasInternas = molde.linhasInternas.filter((l) => !estaNaReta(l, a, b));
@@ -668,25 +724,33 @@ export function semAsLinhasDaReta(molde: Molde, a: Ponto2D, b: Ponto2D): Molde {
 }
 
 /**
- * A parte com a costura acrescentada na aresta do corte (a que liga `p` a
- * `q`): a borda anda `costuraMm` para fora. Nas pontas, a costura segue as
- * arestas vizinhas (tangente) ou sai em esquadro com o corte (reta).
+ * A parte com a costura acrescentada na borda do corte (`linha`: as duas
+ * pontas e, no corte que não é reto, os pontos do caminho): a borda anda
+ * `costuraMm` para fora. Nas pontas, a costura segue as arestas vizinhas
+ * (tangente) ou sai em esquadro com o corte (reta). Nos pontos do caminho, os
+ * dois trechos deslocados se encontram no canto — ou, num canto fechado
+ * demais, cada um acaba no seu ponto.
  */
-function comCosturaNoCorte(parte: Molde, p: Ponto2D, q: Ponto2D, opcoes: OpcoesDeCorte, novoId: () => string): Molde {
+function comCosturaNoCorte(parte: Molde, linha: readonly Ponto2D[], opcoes: OpcoesDeCorte, novoId: () => string): Molde {
   const c = parte.contorno;
   const n = c.length;
-  const i = arestaEntre(c, p, q);
-  if (i < 0 || !(opcoes.costuraMm > 0)) return parte;
-  const de = c[i]!;
-  const ate = c[(i + 1) % n]!;
-  const comprimento = distancia(de, ate);
-  const u = ponto((ate.x - de.x) / comprimento, (ate.y - de.y) / comprimento);
+  const onde = linhaNoContorno(c, linha);
+  if (!onde || !(opcoes.costuraMm > 0)) return parte;
+  const borda = onde.map((k) => c[k]!);
+  const ultimo = borda.length - 1;
+  const de = borda[0]!;
+  const ate = borda[ultimo]!;
   // Num contorno anti-horário, o lado de fora fica à direita de quem anda por ele.
   const sentido = areaAssinada(c) >= 0 ? 1 : -1;
-  const fora = ponto(u.y * sentido, -u.x * sentido);
-  const paraFora = (v: Ponto2D): Ponto2D => ponto(v.x + fora.x * opcoes.costuraMm, v.y + fora.y * opcoes.costuraMm);
+  /** Para cada trecho da borda, a direção que aponta para fora da parte. */
+  const foras = borda.slice(1).map((v, j) => {
+    const anterior = borda[j]!;
+    const comprimento = distancia(anterior, v);
+    return ponto(((v.y - anterior.y) / comprimento) * sentido, ((anterior.x - v.x) / comprimento) * sentido);
+  });
+  const paraFora = (v: Ponto2D, fora: Ponto2D): Ponto2D => ponto(v.x + fora.x * opcoes.costuraMm, v.y + fora.y * opcoes.costuraMm);
   /** A aresta vizinha (que chega a `ponta` vindo de `vizinho`) estendida até a borda nova, se ela chega lá sem ir longe demais. */
-  const estendida = (vizinho: Ponto2D, ponta: Ponto2D): Ponto2D | null => {
+  const estendida = (vizinho: Ponto2D, ponta: Ponto2D, fora: Ponto2D): Ponto2D | null => {
     const d = distancia(vizinho, ponta);
     if (d < MESMO_PONTO_MM) return null;
     const w = ponto((ponta.x - vizinho.x) / d, (ponta.y - vizinho.y) / d);
@@ -695,15 +759,28 @@ function comCosturaNoCorte(parte: Molde, p: Ponto2D, q: Ponto2D, opcoes: OpcoesD
     const andar = opcoes.costuraMm / paraForaPorMm;
     return ponto(ponta.x + w.x * andar, ponta.y + w.y * andar);
   };
+  /** No ponto `j` do caminho, onde os dois trechos deslocados se encontram. */
+  const noCanto = (j: number): Ponto2D[] => {
+    const v = borda[j]!;
+    const antes = foras[j - 1]!;
+    const depois = foras[j]!;
+    const abertura = 1 + antes.x * depois.x + antes.y * depois.y;
+    // O canto fica a costura / cos(meio ângulo) do ponto: além do limite, cada trecho acaba no seu ponto.
+    if (abertura < 2 / LIMITE_DA_PONTA_DA_COSTURA ** 2) return [paraFora(v, antes), paraFora(v, depois)];
+    return [ponto(v.x + ((antes.x + depois.x) * opcoes.costuraMm) / abertura, v.y + ((antes.y + depois.y) * opcoes.costuraMm) / abertura)];
+  };
   const tangente = opcoes.modo === 'tangente';
-  const pontaDe = (tangente ? estendida(c[(i - 1 + n) % n]!, de) : null) ?? null;
-  const pontaAte = (tangente ? estendida(c[(i + 2) % n]!, ate) : null) ?? null;
-  const novo: Ponto2D[] = [];
-  c.forEach((v, k) => {
-    if (k === i) novo.push(...(pontaDe ? [pontaDe] : [de, paraFora(de)]));
-    else if (k === (i + 1) % n) novo.push(...(pontaAte ? [pontaAte] : [paraFora(ate), ate]));
-    else novo.push(v);
-  });
+  const pontaDe = tangente ? estendida(c[(onde[0]! - 1 + n) % n]!, de, foras[0]!) : null;
+  const pontaAte = tangente ? estendida(c[(onde[ultimo]! + 1) % n]!, ate, foras[ultimo - 1]!) : null;
+  // O que cada ponto da borda do corte passa a ser, pelo número dele no contorno.
+  const trocados = new Map<number, Ponto2D[]>();
+  trocados.set(onde[0]!, pontaDe ? [pontaDe] : [de, paraFora(de, foras[0]!)]);
+  for (let j = 1; j < ultimo; j++) trocados.set(onde[j]!, noCanto(j));
+  trocados.set(onde[ultimo]!, pontaAte ? [pontaAte] : [paraFora(ate, foras[ultimo - 1]!), ate]);
+  const novo = c.flatMap((v, k) => trocados.get(k) ?? [v]);
+  if (ultimo > 1 && contornoSeCruza(novo)) {
+    throw new Error('A costura não cabe nessa linha de corte: com essa medida, a borda nova cruza a si mesma. Diminua a costura, ou corte sem ela e acrescente a costura depois.');
+  }
   const piques: Pique[] = opcoes.piques
     ? [de, ate].map((v) => {
         const noContorno = pontoMaisProximoNoContorno(v, novo);
@@ -723,7 +800,9 @@ function comCosturaNoCorte(parte: Molde, p: Ponto2D, q: Ponto2D, opcoes: OpcoesD
 /**
  * "Cortar", com o que a janela pergunta: a peça é dividida pela reta, as
  * linhas internas que estavam em cima dela saem (viraram a borda), e a borda
- * do corte ganha a costura pedida — na parte nova ou nas duas.
+ * do corte ganha a costura pedida — na parte nova ou nas duas. Com `miolo`, o
+ * corte passa por esses pontos (uma curva, vários elementos): quem chama já
+ * tirou da peça os elementos que viraram a borda.
  */
 export function cortarMoldeComOpcoes(
   molde: Molde,
@@ -731,9 +810,10 @@ export function cortarMoldeComOpcoes(
   b: PosicaoNoContorno,
   novoId: () => string,
   opcoes: OpcoesDeCorte = CORTE_SEM_COSTURA,
+  miolo: readonly Ponto2D[] = [],
 ): readonly [Molde, Molde] {
   conferirOpcoesDeCorte(opcoes);
-  const cortadas = cortarMolde(semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId());
+  const cortadas = cortarMolde(miolo.length > 0 ? molde : semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId(), miolo);
   // "Manter distâncias": as pontas do corte levam, para as duas partes, a regra que tinham na peça inteira.
   const g = molde.graduacao;
   const [maior, menor] =
@@ -741,10 +821,8 @@ export function cortarMoldeComOpcoes(
       ? (cortadas.map((parte) => comRegraEm(comRegraEm(parte, a.ponto, regraNaPosicao(g, molde.contorno, a)), b.ponto, regraNaPosicao(g, molde.contorno, b))) as [Molde, Molde])
       : cortadas;
   if (!(opcoes.costuraMm > 0)) return [maior, menor];
-  return [
-    opcoes.costuraNasDuas ? comCosturaNoCorte(maior, a.ponto, b.ponto, opcoes, novoId) : maior,
-    comCosturaNoCorte(menor, a.ponto, b.ponto, opcoes, novoId),
-  ];
+  const linha = [a.ponto, ...miolo, b.ponto];
+  return [opcoes.costuraNasDuas ? comCosturaNoCorte(maior, linha, opcoes, novoId) : maior, comCosturaNoCorte(menor, linha, opcoes, novoId)];
 }
 
 /**

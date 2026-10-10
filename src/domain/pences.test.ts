@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { area, distancia, ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
+import { area, distancia, ponto, rotacionar, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { adicionarMarca, adicionarPique, criarMolde, type DadosDeNovoMolde, type Molde } from './molde';
 import {
   abrirPence,
+  conferirPontasDaPence,
   criarMultiplasPences,
   criarPence,
   criarPenceInterna,
@@ -420,6 +421,107 @@ describe('fecharPence', () => {
     expect(() => fecharPence(comPence(), VERTICE, na(5, 80, 300))).toThrow(/fora da pence/);
     const comMordida = molde({ contorno: COM_PENCE_E_MORDIDA });
     expect(() => fecharPence(comMordida, VERTICE_COM_MORDIDA, na(1, 200, 50))).toThrow(/toda dentro da peça/);
+  });
+});
+
+describe('pence de pernas curvas: o início e o fim indicados', () => {
+  // O retângulo com uma pence de pernas curvas no alto: início (120, 300), ponto 3; um ponto na perna; o vértice (100, 200), ponto 5; outro ponto na perna; o fim (80, 300), ponto 7.
+  const CURVA = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(112, 250), ponto(100, 200), ponto(88, 250), ponto(80, 300), ponto(0, 300)];
+  const PONTAS = { inicio: 3, fim: 7 };
+  const curva = (sobrescrever: Partial<DadosDeNovoMolde> = {}): Molde => molde({ contorno: CURVA, ...sobrescrever });
+
+  it('confere os três pontos: diferentes, do contorno, com o vértice para dentro da peça, entre as pontas', () => {
+    expect(() => conferirPontasDaPence(curva(), 5, PONTAS)).not.toThrow();
+    // As pontas na ordem contrária são a mesma pence.
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 7, fim: 3 })).not.toThrow();
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 3, fim: 3 })).toThrow(/três pontos diferentes/);
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 5, fim: 7 })).toThrow(/três pontos diferentes/);
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 3, fim: 5 })).toThrow(/três pontos diferentes/);
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 3, fim: 12 })).toThrow(/fora do contorno/);
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: -1, fim: 7 })).toThrow(/fora do contorno/);
+    expect(() => conferirPontasDaPence(curva(), 15, PONTAS)).toThrow(/fora do contorno/);
+    // Um canto que sai da peça não é vértice de pence, com as pontas que for.
+    expect(() => conferirPontasDaPence(curva(), 1, { inicio: 0, fim: 2 })).toThrow(/não formam uma pence recortada/);
+    // O "recorte" que leva quase a peça toda.
+    expect(() => conferirPontasDaPence(curva(), 5, { inicio: 3, fim: 2 })).toThrow(/não formam uma pence recortada/);
+  });
+
+  it('fechar só o recorte: saem do contorno o vértice e os pontos das pernas, e a pence fica desenhada inteira', () => {
+    const fechada = fecharPence(curva(), 5, null, PONTAS);
+
+    expect(fechada.contorno).toEqual([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(80, 300), ponto(0, 300)]);
+    expect(fechada.linhasInternas).toEqual([[ponto(120, 300), ponto(112, 250), ponto(100, 200), ponto(88, 250), ponto(80, 300)]]);
+    expect(fechada.pences ?? []).toEqual([]);
+    // Com as pontas na outra ordem, o mesmo.
+    expect(fecharPence(curva(), 5, null, { inicio: 7, fim: 3 }).contorno).toEqual(fechada.contorno);
+  });
+
+  it('fechar por pivô: o lado sem a linha de fio gira até o início ficar na direção do fim', () => {
+    const pivo = na(0, 100, 0);
+    const fechada = fecharPence(curva(), 5, pivo, PONTAS);
+    const graus = ((Math.atan2(300, -20) - Math.atan2(300, 20)) * 180) / Math.PI;
+    const girado = (x: number, y: number): Ponto2D => rotacionar(ponto(x, y), pivo.ponto, graus);
+
+    // A linha de fio está à esquerda: gira o lado direito, no sentido anti-horário.
+    esperarPontos(fechada.contorno, [ponto(0, 0), ponto(100, 0), girado(200, 0), girado(200, 300), ponto(80, 300), ponto(0, 300)]);
+    // Com a linha de fio à direita, gira o lado esquerdo, para o outro lado.
+    const outra = fecharPence(curva({ linhaDeFio: { inicio: ponto(150, 50), fim: ponto(150, 250) } }), 5, pivo, PONTAS);
+    const paraLa = (x: number, y: number): Ponto2D => rotacionar(ponto(x, y), pivo.ponto, -graus);
+    esperarPontos(outra.contorno, [ponto(200, 0), ponto(200, 300), ponto(120, 300), paraLa(0, 300), paraLa(0, 0), ponto(100, 0)]);
+  });
+
+  it('o pivô ou a nova posição em cima da pence — numa perna, num ponto dela — são recusados', () => {
+    expect(() => fecharPence(curva(), 5, na(4, 112, 250), PONTAS)).toThrow(/pivô precisa ficar fora da pence/);
+    expect(() => transferirPence(curva(), 5, na(6, 88, 250), PONTAS)).toThrow(/nova posição fora da pence atual/);
+    // No meio do trecho de perna entre o início e o ponto dela.
+    expect(() => transferirPence(curva(), 5, na(3, 116, 275), PONTAS)).toThrow(/nova posição fora da pence atual/);
+  });
+
+  it('transferir: fecha a pence curva e abre outra, de pernas retas, com o mesmo ângulo entre as pontas', () => {
+    const transferida = transferirPence(curva(), 5, na(1, 200, 150), PONTAS);
+    // O ângulo da pence, visto do vértice: do início (120, 300) ao fim (80, 300).
+    const graus = ((Math.atan2(100, -20) - Math.atan2(100, 20)) * 180) / Math.PI;
+    const girado = (x: number, y: number): Ponto2D => rotacionar(ponto(x, y), ponto(100, 200), graus);
+
+    // Gira o canto de cima, à direita (o lado sem a linha de fio): o início vai parar em cima do fim.
+    esperarPontos(transferida.contorno, [ponto(0, 0), ponto(200, 0), ponto(200, 150), ponto(100, 200), girado(200, 150), girado(200, 300), ponto(80, 300), ponto(0, 300)]);
+    expect(distancia(girado(120, 300), ponto(80, 300))).toBeLessThan(1e-9);
+    // A pence nova tem a abertura do mesmo ângulo, a 100 mm do vértice… e pernas retas: 2000 mm² no lugar dos 2200 da curva.
+    expect(area(transferida.contorno)).toBeCloseTo(58000, 6);
+    expect(area(CURVA)).toBeCloseTo(57800, 6);
+  });
+
+  it('o que está no lado que gira vai junto, também com as pontas indicadas', () => {
+    const peca = adicionarMarca(curva(), ponto(180, 280), 'no-canto');
+    const transferida = transferirPence(peca, 5, na(1, 200, 150), PONTAS);
+    const graus = ((Math.atan2(100, -20) - Math.atan2(100, 20)) * 180) / Math.PI;
+    const esperada = rotacionar(ponto(180, 280), ponto(100, 200), graus);
+
+    expect(distancia(transferida.marcas[0]!.posicao, esperada)).toBeLessThan(1e-9);
+  });
+
+  it('o que está entre a perna curva e a reta das pontas é da peça, e gira com o lado dele', () => {
+    // As pernas agora curvam para dentro da pence: a peça avança até x = 92 e x = 108 a meia altura (a reta das pontas passa em 90 e 110).
+    const PARA_DENTRO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(108, 250), ponto(100, 200), ponto(92, 250), ponto(80, 300), ponto(0, 300)];
+    // Transferir, com a linha de fio à esquerda: gira o canto de cima, à direita — e a marca colada na perna do início vai junto.
+    const direita = adicionarMarca(molde({ contorno: PARA_DENTRO }), ponto(109, 250), 'na-perna');
+    const transferida = transferirPence(direita, 5, na(1, 200, 150), PONTAS);
+    const giroDaPence = ((Math.atan2(100, -20) - Math.atan2(100, 20)) * 180) / Math.PI;
+    expect(distancia(transferida.marcas[0]!.posicao, rotacionar(ponto(109, 250), ponto(100, 200), giroDaPence))).toBeLessThan(1e-9);
+
+    // Fechar por pivô, com a linha de fio à direita: gira o lado esquerdo — e a marca colada na perna do fim vai junto.
+    const pivo = na(0, 100, 0);
+    const esquerda = adicionarMarca(molde({ contorno: PARA_DENTRO, linhaDeFio: { inicio: ponto(150, 50), fim: ponto(150, 250) } }), ponto(91, 250), 'na-perna');
+    const fechada = fecharPence(esquerda, 5, pivo, PONTAS);
+    const giroDoPivo = ((Math.atan2(300, -20) - Math.atan2(300, 20)) * 180) / Math.PI;
+    expect(distancia(fechada.marcas[0]!.posicao, rotacionar(ponto(91, 250), pivo.ponto, -giroDoPivo))).toBeLessThan(1e-9);
+  });
+
+  it('sem as pontas, a ferramenta continua pegando os vizinhos do vértice', () => {
+    // Nesta peça os vizinhos são os pontos das pernas: fecha só o bico de baixo da pence.
+    const fechada = fecharPence(curva(), 5, null);
+    expect(fechada.contorno).toHaveLength(8);
+    expect(fechada.linhasInternas).toEqual([[ponto(112, 250), ponto(100, 200), ponto(88, 250)]]);
   });
 });
 
