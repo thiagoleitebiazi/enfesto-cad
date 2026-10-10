@@ -99,6 +99,17 @@ export function levarOQueEstaNaRegiao(
     ...(molde.cotas
       ? { cotas: molde.cotas.map((c) => (dentro(ancoraDoRotulo(c)) ? transformarCota(c, movimento.ponto, movimento.vetor) : c)) }
       : {}),
+    // A pence do contorno anda com a borda em que está; a marcada e a interna, com a linha interna delas.
+    ...(molde.pences
+      ? {
+          pences: molde.pences.map((pence) => {
+            const anda = pence.tipo === 'recortada' ? pence.pontos.every(naBordaQueAnda) : dentro(pence.pontos[0]!);
+            return anda
+              ? { ...pence, pontos: levar(pence.pontos), ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}) }
+              : pence;
+          }),
+        }
+      : {}),
   };
 }
 

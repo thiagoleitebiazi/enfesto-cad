@@ -46,7 +46,9 @@ import {
 import {
   aplicarPence,
   cliqueDePence,
+  aplicarEdicaoDaPence,
   dialogoDaPence,
+  dialogoDeEditarPence,
   ehFerramentaDePence,
   instrucaoDaPence,
   lerDialogoDaPence,
@@ -134,6 +136,7 @@ import {
   type OpcoesDeDobrar,
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
+import { pencePerto, pencesDaPeca } from './domain/pences';
 import {
   cliqueDaConferencia,
   dialogoDaConferencia,
@@ -414,6 +417,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'dobrar' }
   | { readonly tipo: 'conferir' }
+  | { readonly tipo: 'editar-pence'; readonly id: string }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -2356,12 +2360,18 @@ export default function App(): React.JSX.Element {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const { estado, recusa } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+        const { estado, recusa, editar } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
           noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
           livre: semCaptura,
+          pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
         });
         setRecadoDaFerramenta(recusa);
         if (recusa) return;
+        // O clique caiu numa pence já feita: abrem-se as medidas dela.
+        if (editar) {
+          setDialogoDeFerramenta({ tipo: 'editar-pence', id: editar });
+          return;
+        }
         if (!penceCompleta(modo, opcoesDasPences, estado)) {
           setTrecho(estado);
           return;
@@ -2872,7 +2882,11 @@ export default function App(): React.JSX.Element {
     if (pecaSelecionada && ehFerramentaDePence(modo)) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
-        ? { noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm), livre: cursorMundo }
+        ? {
+            noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm),
+            livre: cursorMundo,
+            pence: pencePerto(pecaSelecionada, cursorMundo, raioMm)?.id ?? null,
+          }
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
     }
@@ -2934,7 +2948,9 @@ export default function App(): React.JSX.Element {
   /** O texto da ferramenta de curva ou arco ligada, conforme o que já foi clicado. */
   const textoDaConstrucao = ((): string | null => {
     const fim = ' Esc sai.';
-    if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
+    if (ehFerramentaDePence(modo)) {
+      return instrucaoDaPence(modo, opcoesDasPences, trecho, pecaSelecionada ? pencesDaPeca(pecaSelecionada).length > 0 : false);
+    }
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
     if (modo === 'conferir') return textoDaConferencia(opcoesDaConferencia, conferencia, cursorMundo);
@@ -3720,6 +3736,33 @@ export default function App(): React.JSX.Element {
                 // Fechado sem calibrar: os dois pontos são esquecidos, para clicar de novo.
                 setCalibracao((atual) => (atual ? { ...atual, pontos: [] } : null));
               }}
+            />
+          );
+        })()}
+      {dialogoDeFerramenta?.tipo === 'editar-pence' &&
+        pecaSelecionada &&
+        (() => {
+          const dialogo = dialogoDeEditarPence(pecaSelecionada, dialogoDeFerramenta.id);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={dialogoDeFerramenta.id}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', pecaSelecionada.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao="Aplicar"
+              onAplicar={(valores) => {
+                try {
+                  const resultado = aplicarEdicaoDaPence(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, proximoId);
+                  aplicarMudanca([...resultado.pecas]);
+                  setRecadoDaFerramenta(resultado.recado);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
             />
           );
         })()}

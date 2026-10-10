@@ -77,6 +77,29 @@ export interface Marca {
 }
 
 /**
+ * Uma pence feita por ferramenta, guardada pelos pontos dela. Com o registro,
+ * dá para mudar as medidas depois, apagar a pence e fechá-la ou transferi-la
+ * sem adivinhar qual canto do contorno é a pence. O registro só vale enquanto
+ * os pontos dele continuam na peça como foram postos.
+ */
+export interface PenceDaPeca {
+  readonly id: string;
+  /** Recortada: o "V" faz parte do contorno. Marcada: é uma linha interna. Interna: o losango desenhado no meio da peça. */
+  readonly tipo: 'recortada' | 'marcada' | 'interna';
+  /** Recortada e marcada: ponta, vértice e ponta. Interna: os quatro cantos do losango (ponta 1, lado, ponta 2, lado). */
+  readonly pontos: readonly Ponto2D[];
+  /** Recortada: os pontos do contorno que o recorte tirou, de uma ponta à outra (nenhum, numa aresta reta). */
+  readonly removidos?: readonly Ponto2D[];
+  /** Recortada: cada ponta foi posta no contorno pelo recorte (não era um ponto dele)? Apagada a pence, a ponta posta por ela sai junto. */
+  readonly pontasCriadas?: readonly [boolean, boolean];
+  /** Os piques e as marcas que a ferramenta pôs junto com a pence: saem e voltam com ela quando as medidas mudam. */
+  readonly piques?: readonly string[];
+  readonly marcas?: readonly string[];
+  /** Interna: tem também a linha do eixo, de ponta a ponta. */
+  readonly comEixo?: boolean;
+}
+
+/**
  * A metade que o "Dobrar" tirou da peça com "Manter dobra do molde" ligado:
  * fica guardada, fora do desenho, para o "Desdobrar" trazê-la de volta como
  * era — em vez de espelhar a metade que ficou.
@@ -128,6 +151,8 @@ export interface Molde {
   readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
   /** A outra metade de uma peça dobrada com "Manter dobra do molde" (aba Produção > Dobrar). */
   readonly dobraMantida?: MetadeGuardada;
+  /** As pences feitas pelas ferramentas de pence (aba Produção), para mudar as medidas depois. */
+  readonly pences?: readonly PenceDaPeca[];
 }
 
 export interface DadosDeNovoMolde {
@@ -230,13 +255,30 @@ function graduacaoTransformada(
   return molde.graduacao ? { graduacao: transformarGraduacao(molde.graduacao, ponto, vetor) } : {};
 }
 
-/** A graduação com cada ponto graduado acompanhando o ponto do contorno que mudou de lugar (mesma quantidade de pontos). */
-function graduacaoAcompanhando(molde: Molde, contornoNovo: Contorno): { readonly graduacao?: Graduacao } {
-  return molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contornoNovo) } : {};
+/**
+ * As pences depois que pontos do contorno mudaram de lugar (mesma quantidade
+ * de pontos, mesma ordem): cada ponto de pence que estava em cima de um ponto
+ * do contorno acompanha-o.
+ */
+export function pencesComOsPontosMovidos(pences: readonly PenceDaPeca[], contornoAntigo: Contorno, contornoNovo: Contorno): readonly PenceDaPeca[] {
+  if (contornoAntigo === contornoNovo || contornoAntigo.length !== contornoNovo.length) return pences;
+  const levar = (p: Ponto2D): Ponto2D => {
+    const i = contornoAntigo.findIndex((v) => Math.abs(v.x - p.x) <= 1e-9 && Math.abs(v.y - p.y) <= 1e-9);
+    return i >= 0 ? contornoNovo[i]! : p;
+  };
+  return pences.map((pence) => (pence.tipo === 'recortada' ? { ...pence, pontos: pence.pontos.map(levar) } : pence));
+}
+
+/** A graduação e as pences acompanhando os pontos do contorno que mudaram de lugar (mesma quantidade de pontos). */
+function acompanhandoOsPontos(molde: Molde, contornoNovo: Contorno): { readonly graduacao?: Graduacao; readonly pences?: readonly PenceDaPeca[] } {
+  return {
+    ...(molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contornoNovo) } : {}),
+    ...(molde.pences ? { pences: pencesComOsPontosMovidos(molde.pences, molde.contorno, contornoNovo) } : {}),
+  };
 }
 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
-export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida'): Molde {
+export function semCampo(molde: Molde, campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences'): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
   return copia;
@@ -247,7 +289,7 @@ export function semGraduacao(molde: Molde): Molde {
   return semCampo(molde, 'graduacao');
 }
 
-/** Os textos, a linha de simetria e a metade guardada da peça levados por uma transformação, prontos para espalhar no molde novo. */
+/** Os textos, a linha de simetria, a metade guardada e as pences da peça levados por uma transformação, prontos para espalhar no molde novo. */
 function anotacoesTransformadas(
   molde: Molde,
   ponto: (p: Ponto2D) => Ponto2D,
@@ -255,9 +297,19 @@ function anotacoesTransformadas(
   readonly textos?: readonly TextoDaPeca[];
   readonly linhaDeSimetria?: { readonly de: Ponto2D; readonly ate: Ponto2D };
   readonly dobraMantida?: MetadeGuardada;
+  readonly pences?: readonly PenceDaPeca[];
 } {
   const guardada = molde.dobraMantida;
   return {
+    ...(molde.pences
+      ? {
+          pences: molde.pences.map((pence) => ({
+            ...pence,
+            pontos: pence.pontos.map(ponto),
+            ...(pence.removidos ? { removidos: pence.removidos.map(ponto) } : {}),
+          })),
+        }
+      : {}),
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),
     ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: ponto(molde.linhaDeSimetria.de), ate: ponto(molde.linhaDeSimetria.ate) } } : {}),
     ...(guardada
@@ -446,7 +498,7 @@ export function reancorarPiques(piques: readonly Pique[], contornoAntigo: Contor
 /** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques das duas arestas vizinhas acompanham (`reancorarPiques`). */
 export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Ponto2D): Molde {
   const contorno = moverPontoDoContorno(molde.contorno, indice, novaPosicao);
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...graduacaoAcompanhando(molde, contorno) };
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...acompanhandoOsPontos(molde, contorno) };
 }
 
 /**
@@ -458,7 +510,7 @@ export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Pon
 export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
   const indicesSet = new Set(indices);
   const contorno = molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p));
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...graduacaoAcompanhando(molde, contorno) };
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...acompanhandoOsPontos(molde, contorno) };
 }
 
 /** Abaixo disso (mm²) o contorno conta como sem área — a mesma tolerância da Cerca. */
@@ -550,7 +602,7 @@ export function redefinirComprimentoDaAresta(
     }
     return pique;
   });
-  return exigirContornoComArea({ ...molde, contorno, piques, ...graduacaoAcompanhando(molde, contorno) }, 'com esse comprimento');
+  return exigirContornoComArea({ ...molde, contorno, piques, ...acompanhandoOsPontos(molde, contorno) }, 'com esse comprimento');
 }
 
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */

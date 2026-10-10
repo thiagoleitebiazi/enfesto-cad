@@ -15,7 +15,7 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { exigirCorteValido } from './corteEUniao';
-import { piquesQueFicamNoContorno, type Marca, type Molde, type Pique } from './molde';
+import { piquesQueFicamNoContorno, semCampo, type Marca, type Molde, type PenceDaPeca, type Pique } from './molde';
 import {
   comecarPeloMenorPontoOriginal,
   distanciaAteALinha,
@@ -30,6 +30,10 @@ import {
  * "V": duas pernas que saem do contorno e se encontram no vértice, dentro da
  * peça. Recortada, o V sai do contorno; marcada, fica desenhado como linha
  * interna. A pence interna é um losango desenhado no meio da peça.
+ *
+ * Toda pence feita por estas ferramentas fica registrada na peça
+ * (`Molde.pences`), pelos pontos dela: é o que permite mudar as medidas
+ * depois e fechar ou transferir sem adivinhar qual canto é a pence.
  */
 
 export type ModoDePence = 'recortar' | 'marcar';
@@ -166,27 +170,39 @@ export function criarPence(
 ): Molde {
   const { inicio, fim, vertice } = geometriaDaPence(molde, posicao, opcoes.aberturaMm, opcoes.profundidadeMm, apontarPara);
   const pontas = [inicio.ponto, fim.ponto];
+  const pontos = [inicio.ponto, vertice, fim.ponto];
   if (opcoes.modo === 'marcar') {
     const marcas: Marca[] = opcoes.marcaNoVertice ? [{ id: novoId(), posicao: vertice }] : [];
-    return {
-      ...molde,
-      linhasInternas: [...molde.linhasInternas, [inicio.ponto, vertice, fim.ponto]],
-      piques: [...molde.piques, ...(opcoes.piquesLaterais ? piquesEm(pontas, molde.contorno, novoId) : [])],
-      marcas: [...molde.marcas, ...marcas],
-    };
+    const piques = opcoes.piquesLaterais ? piquesEm(pontas, molde.contorno, novoId) : [];
+    return comPence(
+      {
+        ...molde,
+        linhasInternas: [...molde.linhasInternas, pontos],
+        piques: [...molde.piques, ...piques],
+        marcas: [...molde.marcas, ...marcas],
+      },
+      { id: novoId(), tipo: 'marcada', pontos, piques: piques.map((q) => q.id), marcas: marcas.map((m) => m.id) },
+    );
   }
   const contorno = substituirTrechoDoContorno(molde.contorno, inicio, fim, [vertice]);
   if (contorno.length < 3 || !(area(contorno) > AREA_MINIMA_MM2)) {
     throw new Error('A pence não cabe nessa peça com essas medidas.');
   }
-  return {
-    ...molde,
-    contorno,
-    piques: [
-      ...piquesQueFicamNoContorno(molde.piques, contorno),
-      ...(opcoes.piquesLaterais ? piquesEm(pontas, contorno, novoId) : []),
-    ],
-  };
+  const piques = opcoes.piquesLaterais ? piquesEm(pontas, contorno, novoId) : [];
+  // O que o recorte tirou do contorno, de uma ponta à outra: volta se a pence for apagada ou mudar de medida.
+  const removidos = trechoDoContorno(molde.contorno, inicio, fim).filter((p) => !mesmoLugar(p, inicio.ponto) && !mesmoLugar(p, fim.ponto));
+  const jaEraPonto = (p: Ponto2D): boolean => molde.contorno.some((v) => mesmoLugar(v, p));
+  return comPence(
+    { ...molde, contorno, piques: [...piquesQueFicamNoContorno(molde.piques, contorno), ...piques] },
+    {
+      id: novoId(),
+      tipo: 'recortada',
+      pontos,
+      removidos,
+      pontasCriadas: [!jaEraPonto(inicio.ponto), !jaEraPonto(fim.ponto)],
+      piques: piques.map((q) => q.id),
+    },
+  );
 }
 
 /** Recusa a quantidade, a distância e as medidas que não dão um grupo de pences. */
@@ -281,14 +297,10 @@ export function abrirPence(
   const volta = anda === 0 ? [...cadeias[1], vertice, ...movida] : [...cadeias[0], ...movida, vertice];
   const novoContorno = comecarPeloMenorPontoOriginal(semPontosRepetidos(volta), contorno);
   const base = levarOQueEstaNaRegiao(molde, cadeias[anda], cadeias[anda], cadeias[1 - anda]!, movimento);
-  return {
-    ...base,
-    contorno: novoContorno,
-    piques: [
-      ...piquesQueFicamNoContorno(base.piques, novoContorno),
-      ...(piquesLaterais ? piquesEm([p, outraBorda], novoContorno, novoId) : []),
-    ],
-  };
+  const piques = piquesLaterais ? piquesEm([p, outraBorda], novoContorno, novoId) : [];
+  const aberta = { ...base, contorno: novoContorno, piques: [...piquesQueFicamNoContorno(base.piques, novoContorno), ...piques] };
+  const registro = registroDoVertice(novoContorno, vertice, novoId(), piques.map((q) => q.id));
+  return registro ? comPence(aberta, registro) : comPencesValidas(aberta);
 }
 
 export interface OpcoesDePenceInterna {
@@ -343,7 +355,10 @@ export function criarPenceInterna(molde: Molde, centro: Ponto2D, opcoes: OpcoesD
   const linhas: Contorno[] = [[...losango, losango[0]!]];
   if (opcoes.linhaAuxiliar) linhas.push([losango[0]!, losango[2]!]);
   const marcas: Marca[] = opcoes.marcas ? losango.map((posicao) => ({ id: novoId(), posicao })) : [];
-  return { ...molde, linhasInternas: [...molde.linhasInternas, ...linhas], marcas: [...molde.marcas, ...marcas] };
+  return comPence(
+    { ...molde, linhasInternas: [...molde.linhasInternas, ...linhas], marcas: [...molde.marcas, ...marcas] },
+    { id: novoId(), tipo: 'interna', pontos: losango, comEixo: opcoes.linhaAuxiliar, marcas: marcas.map((m) => m.id) },
+  );
 }
 
 /** A pence recortada cujo vértice é o ponto `indice` do contorno: as duas pontas (os pontos vizinhos) e o vértice. */
@@ -417,7 +432,12 @@ export function transferirPence(molde: Molde, indice: number, novaPosicao: Posic
     anda === 0 ? antesDaPence : depoisDaPence,
     movimento,
   );
-  return { ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) };
+  const transferida = { ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) };
+  // O registro da pence, se havia, passa a ser o da pence nova: o mesmo vértice, entre os vizinhos de agora.
+  const antiga = penceNoVertice(molde, indice);
+  const registro = antiga ? registroDoVertice(novoContorno, vertice, antiga.id, []) : null;
+  if (!antiga || !registro) return comPencesValidas(transferida);
+  return comPence({ ...transferida, pences: (transferida.pences ?? []).filter((q) => q.id !== antiga.id) }, registro);
 }
 
 /**
@@ -436,12 +456,20 @@ export function fecharPence(molde: Molde, indice: number, pivo: PosicaoNoContorn
   if (!pivo) {
     const semVertice = contorno.filter((_, i) => i !== indice);
     if (semVertice.length < 3 || !(area(semVertice) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área sem essa pence.');
-    return {
+    const pontos = [inicio.ponto, vertice, fim.ponto];
+    const antiga = penceNoVertice(molde, indice);
+    const marcada: Molde = {
       ...molde,
       contorno: semVertice,
-      linhasInternas: [...molde.linhasInternas, [inicio.ponto, vertice, fim.ponto]],
+      linhasInternas: [...molde.linhasInternas, pontos],
       piques: piquesQueFicamNoContorno(molde.piques, semVertice),
     };
+    // A pence registrada continua registrada, agora como marcada.
+    if (!antiga) return comPencesValidas(marcada);
+    return comPence(
+      { ...marcada, pences: (marcada.pences ?? []).filter((q) => q.id !== antiga.id) },
+      { id: antiga.id, tipo: 'marcada', pontos, ...(antiga.piques ? { piques: antiga.piques } : {}) },
+    );
   }
   const centro = pivo.ponto;
   if (distanciaAteALinha(centro, [inicio.ponto, vertice, fim.ponto]) < MESMO_PONTO_MM) {
@@ -468,5 +496,234 @@ export function fecharPence(molde: Molde, indice: number, pivo: PosicaoNoContorn
     anda === 0 ? antesDaPence : depoisDaPence,
     movimento,
   );
-  return { ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) };
+  // A pence deixou de existir: o registro dela sai com os pontos que sumiram.
+  return comPencesValidas({ ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) });
+}
+
+// ---------------------------------------------------------------------------
+// As pences registradas na peça
+// ---------------------------------------------------------------------------
+
+const NO_MESMO_LUGAR_MM = 1e-6;
+
+function mesmoLugar(a: Ponto2D, b: Ponto2D): boolean {
+  return distancia(a, b) <= NO_MESMO_LUGAR_MM;
+}
+
+/** A linha é a mesma sequência de pontos, num sentido ou no outro. */
+function mesmaLinha(linha: readonly Ponto2D[], pontos: readonly Ponto2D[]): boolean {
+  if (linha.length !== pontos.length) return false;
+  return linha.every((p, i) => mesmoLugar(p, pontos[i]!)) || linha.every((p, i) => mesmoLugar(p, pontos[pontos.length - 1 - i]!));
+}
+
+/** O número (a partir de 0) do ponto do contorno que é o vértice da pence recortada, com as pontas dela de vizinhas; -1 se não está mais lá. */
+function verticeNoContorno(contorno: Contorno, pence: PenceDaPeca): number {
+  const [a, v, b] = pence.pontos;
+  if (!a || !v || !b) return -1;
+  const n = contorno.length;
+  return contorno.findIndex((p, i) => {
+    if (!mesmoLugar(p, v)) return false;
+    const antes = contorno[(i - 1 + n) % n]!;
+    const depois = contorno[(i + 1) % n]!;
+    return (mesmoLugar(antes, a) && mesmoLugar(depois, b)) || (mesmoLugar(antes, b) && mesmoLugar(depois, a));
+  });
+}
+
+/** O losango da pence interna como é desenhado: os quatro cantos e a volta ao primeiro. */
+function voltaDoLosango(pence: PenceDaPeca): Ponto2D[] {
+  return [...pence.pontos, pence.pontos[0]!];
+}
+
+function penceEstaNaPeca(molde: Molde, pence: PenceDaPeca): boolean {
+  if (pence.tipo === 'recortada') return verticeNoContorno(molde.contorno, pence) >= 0;
+  const linha = pence.tipo === 'marcada' ? pence.pontos : voltaDoLosango(pence);
+  return molde.linhasInternas.some((l) => mesmaLinha(l, linha));
+}
+
+/** As pences registradas que continuam na peça como foram postas. */
+export function pencesDaPeca(molde: Molde): PenceDaPeca[] {
+  return (molde.pences ?? []).filter((pence) => penceEstaNaPeca(molde, pence));
+}
+
+/** A peça sem os registros de pence que deixaram de valer (o contorno ou a linha deles mudou). */
+export function comPencesValidas(molde: Molde): Molde {
+  if (!molde.pences) return molde;
+  const validas = pencesDaPeca(molde);
+  // Sem nenhuma pence, a peça fica sem o campo, como a que nunca teve.
+  if (validas.length === 0) return semCampo(molde, 'pences');
+  return validas.length === molde.pences.length ? molde : { ...molde, pences: validas };
+}
+
+/** A peça com mais uma pence registrada (os registros que já não valem saem). */
+function comPence(molde: Molde, pence: PenceDaPeca): Molde {
+  return { ...molde, pences: [...pencesDaPeca(molde), pence] };
+}
+
+/** O registro da pence recortada cujo vértice é `vertice`, entre os vizinhos dele no contorno; `null` se o ponto não está no contorno. */
+function registroDoVertice(contorno: Contorno, vertice: Ponto2D, id: string, piques: readonly string[]): PenceDaPeca | null {
+  const n = contorno.length;
+  const i = contorno.findIndex((p) => mesmoLugar(p, vertice));
+  if (i < 0) return null;
+  return {
+    id,
+    tipo: 'recortada',
+    pontos: [contorno[(i - 1 + n) % n]!, contorno[i]!, contorno[(i + 1) % n]!],
+    removidos: [],
+    ...(piques.length > 0 ? { piques } : {}),
+  };
+}
+
+/** A pence recortada registrada cujo vértice é o ponto `indice` do contorno, ou `null`. */
+export function penceNoVertice(molde: Molde, indice: number): PenceDaPeca | null {
+  return pencesDaPeca(molde).find((pence) => pence.tipo === 'recortada' && verticeNoContorno(molde.contorno, pence) === indice) ?? null;
+}
+
+/** A pence registrada que passa mais perto do ponto, a até `raioMm` dele. */
+export function pencePerto(molde: Molde, p: Ponto2D, raioMm: number): PenceDaPeca | null {
+  let melhor: { pence: PenceDaPeca; distancia: number } | null = null;
+  for (const pence of pencesDaPeca(molde)) {
+    const d = distanciaAteALinha(p, pence.tipo === 'interna' ? voltaDoLosango(pence) : pence.pontos);
+    if (d <= raioMm && (!melhor || d < melhor.distancia)) melhor = { pence, distancia: d };
+  }
+  return melhor ? melhor.pence : null;
+}
+
+export interface MedidasDaPence {
+  /** De uma ponta à outra, em linha reta (mm). */
+  readonly aberturaMm: number;
+  /** Do meio das pontas até o vértice, em esquadro com a linha que as liga (mm). */
+  readonly profundidadeMm: number;
+  /** Quanto o vértice está fora do esquadro, para o lado da segunda ponta (mm; negativo, para o da primeira). */
+  readonly desvioMm: number;
+}
+
+/** O meio das pontas, a direção de uma à outra e a direção em esquadro, para o lado do vértice. */
+function eixosDaPence(pence: PenceDaPeca): { readonly meio: Ponto2D; readonly aoLongo: Ponto2D; readonly paraOVertice: Ponto2D } {
+  const [a, v, b] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D];
+  const meio = meioDe(a, b);
+  const aoLongo = unitario(a, b);
+  const lado = (v.x - meio.x) * -aoLongo.y + (v.y - meio.y) * aoLongo.x < 0 ? -1 : 1;
+  return { meio, aoLongo, paraOVertice: ponto(-aoLongo.y * lado, aoLongo.x * lado) };
+}
+
+/** As medidas de uma pence do contorno (recortada ou marcada), lidas dos pontos dela. */
+export function medidasDaPence(pence: PenceDaPeca): MedidasDaPence {
+  if (pence.tipo === 'interna') throw new Error('A pence interna tem outras medidas: as alturas e a largura.');
+  const [a, v, b] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D];
+  const { meio, aoLongo, paraOVertice } = eixosDaPence(pence);
+  const doMeio = ponto(v.x - meio.x, v.y - meio.y);
+  // Zero é zero: a conta pode dar "-0", que não deve aparecer em lugar nenhum.
+  const semSinalNoZero = (valor: number): number => (valor === 0 ? 0 : valor);
+  return {
+    aberturaMm: distancia(a, b),
+    profundidadeMm: semSinalNoZero(doMeio.x * paraOVertice.x + doMeio.y * paraOVertice.y),
+    desvioMm: semSinalNoZero(doMeio.x * aoLongo.x + doMeio.y * aoLongo.y),
+  };
+}
+
+/** As medidas de uma pence interna, lidas do losango dela. */
+export function medidasDaPenceInterna(pence: PenceDaPeca): { readonly altura1Mm: number; readonly altura2Mm: number; readonly larguraMm: number } {
+  if (pence.tipo !== 'interna') throw new Error('Essa pence não é interna.');
+  const [ponta1, lado1, ponta2, lado2] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D, Ponto2D];
+  const centro = meioDe(lado1, lado2);
+  return { altura1Mm: distancia(centro, ponta1), altura2Mm: distancia(centro, ponta2), larguraMm: distancia(lado1, lado2) };
+}
+
+function penceRegistrada(molde: Molde, id: string): PenceDaPeca {
+  const pence = pencesDaPeca(molde).find((q) => q.id === id);
+  if (!pence) throw new Error('Essa pence foi mexida à mão e já não pode ser mudada pelas medidas.');
+  return pence;
+}
+
+/**
+ * A peça sem a pence: recortada, o contorno volta a ser o de antes do recorte;
+ * marcada ou interna, as linhas dela saem. Os piques e as marcas que vieram
+ * com a pence saem também.
+ */
+export function removerPence(molde: Molde, id: string): Molde {
+  const pence = penceRegistrada(molde, id);
+  const piquesDela = new Set(pence.piques ?? []);
+  const marcasDela = new Set(pence.marcas ?? []);
+  const semAcessorios: Molde = {
+    ...molde,
+    pences: (molde.pences ?? []).filter((q) => q.id !== id),
+    piques: molde.piques.filter((q) => !piquesDela.has(q.id)),
+    marcas: molde.marcas.filter((m) => !marcasDela.has(m.id)),
+  };
+  if (pence.tipo === 'recortada') {
+    const contorno = molde.contorno;
+    const n = contorno.length;
+    const i = verticeNoContorno(contorno, pence);
+    // Os pontos que o recorte tinha tirado voltam, na ordem em que o contorno passa pelas pontas.
+    const naOrdem = mesmoLugar(contorno[(i - 1 + n) % n]!, pence.pontos[0]!);
+    const devolvidos = naOrdem ? [...(pence.removidos ?? [])] : [...(pence.removidos ?? [])].reverse();
+    // As pontas que o recorte pôs no contorno saem com ele; as que já eram pontos do contorno ficam.
+    const [criouAPrimeira, criouASegunda] = pence.pontasCriadas ?? [false, false];
+    const saem = [...(criouAPrimeira ? [pence.pontos[0]!] : []), ...(criouASegunda ? [pence.pontos[2]!] : [])];
+    const restaurado = [...contorno.slice(0, i), ...devolvidos, ...contorno.slice(i + 1)].filter((p) => !saem.some((q) => mesmoLugar(p, q)));
+    if (restaurado.length < 3 || !(area(restaurado) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área sem essa pence.');
+    return comPencesValidas({ ...semAcessorios, contorno: restaurado, piques: piquesQueFicamNoContorno(semAcessorios.piques, restaurado) });
+  }
+  const linhasDela = pence.tipo === 'marcada' ? [pence.pontos] : [voltaDoLosango(pence), ...(pence.comEixo ? [[pence.pontos[0]!, pence.pontos[2]!]] : [])];
+  // Sai uma linha interna para cada linha da pence (a primeira que casa), e só ela.
+  const linhasInternas = [...semAcessorios.linhasInternas];
+  for (const linha of linhasDela) {
+    const onde = linhasInternas.findIndex((l) => mesmaLinha(l, linha));
+    if (onde >= 0) linhasInternas.splice(onde, 1);
+  }
+  return comPencesValidas({ ...semAcessorios, linhasInternas });
+}
+
+/**
+ * Muda as medidas de uma pence do contorno já feita: ela é tirada e refeita
+ * no mesmo lugar, com a abertura, a profundidade e o desvio do vértice dados.
+ * Continua recortada ou marcada, com os piques e a marca que tinha.
+ */
+export function alterarPence(molde: Molde, id: string, medidas: MedidasDaPence, novoId: () => string): Molde {
+  const pence = penceRegistrada(molde, id);
+  if (pence.tipo === 'interna') throw new Error('A pence interna muda pelas alturas e pela largura.');
+  conferirMedidasDaPence(medidas.aberturaMm, medidas.profundidadeMm);
+  if (!Number.isFinite(medidas.desvioMm)) throw new Error('O desvio do vértice precisa ser um número.');
+  const { meio, aoLongo, paraOVertice } = eixosDaPence(pence);
+  const vertice = ponto(
+    meio.x + paraOVertice.x * medidas.profundidadeMm + aoLongo.x * medidas.desvioMm,
+    meio.y + paraOVertice.y * medidas.profundidadeMm + aoLongo.y * medidas.desvioMm,
+  );
+  const semEla = removerPence(molde, id);
+  const centro = pontoMaisProximoNoContorno(meio, semEla.contorno);
+  return criarPence(
+    semEla,
+    { indiceAresta: centro.indiceAresta, ponto: centro.ponto },
+    {
+      aberturaMm: medidas.aberturaMm,
+      // A profundidade pedida é em esquadro; com desvio, o vértice fica um pouco mais longe do meio.
+      profundidadeMm: Math.hypot(medidas.profundidadeMm, medidas.desvioMm),
+      modo: pence.tipo === 'marcada' ? 'marcar' : 'recortar',
+      piquesLaterais: (pence.piques?.length ?? 0) > 0,
+      marcaNoVertice: (pence.marcas?.length ?? 0) > 0,
+    },
+    novoId,
+    vertice,
+  );
+}
+
+/** Muda as medidas de uma pence interna já feita: o losango é refeito no mesmo centro e com o mesmo eixo. */
+export function alterarPenceInterna(
+  molde: Molde,
+  id: string,
+  medidas: { readonly altura1Mm: number; readonly altura2Mm: number; readonly larguraMm: number },
+  novoId: () => string,
+): Molde {
+  const pence = penceRegistrada(molde, id);
+  if (pence.tipo !== 'interna') throw new Error('Essa pence não é interna.');
+  const [ponta1, lado1, ponta2, lado2] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D, Ponto2D];
+  const centro = meioDe(lado1, lado2);
+  // O giro do eixo em relação à linha de fio de agora, para o losango novo ficar na mesma direção.
+  const anguloGraus = anguloDe(ponta2, ponta1) - anguloDe(molde.linhaDeFio.inicio, molde.linhaDeFio.fim);
+  return criarPenceInterna(
+    removerPence(molde, id),
+    centro,
+    { ...medidas, anguloGraus, linhaAuxiliar: pence.comEixo === true, marcas: (pence.marcas?.length ?? 0) > 0 },
+    novoId,
+  );
 }

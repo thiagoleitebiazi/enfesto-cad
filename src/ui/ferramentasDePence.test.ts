@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
+import { criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca } from '../domain/pences';
 import {
+  aplicarEdicaoDaPence,
   aplicarPence,
   cliqueDePence,
   dialogoDaPence,
+  dialogoDeEditarPence,
   ehFerramentaDePence,
   instrucaoDaPence,
   lerDialogoDaPence,
@@ -190,16 +193,17 @@ describe('aplicarPence', () => {
     const transferir = clicar('transferir-pence', O, peca, [noContorno(VERTICE), noContorno(na(1, 200, 200))]);
     const transferida = aplicarPence('transferir-pence', O, [peca], peca, transferir, ids());
     expect(area(transferida.pecas[0]!.contorno)).toBeCloseTo(58000, 6);
-    expect(transferida.recado).toBe('Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. A área continua 580,0 cm².');
+    // O contorno desta peça foi desenhado à mão, já com o recorte: a mensagem diz que o canto foi tratado como pence.
+    expect(transferida.recado).toBe('Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. A área continua 580,0 cm². Esse canto não foi feito por uma ferramenta de pence: foi tratado como pence por ser um canto que entra na peça.');
 
     const soORecorte = com({ fecharSomenteORecorte: true });
     const fechada = aplicarPence('fechar-pence', soORecorte, [peca], peca, clicar('fechar-pence', soORecorte, peca, [noContorno(VERTICE)]), ids());
     expect(fechada.pecas[0]!.contorno).toHaveLength(6);
-    expect(fechada.recado).toMatch(/a pence ficou marcada\. A peça passou de 580,0 cm² para 600,0 cm²\.$/);
+    expect(fechada.recado).toMatch(/a pence ficou marcada\. A peça passou de 580,0 cm² para 600,0 cm²\. Esse canto não foi feito por uma ferramenta de pence/);
 
     const comPivo = clicar('fechar-pence', O, peca, [noContorno(VERTICE), noContorno(na(0, 100, 0))]);
     const girada = aplicarPence('fechar-pence', O, [peca], peca, comPivo, ids());
-    expect(girada.recado).toBe('Pence fechada em “Frente”, girando em torno do pivô. A peça passou de 580,0 cm² para 540,0 cm².');
+    expect(girada.recado).toBe('Pence fechada em “Frente”, girando em torno do pivô. A peça passou de 580,0 cm² para 540,0 cm². Esse canto não foi feito por uma ferramenta de pence: foi tratado como pence por ser um canto que entra na peça.');
   });
 
   it('fechar com pivô: quando as pontas não ficam à mesma distância do pivô, a mensagem diz o degrau que sobrou', () => {
@@ -375,5 +379,113 @@ describe('diálogos', () => {
     expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 2, largura: 25, piques: false })).toThrow(/distância/);
     expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 0, largura: 25, piques: false })).toThrow(/número de pregas/);
     expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 1, largura: 0, piques: false })).toThrow(/largura/);
+  });
+});
+
+describe('uma pence já feita: abrir as medidas, mudar e apagar', () => {
+  const novoId = ids();
+  // Uma pence recortada no alto (40 de abertura por 100 de profundidade), feita pela ferramenta: fica registrada.
+  const comRecortada = (): Molde =>
+    criarPence(molde(), NO_ALTO, { aberturaMm: 40, profundidadeMm: 100, modo: 'recortar', piquesLaterais: true, marcaNoVertice: true }, novoId);
+  const comInterna = (): Molde => criarPenceInterna(molde(), ponto(100, 150), O.interna, novoId);
+  const sobAPence = (peca: Molde, x: number, y: number) => ({ noContorno: null, livre: ponto(x, y), pence: pencesDaPeca(peca)[0]!.id });
+
+  it('com a ferramenta de pence ligada, o clique numa pence registrada pede as medidas dela em vez de criar outra', () => {
+    const peca = comRecortada();
+    const id = pencesDaPeca(peca)[0]!.id;
+
+    expect(cliqueDePence('pence-no-contorno', O, peca, SEM_TRECHO, sobAPence(peca, 110, 250))).toEqual({ estado: SEM_TRECHO, recusa: null, editar: id });
+    // Fechar e transferir continuam pedindo o vértice; a pence interna não se abre pela ferramenta do contorno, nem o contrário.
+    expect(cliqueDePence('fechar-pence', O, peca, SEM_TRECHO, sobAPence(peca, 110, 250)).editar).toBeUndefined();
+    expect(cliqueDePence('pence-interna', O, peca, SEM_TRECHO, sobAPence(peca, 110, 250)).editar).toBeUndefined();
+    const interna = comInterna();
+    expect(cliqueDePence('pence-interna', O, interna, SEM_TRECHO, sobAPence(interna, 100, 150)).editar).toBe(pencesDaPeca(interna)[0]!.id);
+    expect(cliqueDePence('pence-no-contorno', O, interna, SEM_TRECHO, sobAPence(interna, 100, 150)).editar).toBeUndefined();
+  });
+
+  it('o diálogo abre com as medidas lidas da pence', () => {
+    const peca = comRecortada();
+    const dialogo = dialogoDeEditarPence(peca, pencesDaPeca(peca)[0]!.id)!;
+
+    expect(dialogo.titulo).toBe('Pence recortada: medidas');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['abertura', '40'],
+      ['profundidade', '100'],
+      ['desvio', '0'],
+      ['apagar', false],
+    ]);
+    const interna = comInterna();
+    expect(dialogoDeEditarPence(interna, pencesDaPeca(interna)[0]!.id)!.campos.map((c) => c.id)).toEqual(['altura1', 'altura2', 'largura', 'apagar']);
+    expect(dialogoDeEditarPence(peca, 'outra')).toBeNull();
+  });
+
+  it('mudar as medidas refaz a pence no lugar e diz como a área ficou', () => {
+    const peca = comRecortada();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { abertura: 60, profundidade: 50, desvio: 0, apagar: false }, novoId);
+
+    const nova = resultado.pecas[0]!;
+    expect(medidasDaPence(pencesDaPeca(nova)[0]!)).toEqual({ aberturaMm: 60, profundidadeMm: 50, desvioMm: 0 });
+    expect(resultado.recado).toBe('Pence de “Frente” refeita: abertura de 60,0 mm, profundidade de 50,0 mm. A peça passou de 580,0 cm² para 585,0 cm².');
+  });
+
+  it('com desvio, a mensagem diz de quanto', () => {
+    const peca = comRecortada();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { abertura: 40, profundidade: 100, desvio: -15, apagar: false }, novoId);
+
+    expect(resultado.recado).toMatch(/profundidade de 100,0 mm, desvio de -15,0 mm\./);
+    expect(medidasDaPence(pencesDaPeca(resultado.pecas[0]!)[0]!).desvioMm).toBeCloseTo(-15, 6);
+  });
+
+  it('apagar tira a pence e devolve o contorno de antes', () => {
+    const peca = comRecortada();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { abertura: 40, profundidade: 100, desvio: 0, apagar: true }, novoId);
+
+    expect(resultado.pecas[0]!.contorno).toEqual(RETANGULO);
+    expect(resultado.recado).toBe('Pence apagada de “Frente”: o contorno voltou a ser o de antes dela. A peça passou de 580,0 cm² para 600,0 cm².');
+  });
+
+  it('a pence interna muda pelas alturas e pela largura', () => {
+    const peca = comInterna();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { altura1: 50, altura2: 30, largura: 16, apagar: false }, novoId);
+
+    expect(resultado.recado).toBe('Pence interna de “Frente” refeita: alturas de 50,0 mm e 30,0 mm, largura de 16,0 mm.');
+    expect(pencesDaPeca(resultado.pecas[0]!)).toHaveLength(1);
+  });
+
+  it('medidas que não servem dão erro, e uma pence que não está mais registrada também', () => {
+    const peca = comRecortada();
+    const id = pencesDaPeca(peca)[0]!.id;
+
+    expect(() => aplicarEdicaoDaPence([peca], peca, id, { abertura: 40, profundidade: 900, desvio: 0, apagar: false }, novoId)).toThrow(/fora da peça/);
+    expect(() => aplicarEdicaoDaPence([peca], peca, 'outra', { abertura: 40, profundidade: 50, desvio: 0, apagar: false }, novoId)).toThrow(/mexida à mão/);
+  });
+
+  it('a prévia marca o vértice das pences registradas e destaca a que está sob o mouse', () => {
+    const peca = comRecortada();
+
+    expect(previaDaPence('pence-no-contorno', O, peca, SEM_TRECHO, null)).toEqual({ marcas: [ponto(100, 200)] });
+    expect(previaDaPence('pence-no-contorno', O, peca, SEM_TRECHO, sobAPence(peca, 110, 250))).toEqual({
+      marcas: [ponto(100, 200)],
+      substituido: [ponto(120, 300), ponto(100, 200), ponto(80, 300)],
+    });
+    // Pregas e múltiplas pences não abrem medidas: não marcam as pences.
+    expect(previaDaPence('pregas', O, peca, SEM_TRECHO, null)).toEqual({ marcas: [] });
+  });
+
+  it('a instrução avisa do clique que abre as medidas, quando a peça tem pences registradas', () => {
+    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO, true)).toMatch(/Ou clique numa pence já feita \(as marcadas com um anel\) para mudar as medidas dela\. Esc sai\.$/);
+    expect(instrucaoDaPence('pence-interna', O, SEM_TRECHO, true)).toMatch(/Ou clique numa pence já feita/);
+    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO)).not.toMatch(/pence já feita/);
+    expect(instrucaoDaPence('fechar-pence', O, SEM_TRECHO, true)).not.toMatch(/pence já feita/);
+  });
+
+  it('fechar e transferir uma pence registrada não levam o aviso do canto tratado como pence', () => {
+    const peca = comRecortada();
+    const vertice = na(peca.contorno.findIndex((p) => p.y === 200), 100, 200);
+    const transferir = clicar('transferir-pence', O, peca, [noContorno(vertice), noContorno(na(1, 200, 200))]);
+
+    expect(aplicarPence('transferir-pence', O, [peca], peca, transferir, novoId).recado).toBe(
+      'Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. A área continua 580,0 cm².',
+    );
   });
 });

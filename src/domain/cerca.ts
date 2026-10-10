@@ -1,7 +1,7 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { area, somar } from '../core/geometria';
 import { graduacaoComOsPontosMovidos } from './graduacao';
-import { reancorarPiques, type Molde } from './molde';
+import { pencesComOsPontosMovidos, reancorarPiques, type Molde } from './molde';
 
 /**
  * Cerca ("Definir cerca"/"Mover cerca" de CADs de moldes): um retângulo
@@ -179,5 +179,6 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
     linhaDeFio,
     piques: reancorarPiques(molde.piques, molde.contorno, contorno),
     ...(molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contorno) } : {}),
+    ...(molde.pences ? { pences: pencesComOsPontosMovidos(molde.pences, molde.contorno, contorno) } : {}),
   };
 }

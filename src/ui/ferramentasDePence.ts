@@ -2,6 +2,8 @@ import { area, distancia, type Ponto2D } from '../core/geometria';
 import type { Molde } from '../domain/molde';
 import {
   abrirPence,
+  alterarPence,
+  alterarPenceInterna,
   conferirMedidasDaPence,
   conferirMultiplasPences,
   conferirOpcoesDePenceInterna,
@@ -11,6 +13,11 @@ import {
   ehVerticeDePence,
   fecharPence,
   MAXIMO_DE_PENCES,
+  medidasDaPence,
+  medidasDaPenceInterna,
+  penceNoVertice,
+  pencesDaPeca,
+  removerPence,
   transferirPence,
   type ModoDePence,
   type OpcoesDePenceInterna,
@@ -136,6 +143,13 @@ export function penceCompleta(ferramenta: FerramentaDePence, opcoes: OpcoesDasPe
 export interface CliqueDePence {
   readonly estado: TrechoEmEdicao;
   readonly recusa: string | null;
+  /** O clique caiu numa pence já feita: em vez de criar outra, abre as medidas dela (o id do registro). */
+  readonly editar?: string;
+}
+
+/** Um clique com a ferramenta de pence ligada: além do que todo clique traz, a pence registrada que está sob ele (se há). */
+export interface CliqueNaPence extends CliqueDeTrecho {
+  readonly pence?: string | null;
 }
 
 const NAO_E_PENCE = 'Esse ponto não é o vértice de uma pence recortada: clique no ponto de dentro do recorte.';
@@ -150,11 +164,19 @@ export function cliqueDePence(
   opcoes: OpcoesDasPences,
   peca: Molde,
   estado: TrechoEmEdicao,
-  clique: CliqueDeTrecho,
+  clique: CliqueNaPence,
 ): CliqueDePence {
   const pedidos = cliquesPedidos(ferramenta, opcoes);
   const igual: CliqueDePence = { estado, recusa: null };
   if (penceCompleta(ferramenta, opcoes, estado)) return igual;
+  // Antes de qualquer ponto: o clique numa pence já feita abre as medidas dela.
+  if (!estado.inicio && clique.pence) {
+    const pence = pencesDaPeca(peca).find((q) => q.id === clique.pence);
+    const daFerramenta =
+      pence !== undefined &&
+      ((ferramenta === 'pence-no-contorno' && pence.tipo !== 'interna') || (ferramenta === 'pence-interna' && pence.tipo === 'interna'));
+    if (pence && daFerramenta) return { estado, recusa: null, editar: pence.id };
+  }
   if (pedidos.inicio !== 'nenhum' && !estado.inicio) {
     const posicao = clique.noContorno;
     if (!posicao) return igual;
@@ -177,6 +199,8 @@ function trocar(pecas: readonly Molde[], id: string, nova: Molde): Molde[] {
 }
 
 const NOME_DO_MODO: Record<ModoDePenceNoContorno, string> = { recortar: 'recortada', marcar: 'marcada', abrir: 'aberta' };
+/** O que a mensagem acrescenta quando a pence fechada ou transferida não tinha registro. */
+const CANTO_TRATADO_COMO_PENCE = ' Esse canto não foi feito por uma ferramenta de pence: foi tratado como pence por ser um canto que entra na peça.';
 
 /** Aplica a ferramenta na peça, com os cliques dados. Lança erro, sem mudar nada, quando não dá. */
 export function aplicarPence(
@@ -218,7 +242,7 @@ export function aplicarPence(
       return pronto(criarPenceInterna(peca, livre!, opcoes.interna, novoId), `Pence interna desenhada em “${peca.nome}”.`);
     case 'fechar-pence': {
       const nova = fecharPence(peca, inicio!.indiceAresta, opcoes.fecharSomenteORecorte ? null : fim);
-      const mudanca = `A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.`;
+      const mudanca = `A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.${penceNoVertice(peca, inicio!.indiceAresta) ? '' : CANTO_TRATADO_COMO_PENCE}`;
       if (opcoes.fecharSomenteORecorte) {
         return pronto(nova, `Recorte da pence fechado em “${peca.nome}”: o contorno passa reto, e a pence ficou marcada. ${mudanca}`);
       }
@@ -234,7 +258,10 @@ export function aplicarPence(
     }
     case 'transferir-pence': {
       const nova = transferirPence(peca, inicio!.indiceAresta, fim!);
-      return pronto(nova, `Pence transferida em “${peca.nome}”, com o mesmo vértice e o mesmo ângulo. A área continua ${areaDe(nova)}.`);
+      return pronto(
+        nova,
+        `Pence transferida em “${peca.nome}”, com o mesmo vértice e o mesmo ângulo. A área continua ${areaDe(nova)}.${penceNoVertice(peca, inicio!.indiceAresta) ? '' : CANTO_TRATADO_COMO_PENCE}`,
+      );
     }
     case 'multiplas-pences': {
       const { quantidade, distanciaMm, ...daPence } = opcoes.multiplas;
@@ -265,10 +292,18 @@ export function previaDaPence(
   opcoes: OpcoesDasPences,
   peca: Molde,
   estado: TrechoEmEdicao,
-  mouse: CliqueDeTrecho | null,
+  mouse: CliqueNaPence | null,
 ): PreviaDeFerramentaDeMolde {
-  const marcas = [estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined);
+  // Os pontos já clicados e, nas ferramentas que mexem em pences, o vértice de cada pence registrada.
+  const dasPences = ferramenta === 'pregas' || ferramenta === 'multiplas-pences' ? [] : pencesDaPeca(peca).map((pence) => pence.pontos[pence.tipo === 'interna' ? 0 : 1]!);
+  const marcas = [...dasPences, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
   if (!mouse) return { marcas };
+  // Com o mouse em cima de uma pence já feita, o clique abre as medidas dela: a pence fica em destaque.
+  const sobOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).editar;
+  if (sobOMouse) {
+    const pence = pencesDaPeca(peca).find((q) => q.id === sobOMouse)!;
+    return { marcas, substituido: pence.tipo === 'interna' ? [...pence.pontos, pence.pontos[0]!] : pence.pontos };
+  }
   const comOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).estado;
   if (penceCompleta(ferramenta, opcoes, comOMouse)) {
     try {
@@ -289,20 +324,21 @@ export function previaDaPence(
 
 const ESC = ' Esc sai.';
 
-/** A instrução do próximo clique, para a faixa de mensagens. */
-export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, estado: TrechoEmEdicao): string {
+/** A instrução do próximo clique, para a faixa de mensagens. `temPences`: a peça tem pences registradas, que um clique pode abrir. */
+export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, estado: TrechoEmEdicao, temPences = false): string {
+  const ouMudar = temPences ? ' Ou clique numa pence já feita (as marcadas com um anel) para mudar as medidas dela.' : '';
   switch (ferramenta) {
     case 'pence-no-contorno':
       if (opcoes.pence.modo === 'abrir') {
         return !estado.inicio
-          ? 'Pence (abrir): clique no contorno da peça selecionada, onde a pence deve abrir.' + ESC
+          ? 'Pence (abrir): clique no contorno da peça selecionada, onde a pence deve abrir.' + ouMudar + ESC
           : 'Pence (abrir): clique no contorno do lado oposto, no pivô — o lado sem a linha de fio gira em torno dele.' + ESC;
       }
       return !estado.inicio
-        ? `Pence (${opcoes.pence.modo}): clique no contorno da peça selecionada, no meio da pence.` + ESC
+        ? `Pence (${opcoes.pence.modo}): clique no contorno da peça selecionada, no meio da pence.` + ouMudar + ESC
         : `Pence (${opcoes.pence.modo}): clique dentro da peça, para onde o vértice deve apontar.` + ESC;
     case 'pence-interna':
-      return 'Pence interna: clique dentro da peça selecionada, no centro da pence.' + ESC;
+      return 'Pence interna: clique dentro da peça selecionada, no centro da pence.' + ouMudar + ESC;
     case 'fechar-pence':
       return !estado.inicio
         ? 'Fechar pence: clique no vértice da pence recortada (o ponto de dentro do recorte).' + ESC
@@ -319,6 +355,90 @@ export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDa
         ? 'Pregas: clique no contorno, na outra ponta da linha da prega.' + ESC
         : 'Pregas: clique do lado em que as outras pregas devem ficar.' + ESC;
   }
+}
+
+/** O diálogo das medidas de uma pence já feita; `null` se ela não está mais na peça como foi posta. */
+export function dialogoDeEditarPence(peca: Molde, id: string): DialogoDePence | null {
+  const pence = pencesDaPeca(peca).find((q) => q.id === id);
+  if (!pence) return null;
+  const apagar: CampoDoDialogo = { tipo: 'caixa', id: 'apagar', rotulo: 'Apagar esta pence', inicial: false };
+  if (pence.tipo === 'interna') {
+    const { altura1Mm, altura2Mm, larguraMm } = medidasDaPenceInterna(pence);
+    return {
+      titulo: 'Pence interna: medidas',
+      campos: [
+        { tipo: 'medida', id: 'altura1', rotulo: 'Altura 1: do centro à ponta (mm)', inicial: paraCampo(arredondar(altura1Mm)) },
+        { tipo: 'medida', id: 'altura2', rotulo: 'Altura 2: do centro à outra ponta (mm)', inicial: paraCampo(arredondar(altura2Mm)) },
+        { tipo: 'medida', id: 'largura', rotulo: 'Largura no centro (mm)', inicial: paraCampo(arredondar(larguraMm)) },
+        apagar,
+      ],
+      nota: 'O losango é refeito no mesmo centro e na mesma direção, com as medidas novas. Apagando, as linhas e as marcas da pence saem da peça.',
+    };
+  }
+  const { aberturaMm, profundidadeMm, desvioMm } = medidasDaPence(pence);
+  return {
+    titulo: pence.tipo === 'recortada' ? 'Pence recortada: medidas' : 'Pence marcada: medidas',
+    campos: [
+      { tipo: 'medida', id: 'abertura', rotulo: 'Abertura: de uma ponta à outra (mm)', inicial: paraCampo(arredondar(aberturaMm)) },
+      { tipo: 'medida', id: 'profundidade', rotulo: 'Profundidade: do meio das pontas ao vértice (mm)', inicial: paraCampo(arredondar(profundidadeMm)) },
+      {
+        tipo: 'medida',
+        id: 'desvio',
+        rotulo: 'Desvio do vértice para o lado (mm; 0 = em esquadro)',
+        inicial: paraCampo(arredondar(desvioMm)),
+      },
+      apagar,
+    ],
+    nota:
+      pence.tipo === 'recortada'
+        ? 'A pence é refeita no mesmo lugar, com as medidas novas: o contorno volta a ser o de antes do recorte e é recortado de novo. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, o contorno fica como era antes da pence.'
+        : 'A pence é refeita no mesmo lugar, com as medidas novas. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, a linha, os piques e a marca dela saem da peça.',
+  };
+}
+
+/** Uma medida lida dos pontos, sem as casas que só vêm das contas. */
+function arredondar(valor: number): number {
+  const arredondado = Math.round(valor * 100) / 100;
+  return arredondado === 0 ? 0 : arredondado;
+}
+
+/** Aplica o diálogo das medidas na pence: muda-as ou, com "Apagar", tira a pence. Lança erro quando as medidas não servem. */
+export function aplicarEdicaoDaPence(
+  pecas: readonly Molde[],
+  peca: Molde,
+  id: string,
+  valores: ValoresDoDialogo,
+  novoId: () => string,
+): ResultadoDeFerramentaDeMolde {
+  const pence = pencesDaPeca(peca).find((q) => q.id === id);
+  if (!pence) throw new Error('Essa pence foi mexida à mão e já não pode ser mudada pelas medidas.');
+  const numero = (campo: string): number => Number(valores[campo]);
+  if (valores.apagar === true) {
+    const sem = removerPence(peca, id);
+    return {
+      pecas: trocar(pecas, peca.id, sem),
+      recado:
+        pence.tipo === 'recortada'
+          ? `Pence apagada de “${peca.nome}”: o contorno voltou a ser o de antes dela. A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(sem.contorno))}.`
+          : `Pence apagada de “${peca.nome}”.`,
+    };
+  }
+  if (pence.tipo === 'interna') {
+    const medidas = { altura1Mm: numero('altura1'), altura2Mm: numero('altura2'), larguraMm: numero('largura') };
+    return {
+      pecas: trocar(pecas, peca.id, alterarPenceInterna(peca, id, medidas, novoId)),
+      recado: `Pence interna de “${peca.nome}” refeita: alturas de ${formatarMm(medidas.altura1Mm)} e ${formatarMm(medidas.altura2Mm)}, largura de ${formatarMm(medidas.larguraMm)}.`,
+    };
+  }
+  const medidas = { aberturaMm: numero('abertura'), profundidadeMm: numero('profundidade'), desvioMm: numero('desvio') };
+  const nova = alterarPence(peca, id, medidas, novoId);
+  const desvio = medidas.desvioMm === 0 ? '' : `, desvio de ${formatarMm(medidas.desvioMm)}`;
+  return {
+    pecas: trocar(pecas, peca.id, nova),
+    recado:
+      `Pence de “${peca.nome}” refeita: abertura de ${formatarMm(medidas.aberturaMm)}, profundidade de ${formatarMm(medidas.profundidadeMm)}${desvio}.` +
+      (pence.tipo === 'recortada' ? ` A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.` : ''),
+  };
 }
 
 /** O diálogo de uma ferramenta: o título, os campos (com o que foi usado por último) e a explicação. */
