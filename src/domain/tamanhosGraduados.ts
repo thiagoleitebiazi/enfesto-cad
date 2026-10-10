@@ -21,12 +21,27 @@ import { reancorarPiques, semGraduacao, transladarMolde, type Molde } from './mo
 const AREA_MINIMA_MM2 = 1e-6;
 const ZERO: Ponto2D = { x: 0, y: 0 };
 
+/** O ponto espelhado na reta que passa por `a` e `b`. */
+function espelharNaReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const comprimento2 = dx * dx + dy * dy;
+  if (comprimento2 === 0) return p;
+  const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / comprimento2;
+  return { x: 2 * (a.x + dx * t) - p.x, y: 2 * (a.y + dy * t) - p.y };
+}
+
 /**
  * A peça com a forma de um tamanho da graduação (o resto fica como está): o
  * contorno desse tamanho e, acompanhando-o na proporção, o que está dentro —
  * furos, linhas internas, marcas e cotas. Os piques ficam na mesma proporção
  * das arestas, e a linha de fio anda inteira, sem mudar de direção nem de
  * comprimento, o que anda o meio dela.
+ *
+ * A metade guardada pelo "Manter dobra" vai junto: cada ponto dela é trazido
+ * para cima da metade desenhada (espelhado na dobra), anda como um ponto
+ * dessa metade e volta para o outro lado da dobra do tamanho. A dobra dela
+ * cai exatamente sobre a dobra do tamanho, e o "Desdobrar" a traz de volta.
  */
 function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): Molde {
   if (tamanho === graduacao.base) return molde;
@@ -39,6 +54,10 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
   const contorno = base.map((p, i) => ({ x: p.x + doTamanho[i]!.x, y: p.y + doTamanho[i]!.y }));
   const fio = molde.linhaDeFio;
   const doFio = deslocamentoNoPonto(base, doTamanho, { x: (fio.inicio.x + fio.fim.x) / 2, y: (fio.inicio.y + fio.fim.y) / 2 });
+  const guardada = molde.dobraMantida;
+  const dobraDoTamanho = guardada ? ([levar(guardada.de), levar(guardada.ate)] as const) : null;
+  const levarGuardada = (p: Ponto2D): Ponto2D =>
+    guardada && dobraDoTamanho ? espelharNaReta(levar(espelharNaReta(p, guardada.de, guardada.ate)), dobraDoTamanho[0], dobraDoTamanho[1]) : p;
   return {
     ...molde,
     contorno,
@@ -62,7 +81,21 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
             ...pence,
             pontos: pence.pontos.map(levar),
             ...(pence.removidos ? { removidos: pence.removidos.map(levar) } : {}),
+            ...(pence.pivo ? { pivo: levar(pence.pivo) } : {}),
           })),
+        }
+      : {}),
+    ...(guardada && dobraDoTamanho
+      ? {
+          dobraMantida: {
+            de: dobraDoTamanho[0],
+            ate: dobraDoTamanho[1],
+            contorno: guardada.contorno.map(levarGuardada),
+            furos: guardada.furos.map((furo) => furo.map(levarGuardada)),
+            linhasInternas: guardada.linhasInternas.map((linha) => linha.map(levarGuardada)),
+            marcas: guardada.marcas.map((m) => ({ ...m, posicao: levarGuardada(m.posicao) })),
+            piques: guardada.piques.map((q) => ({ ...q, posicao: levarGuardada(q.posicao) })),
+          },
         }
       : {}),
   };

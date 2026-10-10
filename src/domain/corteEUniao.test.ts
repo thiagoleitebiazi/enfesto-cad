@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { area, areaAssinada, ponto, retanguloEnvolvente, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { cotaDeDistancia } from './cota';
+import { definirRegra } from './graduacao';
+import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 import {
   cortarMolde,
   cruzamentosDaReta,
@@ -487,6 +489,50 @@ describe('dobrarMolde', () => {
 
     expect('dobraMantida' in deNovo).toBe(false);
     expect(area(deNovo.contorno)).toBeCloseTo(15000, 6);
+  });
+});
+
+describe('a metade guardada nos outros tamanhos da graduação', () => {
+  // Trapézio dobrado em x = 100, mantendo a dobra: fica o lado direito, e o esquerdo fica guardado.
+  const TRAPEZIO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 200)];
+  const dobrada = (): Molde => dobrarMolde(molde({ contorno: TRAPEZIO }), na(0, 100, 0), na(2, 100, 250), ponto(150, 100), { manter: true, fioNoCentro: false });
+  const arestaDaDobra = (peca: Molde): number => {
+    const n = peca.contorno.length;
+    return peca.contorno.findIndex((p, i) => Math.abs(p.x - 100) < 1e-9 && Math.abs(peca.contorno[(i + 1) % n]!.x - 100) < 1e-9);
+  };
+  const graduada = (): Molde => {
+    const comTamanhos = definirTamanhosDoMolde(dobrada(), ['M', 'G'], 'M');
+    const canto = (x: number, y: number): number => comTamanhos.contorno.findIndex((p) => Math.abs(p.x - x) < 1e-9 && Math.abs(p.y - y) < 1e-9);
+    // No G, o lado direito sai 10 mm para fora, e a ponta de cima da dobra sobe 20 mm.
+    let graduacao = definirRegra(comTamanhos.graduacao!, comTamanhos.contorno, canto(200, 0), [ponto(0, 0), ponto(10, 0)]);
+    graduacao = definirRegra(graduacao, comTamanhos.contorno, canto(200, 300), [ponto(0, 0), ponto(10, 0)]);
+    graduacao = definirRegra(graduacao, comTamanhos.contorno, canto(100, 250), [ponto(0, 0), ponto(0, 20)]);
+    return { ...comTamanhos, graduacao };
+  };
+
+  it('a metade guardada vai para o tamanho: a dobra dela cai sobre a dobra do tamanho, e o resto anda como o lado desenhado, espelhado', () => {
+    const g = moldeDoTamanho(graduada(), 1, 'g');
+    const guardada = g.dobraMantida!;
+
+    expect([guardada.de, guardada.ate]).toContainEqual(ponto(100, 0));
+    expect([guardada.de, guardada.ate]).toContainEqual(ponto(100, 270));
+    expect(guardada.contorno).toContainEqual(ponto(100, 270));
+    // O canto (0, 0) da metade guardada é o espelho do (200, 0), que no G foi para (210, 0).
+    const cantoDeBaixo = guardada.contorno.find((p) => Math.abs(p.y) < 1e-6 && p.x < 50)!;
+    expect(cantoDeBaixo.x).toBeCloseTo(-10, 6);
+    // No tamanho base, nada muda.
+    expect(moldeDoTamanho(graduada(), 0, 'm').dobraMantida).toEqual(dobrada().dobraMantida);
+  });
+
+  it('o “Desdobrar” do tamanho traz a metade guardada de volta, em vez de espelhar a desenhada', () => {
+    const g = moldeDoTamanho(graduada(), 1, 'g');
+    expect(desdobraComAMetadeGuardada(g, arestaDaDobra(g))).toBe(true);
+
+    const inteira = desdobrarMolde(g, arestaDaDobra(g), ids());
+    expect(area(inteira.contorno)).toBeCloseTo(area(g.contorno) + area(g.dobraMantida!.contorno), 6);
+    // Espelhando a metade desenhada, a peça teria o dobro da área dela: não é o caso, as duas metades são diferentes.
+    expect(area(inteira.contorno)).not.toBeCloseTo(2 * area(g.contorno), 0);
+    expect('dobraMantida' in inteira).toBe(false);
   });
 });
 

@@ -111,9 +111,11 @@ export function levarOQueEstaNaRegiao(
       ? {
           pences: molde.pences.map((pence) => {
             const anda = pence.tipo === 'recortada' ? pence.pontos.every(naBordaQueAnda) : dentro(pence.pontos[0]!);
+            // O pivô é um ponto do contorno: anda se estiver na borda que anda, esteja a pence onde estiver.
+            const comPivo = pence.pivo && naBordaQueAnda(pence.pivo) ? { ...pence, pivo: movimento.ponto(pence.pivo) } : pence;
             return anda
-              ? { ...pence, pontos: levar(pence.pontos), ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}) }
-              : pence;
+              ? { ...comPivo, pontos: levar(pence.pontos), ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}) }
+              : comPivo;
           }),
         }
       : {}),

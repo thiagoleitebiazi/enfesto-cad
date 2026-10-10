@@ -2,7 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { ponto, type PosicaoNoContorno } from '../core/geometria';
 import { comCurvaRegistrada, curvasDaPeca, gerarCurva } from '../domain/curvasDaPeca';
 import { criarMolde, substituirTrechoDoMolde, type Molde } from '../domain/molde';
-import { avisoDasAlcas, cliqueNaAlca, INSTRUCAO_COM_ALCA, previaDasAlcas } from './ferramentasDeCurva';
+import {
+  apagarAlca,
+  aplicarTornarCurva,
+  avisoDasAlcas,
+  cliqueDeNovoPontoDePassagem,
+  cliqueNaAlca,
+  INSTRUCAO_COM_ALCA,
+  previaDasAlcas,
+} from './ferramentasDeCurva';
 
 // Retângulo de 200 × 300 mm com o lado direito trocado por uma curva que passa por (240, 150).
 const DE: PosicaoNoContorno = { indiceAresta: 1, ponto: ponto(200, 0) };
@@ -71,5 +79,73 @@ describe('previaDasAlcas e os textos', () => {
     expect(avisoDasAlcas(null)).toBe('');
     expect(avisoDasAlcas(comCurva())).toMatch(/Ou clique num ponto de passagem de uma curva \(os anéis\)/);
     expect(INSTRUCAO_COM_ALCA).toMatch(/clique onde o ponto de passagem deve ficar/);
+  });
+});
+
+describe('pontos de passagem: pôr, tirar e tornar um trecho editável', () => {
+  it('o segundo clique no mesmo lugar, em cima da curva, põe um ponto de passagem ali', () => {
+    const peca = comCurva();
+    const sobreACurva = curvasDaPeca(peca)[0]!.pontos[4]!;
+    const posto = cliqueDeNovoPontoDePassagem([peca], peca, sobreACurva, ponto(sobreACurva.x + 2, sobreACurva.y + 1), RAIO);
+
+    expect(posto.tratou).toBe(true);
+    expect(curvasDaPeca(posto.pecas![0]!)[0]!.controles).toHaveLength(4);
+    expect(posto.recado).toBe('Ponto de passagem posto na curva de “Frente”: clique nele (o anel) e, depois, onde ele deve ficar.');
+  });
+
+  it('longe do primeiro clique, ou fora de uma curva registrada, o clique segue sendo o fim do trecho', () => {
+    const peca = comCurva();
+    const sobreACurva = curvasDaPeca(peca)[0]!.pontos[4]!;
+
+    expect(cliqueDeNovoPontoDePassagem([peca], peca, sobreACurva, ponto(200, 300), RAIO)).toEqual({ tratou: false, recado: null });
+    expect(cliqueDeNovoPontoDePassagem([peca], peca, ponto(0, 150), ponto(0, 151), RAIO)).toEqual({ tratou: false, recado: null });
+  });
+
+  it('em cima de um ponto de passagem que já existe, explica e não muda nada', () => {
+    const peca = comCurva();
+    const repetido = cliqueDeNovoPontoDePassagem([peca], peca, ponto(240, 150), ponto(240, 150), RAIO);
+
+    expect(repetido.tratou).toBe(true);
+    expect(repetido.pecas).toBeUndefined();
+    expect(repetido.recado).toMatch(/Já há um ponto de passagem aí/);
+  });
+
+  it('Delete tira o ponto de passagem escolhido; tirado o último, o trecho fica reto', () => {
+    const peca = comCurva();
+    const maisUm = cliqueDeNovoPontoDePassagem([peca], peca, curvasDaPeca(peca)[0]!.pontos[4]!, curvasDaPeca(peca)[0]!.pontos[4]!, RAIO).pecas![0]!;
+
+    const menos = apagarAlca([maisUm], maisUm, { curvaId: 'c1', indice: 1 });
+    expect(curvasDaPeca(menos.pecas![0]!)[0]!.controles).toHaveLength(3);
+    expect(menos.recado).toBe('Ponto de passagem tirado em “Frente”: a curva foi refeita pelo que ficou.');
+
+    const reta = apagarAlca([peca], peca, { curvaId: 'c1', indice: 1 });
+    expect(curvasDaPeca(reta.pecas![0]!)).toHaveLength(0);
+    expect(reta.pecas![0]!.contorno).toHaveLength(4);
+    expect(reta.recado).toBe('Último ponto de passagem tirado em “Frente”: o trecho ficou reto, de uma ponta à outra.');
+
+    const erro = apagarAlca([peca], peca, { curvaId: 'outra', indice: 1 });
+    expect(erro.pecas).toBeUndefined();
+    expect(erro.recado).toMatch(/mexida à mão/);
+  });
+
+  it('tornar o trecho uma curva editável diz quantos pontos de passagem ficaram e quanto a forma mudou', () => {
+    const reta = aplicarTornarCurva([molde()], molde(), DE, ATE, 2, 'c9');
+    expect(curvasDaPeca(reta.pecas[0]!)[0]!.controles).toHaveLength(4);
+    expect(reta.recado).toBe('Trecho de “Frente” tornado curva editável, com 2 pontos de passagem (os anéis). A forma não mudou.');
+
+    // A curva que perdeu o registro (um ponto dela foi mexido à mão) volta a ser editável.
+    const peca = comCurva();
+    const mexida = { ...peca, contorno: peca.contorno.map((p, i) => (i === 6 ? ponto(p.x + 8, p.y) : p)) };
+    expect(curvasDaPeca(mexida)).toHaveLength(0);
+    const n = mexida.contorno.length;
+    const deNovo = aplicarTornarCurva([mexida], mexida, DE, { indiceAresta: n - 2, ponto: ATE.ponto }, 1, 'c9');
+    expect(curvasDaPeca(deNovo.pecas[0]!)).toHaveLength(1);
+    expect(deNovo.recado).toMatch(/com 1 ponto de passagem \(os anéis\)\. A forma mudou \d+,\d mm no ponto em que mais mudou\.$/);
+    expect(() => aplicarTornarCurva([molde()], molde(), DE, ATE, 0, 'c9')).toThrow('inteiro de 1 a 20');
+  });
+
+  it('as instruções dizem do Delete e dos dois cliques', () => {
+    expect(INSTRUCAO_COM_ALCA).toMatch(/Delete tira o ponto de passagem\.$/);
+    expect(avisoDasAlcas(comCurva())).toMatch(/Dois cliques no mesmo lugar de uma curva põem um ponto de passagem ali\.$/);
   });
 });

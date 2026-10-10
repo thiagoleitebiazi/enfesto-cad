@@ -23,6 +23,7 @@ import {
   arredondarCantoDoContorno,
 } from '../core/geometria';
 import { transformarCota, type Cota } from './cota';
+import { curvasAcompanhando } from './filaDeCurva';
 import { graduacaoComOsPontosMovidos, transformarGraduacao, type Graduacao } from './graduacao';
 
 /**
@@ -83,9 +84,12 @@ export interface Marca {
  */
 export interface CurvaDaPeca {
   readonly id: string;
-  readonly tipo: 'curva' | 'arco';
-  /** Por onde a curva passa: a ponta inicial, os pontos de passagem e a ponta final (o arco tem um só ponto de passagem). */
+  /** Curva: passa por todos os pontos. Arco: de círculo, por três. Forma: a curva pré-definida, posta entre as duas pontas. */
+  readonly tipo: 'curva' | 'arco' | 'forma';
+  /** Por onde a curva passa: a ponta inicial, os pontos de passagem e a ponta final (o arco tem um só ponto de passagem; a forma, nenhum). */
   readonly controles: readonly Ponto2D[];
+  /** Forma: a curva pré-definida como está no cadastro (de (0, 0) a (1, 0)) e se entrou espelhada. */
+  readonly forma?: { readonly pontos: readonly Ponto2D[]; readonly espelhar: boolean };
   /** Os pontos do contorno que a curva gerou, de uma ponta à outra. O registro vale enquanto forem pontos seguidos do contorno. */
   readonly pontos: readonly Ponto2D[];
 }
@@ -111,6 +115,8 @@ export interface PenceDaPeca {
   readonly marcas?: readonly string[];
   /** Interna: tem também a linha do eixo, de ponta a ponta. */
   readonly comEixo?: boolean;
+  /** Recortada, aberta por pivô: o ponto do contorno em torno do qual a peça girou para abrir. Com ele, a pence fecha e abre de novo pelo mesmo giro. */
+  readonly pivo?: Ponto2D;
 }
 
 /**
@@ -282,7 +288,23 @@ export function pencesComOsPontosMovidos(pences: readonly PenceDaPeca[], contorn
     const i = contornoAntigo.findIndex((v) => Math.abs(v.x - p.x) <= 1e-9 && Math.abs(v.y - p.y) <= 1e-9);
     return i >= 0 ? contornoNovo[i]! : p;
   };
-  return pences.map((pence) => (pence.tipo === 'recortada' ? { ...pence, pontos: pence.pontos.map(levar) } : pence));
+  return pences.map((pence) =>
+    pence.tipo === 'recortada' ? { ...pence, pontos: pence.pontos.map(levar), ...(pence.pivo ? { pivo: levar(pence.pivo) } : {}) } : pence,
+  );
+}
+
+/**
+ * A peça depois de pontos do contorno mudarem de lugar, com as curvas
+ * registradas acompanhando: a que andou inteira anda junto, e a que teve só
+ * as pontas movidas é refeita entre as pontas de agora (o contorno ganha a
+ * curva nova, e os piques que estavam sobre a antiga saem).
+ */
+export function comAsCurvasAcompanhando(antes: Molde, depois: Molde): Molde {
+  if (!antes.curvas) return depois;
+  const { contorno, curvas } = curvasAcompanhando(antes.curvas, antes.contorno, depois.contorno);
+  if (curvas === antes.curvas) return depois;
+  if (contorno === depois.contorno) return { ...depois, curvas };
+  return { ...depois, contorno, curvas, piques: piquesQueFicamNoContorno(depois.piques, contorno) };
 }
 
 /** A graduação e as pences acompanhando os pontos do contorno que mudaram de lugar (mesma quantidade de pontos). */
@@ -330,6 +352,7 @@ function anotacoesTransformadas(
             ...pence,
             pontos: pence.pontos.map(ponto),
             ...(pence.removidos ? { removidos: pence.removidos.map(ponto) } : {}),
+            ...(pence.pivo ? { pivo: ponto(pence.pivo) } : {}),
           })),
         }
       : {}),
@@ -521,7 +544,12 @@ export function reancorarPiques(piques: readonly Pique[], contornoAntigo: Contor
 /** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques das duas arestas vizinhas acompanham (`reancorarPiques`). */
 export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Ponto2D): Molde {
   const contorno = moverPontoDoContorno(molde.contorno, indice, novaPosicao);
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...acompanhandoOsPontos(molde, contorno) };
+  return comAsCurvasAcompanhando(molde, {
+    ...molde,
+    contorno,
+    piques: reancorarPiques(molde.piques, molde.contorno, contorno),
+    ...acompanhandoOsPontos(molde, contorno),
+  });
 }
 
 /**
@@ -533,7 +561,12 @@ export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Pon
 export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
   const indicesSet = new Set(indices);
   const contorno = molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p));
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...acompanhandoOsPontos(molde, contorno) };
+  return comAsCurvasAcompanhando(molde, {
+    ...molde,
+    contorno,
+    piques: reancorarPiques(molde.piques, molde.contorno, contorno),
+    ...acompanhandoOsPontos(molde, contorno),
+  });
 }
 
 /** Abaixo disso (mm²) o contorno conta como sem área — a mesma tolerância da Cerca. */
@@ -625,7 +658,10 @@ export function redefinirComprimentoDaAresta(
     }
     return pique;
   });
-  return exigirContornoComArea({ ...molde, contorno, piques, ...acompanhandoOsPontos(molde, contorno) }, 'com esse comprimento');
+  return exigirContornoComArea(
+    comAsCurvasAcompanhando(molde, { ...molde, contorno, piques, ...acompanhandoOsPontos(molde, contorno) }),
+    'com esse comprimento',
+  );
 }
 
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */
@@ -664,19 +700,31 @@ export function chanfrarCantoDoMolde(molde: Molde, indice: number, distanciaMm: 
   };
 }
 
-/** Arredonda o canto do vértice `indice` (arco tesselado de raio `raioMm`). */
-export function arredondarCantoDoMolde(molde: Molde, indice: number, raioMm: number): Molde {
+/**
+ * Arredonda o canto do vértice `indice` (arco tesselado de raio `raioMm`).
+ * Com `idDoArco`, o arco fica registrado na peça, com o ponto do meio dele
+ * como ponto de passagem.
+ */
+export function arredondarCantoDoMolde(molde: Molde, indice: number, raioMm: number, idDoArco?: string): Molde {
   const arestaAnterior = (indice - 1 + molde.contorno.length) % molde.contorno.length;
   const contornoAntes = molde.contorno.length;
   const novoContorno = arredondarCantoDoContorno(molde.contorno, indice, raioMm);
   const delta = novoContorno.length - contornoAntes;
+  // O canto deu lugar aos pontos do arco, de um ponto de tangência ao outro.
+  const arco = delta > 0 ? novoContorno.slice(indice, indice + delta + 1) : [];
   return {
     ...molde,
     contorno: novoContorno,
     piques: molde.piques
       .filter((p) => p.indiceAresta !== indice && p.indiceAresta !== arestaAnterior)
       .map((p) => (p.indiceAresta > indice ? { ...p, indiceAresta: p.indiceAresta + delta } : p)),
+    ...(idDoArco !== undefined && arco.length >= 3 ? { curvas: [...(molde.curvas ?? []), arcoRegistrado(idDoArco, arco)] } : {}),
   };
+}
+
+/** O registro de um arco de círculo já amostrado: as pontas e o ponto do meio dele como ponto de passagem. */
+export function arcoRegistrado(id: string, pontos: readonly Ponto2D[]): CurvaDaPeca {
+  return { id, tipo: 'arco', controles: [pontos[0]!, pontos[Math.floor(pontos.length / 2)]!, pontos.at(-1)!], pontos };
 }
 
 /**

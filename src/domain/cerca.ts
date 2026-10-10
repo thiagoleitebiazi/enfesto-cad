@@ -1,7 +1,7 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { area, somar } from '../core/geometria';
 import { graduacaoComOsPontosMovidos } from './graduacao';
-import { pencesComOsPontosMovidos, reancorarPiques, type Molde } from './molde';
+import { comAsCurvasAcompanhando, pencesComOsPontosMovidos, reancorarPiques, type Molde } from './molde';
 
 /**
  * Cerca ("Definir cerca"/"Mover cerca" de CADs de moldes): um retângulo
@@ -170,7 +170,8 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
     opcoes.linhaDeFio && fioInteiroDentro(molde, cerca)
       ? { inicio: somar(molde.linhaDeFio.inicio, delta), fim: somar(molde.linhaDeFio.fim, delta) }
       : molde.linhaDeFio;
-  return {
+  // As curvas registradas acompanham: a que foi inteira com a cerca anda junto, e a que teve só as pontas levadas é refeita.
+  return comAsCurvasAcompanhando(molde, {
     ...molde,
     contorno,
     furos,
@@ -180,5 +181,5 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
     piques: reancorarPiques(molde.piques, molde.contorno, contorno),
     ...(molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contorno) } : {}),
     ...(molde.pences ? { pences: pencesComOsPontosMovidos(molde.pences, molde.contorno, contorno) } : {}),
-  };
+  });
 }

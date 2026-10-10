@@ -54,6 +54,7 @@ import {
   lerDialogoDaPence,
   OPCOES_INICIAIS_DAS_PENCES,
   penceCompleta,
+  penceSemRegistroSobOClique,
   previaDaPence,
   type FerramentaDePence,
   type OpcoesDasPences,
@@ -136,9 +137,18 @@ import {
   type OpcoesDeDobrar,
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
-import { pencePerto, pencesDaPeca } from './domain/pences';
-import { comCurvaRegistrada } from './domain/curvasDaPeca';
-import { avisoDasAlcas, cliqueNaAlca, INSTRUCAO_COM_ALCA, previaDasAlcas, type AlcaEscolhida } from './ui/ferramentasDeCurva';
+import { comPenceReconhecida, pencePerto, pencesDaPeca } from './domain/pences';
+import { comArcoRegistrado, comCurvaRegistrada } from './domain/curvasDaPeca';
+import {
+  apagarAlca,
+  aplicarTornarCurva,
+  avisoDasAlcas,
+  cliqueDeNovoPontoDePassagem,
+  cliqueNaAlca,
+  INSTRUCAO_COM_ALCA,
+  previaDasAlcas,
+  type AlcaEscolhida,
+} from './ui/ferramentasDeCurva';
 import {
   cliqueDaConferencia,
   dialogoDaConferencia,
@@ -231,6 +241,7 @@ import {
   converterCosturaEmContorno,
   substituirTrechoDoMolde,
   type Molde,
+  type PenceDaPeca,
   type PontaDaAresta,
 } from './domain/molde';
 import {
@@ -419,7 +430,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'dobrar' }
   | { readonly tipo: 'conferir' }
-  | { readonly tipo: 'editar-pence'; readonly id: string }
+  | { readonly tipo: 'editar-pence'; readonly id: string; readonly reconhecer?: PenceDaPeca }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -1532,10 +1543,38 @@ export default function App(): React.JSX.Element {
         const linha = linhaNovaDoTrecho(ferramenta, peca.contorno, estado.inicio, estado.fim.ponto, estado.livres, opcoes, estado.fim);
         if (!linha) return 'Faltam pontos para montar a curva.';
         const trocada = substituirTrechoDoMolde(peca, estado.inicio, estado.fim, linha.slice(1, -1));
-        // A curva e os arcos por pontos ficam registrados, com os pontos por onde passam: dá para mexer neles depois.
+        // A curva e os arcos ficam registrados, com os pontos por onde passam: dá para mexer neles depois.
+        // O arco tangente fica com o ponto do meio como ponto de passagem; a pré-definida, com a forma e as duas pontas.
         const tipo = ferramenta === 'curva' ? 'curva' : ferramenta === 'arco-2-pontos' || ferramenta === 'arco-3-pontos' ? 'arco' : null;
-        const nova = tipo ? comCurvaRegistrada(trocada, tipo, [estado.inicio.ponto, ...estado.livres, estado.fim.ponto], linha, proximoId()) : trocada;
+        const nova = tipo
+          ? comCurvaRegistrada(trocada, tipo, [estado.inicio.ponto, ...estado.livres, estado.fim.ponto], linha, proximoId())
+          : ferramenta === 'arco-tangente-a-elemento'
+            ? comArcoRegistrado(trocada, linha, proximoId())
+            : ferramenta === 'curva-predefinida' && opcoes.forma
+              ? comCurvaRegistrada(trocada, 'forma', [estado.inicio.ponto, estado.fim.ponto], linha, proximoId(), {
+                  pontos: opcoes.forma,
+                  espelhar: opcoes.espelhar ?? false,
+                })
+              : trocada;
         aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  /** "Editar pontos de curva": o trecho indicado vira uma curva com pontos de passagem. Devolve a mensagem de erro (nada muda) ou `null`. */
+  const tornarCurvaEditavel = useCallback(
+    (inicio: PosicaoNoContorno, fim: PosicaoNoContorno, pontosDePassagem: number): string | null => {
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      setTrecho(SEM_TRECHO);
+      if (!peca) return 'Selecione uma peça primeiro.';
+      try {
+        const resultado = aplicarTornarCurva(pecas, peca, inicio, fim, pontosDePassagem, proximoId());
+        aplicarMudanca([...resultado.pecas]);
+        setRecadoDaFerramenta(resultado.recado);
         return null;
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
@@ -1710,7 +1749,7 @@ export default function App(): React.JSX.Element {
           pecas.map((p) =>
             p.id === selecionadoId
               ? arredondando
-                ? arredondarCantoDoMolde(p, indice, valorMm)
+                ? arredondarCantoDoMolde(p, indice, valorMm, proximoId())
                 : chanfrarCantoDoMolde(p, indice, valorMm)
               : p,
           ),
@@ -2247,6 +2286,19 @@ export default function App(): React.JSX.Element {
           return;
         }
       }
+      if (modo === 'editar-pontos-de-curva' && trecho.inicio && !trecho.fim) {
+        // O segundo clique no mesmo lugar, em cima de uma curva registrada, põe um ponto de passagem ali.
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const novoPonto = peca
+          ? cliqueDeNovoPontoDePassagem(pecas, peca, trecho.inicio.ponto, semCaptura, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm)
+          : null;
+        if (novoPonto?.tratou) {
+          setTrecho(SEM_TRECHO);
+          if (novoPonto.pecas) aplicarMudanca([...novoPonto.pecas]);
+          setRecadoDaFerramenta(novoPonto.recado);
+          return;
+        }
+      }
       if (ehFerramentaDeTrecho(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2372,16 +2424,23 @@ export default function App(): React.JSX.Element {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const { estado, recusa, editar } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+        const { estado, recusa, editar, reconhecer } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
           noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
           livre: semCaptura,
           pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
+          semRegistro: penceSemRegistroSobOClique(modo, peca, semCaptura, raioMm),
         });
         setRecadoDaFerramenta(recusa);
         if (recusa) return;
         // O clique caiu numa pence já feita: abrem-se as medidas dela.
         if (editar) {
           setDialogoDeFerramenta({ tipo: 'editar-pence', id: editar });
+          return;
+        }
+        // Ou numa pence sem registro: as medidas abrem do mesmo jeito, e é aplicando que ela passa a ter registro.
+        if (reconhecer) {
+          const id = proximoId();
+          setDialogoDeFerramenta({ tipo: 'editar-pence', id, reconhecer: { ...reconhecer, id } });
           return;
         }
         if (!penceCompleta(modo, opcoesDasPences, estado)) {
@@ -2761,6 +2820,16 @@ export default function App(): React.JSX.Element {
           aplicarMudanca([...apagado.pecas]);
           setRecadoDaFerramenta(apagado.recado);
         }
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && modo === 'editar-pontos-de-curva' && alcaDeCurva) {
+        // Com um ponto de passagem escolhido, Delete tira o ponto de passagem, e não a peça.
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const apagada = peca && apagarAlca(pecas, peca, alcaDeCurva);
+        setAlcaDeCurva(null);
+        if (apagada) {
+          if (apagada.pecas) aplicarMudanca([...apagada.pecas]);
+          setRecadoDaFerramenta(apagada.recado);
+        }
       } else if (e.key === 'Backspace' && modo === 'curva' && trecho.livres.length > 0) {
         e.preventDefault();
         setTrecho((atual) => ({ ...atual, livres: atual.livres.slice(0, -1) }));
@@ -2812,6 +2881,7 @@ export default function App(): React.JSX.Element {
     [
       modo,
       trecho,
+      alcaDeCurva,
       pecas,
       selecionadoId,
       transform.escalaPxPorMm,
@@ -2904,6 +2974,7 @@ export default function App(): React.JSX.Element {
             noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm),
             livre: cursorMundo,
             pence: pencePerto(pecaSelecionada, cursorMundo, raioMm)?.id ?? null,
+            semRegistro: penceSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo, raioMm),
           }
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
@@ -3482,15 +3553,24 @@ export default function App(): React.JSX.Element {
               rotulo: 'Número de pontos do trecho (contando as duas pontas)',
               inicial: String(pontosDoTrecho(pecaSelecionada.contorno, dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim)),
             },
+            {
+              tipo: 'inteiro',
+              id: 'passagem',
+              rotulo: 'Ou: tornar o trecho uma curva editável, com este número de pontos de passagem',
+              inicial: '',
+              opcional: true,
+            },
           ]}
-          nota="Os pontos ficam igualmente espaçados ao longo do trecho. Com menos pontos a curva fica mais simples, e a forma pode mudar um pouco."
+          nota="Os pontos ficam igualmente espaçados ao longo do trecho. Com menos pontos a curva fica mais simples, e a forma pode mudar um pouco. Preenchido o segundo campo, o trecho vira uma curva com pontos de passagem (os anéis), que dá para mover, acrescentar e tirar depois: serve para a curva que veio de fora, foi desenhada ponto a ponto ou foi mexida à mão. A mensagem diz quanto a forma mudou."
           rotuloDoBotao="Aplicar"
           onAplicar={(valores) =>
-            aplicarTrecho(
-              'editar-pontos-de-curva',
-              { inicio: dialogoDeFerramenta.inicio, fim: dialogoDeFerramenta.fim, livres: [] },
-              { quantidadeDePontos: Number(valores.pontos) },
-            )
+            valores.passagem !== undefined
+              ? tornarCurvaEditavel(dialogoDeFerramenta.inicio, dialogoDeFerramenta.fim, Number(valores.passagem))
+              : aplicarTrecho(
+                  'editar-pontos-de-curva',
+                  { inicio: dialogoDeFerramenta.inicio, fim: dialogoDeFerramenta.fim, livres: [] },
+                  { quantidadeDePontos: Number(valores.pontos) },
+                )
           }
           onFechar={() => {
             setDialogoDeFerramenta(null);
@@ -3765,7 +3845,10 @@ export default function App(): React.JSX.Element {
       {dialogoDeFerramenta?.tipo === 'editar-pence' &&
         pecaSelecionada &&
         (() => {
-          const dialogo = dialogoDeEditarPence(pecaSelecionada, dialogoDeFerramenta.id);
+          // A pence sem registro entra no diálogo já com o registro que teria: a peça só muda ao aplicar.
+          const reconhecer = dialogoDeFerramenta.reconhecer;
+          const pecaDaPence = reconhecer ? comPenceReconhecida(pecaSelecionada, reconhecer) : pecaSelecionada;
+          const dialogo = dialogoDeEditarPence(pecaDaPence, dialogoDeFerramenta.id, reconhecer !== undefined);
           if (!dialogo) return null;
           return (
             <DialogoDeCampos
@@ -3777,7 +3860,7 @@ export default function App(): React.JSX.Element {
               rotuloDoBotao="Aplicar"
               onAplicar={(valores) => {
                 try {
-                  const resultado = aplicarEdicaoDaPence(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, proximoId);
+                  const resultado = aplicarEdicaoDaPence(pecas, pecaDaPence, dialogoDeFerramenta.id, valores, proximoId);
                   aplicarMudanca([...resultado.pecas]);
                   setRecadoDaFerramenta(resultado.recado);
                   return null;
@@ -4121,7 +4204,7 @@ export default function App(): React.JSX.Element {
             try {
               aplicarMudanca(
                 pecas.map((p) =>
-                  p.id === pecaSelecionada.id ? arredondarCanto(p, dialogoDeFerramenta.indice, raioMm) : p,
+                  p.id === pecaSelecionada.id ? arredondarCanto(p, dialogoDeFerramenta.indice, raioMm, proximoId()) : p,
                 ),
               );
               return null;

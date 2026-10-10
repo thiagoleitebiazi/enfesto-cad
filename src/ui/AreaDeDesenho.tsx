@@ -497,6 +497,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   // estado quando uma prop muda".
   const [modoAnterior, setModoAnterior] = useState(modo);
   const [selecionadoIdAnterior, setSelecionadoIdAnterior] = useState(selecionadoId);
+  // Se a peça selecionada ganha ou perde pontos (uma curva refeita, um desfazer), os números guardados já não são os mesmos pontos.
+  const pontosDaSelecionada = pecas.find((p) => p.id === selecionadoId)?.contorno.length ?? 0;
+  const [pontosDaSelecionadaAntes, setPontosDaSelecionadaAntes] = useState(pontosDaSelecionada);
+  if (pontosDaSelecionadaAntes !== pontosDaSelecionada) {
+    setPontosDaSelecionadaAntes(pontosDaSelecionada);
+    if (verticesSelecionados.size > 0) setVerticesSelecionados(new Set());
+  }
   const [ferramentaDeVistaAnterior, setFerramentaDeVistaAnterior] = useState(ferramentaDeVista);
   if (modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId || ferramentaDeVistaAnterior !== ferramentaDeVista) {
     if ((modoAnterior !== modo || selecionadoIdAnterior !== selecionadoId) && verticesSelecionados.size > 0) {

@@ -1,6 +1,7 @@
 import { arcoDaAresta, concordanciaNoCanto, ladosDoCanto, type TipoDeLado } from '../core/arcos';
 import { distancia, substituirTrechoDoContorno, type Contorno, type PosicaoNoContorno } from '../core/geometria';
 import { cotaDeRaio, type CotaDeRaio } from '../domain/cota';
+import { comArcoRegistrado } from '../domain/curvasDaPeca';
 import { arredondarCantoDoMolde, piquesQueFicamNoContorno, type Molde } from '../domain/molde';
 
 /**
@@ -61,14 +62,16 @@ export function recusaDoCanto(ferramenta: FerramentaDeCanto, contorno: Contorno,
  * Troca o canto `indice` da peça por um arco de raio dado, tangente aos dois
  * elementos que se encontram nele. Entre duas retas, é o arredondar de sempre
  * (que reduz o raio ao que cabe); com um arco de algum lado, o arco de
- * concordância exato, recusado se o raio não cabe.
+ * concordância exato, recusado se o raio não cabe. Com `idDoArco`, o arco
+ * fica registrado na peça: dá para mexer no ponto de passagem dele depois.
  */
-export function arredondarCanto(molde: Molde, indice: number, raioMm: number): Molde {
-  if (ferramentaDoCanto(molde.contorno, indice) === 'arco-tangente') return arredondarCantoDoMolde(molde, indice, raioMm);
+export function arredondarCanto(molde: Molde, indice: number, raioMm: number, idDoArco?: string): Molde {
+  if (ferramentaDoCanto(molde.contorno, indice) === 'arco-tangente') return arredondarCantoDoMolde(molde, indice, raioMm, idDoArco);
   const { de, ate, miolo } = concordanciaNoCanto(molde.contorno, indice, raioMm);
   const contorno = substituirTrechoDoContorno(molde.contorno, de, ate, miolo);
   if (contorno.length < 3) throw new Error(`O contorno da peça "${molde.nome}" ficaria sem área com esse raio.`);
-  return { ...molde, contorno, piques: piquesQueFicamNoContorno(molde.piques, contorno) };
+  const arredondada = { ...molde, contorno, piques: piquesQueFicamNoContorno(molde.piques, contorno) };
+  return idDoArco === undefined ? arredondada : comArcoRegistrado(arredondada, [de.ponto, ...miolo, ate.ponto], idDoArco);
 }
 
 /**

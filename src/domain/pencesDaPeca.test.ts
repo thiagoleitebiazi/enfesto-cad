@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { area, ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
+import { area, ponto, pontoMaisProximoNoContorno, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { definirRegra } from './graduacao';
 import {
   criarMolde,
@@ -15,6 +15,7 @@ import {
   abrirPence,
   alterarPence,
   alterarPenceInterna,
+  comPenceReconhecida,
   comPencesValidas,
   criarMultiplasPences,
   criarPence,
@@ -25,10 +26,13 @@ import {
   penceNoVertice,
   pencePerto,
   pencesDaPeca,
+  penceSemRegistroPerto,
+  pivoDaPence,
   removerPence,
   transferirPence,
   type OpcoesDePence,
 } from './pences';
+import { criarPregas } from './pregas';
 import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 
 // Retângulo de 200 × 300 mm. A aresta 2 é a de cima na conta (y = 300), percorrida de x = 200 para x = 0.
@@ -343,5 +347,208 @@ describe('fechar e transferir uma pence registrada', () => {
 
     expect(pencesDaPeca(comDuas)).toHaveLength(2);
     for (const pence of pencesDaPeca(comDuas)) expect(medidasDaPence(pence).aberturaMm).toBeCloseTo(20, 4);
+  });
+});
+
+describe('a pence aberta por pivô guarda o pivô', () => {
+  const PIVO: PosicaoNoContorno = { indiceAresta: 0, ponto: ponto(100, 0) };
+  const aberta = (aberturaMm = 40, base: Molde = molde()): Molde => abrirPence(base, NO_ALTO, PIVO, aberturaMm, 100, true, ids());
+  const aDela = (peca: Molde) => pencesDaPeca(peca)[0]!;
+
+  it('o registro tem o pivô, e ele vale enquanto está sobre o contorno', () => {
+    const peca = aberta();
+
+    expect(aDela(peca).pivo).toEqual(ponto(100, 0));
+    expect(pivoDaPence(peca, aDela(peca))?.ponto).toEqual(ponto(100, 0));
+    // Com o pivô fora do contorno, a pence é como as outras recortadas.
+    const semPivoNoContorno = { ...peca, pences: peca.pences!.map((q) => ({ ...q, pivo: ponto(100, 50) })) };
+    expect(pivoDaPence(semPivoNoContorno, aDela(semPivoNoContorno))).toBeNull();
+    // A pence recortada comum não tem pivô.
+    const comum = criarPence(molde(), NO_ALTO, RECORTAR, ids());
+    expect(pivoDaPence(comum, pencesDaPeca(comum)[0]!)).toBeNull();
+  });
+
+  it('mudada a abertura, a peça fecha em torno do pivô e abre de novo: é a mesma de abrir direto com a medida nova', () => {
+    const mudada = alterarPence(aberta(40), aDela(aberta(40)).id, { aberturaMm: 60, profundidadeMm: 80, desvioMm: 0 }, ids());
+    const direta = abrirPence(molde(), NO_ALTO, PIVO, 60, 80, true, ids());
+
+    expect(area(mudada.contorno)).toBeCloseTo(area(direta.contorno), 6);
+    expect(area(mudada.contorno)).not.toBeCloseTo(area(aberta(40).contorno), 0);
+    const medidas = medidasDaPence(aDela(mudada));
+    expect(medidas.aberturaMm).toBeCloseTo(60, 6);
+    expect(medidas.profundidadeMm).toBeCloseTo(80, 6);
+    expect(medidas.desvioMm).toBeCloseTo(0, 6);
+    // Continua aberta por pivô, com os dois piques das pontas (e só eles).
+    expect(pivoDaPence(mudada, aDela(mudada))?.ponto).toEqual(ponto(100, 0));
+    expect(mudada.piques).toHaveLength(2);
+    for (const p of direta.contorno) expect(mudada.contorno.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < 1e-6)).toBe(true);
+  });
+
+  it('vale também no contorno que corre no outro sentido', () => {
+    const aoContrario = molde({ contorno: [...RETANGULO].reverse() });
+    const peca = abrirPence(aoContrario, { indiceAresta: 0, ponto: ponto(100, 300) }, { indiceAresta: 2, ponto: ponto(100, 0) }, 40, 100, false, ids());
+    const mudada = alterarPence(peca, aDela(peca).id, { aberturaMm: 60, profundidadeMm: 100, desvioMm: 0 }, ids());
+    const direta = abrirPence(aoContrario, { indiceAresta: 0, ponto: ponto(100, 300) }, { indiceAresta: 2, ponto: ponto(100, 0) }, 60, 100, false, ids());
+
+    expect(Math.abs(area(mudada.contorno))).toBeCloseTo(Math.abs(area(direta.contorno)), 6);
+    expect(medidasDaPence(aDela(mudada)).aberturaMm).toBeCloseTo(60, 6);
+  });
+
+  it('apagada, a pence fecha em torno do pivô: a peça volta a ter a área de antes de abrir', () => {
+    const peca = aberta();
+    expect(area(peca.contorno)).toBeGreaterThan(60000);
+    const fechada = removerPence(peca, aDela(peca).id);
+
+    expect(area(fechada.contorno)).toBeCloseTo(60000, 6);
+    expect('pences' in fechada).toBe(false);
+    expect(fechada.piques).toHaveLength(0);
+    for (const canto of RETANGULO) expect(fechada.contorno.some((q) => Math.hypot(canto.x - q.x, canto.y - q.y) < 1e-6)).toBe(true);
+  });
+
+  it('com o pivô fora do contorno, mudar as medidas refaz só o recorte, como na pence comum', () => {
+    const peca = aberta();
+    const semPivo = { ...peca, pences: peca.pences!.map((q) => ({ ...q, pivo: ponto(100, 50) })) };
+    const mudada = alterarPence(semPivo, aDela(semPivo).id, { aberturaMm: 60, profundidadeMm: 100, desvioMm: 0 }, ids());
+    const direta = abrirPence(molde(), NO_ALTO, PIVO, 60, 100, true, ids());
+
+    expect(area(mudada.contorno)).not.toBeCloseTo(area(direta.contorno), 0);
+    // As pontas andam sobre o contorno, que ali já não é reto: a abertura sai quase a pedida.
+    expect(medidasDaPence(aDela(mudada)).aberturaMm).toBeCloseTo(60, 0);
+  });
+
+  it('o pivô vai junto quando o lado da peça em que ele está anda (uma prega aberta depois)', () => {
+    const peca = aberta();
+    // A prega corta a peça em x = 80: o lado da linha de fio (x = 50) fica, e o outro, com a pence e o pivô, anda.
+    const no = (x: number, y: number): PosicaoNoContorno => {
+      const perto = pontoMaisProximoNoContorno(ponto(x, y), peca.contorno);
+      return { indiceAresta: perto.indiceAresta, ponto: perto.ponto };
+    };
+    const comPrega = criarPregas(peca, no(80, 0), no(80, 300), { modo: 'simples-direita', quantidade: 1, distanciaMm: 0, larguraMm: 10, piques: false }, null, ids());
+
+    expect(aDela(comPrega).pivo).not.toEqual(ponto(100, 0));
+    expect(pivoDaPence(comPrega, aDela(comPrega))).not.toBeNull();
+    // E a pence continua mudando de medida em torno dele.
+    const mudada = alterarPence(comPrega, aDela(comPrega).id, { aberturaMm: 60, profundidadeMm: 100, desvioMm: 0 }, ids());
+    expect(medidasDaPence(aDela(mudada)).aberturaMm).toBeCloseTo(60, 6);
+  });
+
+  it('o pivô acompanha a peça transladada e o tamanho da graduação', () => {
+    const levada = transladarMolde(aberta(), ponto(10, 20), 'outra');
+    expect(aDela(levada).pivo).toEqual(ponto(110, 20));
+    expect(pivoDaPence(levada, aDela(levada))).not.toBeNull();
+
+    const graduada = definirTamanhosDoMolde(aberta(), ['M', 'G'], 'M');
+    expect(pivoDaPence(moldeDoTamanho(graduada, 1, 'g'), aDela(moldeDoTamanho(graduada, 1, 'g')))).not.toBeNull();
+  });
+});
+
+describe('a pence que não tem registro é reconhecida pelo desenho', () => {
+  // O retângulo com uma pence desenhada à mão no alto: pontas em (120, 300) e (80, 300), vértice em (100, 200).
+  const COM_V = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)];
+  const aMao = (): Molde => molde({ contorno: COM_V });
+
+  it('o clique no vértice do canto que entra na peça acha a pence, com as pontas que saem com ela', () => {
+    const achada = penceSemRegistroPerto(aMao(), ponto(101, 202), 6, 'do-contorno', 'r1');
+
+    expect(achada).toEqual({
+      id: 'r1',
+      tipo: 'recortada',
+      pontos: [ponto(120, 300), ponto(100, 200), ponto(80, 300)],
+      removidos: [],
+      pontasCriadas: [true, true],
+    });
+    // O desenho não muda: só achar não registra nada.
+    expect('pences' in aMao()).toBe(false);
+  });
+
+  it('registrada, ela muda de medidas e é apagada como a feita por ferramenta', () => {
+    const achada = penceSemRegistroPerto(aMao(), ponto(100, 200), 6, 'do-contorno', 'r1')!;
+    const registrada = comPenceReconhecida(aMao(), achada);
+
+    expect(registrada.contorno).toEqual(COM_V);
+    expect(pencesDaPeca(registrada)).toHaveLength(1);
+    expect(medidasDaPence(pencesDaPeca(registrada)[0]!)).toEqual({ aberturaMm: 40, profundidadeMm: 100, desvioMm: 0 });
+
+    const mudada = alterarPence(registrada, 'r1', { aberturaMm: 60, profundidadeMm: 80, desvioMm: 0 }, ids());
+    expect(medidasDaPence(pencesDaPeca(mudada)[0]!).aberturaMm).toBeCloseTo(60, 6);
+    expect(area(mudada.contorno)).toBeCloseTo(60000 - (60 * 80) / 2, 6);
+
+    // Apagada, as pontas que estavam na reta do alto saem com ela: volta o retângulo.
+    const sem = removerPence(registrada, 'r1');
+    expect(sem.contorno).toHaveLength(4);
+    expect(area(sem.contorno)).toBeCloseTo(60000, 6);
+  });
+
+  it('a ponta que é um canto de verdade da peça não sai com a pence', () => {
+    // A segunda ponta é o canto (0, 300) da peça.
+    const noCanto = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(40, 300), ponto(20, 200), ponto(0, 300)] });
+    const achada = penceSemRegistroPerto(noCanto, ponto(20, 200), 6, 'do-contorno', 'r1')!;
+
+    expect(achada.pontasCriadas).toEqual([true, false]);
+    const sem = removerPence(comPenceReconhecida(noCanto, achada), 'r1');
+    expect(sem.contorno).toHaveLength(4);
+    expect(sem.contorno).toContainEqual(ponto(0, 300));
+  });
+
+  it('não acha nada longe do vértice, no canto aberto demais, no canto para fora e na pence que já tem registro', () => {
+    // Na perna da pence, longe do vértice.
+    expect(penceSemRegistroPerto(aMao(), ponto(110, 250), 6, 'do-contorno', 'r1')).toBeNull();
+    // Um canto de fora da peça.
+    expect(penceSemRegistroPerto(aMao(), ponto(200, 300), 6, 'do-contorno', 'r1')).toBeNull();
+    // Uma entrada rasa: as pernas fazem 136° uma com a outra.
+    const rasa = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(150, 300), ponto(100, 280), ponto(50, 300), ponto(0, 300)] });
+    expect(penceSemRegistroPerto(rasa, ponto(100, 280), 6, 'do-contorno', 'r1')).toBeNull();
+    // A pence feita por ferramenta já tem registro.
+    const feita = criarPence(molde(), NO_ALTO, RECORTAR, ids());
+    expect(penceSemRegistroPerto(feita, ponto(100, 200), 6, 'do-contorno', 'r1')).toBeNull();
+    // E o losango não é procurado entre as pences do contorno.
+    expect(penceSemRegistroPerto(aMao(), ponto(100, 200), 6, 'interna', 'r1')).toBeNull();
+  });
+
+  it('a linha interna de três pontos com as pontas no contorno é uma pence marcada', () => {
+    const linha = [ponto(120, 300), ponto(100, 200), ponto(80, 300)];
+    const peca = molde({ linhasInternas: [linha, [ponto(50, 50), ponto(60, 60), ponto(70, 50)]] });
+    const achada = penceSemRegistroPerto(peca, ponto(111, 250), 6, 'do-contorno', 'r1');
+
+    expect(achada).toEqual({ id: 'r1', tipo: 'marcada', pontos: linha });
+    // A outra linha de três pontos não toca o contorno: não é pence.
+    expect(penceSemRegistroPerto(peca, ponto(60, 60), 6, 'do-contorno', 'r1')).toBeNull();
+
+    const registrada = comPenceReconhecida(peca, achada!);
+    expect(pencesDaPeca(registrada)).toHaveLength(1);
+    expect(penceSemRegistroPerto(registrada, ponto(111, 250), 6, 'do-contorno', 'r2')).toBeNull();
+    const mudada = alterarPence(registrada, 'r1', { aberturaMm: 30, profundidadeMm: 100, desvioMm: 0 }, ids());
+    expect(medidasDaPence(pencesDaPeca(mudada)[0]!).aberturaMm).toBeCloseTo(30, 6);
+    expect(mudada.linhasInternas).toHaveLength(2);
+  });
+
+  it('a linha interna fechada de quatro lados é uma pence interna, com as pontas na diagonal mais comprida', () => {
+    // Desenhado a partir de um canto do lado, e com a linha do eixo.
+    const losango = [ponto(110, 150), ponto(100, 220), ponto(90, 150), ponto(100, 100), ponto(110, 150)];
+    const peca = molde({ linhasInternas: [losango, [ponto(100, 100), ponto(100, 220)]] });
+    const achada = penceSemRegistroPerto(peca, ponto(105, 185), 6, 'interna', 'r1')!;
+
+    expect(achada).toEqual({ id: 'r1', tipo: 'interna', pontos: [ponto(100, 220), ponto(90, 150), ponto(100, 100), ponto(110, 150)], comEixo: true });
+    expect(penceSemRegistroPerto(peca, ponto(105, 185), 6, 'do-contorno', 'r1')).toBeNull();
+
+    const registrada = comPenceReconhecida(peca, achada);
+    expect(pencesDaPeca(registrada)).toHaveLength(1);
+    expect(medidasDaPenceInterna(pencesDaPeca(registrada)[0]!)).toEqual({ altura1Mm: 70, altura2Mm: 50, larguraMm: 20 });
+    // Já registrada, não é achada de novo.
+    expect(penceSemRegistroPerto(registrada, ponto(105, 185), 6, 'interna', 'r2')).toBeNull();
+
+    const mudada = alterarPenceInterna(registrada, 'r1', { altura1Mm: 60, altura2Mm: 60, larguraMm: 30 }, ids());
+    expect(medidasDaPenceInterna(pencesDaPeca(mudada)[0]!).larguraMm).toBeCloseTo(30, 6);
+    // O losango e o eixo foram trocados pelos novos: continuam duas linhas.
+    expect(mudada.linhasInternas).toHaveLength(2);
+  });
+
+  it('sem a linha do eixo, o losango reconhecido não diz que tem eixo', () => {
+    const peca = molde({ linhasInternas: [[ponto(100, 100), ponto(110, 150), ponto(100, 220), ponto(90, 150), ponto(100, 100)]] });
+
+    expect(penceSemRegistroPerto(peca, ponto(105, 125), 6, 'interna', 'r1')).toMatchObject({ pontos: [ponto(100, 100), ponto(110, 150), ponto(100, 220), ponto(90, 150)], comEixo: false });
+    // Uma linha aberta de cinco pontos não é losango.
+    const aberta = molde({ linhasInternas: [[ponto(100, 100), ponto(110, 150), ponto(100, 220), ponto(90, 150), ponto(95, 110)]] });
+    expect(penceSemRegistroPerto(aberta, ponto(105, 125), 6, 'interna', 'r1')).toBeNull();
   });
 });

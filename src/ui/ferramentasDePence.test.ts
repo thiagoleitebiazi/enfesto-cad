@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
-import { criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca } from '../domain/pences';
+import { abrirPence, comPenceReconhecida, criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
 import {
   aplicarEdicaoDaPence,
   aplicarPence,
@@ -13,6 +13,8 @@ import {
   lerDialogoDaPence,
   OPCOES_INICIAIS_DAS_PENCES,
   penceCompleta,
+  penceSemRegistroSobOClique,
+  ID_DA_PENCE_RECONHECIDA,
   previaDaPence,
   type FerramentaDePence,
   type OpcoesDasPences,
@@ -472,8 +474,14 @@ describe('uma pence já feita: abrir as medidas, mudar e apagar', () => {
     expect(previaDaPence('pregas', O, peca, SEM_TRECHO, null)).toEqual({ marcas: [] });
   });
 
+  it('sem pences registradas, a instrução ainda diz da pence sem registro', () => {
+    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO)).toMatch(/Ou clique no vértice de uma pence que já esteja no contorno, para mudar as medidas\. Esc sai\.$/);
+    expect(instrucaoDaPence('pence-interna', O, SEM_TRECHO)).toMatch(/Ou clique no losango já desenhado, para mudar as medidas\. Esc sai\.$/);
+    expect(instrucaoDaPence('pence-interna', O, SEM_TRECHO, true)).toMatch(/a que não tem anel abre também, no losango já desenhado\. Esc sai\.$/);
+  });
+
   it('a instrução avisa do clique que abre as medidas, quando a peça tem pences registradas', () => {
-    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO, true)).toMatch(/Ou clique numa pence já feita \(as marcadas com um anel\) para mudar as medidas dela\. Esc sai\.$/);
+    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO, true)).toMatch(/Ou clique numa pence já feita \(as marcadas com um anel\) para mudar as medidas dela; a que não tem anel abre também, no vértice de uma pence que já esteja no contorno\. Esc sai\.$/);
     expect(instrucaoDaPence('pence-interna', O, SEM_TRECHO, true)).toMatch(/Ou clique numa pence já feita/);
     expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO)).not.toMatch(/pence já feita/);
     expect(instrucaoDaPence('fechar-pence', O, SEM_TRECHO, true)).not.toMatch(/pence já feita/);
@@ -487,5 +495,104 @@ describe('uma pence já feita: abrir as medidas, mudar e apagar', () => {
     expect(aplicarPence('transferir-pence', O, [peca], peca, transferir, novoId).recado).toBe(
       'Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. A área continua 580,0 cm².',
     );
+  });
+});
+
+describe('a pence sem registro: o clique abre as medidas, e é aplicando que ela passa a ter registro', () => {
+  const novoId = ids();
+  // COM_PENCE é o retângulo com um "V" desenhado à mão no alto: não tem registro.
+  const aMao = (): Molde => molde(COM_PENCE);
+  const noV = (peca: Molde, ferramenta: FerramentaDePence = 'pence-no-contorno') => ({
+    noContorno: VERTICE,
+    livre: ponto(100, 200),
+    pence: null,
+    semRegistro: penceSemRegistroSobOClique(ferramenta, peca, ponto(100, 200), 6),
+  });
+
+  it('só “Pence no contorno” e “Pence interna” reconhecem, cada uma as suas', () => {
+    expect(penceSemRegistroSobOClique('pence-no-contorno', aMao(), ponto(100, 200), 6)).toMatchObject({ id: ID_DA_PENCE_RECONHECIDA, tipo: 'recortada' });
+    expect(penceSemRegistroSobOClique('pence-no-contorno', aMao(), ponto(100, 200), 6, 'meu-id')!.id).toBe('meu-id');
+    expect(penceSemRegistroSobOClique('pence-interna', aMao(), ponto(100, 200), 6)).toBeNull();
+    for (const ferramenta of ['fechar-pence', 'transferir-pence', 'multiplas-pences', 'pregas'] as const) {
+      expect(penceSemRegistroSobOClique(ferramenta, aMao(), ponto(100, 200), 6)).toBeNull();
+    }
+  });
+
+  it('o clique no vértice pede para reconhecer, em vez de começar outra pence ali', () => {
+    const clique = cliqueDePence('pence-no-contorno', O, aMao(), SEM_TRECHO, noV(aMao()));
+
+    expect(clique.estado).toBe(SEM_TRECHO);
+    expect(clique.reconhecer).toMatchObject({ tipo: 'recortada', pontos: [ponto(120, 300), ponto(100, 200), ponto(80, 300)] });
+    // Com um ponto já clicado, o clique é da pence nova, e não reconhece nada.
+    const comInicio = { ...SEM_TRECHO, inicio: NO_ALTO };
+    expect(cliqueDePence('pence-no-contorno', O, molde(), comInicio, { ...noV(aMao()), noContorno: null }).reconhecer).toBeUndefined();
+    // A candidata que não é da ferramenta não abre nada.
+    const daOutra = { ...noV(aMao()), semRegistro: { id: 'x', tipo: 'interna' as const, pontos: [] } };
+    expect(cliqueDePence('pence-no-contorno', O, aMao(), SEM_TRECHO, daOutra).reconhecer).toBeUndefined();
+  });
+
+  it('a prévia destaca a pence sem registro que está sob o mouse', () => {
+    expect(previaDaPence('pence-no-contorno', O, aMao(), SEM_TRECHO, noV(aMao()))).toEqual({
+      marcas: [],
+      substituido: [ponto(120, 300), ponto(100, 200), ponto(80, 300)],
+    });
+  });
+
+  it('o diálogo avisa que a pence foi reconhecida e traz as medidas lidas do desenho', () => {
+    const achada = { ...penceSemRegistroSobOClique('pence-no-contorno', aMao(), ponto(100, 200), 6)!, id: 'r1' };
+    const pecaDaPence = comPenceReconhecida(aMao(), achada);
+    const dialogo = dialogoDeEditarPence(pecaDaPence, 'r1', true)!;
+
+    expect(dialogo.nota).toMatch(/^Esta pence não tinha registro .* Aplicando, ela passa a ter registro; fechando sem aplicar, nada muda\. A pence é refeita/);
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['abertura', '40'],
+      ['profundidade', '100'],
+      ['desvio', '0'],
+      ['apagar', false],
+    ]);
+    // Sem o aviso, é o diálogo de sempre.
+    expect(dialogoDeEditarPence(pecaDaPence, 'r1')!.nota).toMatch(/^A pence é refeita/);
+
+    const resultado = aplicarEdicaoDaPence([aMao()], pecaDaPence, 'r1', { abertura: 50, profundidade: 100, desvio: 0, apagar: false }, novoId);
+    expect(pencesDaPeca(resultado.pecas[0]!)).toHaveLength(1);
+    expect(medidasDaPence(pencesDaPeca(resultado.pecas[0]!)[0]!).aberturaMm).toBeCloseTo(50, 6);
+  });
+});
+
+describe('a pence aberta por pivô: medidas e fechar', () => {
+  const novoId = ids();
+  const aberta = (): Molde => abrirPence(molde(), NO_ALTO, na(0, 100, 0), 40, 100, true, novoId);
+
+  it('o diálogo não pede desvio e explica o giro em torno do pivô', () => {
+    const peca = aberta();
+    const dialogo = dialogoDeEditarPence(peca, pencesDaPeca(peca)[0]!.id)!;
+
+    expect(dialogo.titulo).toBe('Pence aberta por pivô: medidas');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['abertura', '40'],
+      ['profundidade', '100'],
+      ['apagar', false],
+    ]);
+    expect(dialogo.campos[2]!.rotulo).toBe('Fechar esta pence (a peça volta a ser a de antes de abrir)');
+    expect(dialogo.nota).toMatch(/fecha em torno do mesmo pivô e abre de novo com a abertura nova/);
+  });
+
+  it('mudar a abertura abre de novo em torno do pivô, e a mensagem diz', () => {
+    const peca = aberta();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { abertura: 60, profundidade: 100, apagar: false }, novoId);
+    const nova = resultado.pecas[0]!;
+    const direta = abrirPence(molde(), NO_ALTO, na(0, 100, 0), 60, 100, true, novoId);
+
+    expect(area(nova.contorno)).toBeCloseTo(area(direta.contorno), 6);
+    expect(pivoDaPence(nova, pencesDaPeca(nova)[0]!)).not.toBeNull();
+    expect(resultado.recado).toMatch(/^Pence de “Frente” aberta de novo em torno do pivô: abertura de 60,0 mm, profundidade de 100,0 mm\. A peça passou de \d+,\d cm² para \d+,\d cm²\.$/);
+  });
+
+  it('fechar devolve a peça de antes de abrir', () => {
+    const peca = aberta();
+    const resultado = aplicarEdicaoDaPence([peca], peca, pencesDaPeca(peca)[0]!.id, { abertura: 40, profundidade: 100, apagar: true }, novoId);
+
+    expect(area(resultado.pecas[0]!.contorno)).toBeCloseTo(60000, 6);
+    expect(resultado.recado).toMatch(/^Pence fechada em “Frente”, em torno do pivô em que foi aberta: a peça voltou a ser a de antes\. A peça passou de \d+,\d cm² para 600,0 cm²\.$/);
   });
 });
