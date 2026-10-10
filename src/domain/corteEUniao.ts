@@ -12,7 +12,16 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { ancoraDoRotulo, type Cota } from './cota';
-import { piquesQueFicamNoContorno, rotacionarMolde, semCampo, transladarMolde, type LinhaDeFio, type MetadeGuardada, type Molde } from './molde';
+import {
+  piquesQueFicamNoContorno,
+  rotacionarMolde,
+  semCampo,
+  transladarMolde,
+  type LinhaDeFio,
+  type MetadeGuardada,
+  type Molde,
+  type Pique,
+} from './molde';
 
 /**
  * Operações que cortam, dobram e unem moldes inteiros (grupos "Cortar e
@@ -491,5 +500,185 @@ export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, aresta
     marcas: [...moldeA.marcas, ...b.marcas],
     piques: piquesQueFicamNoContorno([...moldeA.piques, ...b.piques], contorno),
     ...(cotas.length > 0 ? { cotas } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cortar com costura, e remover uma faixa unindo o que sobra
+// ---------------------------------------------------------------------------
+
+/** O que o "Cortar" pergunta além da reta. */
+export interface OpcoesDeCorte {
+  /** Costura acrescentada ao contorno, na borda do corte (mm); 0 = sem costura. */
+  readonly costuraMm: number;
+  /** A costura entra nas duas partes; sem isso, só na parte nova (a menor). */
+  readonly costuraNasDuas: boolean;
+  /** Um pique em cada ponta da linha do corte, nas partes que ganharam costura. */
+  readonly piques: boolean;
+  /** Como a costura acaba nas pontas: seguindo as arestas vizinhas ('tangente') ou em esquadro com o corte ('reta'). */
+  readonly modo: 'tangente' | 'reta';
+}
+
+export const CORTE_SEM_COSTURA: OpcoesDeCorte = { costuraMm: 0, costuraNasDuas: false, piques: false, modo: 'tangente' };
+
+/** No modo tangente, a aresta vizinha é estendida no máximo este tanto de vezes a costura; além disso, a ponta acaba em esquadro. */
+const LIMITE_DA_PONTA_DA_COSTURA = 4;
+/** Um ponto a menos disso (mm) do contorno de uma parte conta como estando nele. */
+const NO_CONTORNO_DA_PARTE_MM = 1e-4;
+
+/** Recusa a costura que não é um número de zero para cima. */
+export function conferirOpcoesDeCorte(opcoes: OpcoesDeCorte): void {
+  if (!Number.isFinite(opcoes.costuraMm) || opcoes.costuraMm < 0) throw new Error('A costura do corte precisa ser zero ou maior.');
+}
+
+/** A aresta do contorno que liga os dois pontos, num sentido ou no outro; -1 se não há. */
+function arestaEntre(contorno: Contorno, p: Ponto2D, q: Ponto2D): number {
+  const n = contorno.length;
+  const igual = (a: Ponto2D, b: Ponto2D): boolean => distancia(a, b) <= NO_CONTORNO_DA_PARTE_MM;
+  return contorno.findIndex((v, i) => {
+    const w = contorno[(i + 1) % n]!;
+    return (igual(v, p) && igual(w, q)) || (igual(v, q) && igual(w, p));
+  });
+}
+
+/** A peça sem as linhas internas que estão em cima da reta: elas viram a borda do corte (ou a linha da prega). */
+export function semAsLinhasDaReta(molde: Molde, a: Ponto2D, b: Ponto2D): Molde {
+  const linhasInternas = molde.linhasInternas.filter((l) => !estaNaReta(l, a, b));
+  return linhasInternas.length === molde.linhasInternas.length ? molde : { ...molde, linhasInternas };
+}
+
+/**
+ * A parte com a costura acrescentada na aresta do corte (a que liga `p` a
+ * `q`): a borda anda `costuraMm` para fora. Nas pontas, a costura segue as
+ * arestas vizinhas (tangente) ou sai em esquadro com o corte (reta).
+ */
+function comCosturaNoCorte(parte: Molde, p: Ponto2D, q: Ponto2D, opcoes: OpcoesDeCorte, novoId: () => string): Molde {
+  const c = parte.contorno;
+  const n = c.length;
+  const i = arestaEntre(c, p, q);
+  if (i < 0 || !(opcoes.costuraMm > 0)) return parte;
+  const de = c[i]!;
+  const ate = c[(i + 1) % n]!;
+  const comprimento = distancia(de, ate);
+  const u = ponto((ate.x - de.x) / comprimento, (ate.y - de.y) / comprimento);
+  // Num contorno anti-horário, o lado de fora fica à direita de quem anda por ele.
+  const sentido = areaAssinada(c) >= 0 ? 1 : -1;
+  const fora = ponto(u.y * sentido, -u.x * sentido);
+  const paraFora = (v: Ponto2D): Ponto2D => ponto(v.x + fora.x * opcoes.costuraMm, v.y + fora.y * opcoes.costuraMm);
+  /** A aresta vizinha (que chega a `ponta` vindo de `vizinho`) estendida até a borda nova, se ela chega lá sem ir longe demais. */
+  const estendida = (vizinho: Ponto2D, ponta: Ponto2D): Ponto2D | null => {
+    const d = distancia(vizinho, ponta);
+    if (d < MESMO_PONTO_MM) return null;
+    const w = ponto((ponta.x - vizinho.x) / d, (ponta.y - vizinho.y) / d);
+    const paraForaPorMm = w.x * fora.x + w.y * fora.y;
+    if (!(paraForaPorMm > 1 / LIMITE_DA_PONTA_DA_COSTURA)) return null;
+    const andar = opcoes.costuraMm / paraForaPorMm;
+    return ponto(ponta.x + w.x * andar, ponta.y + w.y * andar);
+  };
+  const tangente = opcoes.modo === 'tangente';
+  const pontaDe = (tangente ? estendida(c[(i - 1 + n) % n]!, de) : null) ?? null;
+  const pontaAte = (tangente ? estendida(c[(i + 2) % n]!, ate) : null) ?? null;
+  const novo: Ponto2D[] = [];
+  c.forEach((v, k) => {
+    if (k === i) novo.push(...(pontaDe ? [pontaDe] : [de, paraFora(de)]));
+    else if (k === (i + 1) % n) novo.push(...(pontaAte ? [pontaAte] : [paraFora(ate), ate]));
+    else novo.push(v);
+  });
+  const piques: Pique[] = opcoes.piques
+    ? [de, ate].map((v) => {
+        const noContorno = pontoMaisProximoNoContorno(v, novo);
+        return { id: novoId(), posicao: noContorno.ponto, indiceAresta: noContorno.indiceAresta };
+      })
+    : [];
+  return { ...parte, contorno: novo, piques: [...piquesQueFicamNoContorno(parte.piques, novo), ...piques] };
+}
+
+/**
+ * "Cortar", com o que a janela pergunta: a peça é dividida pela reta, as
+ * linhas internas que estavam em cima dela saem (viraram a borda), e a borda
+ * do corte ganha a costura pedida — na parte nova ou nas duas.
+ */
+export function cortarMoldeComOpcoes(
+  molde: Molde,
+  a: PosicaoNoContorno,
+  b: PosicaoNoContorno,
+  novoId: () => string,
+  opcoes: OpcoesDeCorte = CORTE_SEM_COSTURA,
+): readonly [Molde, Molde] {
+  conferirOpcoesDeCorte(opcoes);
+  const [maior, menor] = cortarMolde(semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId());
+  if (!(opcoes.costuraMm > 0)) return [maior, menor];
+  return [
+    opcoes.costuraNasDuas ? comCosturaNoCorte(maior, a.ponto, b.ponto, opcoes, novoId) : maior,
+    comCosturaNoCorte(menor, a.ponto, b.ponto, opcoes, novoId),
+  ];
+}
+
+/**
+ * "Remover região" com as duas partes: a peça sem a região do lado clicado, e
+ * a região tirada como peça própria (para o "Manter região do molde").
+ */
+export function separarRegiaoDoMolde(
+  molde: Molde,
+  a: PosicaoNoContorno,
+  b: PosicaoNoContorno,
+  pontoDoLado: Ponto2D,
+  novoId: string,
+): { readonly peca: Molde; readonly regiao: Molde } {
+  const semLinhas = semAsLinhasDaReta(molde, a.ponto, b.ponto);
+  const peca = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'sai');
+  const regiao = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'fica');
+  return { peca, regiao: { ...regiao, id: novoId, nome: `${molde.nome} (2)` } };
+}
+
+/**
+ * "Remover região" com "Unir moldes": a faixa entre duas retas sai, e as duas
+ * partes que sobram são unidas pelas bordas do corte — a que não tem a linha
+ * de fio gira e anda até encostar na outra. Bordas de comprimentos diferentes
+ * ficam centralizadas uma na outra, e sobra um degrau (`degrauMm`).
+ * A segunda reta é dada pelos dois pontos dela no contorno da peça.
+ */
+export function removerFaixaDoMolde(
+  molde: Molde,
+  a1: PosicaoNoContorno,
+  b1: PosicaoNoContorno,
+  a2: Ponto2D,
+  b2: Ponto2D,
+  novoId: string,
+): { readonly peca: Molde; readonly faixa: Molde; readonly degrauMm: number } {
+  const semLinhas = semAsLinhasDaReta(semAsLinhasDaReta(molde, a1.ponto, b1.ponto), a2, b2);
+  const primeiras = partesDoCorte(semLinhas, a1, b1);
+  const noContornoDe = (parte: Molde, p: Ponto2D): PosicaoNoContorno | null => {
+    const perto = pontoMaisProximoNoContorno(p, parte.contorno);
+    return perto.distancia <= NO_CONTORNO_DA_PARTE_MM ? { indiceAresta: perto.indiceAresta, ponto: perto.ponto } : null;
+  };
+  // A segunda reta fica inteira numa das partes; a outra é a parte de perto, que encosta na primeira reta.
+  const meioDaSegunda = ponto((a2.x + b2.x) / 2, (a2.y + b2.y) / 2);
+  const comASegunda = primeiras.findIndex((parte) => noContornoDe(parte, a2) && noContornoDe(parte, b2) && pontoDentroDoContorno(meioDaSegunda, parte.contorno));
+  if (comASegunda < 0) {
+    throw new Error('A segunda reta precisa ficar toda de um lado da primeira, de um ponto do contorno a outro, sem cruzar com ela.');
+  }
+  const dePerto = primeiras[1 - comASegunda]!;
+  const resto = primeiras[comASegunda]!;
+  const segundas = partesDoCorte(resto, noContornoDe(resto, a2)!, noContornoDe(resto, b2)!);
+  // Das duas partes do resto, a faixa é a que tem a primeira reta como aresta.
+  const qualEAFaixa = segundas.findIndex((parte) => arestaEntre(parte.contorno, a1.ponto, b1.ponto) >= 0);
+  if (qualEAFaixa < 0) throw new Error('As duas retas precisam delimitar uma faixa da peça, de borda a borda.');
+  const faixa = segundas[qualEAFaixa]!;
+  const deLonge = segundas[1 - qualEAFaixa]!;
+  const arestaDePerto = arestaEntre(dePerto.contorno, a1.ponto, b1.ponto);
+  const arestaDeLonge = arestaEntre(deLonge.contorno, a2, b2);
+  if (arestaDePerto < 0 || arestaDeLonge < 0) throw new Error('As duas retas precisam delimitar uma faixa da peça, de borda a borda.');
+  // Fica parada a parte que tem o meio da linha de fio; a outra vai até ela.
+  const meioDoFio = ponto((molde.linhaDeFio.inicio.x + molde.linhaDeFio.fim.x) / 2, (molde.linhaDeFio.inicio.y + molde.linhaDeFio.fim.y) / 2);
+  const fioNaDeLonge = pontoDentroDoContorno(meioDoFio, deLonge.contorno) && !pontoDentroDoContorno(meioDoFio, dePerto.contorno);
+  const unida = fioNaDeLonge
+    ? unirMoldes({ ...deLonge, linhaDeFio: molde.linhaDeFio }, arestaDeLonge, { ...dePerto, id: `${molde.id}-parte` }, arestaDePerto)
+    : unirMoldes(dePerto, arestaDePerto, { ...deLonge, id: `${molde.id}-parte` }, arestaDeLonge);
+  if (!(area(unida.contorno) > AREA_MINIMA_DE_UMA_PARTE_MM2)) throw new Error('A peça ficaria sem área sem essa faixa.');
+  return {
+    peca: unida,
+    faixa: { ...faixa, id: novoId, nome: `${molde.nome} (2)` },
+    degrauMm: Math.abs(distancia(a1.ponto, b1.ponto) - distancia(a2, b2)),
   };
 }

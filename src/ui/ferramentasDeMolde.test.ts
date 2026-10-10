@@ -9,9 +9,15 @@ import {
   arestaDeOutraPecaPerto,
   arestaPerto,
   cliqueDeReta,
+  dialogoDeCortar,
+  dialogoDeRemoverRegiao,
   ehFerramentaDeMolde,
   ehFerramentaDeReta,
+  instrucaoDaReta,
+  lerDialogoDeCortar,
+  lerDialogoDeRemoverRegiao,
   nomeDaParteNova,
+  retaPeloElemento,
   previaDaBainha,
   previaDaReta,
   previaDeDesdobrar,
@@ -301,5 +307,136 @@ describe('achar a aresta sob o mouse', () => {
     expect(arestaDeOutraPecaPerto(ponto(202, 150), pecas, 'f', 5)).toBeNull();
     expect(arestaDeOutraPecaPerto(ponto(202, 150), pecas, 'l', 5)).toEqual({ peca: pecas[0], indiceAresta: 1 });
     expect(arestaDeOutraPecaPerto(ponto(350, 150), pecas, 'f', 5)).toBeNull();
+  });
+});
+
+describe('Cortar e Remover região: as opções das janelas', () => {
+  const COM_COSTURA = { costuraMm: 10, costuraNasDuas: false, piques: true, modo: 'reta' as const };
+  const comLinha = (linhas: readonly (readonly { x: number; y: number }[])[]): Molde => molde('f', 'Frente', FRENTE, { linhasInternas: linhas });
+
+  it('a janela do Cortar lê a costura, os dois moldes, o pique e o modo', () => {
+    const dialogo = dialogoDeCortar(COM_COSTURA);
+    expect(dialogo.titulo).toBe('Cortar molde');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['costura', '10'],
+      ['costuraNasDuas', false],
+      ['piques', true],
+      ['modo', 'reta'],
+    ]);
+    expect(lerDialogoDeCortar({ costura: 7.5, costuraNasDuas: true, piques: false, modo: 'tangente' })).toEqual({ costuraMm: 7.5, costuraNasDuas: true, piques: false, modo: 'tangente' });
+    expect(lerDialogoDeCortar({ costura: 0, costuraNasDuas: false, piques: false, modo: 'outro' }).modo).toBe('tangente');
+    expect(() => lerDialogoDeCortar({ costura: -2, costuraNasDuas: false, piques: false, modo: 'reta' })).toThrow(/zero ou maior/);
+  });
+
+  it('cortar com costura: a peça nova cresce na borda do corte, e a mensagem diz', () => {
+    const resultado = aplicarReta('cortar', [frente()], frente(), { inicio: na(0, 50, 0), fim: na(2, 50, 300), livres: [] }, ids(), undefined, { corte: COM_COSTURA });
+
+    expect(area(resultado.pecas[1]!.contorno)).toBeCloseTo(18000, 6);
+    expect(resultado.pecas[1]!.piques).toHaveLength(2);
+    expect(resultado.recado).toBe(
+      '“Frente” cortada em duas: 450,0 cm² continuam nela e 180,0 cm² são a peça nova “Frente (2)”. A borda do corte ganhou 10,0 mm de costura na peça nova, com um pique em cada ponta da linha do corte.',
+    );
+    const nasDuas = aplicarReta('cortar', [frente()], frente(), { inicio: na(0, 50, 0), fim: na(2, 50, 300), livres: [] }, ids(), undefined, { corte: { ...COM_COSTURA, costuraNasDuas: true, piques: false } });
+    expect(nasDuas.recado).toMatch(/de costura nas duas partes\.$/);
+  });
+
+  it('o clique numa linha interna reta faz dela a reta do corte, de borda a borda', () => {
+    // A linha interna vai de (100, 50) a (100, 250): a reta dela cruza a peça em (100, 0) e (100, 300).
+    const peca = comLinha([[ponto(100, 50), ponto(100, 250)]]);
+    const peloElemento = retaPeloElemento('cortar', peca, SEM_TRECHO, 0)!;
+
+    expect(peloElemento.recado).toBeNull();
+    expect([peloElemento.estado.inicio!.ponto, peloElemento.estado.fim!.ponto]).toContainEqual(ponto(100, 0));
+    expect([peloElemento.estado.inicio!.ponto, peloElemento.estado.fim!.ponto]).toContainEqual(ponto(100, 300));
+    // O corte por ela tira a linha interna: virou a borda.
+    const cortada = aplicarReta('cortar', [peca], peca, peloElemento.estado, ids());
+    expect(cortada.pecas.flatMap((p) => p.linhasInternas)).toEqual([]);
+  });
+
+  it('a linha que não é reta, ou o clique que não é de reta nova, não vale como elemento', () => {
+    const curva = comLinha([[ponto(100, 50), ponto(130, 150), ponto(100, 250)]]);
+    expect(retaPeloElemento('cortar', curva, SEM_TRECHO, 0)!.recado).toMatch(/precisa ser reta para servir de reta de corte/);
+    expect(retaPeloElemento('cortar', curva, SEM_TRECHO, 0)!.estado).toBe(SEM_TRECHO);
+
+    const peca = comLinha([[ponto(100, 50), ponto(100, 250)]]);
+    expect(retaPeloElemento('cortar', peca, SEM_TRECHO, null)).toBeNull();
+    expect(retaPeloElemento('dobrar', peca, SEM_TRECHO, 0)).toBeNull();
+    // Com a reta já posta, o clique seguinte do "Remover região" é o lado, e não outro elemento.
+    expect(retaPeloElemento('remover-regiao', peca, AO_MEIO, 0)).toBeNull();
+    expect(retaPeloElemento('cortar', peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, 0)).toBeNull();
+  });
+
+  it('Remover região com “Manter região”: a região tirada vira uma peça nova', () => {
+    expect(dialogoDeRemoverRegiao({ manter: true, unir: false }).campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['manter', true],
+      ['unir', false],
+    ]);
+    expect(lerDialogoDeRemoverRegiao({ manter: true, unir: true })).toEqual({ manter: true, unir: true });
+    expect(lerDialogoDeRemoverRegiao({})).toEqual({ manter: false, unir: false });
+
+    const resultado = aplicarReta('remover-regiao', [frente()], frente(), { ...AO_MEIO, livres: [ponto(150, 150)] }, ids(), undefined, { remover: { manter: true, unir: false } });
+    expect(resultado.pecas).toHaveLength(2);
+    expect(resultado.pecas[1]!.nome).toBe('Frente (2)');
+    expect(resultado.recado).toBe('Região de 300,0 cm² removida de “Frente”; ela virou a peça “Frente (2)”.');
+  });
+
+  it('Remover região com “Unir moldes”: duas retas, e sai a faixa entre elas', () => {
+    const UNIR = { manter: false, unir: true };
+    // Depois da primeira reta, os cliques são os dois pontos do contorno da segunda (fora do contorno não contam).
+    expect(retaCompleta('remover-regiao', AO_MEIO, true)).toBe(false);
+    expect(cliqueDeReta('remover-regiao', AO_MEIO, solto(150, 150), true)).toBe(AO_MEIO);
+    const umPonto = cliqueDeReta('remover-regiao', AO_MEIO, noContorno(na(0, 140, 0)), true);
+    expect(umPonto.livres).toEqual([ponto(140, 0)]);
+    expect(cliqueDeReta('remover-regiao', umPonto, noContorno(na(0, 140, 0)), true)).toBe(umPonto);
+    const completa = cliqueDeReta('remover-regiao', umPonto, noContorno(na(2, 140, 300)), true);
+    expect(retaCompleta('remover-regiao', completa, true)).toBe(true);
+    // Sem a opção, o mesmo estado estaria completo com um ponto só.
+    expect(retaCompleta('remover-regiao', umPonto)).toBe(true);
+
+    const resultado = aplicarReta('remover-regiao', [frente()], frente(), completa, ids(), undefined, { remover: UNIR });
+    expect(resultado.pecas).toHaveLength(1);
+    expect(area(resultado.pecas[0]!.contorno)).toBeCloseTo(48000, 6);
+    expect(resultado.recado).toBe('Faixa de 120,0 cm² removida de “Frente”, e as duas partes que sobraram foram unidas: a peça passou de 600,0 cm² para 480,0 cm².');
+
+    const mantendo = aplicarReta('remover-regiao', [frente()], frente(), completa, ids(), undefined, { remover: { manter: true, unir: true } });
+    expect(mantendo.pecas).toHaveLength(2);
+    expect(mantendo.recado).toMatch(/A faixa virou a peça “Frente \(2\)”\.$/);
+    expect(() => aplicarReta('remover-regiao', [frente()], frente(), umPonto, ids(), undefined, { remover: UNIR })).toThrow(/duas retas/);
+  });
+
+  it('retas de comprimentos diferentes: a mensagem diz o degrau', () => {
+    const torta = { ...AO_MEIO, livres: [ponto(140, 0), ponto(170, 300)] };
+    const resultado = aplicarReta('remover-regiao', [frente()], frente(), torta, ids(), undefined, { remover: { manter: false, unir: true } });
+
+    expect(resultado.recado).toMatch(/sobrou um degrau de 0,7 mm em cada ponta\.$/);
+  });
+
+  it('a segunda reta também pode ser um elemento, e a prévia destaca a faixa', () => {
+    const peca = comLinha([[ponto(140, 50), ponto(140, 250)]]);
+    const segunda = retaPeloElemento('remover-regiao', peca, AO_MEIO, 0, true)!;
+    expect(segunda.estado.livres).toHaveLength(2);
+    expect(segunda.estado.livres).toContainEqual(ponto(140, 0));
+    expect(segunda.estado.livres).toContainEqual(ponto(140, 300));
+
+    const umPonto = { ...AO_MEIO, livres: [ponto(140, 0)] };
+    const previa = previaDaReta('remover-regiao', frente(), umPonto, noContorno(na(2, 140, 300)), true);
+    expect(previa.linhas).toEqual([[ponto(140, 0), ponto(140, 300)]]);
+    expect(area(previa.substituido!.slice(0, -1))).toBeCloseTo(12000, 6);
+    // Sem a segunda ponta no contorno, só a reta até o mouse.
+    const semPonta = previaDaReta('remover-regiao', frente(), umPonto, solto(150, 150), true);
+    expect(semPonta.substituido).toBeUndefined();
+    expect(semPonta.linhas).toEqual([[ponto(140, 0), ponto(150, 150)]]);
+    // Antes da segunda reta começar, só as marcas da primeira.
+    expect(previaDaReta('remover-regiao', frente(), AO_MEIO, solto(150, 150), true).linhas).toBeUndefined();
+  });
+
+  it('as instruções acompanham cada passo, com e sem “Unir moldes”', () => {
+    expect(instrucaoDaReta('cortar', SEM_TRECHO)).toMatch(/onde o corte começa\. Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda\. Esc sai\.$/);
+    expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, inicio: na(0, 50, 0) })).toMatch(/onde o corte termina/);
+    expect(instrucaoDaReta('remover-regiao', SEM_TRECHO)).toMatch(/numa ponta da reta que separa a região/);
+    expect(instrucaoDaReta('remover-regiao', { ...SEM_TRECHO, inicio: na(0, 50, 0) })).toMatch(/na outra ponta da reta/);
+    expect(instrucaoDaReta('remover-regiao', AO_MEIO)).toMatch(/na região que deve sair/);
+    expect(instrucaoDaReta('remover-regiao', AO_MEIO, { manter: false, unir: true })).toMatch(/agora a segunda reta/);
+    expect(instrucaoDaReta('remover-regiao', { ...AO_MEIO, livres: [ponto(140, 0)] }, { manter: false, unir: true })).toMatch(/na outra ponta da segunda reta/);
   });
 });

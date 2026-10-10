@@ -82,6 +82,7 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
             pontos: pence.pontos.map(levar),
             ...(pence.removidos ? { removidos: pence.removidos.map(levar) } : {}),
             ...(pence.pivo ? { pivo: levar(pence.pivo) } : {}),
+            ...(pence.bico ? { bico: levar(pence.bico) } : {}),
           })),
         }
       : {}),

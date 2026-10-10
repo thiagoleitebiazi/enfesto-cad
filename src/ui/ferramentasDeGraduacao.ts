@@ -10,7 +10,9 @@ import {
   indiceDoTamanho,
   lerTamanhos,
   pontoGraduadoEm,
+  regraComPasso,
   regraDoVertice,
+  regraNaTangente,
   regraNoEixo,
   regraPeloTamanhoDeReferencia,
   regraPorPasso,
@@ -80,14 +82,24 @@ export type EixoNaTela = 'dx-dy' | 'dx' | 'dy';
 
 /** O que os diálogos deixaram escolhido; cada um abre com o que foi usado por último. */
 export interface OpcoesDaGraduacao {
-  readonly automatico: { readonly dxMm: number; readonly dyMm: number };
+  /** `tamanho`: o nome do tamanho em que a diferença é aplicada, ou `TODOS_OS_TAMANHOS`. */
+  readonly automatico: { readonly dxMm: number; readonly dyMm: number; readonly tamanho: string };
   readonly ajustar: { readonly eixo: EixoNaTela };
   /** A distância de um tamanho ao vizinho, no ponto de referência (zero empilha), e o tamanho a mexer (ou "todos"). */
   readonly agrupar: { readonly dxMm: number; readonly dyMm: number; readonly tamanho: string };
   readonly mouse: { readonly modo: 'absoluto' | 'incremental' | 'proporcional' };
   /** "Unir": todos os pontos graduados, para as curvas de cada tamanho saírem exatas. */
   readonly unir: { readonly ajustarCurvas: boolean };
-  readonly tangente: { readonly distanciaMm: number; readonly inverter: boolean };
+  readonly tangente: {
+    readonly distanciaMm: number;
+    readonly inverter: boolean;
+    /** A direção é sempre a da aresta no contorno base; sem isso, cada tamanho segue a aresta do tamanho vizinho. */
+    readonly usarContornoBase: boolean;
+    /** O nome do tamanho em que a distância é aplicada, ou `TODOS_OS_TAMANHOS`. */
+    readonly tamanho: string;
+    /** A distância conta de um tamanho ao vizinho; sem isso, conta a partir do base. */
+    readonly incremental: boolean;
+  };
   readonly remover: { readonly onde: 'pontos' | 'molde'; readonly eixo: EixoNaTela };
   readonly copiar: {
     readonly eixo: EixoNaTela;
@@ -102,12 +114,12 @@ export interface OpcoesDaGraduacao {
 export const TODOS_OS_TAMANHOS = 'todos';
 
 export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
-  automatico: { dxMm: 10, dyMm: 0 },
+  automatico: { dxMm: 10, dyMm: 0, tamanho: TODOS_OS_TAMANHOS },
   ajustar: { eixo: 'dx-dy' },
   agrupar: { dxMm: 0, dyMm: 0, tamanho: TODOS_OS_TAMANHOS },
   mouse: { modo: 'absoluto' },
   unir: { ajustarCurvas: true },
-  tangente: { distanciaMm: 5, inverter: false },
+  tangente: { distanciaMm: 5, inverter: false, usarContornoBase: true, tamanho: TODOS_OS_TAMANHOS, incremental: true },
   remover: { onde: 'pontos', eixo: 'dx-dy' },
   copiar: { eixo: 'dx-dy', inverterDx: false, inverterDy: false, destino: 'cliques' },
   separar: { tamanho: TODOS_OS_TAMANHOS },
@@ -198,6 +210,19 @@ const EIXOS: ReadonlyArray<{ readonly valor: EixoNaTela; readonly rotulo: string
 ];
 const INDICAR = 'Indicar no desenho';
 
+/** O campo "Aplicar no tamanho": todos, ou um dos tamanhos da peça que não é o base. */
+function campoDoTamanho(peca: Molde, escolhido: string): CampoDoDialogo {
+  const graduacao = peca.graduacao;
+  const outros = graduacao ? graduacao.tamanhos.filter((_, t) => t !== graduacao.base) : [];
+  return {
+    tipo: 'escolha',
+    id: 'tamanho',
+    rotulo: 'Aplicar no tamanho',
+    opcoes: [{ valor: TODOS_OS_TAMANHOS, rotulo: 'Todos' }, ...outros.map((nome) => ({ valor: nome, rotulo: nome }))],
+    inicial: outros.includes(escolhido) ? escolhido : TODOS_OS_TAMANHOS,
+  };
+}
+
 /** O diálogo que a ferramenta abre antes de agir; `null` para as que não perguntam nada. */
 export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: OpcoesDaGraduacao, peca: Molde): DialogoDeGraduacao | null {
   switch (ferramenta) {
@@ -207,8 +232,9 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
         campos: [
           { tipo: 'medida', id: 'dx', rotulo: 'Diferença de DX por tamanho (mm, + para a direita)', inicial: paraOCampo(opcoes.automatico.dxMm) },
           { tipo: 'medida', id: 'dy', rotulo: 'Diferença de DY por tamanho (mm, + para baixo)', inicial: paraOCampo(opcoes.automatico.dyMm) },
+          campoDoTamanho(peca, opcoes.automatico.tamanho),
         ],
-        nota: 'Depois de confirmar, clique nos pontos do contorno. Cada um passa a andar essa diferença a mais em cada tamanho acima do base, e a menos em cada um abaixo, no lugar da regra que tinha.',
+        nota: 'Depois de confirmar, clique nos pontos do contorno. Em “Todos”, cada um passa a andar essa diferença a mais em cada tamanho acima do base, e a menos em cada um abaixo, no lugar da regra que tinha. Num tamanho só, só ele muda: fica com essa diferença em relação ao tamanho vizinho, do lado do base. O manual da referência tem a opção, mas não diz a conta; essa é a nossa leitura.',
         rotuloDoBotao: INDICAR,
       };
     case 'ajustar-graduacao':
@@ -264,8 +290,16 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
         campos: [
           { tipo: 'medida', id: 'distancia', rotulo: 'Distância por tamanho (mm)', inicial: paraOCampo(opcoes.tangente.distanciaMm) },
           { tipo: 'caixa', id: 'inverter', rotulo: 'Inverter sentido: pela aresta que chega ao ponto', inicial: opcoes.tangente.inverter },
+          {
+            tipo: 'caixa',
+            id: 'usarContornoBase',
+            rotulo: 'Usar contorno base: a direção é sempre a da aresta no tamanho base',
+            inicial: opcoes.tangente.usarContornoBase,
+          },
+          campoDoTamanho(peca, opcoes.tangente.tamanho),
+          { tipo: 'caixa', id: 'incremental', rotulo: 'Incremental: a distância conta de um tamanho ao vizinho (sem isso, a partir do base)', inicial: opcoes.tangente.incremental },
         ],
-        nota: 'Depois de confirmar, clique nos pontos do contorno. Cada um passa a andar essa distância por tamanho na direção da aresta que sai dele (a que vai para o ponto de número seguinte), no contorno base — ou, invertendo, na da aresta que chega.',
+        nota: 'Depois de confirmar, clique nos pontos do contorno. Cada um passa a andar essa distância na direção da aresta que sai dele (a que vai para o ponto de número seguinte) — ou, invertendo, na da aresta que chega. Sem “Usar contorno base”, cada tamanho sai do vizinho na direção que a aresta tem nele: a tangente acompanha a curva dos tamanhos. O manual da referência tem as opções, mas não diz as contas; essas são a nossa leitura.',
         rotuloDoBotao: INDICAR,
       };
     case 'remover-graduacao':
@@ -350,7 +384,7 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
   const caixa = (id: string): boolean => valores[id] === true;
   switch (ferramenta) {
     case 'graduar-automatico':
-      return { ...opcoes, automatico: { dxMm: numero('dx'), dyMm: numero('dy') } };
+      return { ...opcoes, automatico: { dxMm: numero('dx'), dyMm: numero('dy'), tamanho: valores.tamanho === undefined ? TODOS_OS_TAMANHOS : String(valores.tamanho) } };
     case 'ajustar-graduacao':
       return { ...opcoes, ajustar: { eixo: String(valores.eixo) as EixoNaTela } };
     case 'agrupar-graduacao':
@@ -361,7 +395,17 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
       return { ...opcoes, unir: { ajustarCurvas: caixa('ajustarCurvas') } };
     case 'graduar-tangente':
       if (numero('distancia') === 0) throw new Error('A distância por tamanho precisa ser diferente de zero.');
-      return { ...opcoes, tangente: { distanciaMm: numero('distancia'), inverter: caixa('inverter') } };
+      return {
+        ...opcoes,
+        tangente: {
+          distanciaMm: numero('distancia'),
+          inverter: caixa('inverter'),
+          // Sem o campo (um diálogo antigo), vale o de sempre: pelo contorno base, em todos os tamanhos, de vizinho em vizinho.
+          usarContornoBase: valores.usarContornoBase !== false,
+          tamanho: valores.tamanho === undefined ? TODOS_OS_TAMANHOS : String(valores.tamanho),
+          incremental: valores.incremental !== false,
+        },
+      };
     case 'remover-graduacao':
       return { ...opcoes, remover: { onde: valores.onde === 'molde' ? 'molde' : 'pontos', eixo: String(valores.eixo) as EixoNaTela } };
     case 'copiar-graduacao':
@@ -552,8 +596,20 @@ export function cliqueDeGraduacao(
     case 'graduar-mouse':
       return { estado: noVertice, recado: null };
     case 'graduar-automatico': {
-      const regra = regraPorPasso(graduacao, paraOMundo({ dx: opcoes.automatico.dxMm, dy: opcoes.automatico.dyMm }));
-      return com(definirRegra(graduacao, contorno, i, regra), `${ponto} graduado: DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} por tamanho.`);
+      const { dxMm, dyMm, tamanho } = opcoes.automatico;
+      const qual = tamanho === TODOS_OS_TAMANHOS ? null : indiceDoTamanho(graduacao.tamanhos, tamanho);
+      if (qual !== null && qual < 0) return { estado, recado: `A peça não tem o tamanho “${tamanho}”: abra “Automático” de novo e escolha outro.` };
+      try {
+        const regra = regraComPasso(graduacao, regraDoVertice(graduacao, contorno, i), paraOMundo({ dx: dxMm, dy: dyMm }), qual);
+        return com(
+          definirRegra(graduacao, contorno, i, regra),
+          qual === null
+            ? `${ponto} graduado: DX ${mm(dxMm)} e DY ${mm(dyMm)} por tamanho.`
+            : `${ponto} graduado no tamanho ${tamanho}: DX ${mm(dxMm)} e DY ${mm(dyMm)} em relação ao ${graduacao.tamanhos[qual > graduacao.base ? qual - 1 : qual + 1]}; os outros tamanhos ficaram como estavam.`,
+        );
+      } catch (e) {
+        return { estado, recado: e instanceof Error ? e.message : String(e) };
+      }
     }
     case 'ajustar-graduacao': {
       if (!estado.inicio) return { estado: noVertice, recado: null };
@@ -578,15 +634,20 @@ export function cliqueDeGraduacao(
     }
     case 'graduar-tangente': {
       const n = contorno.length;
-      const vizinho = contorno[opcoes.tangente.inverter ? (i - 1 + n) % n : (i + 1) % n]!;
-      const comprimento = distancia(contorno[i]!, vizinho);
-      if (comprimento < MESMO_PONTO_MM) return { estado, recado: 'Essa aresta não tem comprimento: não dá a direção da tangente.' };
-      const k = opcoes.tangente.distanciaMm / comprimento;
-      const regra = regraPorPasso(graduacao, { x: (vizinho.x - contorno[i]!.x) * k, y: (vizinho.y - contorno[i]!.y) * k });
-      return com(
-        definirRegra(graduacao, contorno, i, regra),
-        `${ponto} graduado na tangente: ${mm(opcoes.tangente.distanciaMm)} por tamanho, na direção do ponto ${(opcoes.tangente.inverter ? (i - 1 + n) % n : (i + 1) % n) + 1}.`,
-      );
+      const { distanciaMm, inverter, usarContornoBase, tamanho, incremental } = opcoes.tangente;
+      const vizinho = inverter ? (i - 1 + n) % n : (i + 1) % n;
+      const qual = tamanho === TODOS_OS_TAMANHOS ? null : indiceDoTamanho(graduacao.tamanhos, tamanho);
+      if (qual !== null && qual < 0) return { estado, recado: `A peça não tem o tamanho “${tamanho}”: abra “Tangente” de novo e escolha outro.` };
+      try {
+        const regra = regraNaTangente(graduacao, contorno, i, vizinho, distanciaMm, { usarContornoBase, incremental, tamanho: qual });
+        const quanto = incremental ? (qual === null ? 'por tamanho' : 'a partir do tamanho vizinho') : 'a partir do base';
+        return com(
+          definirRegra(graduacao, contorno, i, regra),
+          `${ponto} graduado na tangente${qual === null ? '' : `, no tamanho ${tamanho}`}: ${mm(distanciaMm)} ${quanto}, na direção do ponto ${vizinho + 1}${usarContornoBase || !incremental ? '' : ', seguindo a aresta de cada tamanho'}.`,
+        );
+      } catch (e) {
+        return { estado, recado: e instanceof Error ? e.message : String(e) };
+      }
     }
     case 'graduar-regras': {
       if (!contexto.regra) return { estado, recado: 'Escolha antes uma regra, em “Regras”.' };
@@ -714,7 +775,9 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
     case 'graduar-tabela':
       return 'Tabela: clique num ponto do contorno da peça selecionada para ver e mudar a graduação dele (os anéis marcam os pontos graduados).' + ESC;
     case 'graduar-automatico':
-      return `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} por tamanho.` + ESC;
+      return (
+        `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} ${opcoes.automatico.tamanho === TODOS_OS_TAMANHOS ? 'por tamanho' : `no tamanho ${opcoes.automatico.tamanho}`}.` + ESC
+      );
     case 'ajustar-graduacao':
       if (!estado.inicio) return `Ajustar (${NOME_DO_EIXO[opcoes.ajustar.eixo]}): clique no ponto inicial.` + ESC;
       return estado.livres.length < 2
@@ -733,7 +796,9 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
         `Mouse: clique onde o ponto ${numero} deve ficar ${opcoes.mouse.modo === 'absoluto' ? 'no tamanho da ponta' : 'no tamanho seguinte ao base'} — o tracejado mostra o tamanho da ponta.` + ESC
       );
     case 'graduar-tangente':
-      return `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} por tamanho, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um.` + ESC;
+      return (
+        `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} ${opcoes.tangente.tamanho === TODOS_OS_TAMANHOS ? (opcoes.tangente.incremental ? 'por tamanho' : 'a partir do base') : `no tamanho ${opcoes.tangente.tamanho}`}, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um.` + ESC
+      );
     case 'graduar-regras':
       return (regra ? `Regras (“${regra.nome}”): clique nos pontos que devem receber essa regra.` : 'Regras: escolha antes uma regra.') + ESC;
     case 'criar-regra':

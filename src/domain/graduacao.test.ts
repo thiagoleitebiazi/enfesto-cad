@@ -20,6 +20,8 @@ import {
   regraDoVertice,
   regraNoEixo,
   regraPeloTamanhoDeReferencia,
+  regraComPasso,
+  regraNaTangente,
   regraPorPasso,
   regraProporcional,
   removerPontoGraduado,
@@ -473,5 +475,83 @@ describe('regraProporcional', () => {
     const soMaiores = iniciarGraduacao(RETANGULO, ['M', 'G', 'GG'], 0);
     expect(regraProporcional(soMaiores, ponto(-9, -9), ponto(20, 40))).toEqual([ZERO, ponto(10, 20), ponto(20, 40)]);
     expect(regraProporcional(cinco, null, ponto(30, 60))).toEqual([ZERO, ZERO, ZERO, ponto(15, 30), ponto(30, 60)]);
+  });
+});
+
+describe('regraComPasso', () => {
+  const cinco = iniciarGraduacao(RETANGULO, ['PP', 'P', 'M', 'G', 'GG'], 2);
+  const atual = [ponto(-20, 0), ponto(-10, 0), ZERO, ponto(10, 0), ponto(20, 0)];
+
+  it('em todos os tamanhos, de vizinho em vizinho, é a regra de passo constante', () => {
+    expect(regraComPasso(cinco, atual, ponto(7, 0), null)).toEqual(regraPorPasso(cinco, ponto(7, 0)));
+  });
+
+  it('em todos os tamanhos, a partir do base, cada tamanho fica a um passo do base (para trás, abaixo dele)', () => {
+    expect(regraComPasso(cinco, atual, ponto(7, 0), null, false)).toEqual([ponto(-7, 0), ponto(-7, 0), ZERO, ponto(7, 0), ponto(7, 0)]);
+  });
+
+  it('num tamanho só, só ele muda: fica a um passo do vizinho do lado do base', () => {
+    expect(regraComPasso(cinco, atual, ponto(15, 0), 4)).toEqual([ponto(-20, 0), ponto(-10, 0), ZERO, ponto(10, 0), ponto(25, 0)]);
+    expect(regraComPasso(cinco, atual, ponto(15, 0), 0)).toEqual([ponto(-25, 0), ponto(-10, 0), ZERO, ponto(10, 0), ponto(20, 0)]);
+    // A partir do base, o tamanho fica a um passo dele, tenha o vizinho o que tiver.
+    expect(regraComPasso(cinco, atual, ponto(15, 0), 4, false)).toEqual([ponto(-20, 0), ponto(-10, 0), ZERO, ponto(10, 0), ponto(15, 0)]);
+    expect(regraComPasso(cinco, atual, ponto(15, 0), 1, false)[1]).toEqual(ponto(-15, 0));
+  });
+
+  it('recusa o tamanho base e o que não existe', () => {
+    expect(() => regraComPasso(cinco, atual, ponto(15, 0), 2)).toThrow('O tamanho base');
+    expect(() => regraComPasso(cinco, atual, ponto(15, 0), 9)).toThrow('Tamanho fora da graduação');
+  });
+});
+
+describe('regraNaTangente', () => {
+  // O ponto 2 é (200, 300); o vizinho seguinte, o 3, é (0, 300): a aresta sai na direção −x.
+  const cinco = iniciarGraduacao(RETANGULO, ['PP', 'P', 'M', 'G', 'GG'], 2);
+  const PELO_BASE = { usarContornoBase: true, incremental: true, tamanho: null };
+  // O vizinho sobe 40 mm por tamanho: a aresta muda de direção de um tamanho para o outro.
+  const comVizinhoGraduado = definirRegra(cinco, RETANGULO, 3, regraPorPasso(cinco, ponto(0, 40)));
+
+  it('pelo contorno base, anda a distância por tamanho na direção da aresta', () => {
+    expect(regraNaTangente(cinco, RETANGULO, 2, 3, 5, PELO_BASE)).toEqual([ponto(10, 0), ponto(5, 0), ZERO, ponto(-5, 0), ponto(-10, 0)]);
+    // Com o vizinho graduado, o contorno base continua dando a mesma direção.
+    expect(regraNaTangente(comVizinhoGraduado, RETANGULO, 2, 3, 5, PELO_BASE)[4]).toEqual(ponto(-10, 0));
+  });
+
+  it('sem o contorno base, cada tamanho sai do vizinho na direção que a aresta tem nele', () => {
+    const regra = regraNaTangente(comVizinhoGraduado, RETANGULO, 2, 3, 5, { ...PELO_BASE, usarContornoBase: false });
+
+    // O G sai do base pela aresta do base: −x.
+    expect(regra[3]).toEqual(ponto(-5, 0));
+    // O GG sai do G pela aresta do G: de (195, 300) a (0, 340).
+    const comprimento = Math.hypot(195, 40);
+    expect(regra[4]!.x).toBeCloseTo(-5 - (5 * 195) / comprimento, 9);
+    expect(regra[4]!.y).toBeCloseTo((5 * 40) / comprimento, 9);
+    // Abaixo do base, o mesmo, para trás.
+    expect(regra[1]).toEqual(ponto(5, 0));
+    expect(regra[0]!.y).not.toBe(0);
+  });
+
+  it('a partir do base (sem incremental), cada tamanho fica à distância do base', () => {
+    expect(regraNaTangente(cinco, RETANGULO, 2, 3, 5, { ...PELO_BASE, incremental: false })).toEqual([ponto(5, 0), ponto(5, 0), ZERO, ponto(-5, 0), ponto(-5, 0)]);
+    // A partir do base, a direção é a do base mesmo sem "Usar contorno base": não há tamanho vizinho de onde sair.
+    expect(regraNaTangente(comVizinhoGraduado, RETANGULO, 2, 3, 5, { usarContornoBase: false, incremental: false, tamanho: null })).toEqual([
+      ponto(5, 0),
+      ponto(5, 0),
+      ZERO,
+      ponto(-5, 0),
+      ponto(-5, 0),
+    ]);
+  });
+
+  it('num tamanho só, os outros ficam como estavam', () => {
+    const comRegra = definirRegra(cinco, RETANGULO, 2, regraPorPasso(cinco, ponto(0, 10)));
+
+    expect(regraNaTangente(comRegra, RETANGULO, 2, 3, 5, { ...PELO_BASE, tamanho: 4 })).toEqual([ponto(0, -20), ponto(0, -10), ZERO, ponto(0, 10), ponto(-5, 10)]);
+    // Sem o contorno base, sai do G na direção da aresta do G: de (200, 310) a (0, 300).
+    const seguindo = regraNaTangente(comRegra, RETANGULO, 2, 3, 5, { usarContornoBase: false, incremental: true, tamanho: 4 });
+    expect(seguindo[3]).toEqual(ponto(0, 10));
+    expect(seguindo[4]!.y).toBeLessThan(10);
+    expect(() => regraNaTangente(comRegra, RETANGULO, 2, 3, 5, { usarContornoBase: false, incremental: true, tamanho: 2 })).toThrow('O tamanho base');
+    expect(() => regraNaTangente(comRegra, RETANGULO, 2, 9, 5, PELO_BASE)).toThrow('Ponto fora do contorno');
   });
 });

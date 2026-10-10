@@ -347,6 +347,17 @@ describe('a prega feita por ferramenta fica registrada', () => {
     expect(aPrega(g).movida[0].x).toBeCloseTo(154, 6);
   });
 
+  it('a linha interna que estava em cima da linha da prega (a reta auxiliar) sai: a prega desenha a dela', () => {
+    const base = molde({ linhasInternas: [[ponto(100, 20), ponto(100, 280)], [ponto(20, 20), ponto(30, 30)]] });
+    const peca = criarPregas(base, EMBAIXO, EM_CIMA, SIMPLES, null, ids());
+
+    // As três linhas de dobra, a seta e a linha que não tinha nada com a prega.
+    expect(peca.linhasInternas).toHaveLength(5);
+    expect(peca.linhasInternas).toContainEqual([ponto(20, 20), ponto(30, 30)]);
+    expect(peca.linhasInternas).not.toContainEqual([ponto(100, 20), ponto(100, 280)]);
+    expect(pregasDaPeca(peca)).toHaveLength(1);
+  });
+
   it('pregaPerto acha a prega em cuja faixa o ponto está', () => {
     const peca = comPrega();
 

@@ -992,7 +992,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   rotulo="Pregas"
                   icone="pregas"
                   pressionado={props.modo === 'pregas'}
-                  dica="Pregas: abre a peça numa linha, de um ponto do contorno a outro, com o tecido que a prega consome — simples ou dupla, uma ou várias, com as linhas de dobra desenhadas"
+                  dica="Pregas: abre a peça numa linha — dois pontos do contorno, ou uma linha interna reta —, com o tecido que a prega consome: simples ou dupla, uma ou várias, com as linhas de dobra desenhadas. Um clique dentro de uma prega já feita muda as larguras dela ou a tira"
                   falta={props.temSelecaoUnica ? null : SEM_PECA}
                   onClick={() => props.onUsarFerramentaDeMolde('pregas')}
                 />
@@ -1001,7 +1001,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   rotulo={['Pence no', 'contorno']}
                   icone="pence-no-contorno"
                   pressionado={props.modo === 'pence-no-contorno'}
-                  dica="Pence no contorno: cria uma pence com a abertura e a profundidade pedidas — recortada (o contorno entra por ela), marcada (só desenhada) ou aberta em torno de um pivô"
+                  dica="Pence no contorno: cria uma pence com a abertura e a profundidade pedidas — recortada (o contorno entra por ela), marcada (só desenhada) ou aberta em torno de um pivô, com acabamento ou não. Um clique numa pence que já está na peça muda as medidas dela"
                   falta={props.temSelecaoUnica ? null : SEM_PECA}
                   onClick={() => props.onUsarFerramentaDeMolde('pence-no-contorno')}
                 />
@@ -1052,7 +1052,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Cortar"
                     icone="cortar-molde"
                     pressionado={props.modo === 'cortar'}
-                    dica="Cortar: divide a peça selecionada em duas por uma reta — clique no contorno, onde o corte começa e onde termina. A parte maior continua sendo a peça; a outra vira uma peça nova"
+                    dica="Cortar: divide a peça selecionada em duas por uma reta — dois pontos do contorno, ou uma linha interna reta dela —, com costura na borda do corte, se quiser. A parte maior continua sendo a peça; a outra vira uma peça nova"
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMolde('cortar')}
                   />
@@ -1070,7 +1070,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     rotulo="Remover região"
                     icone="remover-regiao"
                     pressionado={props.modo === 'remover-regiao'}
-                    dica="Remover região: tira um pedaço da peça selecionada — clique nas duas pontas da reta que separa a região, no contorno, e depois dentro da região que deve sair"
+                    dica="Remover região: tira um pedaço da peça selecionada, de um lado de uma reta — ou a faixa entre duas retas, unindo as duas partes que sobram. A região tirada pode virar uma peça nova"
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMolde('remover-regiao')}
                   />

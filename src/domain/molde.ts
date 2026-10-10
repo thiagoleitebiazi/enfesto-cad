@@ -117,6 +117,12 @@ export interface PenceDaPeca {
   readonly comEixo?: boolean;
   /** Recortada, aberta por pivô: o ponto do contorno em torno do qual a peça girou para abrir. Com ele, a pence fecha e abre de novo pelo mesmo giro. */
   readonly pivo?: Ponto2D;
+  /**
+   * Marcada, com acabamento: o bico que o contorno ganhou entre as duas pontas
+   * (o que a pence faz na borda quando é dobrada). Com ele, a pence não foi
+   * recortada: fica desenhada, e o contorno passa pelo bico.
+   */
+  readonly bico?: Ponto2D;
 }
 
 /**
@@ -388,6 +394,7 @@ function anotacoesTransformadas(
             pontos: pence.pontos.map(ponto),
             ...(pence.removidos ? { removidos: pence.removidos.map(ponto) } : {}),
             ...(pence.pivo ? { pivo: ponto(pence.pivo) } : {}),
+            ...(pence.bico ? { bico: ponto(pence.bico) } : {}),
           })),
         }
       : {}),

@@ -4,7 +4,9 @@ import { cotaDeDistancia } from './cota';
 import { definirRegra } from './graduacao';
 import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 import {
+  conferirOpcoesDeCorte,
   cortarMolde,
+  cortarMoldeComOpcoes,
   cruzamentosDaReta,
   desdobraComAMetadeGuardada,
   desdobrarMolde,
@@ -14,7 +16,10 @@ import {
   encostarMolde,
   fioNoCentro,
   metadeDoMolde,
+  removerFaixaDoMolde,
+  separarRegiaoDoMolde,
   unirMoldes,
+  type OpcoesDeCorte,
 } from './corteEUniao';
 import {
   adicionarCota,
@@ -615,5 +620,147 @@ describe('desdobrarMolde com a metade guardada', () => {
     const inteira = desdobrarMolde(molde(), 3, ids(), { fioNoCentro: true });
 
     expect(inteira.linhaDeFio).toEqual({ inicio: ponto(0, 50), fim: ponto(0, 250) });
+  });
+});
+
+describe('cortarMoldeComOpcoes', () => {
+  // O corte em pé, em x = 50: a parte maior vai de x = 50 a 200, e a nova, de 0 a 50.
+  const [a, b] = [na(0, 50, 0), na(2, 50, 300)];
+  const COSTURA: OpcoesDeCorte = { costuraMm: 10, costuraNasDuas: false, piques: false, modo: 'reta' };
+  const contem = (contorno: readonly Ponto2D[], x: number, y: number): boolean => contorno.some((p) => Math.abs(p.x - x) < 1e-6 && Math.abs(p.y - y) < 1e-6);
+
+  it('sem costura, é o corte de sempre — e a linha interna que estava em cima da reta sai', () => {
+    const peca = molde({ linhasInternas: [[ponto(50, 0), ponto(50, 300)], [ponto(120, 50), ponto(120, 250)]] });
+    const [maior, menor] = cortarMoldeComOpcoes(peca, a, b, ids());
+
+    expect(area(maior.contorno)).toBeCloseTo(45000, 6);
+    expect(area(menor.contorno)).toBeCloseTo(15000, 6);
+    expect(maior.linhasInternas).toEqual([[ponto(120, 50), ponto(120, 250)]]);
+    expect(menor.linhasInternas).toEqual([]);
+    expect(maior.id).toBe('m1');
+    expect(menor.id).toBe('novo-1');
+  });
+
+  it('modo reta: a borda do corte da peça nova anda a costura para fora, em esquadro', () => {
+    const [maior, menor] = cortarMoldeComOpcoes(molde(), a, b, ids(), COSTURA);
+
+    expect(area(menor.contorno)).toBeCloseTo(15000 + 10 * 300, 6);
+    expect(menor.contorno).toHaveLength(6);
+    for (const [x, y] of [[50, 0], [60, 0], [60, 300], [50, 300]] as const) expect(contem(menor.contorno, x, y)).toBe(true);
+    // Sem "2 moldes", a parte maior fica como o corte a deixou.
+    expect(area(maior.contorno)).toBeCloseTo(45000, 6);
+  });
+
+  it('com “2 moldes”, as duas partes ganham a costura, cada uma para o seu lado de fora', () => {
+    const [maior, menor] = cortarMoldeComOpcoes(molde(), a, b, ids(), { ...COSTURA, costuraNasDuas: true });
+
+    expect(area(maior.contorno)).toBeCloseTo(45000 + 3000, 6);
+    expect(contem(maior.contorno, 40, 0)).toBe(true);
+    expect(contem(maior.contorno, 40, 300)).toBe(true);
+    expect(area(menor.contorno)).toBeCloseTo(18000, 6);
+  });
+
+  it('modo tangente: as arestas vizinhas são estendidas até a borda nova', () => {
+    // No retângulo, as vizinhas já estão em esquadro com o corte: a parte nova fica um retângulo maior, sem pontos a mais.
+    const [, menor] = cortarMoldeComOpcoes(molde(), a, b, ids(), { ...COSTURA, modo: 'tangente' });
+    expect(menor.contorno).toHaveLength(4);
+    expect(area(menor.contorno)).toBeCloseTo(18000, 6);
+
+    // Cortando o canto (200, 0) em diagonal, as vizinhas chegam ao corte a 45°: cada uma anda 10 × √2 a mais.
+    const [, canto] = cortarMoldeComOpcoes(molde(), na(0, 100, 0), na(1, 200, 100), ids(), { ...COSTURA, modo: 'tangente' });
+    expect(canto.contorno).toHaveLength(3);
+    expect(contem(canto.contorno, 100 - 10 * Math.SQRT2, 0)).toBe(true);
+    expect(contem(canto.contorno, 200, 100 + 10 * Math.SQRT2)).toBe(true);
+    // Em esquadro, o mesmo canto ganha um retângulo sobre a diagonal.
+    const [, emEsquadro] = cortarMoldeComOpcoes(molde(), na(0, 100, 0), na(1, 200, 100), ids(), COSTURA);
+    expect(emEsquadro.contorno).toHaveLength(5);
+    expect(area(emEsquadro.contorno)).toBeCloseTo(5000 + 10 * 100 * Math.SQRT2, 6);
+  });
+
+  it('modo tangente: a vizinha que corre junto do corte não chega à borda nova, e essa ponta acaba em esquadro', () => {
+    // Um degrau: o corte sobe do canto de dentro (100, 100) até (100, 300); a aresta que chega a esse canto é paralela ao corte.
+    const degrau = molde({ contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(200, 100), ponto(200, 300), ponto(0, 300)], linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) } });
+    const [maior] = cortarMoldeComOpcoes(degrau, na(2, 100, 100), na(4, 100, 300), ids(), { ...COSTURA, costuraNasDuas: true, modo: 'tangente' });
+
+    expect(area(maior.contorno)).toBeCloseTo(30000 + 10 * 200, 6);
+    // Em baixo, em esquadro: o canto fica, e nasce o ponto (110, 100). Em cima, a aresta do alto foi estendida.
+    expect(contem(maior.contorno, 100, 100)).toBe(true);
+    expect(contem(maior.contorno, 110, 100)).toBe(true);
+    expect(contem(maior.contorno, 110, 300)).toBe(true);
+    expect(contem(maior.contorno, 100, 300)).toBe(false);
+  });
+
+  it('com pique, cada parte que ganhou costura fica com um em cada ponta da linha do corte', () => {
+    const [maior, menor] = cortarMoldeComOpcoes(molde(), a, b, ids(), { ...COSTURA, piques: true, modo: 'tangente' });
+
+    expect(maior.piques).toHaveLength(0);
+    expect(menor.piques.map((q) => q.posicao)).toEqual([ponto(50, 0), ponto(50, 300)]);
+  });
+
+  it('recusa a costura negativa', () => {
+    expect(() => cortarMoldeComOpcoes(molde(), a, b, ids(), { ...COSTURA, costuraMm: -1 })).toThrow('zero ou maior');
+    expect(() => conferirOpcoesDeCorte({ ...COSTURA, costuraMm: Number.NaN })).toThrow('zero ou maior');
+  });
+});
+
+describe('remover região: manter a região e unir o que sobra', () => {
+  const FIO_A_ESQUERDA = { inicio: ponto(50, 50), fim: ponto(50, 250) };
+
+  it('separarRegiaoDoMolde: a peça sem a região, e a região como peça própria', () => {
+    const { peca, regiao } = separarRegiaoDoMolde(molde(), na(0, 150, 0), na(2, 150, 300), ponto(180, 150), 'nova');
+
+    expect(area(peca.contorno)).toBeCloseTo(45000, 6);
+    expect(area(regiao.contorno)).toBeCloseTo(15000, 6);
+    expect(peca.id).toBe('m1');
+    expect(regiao).toMatchObject({ id: 'nova', nome: 'Frente (2)' });
+  });
+
+  it('removerFaixaDoMolde: a faixa entre as duas retas sai, e o lado sem a linha de fio vem encostar no outro', () => {
+    const peca = adicionarMarca(molde({ linhaDeFio: FIO_A_ESQUERDA }), ponto(180, 150), 'marca');
+    const { peca: unida, faixa, degrauMm } = removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 0), ponto(140, 300), 'faixa');
+
+    expect(area(unida.contorno)).toBeCloseTo(60000 - 40 * 300, 6);
+    expect(area(faixa.contorno)).toBeCloseTo(12000, 6);
+    expect(degrauMm).toBeCloseTo(0, 9);
+    expect(unida.id).toBe('m1');
+    expect(unida.linhaDeFio).toEqual(FIO_A_ESQUERDA);
+    // O que estava do lado de lá andou os 40 mm da faixa.
+    expect(unida.marcas[0]!.posicao.x).toBeCloseTo(140, 6);
+    expect(unida.marcas[0]!.posicao.y).toBeCloseTo(150, 6);
+    const xs = unida.contorno.map((p) => p.x);
+    expect(Math.min(...xs)).toBeCloseTo(0, 6);
+    expect(Math.max(...xs)).toBeCloseTo(160, 6);
+    expect(faixa).toMatchObject({ id: 'faixa', nome: 'Frente (2)' });
+  });
+
+  it('com a linha de fio do lado de lá, é o lado de cá que anda', () => {
+    const peca = molde({ linhaDeFio: { inicio: ponto(180, 50), fim: ponto(180, 250) } });
+    const { peca: unida } = removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 0), ponto(140, 300), 'faixa');
+
+    expect(unida.linhaDeFio).toEqual({ inicio: ponto(180, 50), fim: ponto(180, 250) });
+    const xs = unida.contorno.map((p) => p.x);
+    expect(Math.min(...xs)).toBeCloseTo(40, 6);
+    expect(Math.max(...xs)).toBeCloseTo(200, 6);
+    expect(area(unida.contorno)).toBeCloseTo(48000, 6);
+  });
+
+  it('retas de comprimentos diferentes deixam um degrau, que é dito', () => {
+    const { degrauMm, peca: unida } = removerFaixaDoMolde(molde({ linhaDeFio: FIO_A_ESQUERDA }), na(0, 100, 0), na(2, 100, 300), ponto(140, 0), ponto(170, 300), 'faixa');
+
+    expect(degrauMm).toBeCloseTo(Math.hypot(30, 300) - 300, 9);
+    expect(area(unida.contorno)).toBeGreaterThan(0);
+  });
+
+  it('a linha interna que estava em cima de uma das retas sai', () => {
+    const peca = molde({ linhaDeFio: FIO_A_ESQUERDA, linhasInternas: [[ponto(100, 0), ponto(100, 300)], [ponto(140, 0), ponto(140, 300)], [ponto(20, 20), ponto(30, 30)]] });
+    const { peca: unida } = removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 0), ponto(140, 300), 'faixa');
+
+    expect(unida.linhasInternas).toEqual([[ponto(20, 20), ponto(30, 30)]]);
+  });
+
+  it('recusa a segunda reta que cruza a primeira ou que não está no contorno', () => {
+    const peca = molde({ linhaDeFio: FIO_A_ESQUERDA });
+    expect(() => removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(50, 0), ponto(150, 300), 'faixa')).toThrow('de um lado da primeira');
+    expect(() => removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 10), ponto(140, 290), 'faixa')).toThrow('de um lado da primeira');
   });
 });

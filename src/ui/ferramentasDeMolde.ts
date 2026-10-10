@@ -8,16 +8,23 @@ import {
 } from '../core/geometria';
 import { criarBainha, geometriaDaBainha, type OpcoesDeBainha } from '../domain/bainha';
 import {
-  cortarMolde,
+  conferirOpcoesDeCorte,
+  cortarMoldeComOpcoes,
+  CORTE_SEM_COSTURA,
   desdobraComAMetadeGuardada,
   desdobrarMolde,
+  dobraPelaLinhaInterna,
   dobrarMolde,
   encostarMolde,
   metadeDoMolde,
+  removerFaixaDoMolde,
+  separarRegiaoDoMolde,
   unirMoldes,
+  type OpcoesDeCorte,
   type OpcoesDeDobra,
 } from '../domain/corteEUniao';
 import { rotacaoEhPermitida, type Molde } from '../domain/molde';
+import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import { caminhoDoTrecho, SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
 import { formatarMm } from './medidas';
 
@@ -94,28 +101,72 @@ function arestaDoContorno(contorno: Contorno, indiceAresta: number): Ponto2D[] {
   return [contorno[indiceAresta]!, contorno[(indiceAresta + 1) % contorno.length]!];
 }
 
+/** O que o "Remover região" pergunta. */
+export interface OpcoesDeRemoverRegiao {
+  /** "Manter região do molde": a região tirada vira uma peça nova, em vez de sumir. */
+  readonly manter: boolean;
+  /** "Unir moldes": com duas retas, sai a faixa entre elas, e as duas partes que sobram são unidas. */
+  readonly unir: boolean;
+}
+
+export const REMOVER_REGIAO_SIMPLES: OpcoesDeRemoverRegiao = { manter: false, unir: false };
+
 /**
  * A reta está completa: os dois pontos do contorno e, em "Dobrar" e "Remover
- * região", o clique dentro da peça que escolhe o lado.
+ * região", o clique dentro da peça que escolhe o lado. Em "Remover região" com
+ * `segundaReta` ("Unir moldes"), em vez do lado vêm os dois pontos da segunda
+ * reta.
  */
-export function retaCompleta(ferramenta: FerramentaDeReta | 'bainha', estado: TrechoEmEdicao): boolean {
+export function retaCompleta(ferramenta: FerramentaDeReta | 'bainha', estado: TrechoEmEdicao, segundaReta = false): boolean {
   if (!estado.inicio || !estado.fim) return false;
+  if (ferramenta === 'remover-regiao' && segundaReta) return estado.livres.length >= 2;
   return ferramenta === 'cortar' || ferramenta === 'bainha' || estado.livres.length > 0;
 }
 
 /**
  * O estado depois de um clique: primeiro os dois pontos do contorno (um clique
  * fora dele, ou no mesmo ponto, não conta) e, nas ferramentas que escolhem um
- * lado, o ponto clicado em seguida.
+ * lado, o ponto clicado em seguida. Com `segundaReta`, os cliques seguintes
+ * são os dois pontos do contorno da segunda reta.
  */
-export function cliqueDeReta(ferramenta: FerramentaDeReta | 'bainha', estado: TrechoEmEdicao, clique: CliqueDeTrecho): TrechoEmEdicao {
-  if (retaCompleta(ferramenta, estado)) return estado;
+export function cliqueDeReta(ferramenta: FerramentaDeReta | 'bainha', estado: TrechoEmEdicao, clique: CliqueDeTrecho, segundaReta = false): TrechoEmEdicao {
+  if (retaCompleta(ferramenta, estado, segundaReta)) return estado;
   if (!estado.inicio) return clique.noContorno ? { ...SEM_TRECHO, inicio: clique.noContorno } : estado;
   if (!estado.fim) {
     const fim = clique.noContorno;
     return fim && distancia(fim.ponto, estado.inicio.ponto) > MESMO_PONTO_MM ? { ...estado, fim } : estado;
   }
+  if (ferramenta === 'remover-regiao' && segundaReta) {
+    const p = clique.noContorno?.ponto;
+    const repetido = p !== undefined && estado.livres.some((q) => distancia(p, q) <= MESMO_PONTO_MM);
+    return p && !repetido ? { ...estado, livres: [...estado.livres, p] } : estado;
+  }
   return { ...estado, livres: [clique.livre] };
+}
+
+/**
+ * O clique numa linha interna reta da peça (o "elemento"), em vez de dois
+ * pontos do contorno: a reta é a linha inteira, de borda a borda. Vale para a
+ * reta que ainda não começou — a primeira ou, com `segundaReta`, a segunda.
+ * `null` quando o clique não é isso, e a ferramenta segue como sempre.
+ */
+export function retaPeloElemento(
+  ferramenta: FerramentaDeReta,
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  linhaInterna: number | null,
+  segundaReta = false,
+): { readonly estado: TrechoEmEdicao; readonly recado: string | null } | null {
+  if (linhaInterna === null || ferramenta === 'dobrar') return null;
+  const primeira = !estado.inicio;
+  const segunda = ferramenta === 'remover-regiao' && segundaReta && estado.inicio !== null && estado.fim !== null && estado.livres.length === 0;
+  if (!primeira && !segunda) return null;
+  try {
+    const [a, b] = dobraPelaLinhaInterna(peca, linhaInterna);
+    return { estado: primeira ? { ...SEM_TRECHO, inicio: a, fim: b } : { ...estado, livres: [a.ponto, b.ponto] }, recado: null };
+  } catch (e) {
+    return { estado, recado: (e instanceof Error ? e.message : String(e)).replace('de linha de dobra', 'de reta de corte') };
+  }
 }
 
 /** Um nome que nenhuma peça usa: "Nome (2)", "Nome (3)"… */
@@ -135,7 +186,8 @@ const DOBRA_SIMPLES: OpcoesDeDobra = { manter: false, fioNoCentro: false };
 
 /**
  * Aplica "Cortar", "Remover região" ou "Dobrar" na peça. Lança erro, sem mudar
- * nada, quando a reta não serve. `dobra` são as opções da janela do "Dobrar".
+ * nada, quando a reta não serve. `dobra` são as opções da janela do "Dobrar";
+ * `extras`, as do "Cortar" e do "Remover região".
  */
 export function aplicarReta(
   ferramenta: FerramentaDeReta,
@@ -144,14 +196,36 @@ export function aplicarReta(
   estado: TrechoEmEdicao,
   novoId: () => string,
   dobra: OpcoesDeDobra = DOBRA_SIMPLES,
+  extras: { readonly corte?: OpcoesDeCorte; readonly remover?: OpcoesDeRemoverRegiao } = {},
 ): ResultadoDeFerramentaDeMolde {
   if (!estado.inicio || !estado.fim) throw new Error('Indique os dois pontos da reta no contorno da peça.');
   if (ferramenta === 'cortar') {
-    const [maior, menor] = cortarMolde(peca, estado.inicio, estado.fim, novoId());
+    const corte = extras.corte ?? CORTE_SEM_COSTURA;
+    const [maior, menor] = cortarMoldeComOpcoes(peca, estado.inicio, estado.fim, novoId, corte);
     const nova = { ...menor, nome: nomeDaParteNova(peca.nome, pecas) };
+    const costura =
+      corte.costuraMm > 0
+        ? ` A borda do corte ganhou ${formatarMm(corte.costuraMm)} de costura ${corte.costuraNasDuas ? 'nas duas partes' : 'na peça nova'}${corte.piques ? ', com um pique em cada ponta da linha do corte' : ''}.`
+        : '';
     return {
       pecas: trocar(pecas, peca.id, [maior, nova]),
-      recado: `“${peca.nome}” cortada em duas: ${cm2(area(maior.contorno))} continuam nela e ${cm2(area(nova.contorno))} são a peça nova “${nova.nome}”.`,
+      recado: `“${peca.nome}” cortada em duas: ${cm2(area(maior.contorno))} continuam nela e ${cm2(area(nova.contorno))} são a peça nova “${nova.nome}”.${costura}`,
+    };
+  }
+  const remover = extras.remover ?? REMOVER_REGIAO_SIMPLES;
+  if (ferramenta === 'remover-regiao' && remover.unir) {
+    const [a2, b2] = estado.livres;
+    if (!a2 || !b2) throw new Error('Indique as duas retas que delimitam a faixa: dois pontos do contorno para cada uma.');
+    const { peca: unida, faixa, degrauMm } = removerFaixaDoMolde(peca, estado.inicio, estado.fim, a2, b2, novoId());
+    const guardada = remover.manter ? { ...faixa, nome: nomeDaParteNova(peca.nome, pecas) } : null;
+    const degrau =
+      degrauMm > 0.05 ? ` As duas retas têm comprimentos diferentes: as bordas ficaram centralizadas, e sobrou um degrau de ${formatarMm(degrauMm / 2)} em cada ponta.` : '';
+    return {
+      pecas: trocar(pecas, peca.id, guardada ? [unida, guardada] : [unida]),
+      recado:
+        `Faixa de ${cm2(area(faixa.contorno))} removida de “${peca.nome}”, e as duas partes que sobraram foram unidas: a peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(unida.contorno))}.` +
+        (guardada ? ` A faixa virou a peça “${guardada.nome}”.` : '') +
+        degrau,
     };
   }
   const lado = estado.livres[0];
@@ -167,6 +241,14 @@ export function aplicarReta(
       }`,
     };
   }
+  if (remover.manter) {
+    const { peca: sem, regiao } = separarRegiaoDoMolde(peca, estado.inicio, estado.fim, lado, novoId());
+    const guardada = { ...regiao, nome: nomeDaParteNova(peca.nome, pecas) };
+    return {
+      pecas: trocar(pecas, peca.id, [sem, guardada]),
+      recado: `Região de ${cm2(area(guardada.contorno))} removida de “${peca.nome}”; ela virou a peça “${guardada.nome}”.`,
+    };
+  }
   const metade = metadeDoMolde(peca, estado.inicio, estado.fim, lado, 'sai');
   return {
     pecas: trocar(pecas, peca.id, [metade]),
@@ -174,17 +256,105 @@ export function aplicarReta(
   };
 }
 
-/** A prévia da reta de corte: a reta até o mouse e, com ela posta, o lado que vai sair em destaque. */
+/** O que a janela do "Cortar" pergunta. */
+export function dialogoDeCortar(opcoes: OpcoesDeCorte): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
+  return {
+    titulo: 'Cortar molde',
+    campos: [
+      { tipo: 'medida', id: 'costura', rotulo: 'Costura na borda do corte (mm; 0 = sem costura)', inicial: String(opcoes.costuraMm).replace('.', ',') },
+      { tipo: 'caixa', id: 'costuraNasDuas', rotulo: 'Costura 2 moldes: nas duas partes (sem isso, só na peça nova)', inicial: opcoes.costuraNasDuas },
+      { tipo: 'caixa', id: 'piques', rotulo: 'Pique em cada ponta da linha do corte, na parte que ganha costura', inicial: opcoes.piques },
+      {
+        tipo: 'escolha',
+        id: 'modo',
+        rotulo: 'Modo: como a costura acaba nas pontas',
+        opcoes: [
+          { valor: 'tangente', rotulo: 'Tangente: segue a direção das arestas vizinhas' },
+          { valor: 'reta', rotulo: 'Reta: sai em esquadro com o corte' },
+        ],
+        inicial: opcoes.modo,
+      },
+    ],
+    nota: 'Depois de confirmar, clique no contorno da peça, onde o corte começa e onde termina — ou numa linha interna reta dela (o elemento), que vira a reta do corte, de borda a borda. A parte maior continua sendo a peça; a outra vira uma peça nova. A costura entra no contorno, só na borda do corte; no modo tangente, a aresta vizinha que não chega à borda nova em até quatro vezes a costura acaba em esquadro. O manual da referência não diz qual parte ganha a costura sem “2 moldes”; aqui é a peça nova.',
+  };
+}
+
+/** As opções do "Cortar" com o que a janela entregou. Lança erro quando a costura não serve. */
+export function lerDialogoDeCortar(valores: ValoresDoDialogo): OpcoesDeCorte {
+  const opcoes: OpcoesDeCorte = {
+    costuraMm: Number(valores.costura),
+    costuraNasDuas: valores.costuraNasDuas === true,
+    piques: valores.piques === true,
+    modo: valores.modo === 'reta' ? 'reta' : 'tangente',
+  };
+  conferirOpcoesDeCorte(opcoes);
+  return opcoes;
+}
+
+/** O que a janela do "Remover região" pergunta. */
+export function dialogoDeRemoverRegiao(opcoes: OpcoesDeRemoverRegiao): { readonly titulo: string; readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
+  return {
+    titulo: 'Remover região',
+    campos: [
+      { tipo: 'caixa', id: 'manter', rotulo: 'Manter região do molde: a região tirada vira uma peça nova', inicial: opcoes.manter },
+      { tipo: 'caixa', id: 'unir', rotulo: 'Unir moldes: com duas retas, sai a faixa entre elas e as duas partes que sobram são unidas', inicial: opcoes.unir },
+    ],
+    nota: 'Depois de confirmar, indique a reta que separa a região: dois pontos do contorno, ou uma linha interna reta (o elemento). Sem “Unir moldes”, clique em seguida dentro da região que deve sair. Com “Unir moldes”, indique a segunda reta do mesmo jeito: a faixa entre as duas sai, e a parte que não tem a linha de fio gira e anda até encostar na outra, borda com borda.',
+  };
+}
+
+export function lerDialogoDeRemoverRegiao(valores: ValoresDoDialogo): OpcoesDeRemoverRegiao {
+  return { manter: valores.manter === true, unir: valores.unir === true };
+}
+
+const ESC_DA_RETA = ' Esc sai.';
+
+/** A instrução do próximo clique do "Cortar" e do "Remover região". */
+export function instrucaoDaReta(ferramenta: 'cortar' | 'remover-regiao', estado: TrechoEmEdicao, remover: OpcoesDeRemoverRegiao = REMOVER_REGIAO_SIMPLES): string {
+  const ouElemento = ' Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda.';
+  if (ferramenta === 'cortar') {
+    return !estado.inicio
+      ? 'Cortar: clique no contorno da peça selecionada, onde o corte começa.' + ouElemento + ESC_DA_RETA
+      : 'Cortar: clique no contorno, onde o corte termina — a peça vira duas, pela reta tracejada.' + ESC_DA_RETA;
+  }
+  if (!estado.inicio) return 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região.' + ouElemento + ESC_DA_RETA;
+  if (!estado.fim) return 'Remover região: clique no contorno, na outra ponta da reta.' + ESC_DA_RETA;
+  if (!remover.unir) return 'Remover região: clique dentro da peça, na região que deve sair (ela fica em destaque).' + ESC_DA_RETA;
+  return estado.livres.length === 0
+    ? 'Remover região (unir): agora a segunda reta — clique no contorno, numa ponta dela, ou numa linha interna reta.' + ESC_DA_RETA
+    : 'Remover região (unir): clique no contorno, na outra ponta da segunda reta — a faixa entre as duas sai (fica em destaque).' + ESC_DA_RETA;
+}
+
+/**
+ * A prévia da reta de corte: a reta até o mouse e, com ela posta, o lado que
+ * vai sair em destaque. Com `segundaReta` ("Remover região" unindo), a
+ * segunda reta até o mouse e, se ela fecha a faixa, a faixa em destaque.
+ */
 export function previaDaReta(
   ferramenta: FerramentaDeReta,
   peca: Molde,
   estado: TrechoEmEdicao,
   mouse: CliqueDeTrecho | null,
+  segundaReta = false,
 ): PreviaDeFerramentaDeMolde {
   const marcas = [estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined);
   if (!estado.inicio) return { marcas };
   const ate = estado.fim?.ponto ?? mouse?.noContorno?.ponto ?? mouse?.livre ?? null;
   const novo = ate && distancia(ate, estado.inicio.ponto) > MESMO_PONTO_MM ? [estado.inicio.ponto, ate] : null;
+  if (ferramenta === 'remover-regiao' && segundaReta && estado.fim) {
+    const todas = [...marcas, ...estado.livres];
+    const a2 = estado.livres[0];
+    if (!a2) return { novo, marcas: todas };
+    const b2 = estado.livres[1] ?? mouse?.noContorno?.ponto ?? null;
+    const segunda = [a2, b2 ?? mouse?.livre ?? a2];
+    try {
+      // Só para saber qual é a faixa: o id e as peças não importam aqui.
+      const faixa = b2 ? removerFaixaDoMolde(peca, estado.inicio, estado.fim, a2, b2, 'previa').faixa.contorno : null;
+      return { novo, linhas: [segunda], marcas: todas, ...(faixa ? { substituido: [...faixa, faixa[0]!] } : {}) };
+    } catch {
+      return { novo, linhas: [segunda], marcas: todas };
+    }
+  }
   if (!estado.fim || ferramenta === 'cortar' || !mouse) return { novo, marcas };
   try {
     // O lado sob o mouse: em "Remover região" é o que sai; em "Dobrar", sai o outro.

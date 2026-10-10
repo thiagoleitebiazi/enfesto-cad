@@ -15,6 +15,7 @@ import {
   abrirPence,
   alterarPence,
   alterarPenceInterna,
+  comAcabamento,
   comPenceReconhecida,
   comPencesValidas,
   criarMultiplasPences,
@@ -29,6 +30,7 @@ import {
   penceSemRegistroPerto,
   pivoDaPence,
   removerPence,
+  semAcabamento,
   transferirPence,
   type OpcoesDePence,
 } from './pences';
@@ -550,5 +552,143 @@ describe('a pence que não tem registro é reconhecida pelo desenho', () => {
     // Uma linha aberta de cinco pontos não é losango.
     const aberta = molde({ linhasInternas: [[ponto(100, 100), ponto(110, 150), ponto(100, 220), ponto(90, 150), ponto(95, 110)]] });
     expect(penceSemRegistroPerto(aberta, ponto(105, 125), 6, 'interna', 'r1')).toBeNull();
+  });
+});
+
+describe('o pique no vértice vale para a pence recortada e para a aberta por pivô', () => {
+  it('recortada: a marca fica no vértice, sai com a pence e acompanha as medidas novas', () => {
+    const peca = criarPence(molde(), NO_ALTO, RECORTAR, ids());
+    const pence = pencesDaPeca(peca)[0]!;
+
+    expect(peca.marcas.map((m) => m.posicao)).toEqual([ponto(100, 200)]);
+    expect(pence.marcas).toEqual([peca.marcas[0]!.id]);
+
+    const mudada = alterarPence(peca, pence.id, { aberturaMm: 40, profundidadeMm: 80, desvioMm: 0 }, ids());
+    expect(mudada.marcas).toHaveLength(1);
+    expect(mudada.marcas[0]!.posicao.y).toBeCloseTo(220, 6);
+    expect(removerPence(peca, pence.id).marcas).toHaveLength(0);
+  });
+
+  it('sem a opção, a pence recortada não põe marca nem a guarda no registro', () => {
+    const peca = criarPence(molde(), NO_ALTO, { ...RECORTAR, marcaNoVertice: false }, ids());
+
+    expect(peca.marcas).toHaveLength(0);
+    expect(pencesDaPeca(peca)[0]!.marcas).toBeUndefined();
+  });
+
+  it('aberta por pivô: a marca vai para o vértice de agora quando a abertura muda, e sai quando a pence fecha', () => {
+    const pivo: PosicaoNoContorno = { indiceAresta: 0, ponto: ponto(100, 0) };
+    const peca = abrirPence(molde(), NO_ALTO, pivo, 40, 100, false, ids(), true);
+    const pence = pencesDaPeca(peca)[0]!;
+
+    expect(peca.marcas).toHaveLength(1);
+    expect(peca.marcas[0]!.posicao).toEqual(pence.pontos[1]);
+    const mudada = alterarPence(peca, pence.id, { aberturaMm: 60, profundidadeMm: 100, desvioMm: 0 }, ids());
+    expect(mudada.marcas).toHaveLength(1);
+    expect(mudada.marcas[0]!.posicao).toEqual(pencesDaPeca(mudada)[0]!.pontos[1]);
+    expect(removerPence(peca, pence.id).marcas).toHaveLength(0);
+    // Sem pedir, a pence aberta por pivô não põe marca.
+    expect(abrirPence(molde(), NO_ALTO, pivo, 40, 100, false, ids()).marcas).toHaveLength(0);
+  });
+});
+
+describe('pence com acabamento: desenhada, com o bico no contorno', () => {
+  const SEM_ACESSORIOS: OpcoesDePence = { ...RECORTAR, piquesLaterais: false, marcaNoVertice: false };
+  // A pence de 40 × 100 no alto: meia abertura de 20 para 100 de profundidade. O bico sobe 20 × tan(2α), com tan α = 0,2.
+  const ALTURA_DO_BICO = (20 * (2 * 0.2)) / (1 - 0.2 * 0.2);
+  const recortada = (): Molde => criarPence(molde(), NO_ALTO, SEM_ACESSORIOS, ids());
+  const aDela = (peca: Molde) => pencesDaPeca(peca)[0]!;
+
+  it('o recorte volta a ser tecido, as pernas ficam desenhadas e o contorno passa pelo bico', () => {
+    const peca = comAcabamento(recortada(), aDela(recortada()).id);
+    const pence = aDela(peca);
+
+    expect(pence.tipo).toBe('marcada');
+    expect(pence.bico!.x).toBeCloseTo(100, 9);
+    expect(pence.bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
+    expect(peca.contorno).toContainEqual(pence.bico);
+    expect(peca.contorno).not.toContainEqual(ponto(100, 200));
+    expect(peca.linhasInternas).toEqual([[ponto(120, 300), ponto(100, 200), ponto(80, 300)]]);
+    // O retângulo inteiro mais o triângulo do bico.
+    expect(area(peca.contorno)).toBeCloseTo(60000 + (40 * ALTURA_DO_BICO) / 2, 6);
+    expect(medidasDaPence(pence)).toEqual({ aberturaMm: 40, profundidadeMm: 100, desvioMm: 0 });
+  });
+
+  it('sem o acabamento, volta a ser a pence recortada de antes', () => {
+    const antes = recortada();
+    const depois = semAcabamento(comAcabamento(antes, aDela(antes).id), aDela(antes).id);
+
+    expect(depois.contorno).toEqual(antes.contorno);
+    expect(depois.linhasInternas).toEqual([]);
+    expect(aDela(depois).tipo).toBe('recortada');
+    expect('bico' in aDela(depois)).toBe(false);
+    expect(() => semAcabamento(antes, aDela(antes).id)).toThrow('não tem acabamento');
+    const marcada = criarPence(molde(), NO_ALTO, MARCAR, ids());
+    expect(() => comAcabamento(marcada, aDela(marcada).id)).toThrow('pence recortada do contorno');
+  });
+
+  it('com as bordas chegando com inclinações diferentes, o bico fica no meio dos dois encontros', () => {
+    // À direita da pence a borda sobe (de (200, 320) a (120, 300)); à esquerda, é reta.
+    const inclinada = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 320), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const achada = penceSemRegistroPerto(inclinada, ponto(100, 200), 6, 'do-contorno', 'r1')!;
+    const peca = comAcabamento(comPenceReconhecida(inclinada, achada), 'r1');
+
+    const bico = aDela(peca).bico!;
+    expect(bico.x).toBeCloseTo(100, 9);
+    // Mais alto que o da borda reta dos dois lados, e mais baixo que o da borda inclinada dos dois lados.
+    expect(bico.y).toBeGreaterThan(300 + ALTURA_DO_BICO);
+    expect(bico.y).toBeLessThan(300 + ALTURA_DO_BICO + 20);
+    // Não importa de que lado está a borda inclinada: a peça espelhada tem o bico à mesma altura.
+    const espelhada = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 320)] });
+    const achadaNaEspelhada = penceSemRegistroPerto(espelhada, ponto(100, 200), 6, 'do-contorno', 'r1')!;
+    const bicoDaEspelhada = aDela(comAcabamento(comPenceReconhecida(espelhada, achadaNaEspelhada), 'r1')).bico!;
+    expect(bicoDaEspelhada.x).toBeCloseTo(100, 9);
+    expect(bicoDaEspelhada.y).toBeCloseTo(bico.y, 9);
+  });
+
+  it('com as bordas fugindo da pence, não há encontro: o contorno passa reto pelo meio das pontas', () => {
+    // A pence na ponta de um bico da peça: as duas bordas vizinhas descem para longe dela.
+    const emPonta = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(120, 300), ponto(100, 200), ponto(80, 300)], linhaDeFio: { inicio: ponto(100, 20), fim: ponto(100, 120) } });
+    const achada = penceSemRegistroPerto(emPonta, ponto(100, 200), 6, 'do-contorno', 'r1')!;
+    const peca = comAcabamento(comPenceReconhecida(emPonta, achada), 'r1');
+
+    expect(aDela(peca).bico).toEqual(ponto(100, 300));
+  });
+
+  it('aberta por pivô com acabamento: muda de abertura e fecha em torno do pivô, sempre com o bico', () => {
+    const pivo: PosicaoNoContorno = { indiceAresta: 0, ponto: ponto(100, 0) };
+    const peca = abrirPence(molde(), NO_ALTO, pivo, 40, 100, true, ids(), false, true);
+    const pence = aDela(peca);
+
+    expect(pence).toMatchObject({ tipo: 'marcada', pivo: ponto(100, 0) });
+    expect(pence.bico).toBeDefined();
+    expect(pivoDaPence(peca, pence)).not.toBeNull();
+    expect(peca.linhasInternas).toHaveLength(1);
+    // Nada foi recortado: a peça ficou maior que a aberta com recorte.
+    expect(area(peca.contorno)).toBeGreaterThan(area(abrirPence(molde(), NO_ALTO, pivo, 40, 100, true, ids()).contorno) + 1999);
+
+    const mudada = alterarPence(peca, pence.id, { aberturaMm: 60, profundidadeMm: 100, desvioMm: 0 }, ids());
+    const direta = abrirPence(molde(), NO_ALTO, pivo, 60, 100, true, ids(), false, true);
+    expect(area(mudada.contorno)).toBeCloseTo(area(direta.contorno), 6);
+    expect(aDela(mudada).bico).toBeDefined();
+    expect(mudada.linhasInternas).toHaveLength(1);
+    expect(mudada.piques).toHaveLength(2);
+
+    const fechada = removerPence(mudada, aDela(mudada).id);
+    expect(area(fechada.contorno)).toBeCloseTo(60000, 6);
+    expect(fechada.linhasInternas).toHaveLength(0);
+    expect('pences' in fechada).toBe(false);
+  });
+
+  it('o registro deixa de valer se o bico é mexido, e acompanha a peça movida', () => {
+    const peca = comAcabamento(recortada(), aDela(recortada()).id);
+    const bico = aDela(peca).bico!;
+    const mexida = { ...peca, contorno: peca.contorno.map((p) => (p === bico || (p.x === bico.x && p.y === bico.y) ? ponto(p.x, p.y + 5) : p)) };
+    expect(pencesDaPeca(mexida)).toHaveLength(0);
+
+    const levada = transladarMolde(peca, ponto(10, 20), 'outra');
+    expect(pencesDaPeca(levada)).toHaveLength(1);
+    expect(aDela(levada).bico!.x).toBeCloseTo(110, 9);
+    expect(area(removerPence(levada, aDela(levada).id).contorno)).toBeCloseTo(60000, 6);
   });
 });

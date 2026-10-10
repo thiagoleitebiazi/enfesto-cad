@@ -297,6 +297,82 @@ export function regraPorPasso(graduacao: Graduacao, passo: Ponto2D): Ponto2D[] {
   return graduacao.tamanhos.map((_, t) => ({ x: vezes(passo.x, t - graduacao.base), y: vezes(passo.y, t - graduacao.base) }));
 }
 
+/**
+ * A regra de um ponto depois de receber o `passo`:
+ * - em todos os tamanhos (`tamanho` nulo) ou num só — os outros ficam com o
+ *   que tinham em `atual`;
+ * - incremental (cada tamanho anda o passo a mais que o vizinho do lado do
+ *   base) ou absoluto (o passo conta a partir do base, em cada tamanho).
+ * Abaixo do base o passo vale ao contrário, como em `regraPorPasso`.
+ */
+export function regraComPasso(graduacao: Graduacao, atual: readonly Ponto2D[], passo: Ponto2D, tamanho: number | null, incremental = true): Ponto2D[] {
+  const base = graduacao.base;
+  // Zero vezes um número negativo dá "-0": fica zero, para não aparecer assim em lugar nenhum.
+  const comSinal = (sinal: number): Ponto2D => ({ x: passo.x * sinal === 0 ? 0 : passo.x * sinal, y: passo.y * sinal === 0 ? 0 : passo.y * sinal });
+  if (tamanho === null) {
+    return incremental ? regraPorPasso(graduacao, passo) : graduacao.tamanhos.map((_, t) => (t === base ? ZERO : comSinal(t > base ? 1 : -1)));
+  }
+  if (!Number.isInteger(tamanho) || tamanho < 0 || tamanho >= graduacao.tamanhos.length) throw new Error('Tamanho fora da graduação.');
+  if (tamanho === base) throw new Error('O tamanho base é o do contorno desenhado e não anda: escolha outro tamanho.');
+  const sinal = tamanho > base ? 1 : -1;
+  const regra = regraCompleta(graduacao, atual);
+  regra[tamanho] = incremental ? somar(regra[tamanho - sinal]!, comSinal(sinal)) : comSinal(sinal);
+  return regra;
+}
+
+/**
+ * "Tangente": a regra do ponto `indice` andando `distanciaMm` na direção do
+ * ponto `indiceDoVizinho` (a aresta que sai dele, ou a que chega).
+ * - `usarContornoBase`: a direção é sempre a da aresta no contorno base. Sem
+ *   isso (e no incremental), cada tamanho sai do vizinho do lado do base na
+ *   direção que a aresta tem nesse vizinho — a tangente acompanha a curva dos
+ *   tamanhos.
+ * - `tamanho` e `incremental`: como em `regraComPasso`.
+ */
+export function regraNaTangente(
+  graduacao: Graduacao,
+  contorno: Contorno,
+  indice: number,
+  indiceDoVizinho: number,
+  distanciaMm: number,
+  opcoes: { readonly usarContornoBase: boolean; readonly incremental: boolean; readonly tamanho: number | null },
+): Ponto2D[] {
+  const ponto = contorno[indice];
+  const vizinho = contorno[indiceDoVizinho];
+  if (!ponto || !vizinho) throw new Error('Ponto fora do contorno da peça.');
+  const atual = regraDoVertice(graduacao, contorno, indice);
+  const doVizinho = regraDoVertice(graduacao, contorno, indiceDoVizinho);
+  /** A direção da aresta no tamanho `t`, com o ponto onde `regra` o põe nesse tamanho. */
+  const direcaoEm = (t: number, regra: readonly Ponto2D[]): Ponto2D => {
+    const de = somar(ponto, regra[t] ?? ZERO);
+    const ate = somar(vizinho, doVizinho[t] ?? ZERO);
+    const comprimento = distancia(de, ate);
+    if (comprimento < NO_MESMO_LUGAR_MM) throw new Error('Essa aresta não tem comprimento: não dá a direção da tangente.');
+    return { x: (ate.x - de.x) / comprimento, y: (ate.y - de.y) / comprimento };
+  };
+  const base = graduacao.base;
+  const passoEm = (direcao: Ponto2D): Ponto2D => ({ x: direcao.x * distanciaMm, y: direcao.y * distanciaMm });
+  const noBase = direcaoEm(
+    base,
+    graduacao.tamanhos.map(() => ZERO),
+  );
+  if (opcoes.usarContornoBase || !opcoes.incremental) return regraComPasso(graduacao, atual, passoEm(noBase), opcoes.tamanho, opcoes.incremental);
+  if (opcoes.tamanho !== null) {
+    const t = opcoes.tamanho;
+    if (!Number.isInteger(t) || t < 0 || t >= graduacao.tamanhos.length) throw new Error('Tamanho fora da graduação.');
+    if (t === base) throw new Error('O tamanho base é o do contorno desenhado e não anda: escolha outro tamanho.');
+    const sinal = t > base ? 1 : -1;
+    const regra = regraCompleta(graduacao, atual);
+    const passo = passoEm(direcaoEm(t - sinal, regra));
+    regra[t] = somar(regra[t - sinal]!, { x: passo.x * sinal, y: passo.y * sinal });
+    return regra;
+  }
+  const regra: Ponto2D[] = graduacao.tamanhos.map(() => ZERO);
+  for (let t = base + 1; t < regra.length; t++) regra[t] = somar(regra[t - 1]!, passoEm(direcaoEm(t - 1, regra)));
+  for (let t = base - 1; t >= 0; t--) regra[t] = subtrair(regra[t + 1]!, passoEm(direcaoEm(t + 1, regra)));
+  return regra;
+}
+
 /** O tamanho da ponta da graduação: o maior, ou o menor quando o base já é o maior. */
 export function tamanhoDeReferencia(graduacao: Graduacao): number {
   return graduacao.base < graduacao.tamanhos.length - 1 ? graduacao.tamanhos.length - 1 : 0;

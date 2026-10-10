@@ -1,4 +1,5 @@
 import { area, distancia, type Ponto2D } from '../core/geometria';
+import { dobraPelaLinhaInterna } from '../domain/corteEUniao';
 import type { Molde, PenceDaPeca } from '../domain/molde';
 import {
   abrirPence,
@@ -81,6 +82,8 @@ export interface OpcoesDasPences {
     readonly perpendicular: boolean;
     readonly piquesLaterais: boolean;
     readonly marcaNoVertice: boolean;
+    /** "Criar acabamento" (só no Abrir): a pence fica desenhada, sem recortar, e o contorno ganha o bico dela. */
+    readonly acabamento: boolean;
   };
   readonly interna: OpcoesDePenceInterna;
   readonly fecharSomenteORecorte: boolean;
@@ -97,7 +100,7 @@ export interface OpcoesDasPences {
 }
 
 export const OPCOES_INICIAIS_DAS_PENCES: OpcoesDasPences = {
-  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true },
+  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true, acabamento: false },
   interna: { altura1Mm: 80, altura2Mm: 80, larguraMm: 20, anguloGraus: 0, linhaAuxiliar: true, marcas: true },
   fecharSomenteORecorte: false,
   multiplas: { quantidade: 2, distanciaMm: 60, aberturaMm: 20, profundidadeMm: 80, modo: 'recortar', piquesLaterais: true, marcaNoVertice: true },
@@ -170,6 +173,8 @@ export interface CliqueNaPence extends CliqueDeTrecho {
   readonly semRegistro?: PenceDaPeca | null;
   /** A prega registrada em cuja faixa o clique caiu (se há). */
   readonly prega?: string | null;
+  /** A linha interna da peça que está sob o clique (o número dela), se há. */
+  readonly linhaInterna?: number | null;
 }
 
 /** O id que a pence reconhecida leva enquanto é só uma candidata (no desenho, sob o mouse). */
@@ -213,6 +218,15 @@ export function cliqueDePence(
   // Com "Pregas", o clique dentro de uma prega já feita — e fora do contorno, onde começaria outra — abre as medidas dela.
   if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.prega && pregasDaPeca(peca).some((q) => q.id === clique.prega)) {
     return { estado, recusa: null, editarPrega: clique.prega };
+  }
+  // Ainda com "Pregas": o clique numa linha interna reta (a reta auxiliar) faz dela a linha da prega, de borda a borda.
+  if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.linhaInterna !== undefined && clique.linhaInterna !== null) {
+    try {
+      const [a, b] = dobraPelaLinhaInterna(peca, clique.linhaInterna);
+      return { estado: { ...SEM_TRECHO, inicio: a, fim: b }, recusa: null };
+    } catch (e) {
+      return { estado, recusa: (e instanceof Error ? e.message : String(e)).replace('de linha de dobra', 'de linha da prega') };
+    }
   }
   // O mesmo com a pence que não tem registro (de projeto antigo, importada ou desenhada à mão).
   if (!estado.inicio && clique.semRegistro) {
@@ -263,11 +277,11 @@ export function aplicarPence(
 
   switch (ferramenta) {
     case 'pence-no-contorno': {
-      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular } = opcoes.pence;
+      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular, acabamento } = opcoes.pence;
       const medidas = `abertura de ${formatarMm(aberturaMm)}, profundidade de ${formatarMm(profundidadeMm)}`;
       const nova =
         modo === 'abrir'
-          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId)
+          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento)
           : criarPence(
               peca,
               inicio!,
@@ -279,7 +293,7 @@ export function aplicarPence(
         nova,
         modo === 'marcar'
           ? `Pence marcada em “${peca.nome}”: ${medidas}.`
-          : `Pence ${NOME_DO_MODO[modo]} em “${peca.nome}”: ${medidas}. A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.`,
+          : `Pence ${NOME_DO_MODO[modo]} em “${peca.nome}”${modo === 'abrir' && acabamento ? ', com acabamento (desenhada, com o bico no contorno)' : ''}: ${medidas}. A peça passou de ${areaDe(peca)} para ${areaDe(nova)}.`,
       );
     }
     case 'pence-interna':
@@ -416,7 +430,11 @@ export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDa
     case 'pregas':
       if (!estado.inicio) {
         const ouMudarPrega = temPregas ? ' Ou clique dentro de uma prega já feita (as marcadas com um anel) para mudar as larguras dela ou tirá-la.' : '';
-        return 'Pregas: clique no contorno da peça selecionada, numa ponta da linha da prega.' + ouMudarPrega + ESC;
+        return (
+          'Pregas: clique no contorno da peça selecionada, numa ponta da linha da prega — ou numa linha interna reta (a reta auxiliar), que vira a linha da prega, de borda a borda.' +
+          ouMudarPrega +
+          ESC
+        );
       }
       return !estado.fim
         ? 'Pregas: clique no contorno, na outra ponta da linha da prega.' + ESC
@@ -627,9 +645,15 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             inicial: opcoes.pence.perpendicular,
           },
           { tipo: 'caixa', id: 'piquesLaterais', rotulo: 'Piques laterais: um em cada ponta da pence', inicial: opcoes.pence.piquesLaterais },
-          { tipo: 'caixa', id: 'marcaNoVertice', rotulo: 'Marca no vértice (na pence marcada)', inicial: opcoes.pence.marcaNoVertice },
+          { tipo: 'caixa', id: 'marcaNoVertice', rotulo: 'Pique no vértice: uma marca no vértice da pence', inicial: opcoes.pence.marcaNoVertice },
+          {
+            tipo: 'caixa',
+            id: 'acabamento',
+            rotulo: 'Criar acabamento (só no Abrir): a pence fica desenhada, sem recortar, e o contorno ganha o bico dela',
+            inicial: opcoes.pence.acabamento,
+          },
         ],
-        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida.',
+        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta não é recortada: as pernas ficam desenhadas e o contorno, entre as duas pontas, ganha o bico que a pence faz quando é dobrada (a borda de cada lado, espelhada na perna, até a linha do meio). O manual da referência tem a opção, mas não diz a conta; essa é a nossa leitura.',
       };
     case 'pence-interna':
       return {
@@ -689,7 +713,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
           { tipo: 'medida', id: 'profundidade', rotulo: 'Profundidade (mm)', inicial: paraCampo(opcoes.multiplas.profundidadeMm) },
           { tipo: 'escolha', id: 'modo', rotulo: 'O que fazer', opcoes: MODOS_DE_PENCE, inicial: opcoes.multiplas.modo },
           { tipo: 'caixa', id: 'piquesLaterais', rotulo: 'Piques laterais: um em cada ponta de cada pence', inicial: opcoes.multiplas.piquesLaterais },
-          { tipo: 'caixa', id: 'marcaNoVertice', rotulo: 'Marca no vértice (nas pences marcadas)', inicial: opcoes.multiplas.marcaNoVertice },
+          { tipo: 'caixa', id: 'marcaNoVertice', rotulo: 'Pique no vértice: uma marca no vértice de cada pence', inicial: opcoes.multiplas.marcaNoVertice },
         ],
         nota: 'Depois de confirmar, clique no contorno da peça, no meio do grupo. As pences ficam em esquadro com o contorno, repartidas por igual dos dois lados do clique. O manual da referência não descreve esta ferramenta; esta é a leitura natural.',
       };
@@ -747,6 +771,7 @@ export function lerDialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesD
         perpendicular: caixa('perpendicular'),
         piquesLaterais: caixa('piquesLaterais'),
         marcaNoVertice: caixa('marcaNoVertice'),
+        acabamento: caixa('acabamento'),
       };
       conferirMedidasDaPence(pence.aberturaMm, pence.profundidadeMm);
       return { ...opcoes, pence };

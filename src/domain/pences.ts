@@ -189,11 +189,13 @@ export function criarPence(
     throw new Error('A pence não cabe nessa peça com essas medidas.');
   }
   const piques = opcoes.piquesLaterais ? piquesEm(pontas, contorno, novoId) : [];
+  // O pique no vértice é uma marca nele: vale para a pence recortada como para a marcada.
+  const marcas: Marca[] = opcoes.marcaNoVertice ? [{ id: novoId(), posicao: vertice }] : [];
   // O que o recorte tirou do contorno, de uma ponta à outra: volta se a pence for apagada ou mudar de medida.
   const removidos = trechoDoContorno(molde.contorno, inicio, fim).filter((p) => !mesmoLugar(p, inicio.ponto) && !mesmoLugar(p, fim.ponto));
   const jaEraPonto = (p: Ponto2D): boolean => molde.contorno.some((v) => mesmoLugar(v, p));
   return comPence(
-    { ...molde, contorno, piques: [...piquesQueFicamNoContorno(molde.piques, contorno), ...piques] },
+    { ...molde, contorno, piques: [...piquesQueFicamNoContorno(molde.piques, contorno), ...piques], marcas: [...molde.marcas, ...marcas] },
     {
       id: novoId(),
       tipo: 'recortada',
@@ -201,6 +203,7 @@ export function criarPence(
       removidos,
       pontasCriadas: [!jaEraPonto(inicio.ponto), !jaEraPonto(fim.ponto)],
       piques: piques.map((q) => q.id),
+      ...(marcas.length > 0 ? { marcas: marcas.map((m) => m.id) } : {}),
     },
   );
 }
@@ -268,6 +271,8 @@ export function abrirPence(
   profundidadeMm: number,
   piquesLaterais: boolean,
   novoId: () => string,
+  marcaNoVertice = false,
+  acabamento = false,
 ): Molde {
   conferirMedidasDaPence(aberturaMm, profundidadeMm);
   const p = posicao.ponto;
@@ -298,10 +303,19 @@ export function abrirPence(
   const novoContorno = comecarPeloMenorPontoOriginal(semPontosRepetidos(volta), contorno);
   const base = levarOQueEstaNaRegiao(molde, cadeias[anda], cadeias[anda], cadeias[1 - anda]!, movimento);
   const piques = piquesLaterais ? piquesEm([p, outraBorda], novoContorno, novoId) : [];
-  const aberta = { ...base, contorno: novoContorno, piques: [...piquesQueFicamNoContorno(base.piques, novoContorno), ...piques] };
+  const marcas: Marca[] = marcaNoVertice ? [{ id: novoId(), posicao: vertice }] : [];
+  const aberta = {
+    ...base,
+    contorno: novoContorno,
+    piques: [...piquesQueFicamNoContorno(base.piques, novoContorno), ...piques],
+    marcas: [...base.marcas, ...marcas],
+  };
   const registro = registroDoVertice(novoContorno, vertice, novoId(), piques.map((q) => q.id));
   // Com o pivô guardado, a pence fecha e abre de novo pelo mesmo giro quando as medidas mudam.
-  return registro ? comPence(aberta, { ...registro, pivo: q }) : comPencesValidas(aberta);
+  if (!registro) return comPencesValidas(aberta);
+  const comRegistro = comPence(aberta, { ...registro, pivo: q, ...(marcas.length > 0 ? { marcas: marcas.map((m) => m.id) } : {}) });
+  // "Criar acabamento": a pence aberta não é recortada; fica desenhada, e o contorno ganha o bico dela.
+  return acabamento ? comAcabamento(comRegistro, registro.id) : comRegistro;
 }
 
 export interface OpcoesDePenceInterna {
@@ -538,7 +552,106 @@ function voltaDoLosango(pence: PenceDaPeca): Ponto2D[] {
 function penceEstaNaPeca(molde: Molde, pence: PenceDaPeca): boolean {
   if (pence.tipo === 'recortada') return verticeNoContorno(molde.contorno, pence) >= 0;
   const linha = pence.tipo === 'marcada' ? pence.pontos : voltaDoLosango(pence);
-  return molde.linhasInternas.some((l) => mesmaLinha(l, linha));
+  if (!molde.linhasInternas.some((l) => mesmaLinha(l, linha))) return false;
+  // A marcada com acabamento vale enquanto o bico é o ponto do contorno entre as duas pontas dela.
+  return pence.bico === undefined || bicoNoContorno(molde.contorno, pence) >= 0;
+}
+
+/** O número (a partir de 0) do ponto do contorno que é o bico da pence com acabamento, com as pontas dela de vizinhas; -1 se não está mais lá. */
+function bicoNoContorno(contorno: Contorno, pence: PenceDaPeca): number {
+  const [a, , b] = pence.pontos;
+  const bico = pence.bico;
+  if (!a || !b || !bico) return -1;
+  const n = contorno.length;
+  return contorno.findIndex((p, i) => {
+    if (!mesmoLugar(p, bico)) return false;
+    const antes = contorno[(i - 1 + n) % n]!;
+    const depois = contorno[(i + 1) % n]!;
+    return (mesmoLugar(antes, a) && mesmoLugar(depois, b)) || (mesmoLugar(antes, b) && mesmoLugar(depois, a));
+  });
+}
+
+/**
+ * O bico do acabamento de uma pence recortada (vértice no ponto `i` do
+ * contorno): quando a pence é dobrada, a borda da peça de cada lado dela vem
+ * por cima do tecido da pence; o bico é onde essas duas bordas, espelhadas nas
+ * pernas, se encontram na linha do meio da pence. Com os dois lados chegando
+ * com inclinações diferentes, fica no meio dos dois encontros. Sem encontro
+ * (bordas que fogem da pence), o bico é o meio das pontas: a borda passa reta.
+ */
+function bicoDaPence(contorno: Contorno, i: number): Ponto2D {
+  const n = contorno.length;
+  const a = contorno[(i - 1 + n) % n]!;
+  const v = contorno[i]!;
+  const b = contorno[(i + 1) % n]!;
+  const meio = meioDe(a, b);
+  const ateOMeio = distancia(v, meio);
+  if (ateOMeio < MESMO_PONTO_MM) return meio;
+  const eixo = ponto((meio.x - v.x) / ateOMeio, (meio.y - v.y) / ateOMeio);
+  /** A que distância do vértice, na linha do meio, chega a borda vizinha da ponta, espelhada na perna dela. */
+  const encontro = (ponta: Ponto2D, vizinho: Ponto2D): number | null => {
+    const perna = distancia(ponta, v);
+    const borda = distancia(ponta, vizinho);
+    if (perna < MESMO_PONTO_MM || borda < MESMO_PONTO_MM) return null;
+    const l = ponto((v.x - ponta.x) / perna, (v.y - ponta.y) / perna);
+    const w = ponto((vizinho.x - ponta.x) / borda, (vizinho.y - ponta.y) / borda);
+    // A direção da borda vizinha, espelhada na perna.
+    const aoLongo = w.x * l.x + w.y * l.y;
+    const r = ponto(2 * aoLongo * l.x - w.x, 2 * aoLongo * l.y - w.y);
+    // Onde a semirreta (ponta + s·r) cruza a linha do meio (v + t·eixo).
+    const det = r.x * -eixo.y + eixo.x * r.y;
+    if (Math.abs(det) < 1e-12) return null;
+    const dx = v.x - ponta.x;
+    const dy = v.y - ponta.y;
+    const s = (dx * -eixo.y + eixo.x * dy) / det;
+    const t = (r.x * dy - r.y * dx) / det;
+    return s > 0 && t >= ateOMeio - MESMO_PONTO_MM ? t : null;
+  };
+  const encontros = [encontro(a, contorno[(i - 2 + n) % n]!), encontro(b, contorno[(i + 2) % n]!)].filter((t): t is number => t !== null);
+  if (encontros.length === 0) return meio;
+  const t = encontros.reduce((soma, valor) => soma + valor, 0) / encontros.length;
+  return ponto(v.x + eixo.x * t, v.y + eixo.y * t);
+}
+
+/**
+ * A pence recortada (registrada) vira uma pence com acabamento: o recorte
+ * volta a ser tecido, o contorno passa pelo bico e as pernas ficam desenhadas
+ * como linha interna. O registro guarda o bico.
+ */
+export function comAcabamento(molde: Molde, id: string): Molde {
+  const pence = penceRegistrada(molde, id);
+  if (pence.tipo !== 'recortada') throw new Error('O acabamento é para a pence recortada do contorno.');
+  const i = verticeNoContorno(molde.contorno, pence);
+  const bico = bicoDaPence(molde.contorno, i);
+  const contorno = molde.contorno.map((p, k) => (k === i ? bico : p));
+  if (!(area(contorno) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área com o acabamento dessa pence.');
+  return {
+    ...molde,
+    contorno,
+    linhasInternas: [...molde.linhasInternas, pence.pontos],
+    piques: piquesQueFicamNoContorno(molde.piques, contorno),
+    pences: (molde.pences ?? []).map((q) => (q.id === id ? { ...q, tipo: 'marcada' as const, bico } : q)),
+  };
+}
+
+/** O contrário de `comAcabamento`: a pence com acabamento volta a ser recortada, com o vértice no contorno no lugar do bico. */
+export function semAcabamento(molde: Molde, id: string): Molde {
+  const pence = penceRegistrada(molde, id);
+  const i = pence.bico ? bicoNoContorno(molde.contorno, pence) : -1;
+  if (i < 0) throw new Error('Essa pence não tem acabamento.');
+  const contorno = molde.contorno.map((p, k) => (k === i ? pence.pontos[1]! : p));
+  const linhasInternas = [...molde.linhasInternas];
+  const daPence = linhasInternas.findIndex((l) => mesmaLinha(l, pence.pontos));
+  if (daPence >= 0) linhasInternas.splice(daPence, 1);
+  const recortada: { -readonly [K in keyof PenceDaPeca]: PenceDaPeca[K] } = { ...pence, tipo: 'recortada' };
+  delete recortada.bico;
+  return {
+    ...molde,
+    contorno,
+    linhasInternas,
+    piques: piquesQueFicamNoContorno(molde.piques, contorno),
+    pences: (molde.pences ?? []).map((q) => (q.id === id ? recortada : q)),
+  };
 }
 
 /** As pences registradas que continuam na peça como foram postas. */
@@ -587,7 +700,7 @@ const NA_RETA_MM = 0.01;
  * pivô já não está lá.
  */
 export function pivoDaPence(molde: Molde, pence: PenceDaPeca): PosicaoNoContorno | null {
-  if (pence.tipo !== 'recortada' || !pence.pivo) return null;
+  if ((pence.tipo !== 'recortada' && pence.bico === undefined) || !pence.pivo) return null;
   const noContorno = pontoMaisProximoNoContorno(pence.pivo, molde.contorno);
   return noContorno.distancia <= NO_MESMO_LUGAR_MM ? { indiceAresta: noContorno.indiceAresta, ponto: noContorno.ponto } : null;
 }
@@ -739,6 +852,8 @@ function penceRegistrada(molde: Molde, id: string): PenceDaPeca {
  */
 export function removerPence(molde: Molde, id: string): Molde {
   const pence = penceRegistrada(molde, id);
+  // A pence com acabamento sai como a recortada que ela seria: o bico vai embora com ela.
+  if (pence.bico) return removerPence(semAcabamento(molde, id), id);
   const piquesDela = new Set(pence.piques ?? []);
   const marcasDela = new Set(pence.marcas ?? []);
   const semAcessorios: Molde = {
@@ -782,9 +897,15 @@ export function removerPence(molde: Molde, id: string): Molde {
 export function alterarPence(molde: Molde, id: string, medidas: MedidasDaPence, novoId: () => string): Molde {
   const pence = penceRegistrada(molde, id);
   if (pence.tipo === 'interna') throw new Error('A pence interna muda pelas alturas e pela largura.');
+  if (pence.bico) {
+    // Com acabamento: muda como a recortada que ela seria, e o bico é refeito para as medidas novas.
+    const mudada = alterarPence(semAcabamento(molde, id), id, medidas, novoId);
+    const nova = pencesDaPeca(mudada).at(-1);
+    return nova && nova.tipo === 'recortada' ? comAcabamento(mudada, nova.id) : mudada;
+  }
   conferirMedidasDaPence(medidas.aberturaMm, medidas.profundidadeMm);
   if (!Number.isFinite(medidas.desvioMm)) throw new Error('O desvio do vértice precisa ser um número.');
-  const pivo = pence.tipo === 'recortada' ? pivoDaPence(molde, pence) : null;
+  const pivo = pivoDaPence(molde, pence);
   if (pivo) {
     // Aberta por pivô: fecha em torno dele e abre de novo, com as medidas novas, a partir de onde as pontas se encontraram.
     const fechada = removerPence(molde, id);
@@ -803,6 +924,7 @@ export function alterarPence(molde: Molde, id: string, medidas: MedidasDaPence, 
       medidas.profundidadeMm,
       (pence.piques?.length ?? 0) > 0,
       novoId,
+      (pence.marcas?.length ?? 0) > 0,
     );
   }
   const { meio, aoLongo, paraOVertice } = eixosDaPence(pence);

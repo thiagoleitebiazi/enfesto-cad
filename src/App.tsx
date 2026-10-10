@@ -31,6 +31,14 @@ import {
   aplicarBainha,
   aplicarDesdobrar,
   aplicarReta,
+  dialogoDeCortar,
+  dialogoDeRemoverRegiao,
+  instrucaoDaReta,
+  lerDialogoDeCortar,
+  lerDialogoDeRemoverRegiao,
+  REMOVER_REGIAO_SIMPLES,
+  retaPeloElemento,
+  type OpcoesDeRemoverRegiao,
   aplicarUniao,
   arestaDeOutraPecaPerto,
   arestaPerto,
@@ -178,6 +186,7 @@ import {
   type OpcoesDeElemento,
 } from './ui/ferramentasDeElemento';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
+import { CORTE_SEM_COSTURA, type OpcoesDeCorte } from './domain/corteEUniao';
 import {
   curvaDoTrecho,
   CURVAS_DE_FABRICA,
@@ -431,6 +440,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'espiral' }
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
+  | { readonly tipo: 'cortar' }
+  | { readonly tipo: 'remover-regiao' }
   | { readonly tipo: 'dobrar' }
   | { readonly tipo: 'conferir' }
   | { readonly tipo: 'editar-pence'; readonly id: string; readonly reconhecer?: PenceDaPeca }
@@ -541,6 +552,8 @@ export default function App(): React.JSX.Element {
   );
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
+  const [opcoesDeCorte, setOpcoesDeCorte] = useState<OpcoesDeCorte>(CORTE_SEM_COSTURA);
+  const [opcoesDeRemover, setOpcoesDeRemover] = useState<OpcoesDeRemoverRegiao>(REMOVER_REGIAO_SIMPLES);
   // "Editar pontos de curva": o ponto de passagem escolhido, à espera do clique que diz onde ele fica.
   const [alcaDeCurva, setAlcaDeCurva] = useState<AlcaEscolhida | null>(null);
   // "Conferir": as opções da janela e as costuras já indicadas no desenho.
@@ -1229,7 +1242,9 @@ export default function App(): React.JSX.Element {
   const usarFerramentaDeMolde = useCallback(
     (ferramenta: FerramentaDeMolde | FerramentaDePence) => {
       if (!selecionadoId) return;
-      if (ferramenta === 'bainha' || ferramenta === 'unir' || ferramenta === 'dobrar') setDialogoDeFerramenta({ tipo: ferramenta });
+      if (ferramenta === 'bainha' || ferramenta === 'unir' || ferramenta === 'dobrar' || ferramenta === 'cortar' || ferramenta === 'remover-regiao') {
+        setDialogoDeFerramenta({ tipo: ferramenta });
+      }
       else if (ehFerramentaDePence(ferramenta) && dialogoDaPence(ferramenta, opcoesDasPences)) {
         setDialogoDeFerramenta({ tipo: 'pence', ferramenta });
       } else entrarModoDeConstrucao(ferramenta);
@@ -2359,11 +2374,20 @@ export default function App(): React.JSX.Element {
         if (!peca) return;
         setRecadoDaFerramenta(null);
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const novo = cliqueDeReta(modo, trecho, {
-          noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
-          livre: semCaptura,
-        });
-        if (!retaCompleta(modo, novo)) {
+        // "Remover região" com "Unir moldes" pede uma segunda reta em vez do lado.
+        const segundaReta = modo === 'remover-regiao' && opcoesDeRemover.unir;
+        const noContorno = posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm);
+        // O clique numa linha interna reta, fora do contorno, é a reta inteira dela (o elemento).
+        const peloElemento =
+          modo !== 'bainha' && !noContorno
+            ? retaPeloElemento(modo, peca, trecho, linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null, segundaReta)
+            : null;
+        if (peloElemento?.recado) {
+          setRecadoDaFerramenta(peloElemento.recado);
+          return;
+        }
+        const novo = peloElemento ? peloElemento.estado : cliqueDeReta(modo, trecho, { noContorno, livre: semCaptura }, segundaReta);
+        if (!retaCompleta(modo, novo, segundaReta)) {
           setTrecho(novo);
           return;
         }
@@ -2373,7 +2397,7 @@ export default function App(): React.JSX.Element {
           const resultado =
             modo === 'bainha'
               ? aplicarBainha(pecas, peca, novo, opcoesDeBainha, proximoId)
-              : aplicarReta(modo, pecas, peca, novo, proximoId);
+              : aplicarReta(modo, pecas, peca, novo, proximoId, undefined, { corte: opcoesDeCorte, remover: opcoesDeRemover });
           aplicarMudanca([...resultado.pecas]);
           setRecadoDaFerramenta(resultado.recado);
         } catch (e) {
@@ -2434,6 +2458,7 @@ export default function App(): React.JSX.Element {
           pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
           semRegistro: penceSemRegistroSobOClique(modo, peca, semCaptura, raioMm),
           prega: pregaPerto(peca, semCaptura, 0)?.id ?? null,
+          linhaInterna: linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null,
         });
         setRecadoDaFerramenta(recusa);
         if (recusa) return;
@@ -2581,6 +2606,8 @@ export default function App(): React.JSX.Element {
     },
     [
       modo,
+      opcoesDeCorte,
+      opcoesDeRemover,
       pontosEmEdicao,
       contornoPendente,
       pecas,
@@ -2986,6 +3013,7 @@ export default function App(): React.JSX.Element {
             pence: pencePerto(pecaSelecionada, cursorMundo, raioMm)?.id ?? null,
             semRegistro: penceSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo, raioMm),
             prega: pregaPerto(pecaSelecionada, cursorMundo, 0)?.id ?? null,
+            linhaInterna: linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null,
           }
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
@@ -3019,7 +3047,7 @@ export default function App(): React.JSX.Element {
       const mouse = cursorMundo ? { noContorno: posicaoNoContornoPerto(cursorMundo, contorno, raioMm), livre: cursorMundo } : null;
       return modo === 'bainha'
         ? previaDaBainha(pecaSelecionada, trecho, mouse, opcoesDeBainha)
-        : previaDaReta(modo, pecaSelecionada, trecho, mouse);
+        : previaDaReta(modo, pecaSelecionada, trecho, mouse, modo === 'remover-regiao' && opcoesDeRemover.unir);
     }
     if (modo === 'circulo' && pontosEmEdicao[0] && cursorMundo && !mesmoPonto(pontosEmEdicao[0], cursorMundo)) {
       return { novo: circulo(pontosEmEdicao[0], cursorMundo), novoFechado: true };
@@ -3030,6 +3058,7 @@ export default function App(): React.JSX.Element {
     return null;
   }, [
     modo,
+    opcoesDeRemover.unir,
     pecas,
     pecaSelecionada,
     trecho,
@@ -3127,14 +3156,9 @@ export default function App(): React.JSX.Element {
       case 'espiral':
         return 'Espiral: clique onde o centro da espiral deve ficar.' + fim;
       case 'cortar':
-        return !trecho.inicio
-          ? 'Cortar: clique no contorno da peça selecionada, onde o corte começa.' + fim
-          : 'Cortar: clique no contorno, onde o corte termina — a peça vira duas, pela reta tracejada.' + fim;
+        return instrucaoDaReta('cortar', trecho);
       case 'remover-regiao':
-        if (!trecho.inicio) return 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região.' + fim;
-        return !trecho.fim
-          ? 'Remover região: clique no contorno, na outra ponta da reta.' + fim
-          : 'Remover região: clique dentro da peça, na região que deve sair (ela fica em destaque).' + fim;
+        return instrucaoDaReta('remover-regiao', trecho, opcoesDeRemover);
       case 'dobrar':
         return instrucaoDeDobrar(opcoesDeDobrar, trecho);
       case 'desdobrar':
@@ -3916,6 +3940,40 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'cortar' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo={dialogoDeCortar(opcoesDeCorte).titulo}
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeCortar(opcoesDeCorte).campos}
+          nota={dialogoDeCortar(opcoesDeCorte).nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            try {
+              setOpcoesDeCorte(lerDialogoDeCortar(valores));
+              entrarModoDeConstrucao('cortar');
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'remover-regiao' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo={dialogoDeRemoverRegiao(opcoesDeRemover).titulo}
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeRemoverRegiao(opcoesDeRemover).campos}
+          nota={dialogoDeRemoverRegiao(opcoesDeRemover).nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            setOpcoesDeRemover(lerDialogoDeRemoverRegiao(valores));
+            entrarModoDeConstrucao('remover-regiao');
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'conferir' && (
         <DialogoDeCampos
           titulo="Conferir moldes"

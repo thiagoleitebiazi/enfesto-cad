@@ -9,7 +9,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { exigirCorteValido } from './corteEUniao';
+import { exigirCorteValido, semAsLinhasDaReta } from './corteEUniao';
 import { piquesQueFicamNoContorno, semCampo, type Molde, type Pique, type PregaDaPeca } from './molde';
 import {
   comecarPeloMenorPontoOriginal,
@@ -242,7 +242,8 @@ export function criarPregas(
       retas.push(retaAtravessandoAPeca(molde.contorno, origem, d, i + 1));
     }
   }
-  let atual = molde;
+  // A linha interna que estava em cima da linha da prega (a reta auxiliar que a indicou) sai: a prega desenha a dela.
+  let atual = semAsLinhasDaReta(molde, a.ponto, b.ponto);
   for (let i = 0; i < retas.length; i++) {
     const [de, ate] = retas[i]!;
     const aplicada = abrirUmaPrega(atual, de, ate, opcoes, novoId);

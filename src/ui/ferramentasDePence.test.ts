@@ -337,7 +337,7 @@ describe('diálogos', () => {
   });
 
   it('lê as opções da pence no contorno e recusa medidas que não servem', () => {
-    const valores = { modo: 'abrir', abertura: 45, profundidade: 120, perpendicular: false, piquesLaterais: true, marcaNoVertice: false };
+    const valores = { modo: 'abrir', abertura: 45, profundidade: 120, perpendicular: false, piquesLaterais: true, marcaNoVertice: false, acabamento: true };
     expect(lerDialogoDaPence('pence-no-contorno', O, valores).pence).toEqual({
       modo: 'abrir',
       aberturaMm: 45,
@@ -345,6 +345,7 @@ describe('diálogos', () => {
       perpendicular: false,
       piquesLaterais: true,
       marcaNoVertice: false,
+      acabamento: true,
     });
     expect(() => lerDialogoDaPence('pence-no-contorno', O, { ...valores, abertura: 0 })).toThrow(/abertura/);
     // As outras ferramentas não mudam.
@@ -675,5 +676,83 @@ describe('uma prega já feita: abrir as medidas, mudar e tirar', () => {
     expect(instrucaoDaPence('pregas', O, SEM_TRECHO, false, true)).toMatch(/Ou clique dentro de uma prega já feita \(as marcadas com um anel\) para mudar as larguras dela ou tirá-la\. Esc sai\.$/);
     expect(instrucaoDaPence('pregas', O, SEM_TRECHO)).not.toMatch(/prega já feita/);
     expect(instrucaoDaPence('pregas', O, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, false, true)).not.toMatch(/prega já feita/);
+  });
+});
+
+describe('“Pregas” pela reta auxiliar e o pique no vértice da pence aberta', () => {
+  it('o clique numa linha interna reta faz dela a linha da prega, de borda a borda', () => {
+    const peca: Molde = { ...molde(), linhasInternas: [[ponto(100, 50), ponto(100, 250)], [ponto(20, 20), ponto(40, 60), ponto(20, 100)]] };
+    const clique = cliqueDePence('pregas', O, peca, SEM_TRECHO, { noContorno: null, livre: ponto(100, 150), linhaInterna: 0 });
+
+    expect(clique.recusa).toBeNull();
+    expect([clique.estado.inicio!.ponto, clique.estado.fim!.ponto]).toContainEqual(ponto(100, 0));
+    expect([clique.estado.inicio!.ponto, clique.estado.fim!.ponto]).toContainEqual(ponto(100, 300));
+    // Com uma prega só, as duas pontas já completam a ferramenta.
+    expect(penceCompleta('pregas', O, clique.estado)).toBe(O.pregas.quantidade === 1);
+  });
+
+  it('a linha que não é reta é recusada com a explicação; no contorno, o clique começa a linha como sempre', () => {
+    const peca: Molde = { ...molde(), linhasInternas: [[ponto(20, 20), ponto(40, 60), ponto(20, 100)]] };
+    const torta = cliqueDePence('pregas', O, peca, SEM_TRECHO, { noContorno: null, livre: ponto(40, 60), linhaInterna: 0 });
+    expect(torta.estado).toBe(SEM_TRECHO);
+    expect(torta.recusa).toMatch(/precisa ser reta para servir de linha da prega/);
+
+    const noContornoDaPeca = cliqueDePence('pregas', O, peca, SEM_TRECHO, { noContorno: na(0, 100, 0), livre: ponto(100, 0), linhaInterna: 0 });
+    expect(noContornoDaPeca.estado.inicio).toEqual(na(0, 100, 0));
+    expect(noContornoDaPeca.estado.fim).toBeNull();
+    // As outras ferramentas não usam a linha interna.
+    expect(cliqueDePence('pence-interna', O, peca, SEM_TRECHO, { noContorno: null, livre: ponto(100, 150), linhaInterna: 0 }).estado.inicio).toBeNull();
+  });
+
+  it('a instrução das pregas diz da reta auxiliar', () => {
+    expect(instrucaoDaPence('pregas', O, SEM_TRECHO)).toMatch(/ou numa linha interna reta \(a reta auxiliar\), que vira a linha da prega, de borda a borda\. Esc sai\.$/);
+  });
+
+  it('“Abrir” com o pique no vértice põe a marca no vértice da pence aberta', () => {
+    const opcoes = com({ pence: { ...O.pence, modo: 'abrir', marcaNoVertice: true, piquesLaterais: false } });
+    const estado: TrechoEmEdicao = { inicio: NO_ALTO, fim: na(0, 100, 0), livres: [] };
+    const aberta = aplicarPence('pence-no-contorno', opcoes, [molde()], molde(), estado, ids()).pecas[0]!;
+
+    expect(aberta.marcas).toHaveLength(1);
+    expect(aberta.marcas[0]!.posicao).toEqual(pencesDaPeca(aberta)[0]!.pontos[1]);
+    const semMarca = aplicarPence('pence-no-contorno', com({ pence: { ...O.pence, modo: 'abrir', marcaNoVertice: false } }), [molde()], molde(), estado, ids()).pecas[0]!;
+    expect(semMarca.marcas).toHaveLength(0);
+  });
+});
+
+describe('“Criar acabamento” no Abrir', () => {
+  const estado: TrechoEmEdicao = { inicio: NO_ALTO, fim: na(0, 100, 0), livres: [] };
+  const ABRIR = { ...O.pence, modo: 'abrir' as const, aberturaMm: 40, profundidadeMm: 100, piquesLaterais: false, marcaNoVertice: false };
+
+  it('o diálogo tem a opção, e ela é lida', () => {
+    expect(dialogoDaPence('pence-no-contorno', O)!.campos.map((c) => c.id)).toContain('acabamento');
+    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta não é recortada/);
+    expect(lerDialogoDaPence('pence-no-contorno', O, { modo: 'abrir', abertura: 40, profundidade: 100, perpendicular: true, piquesLaterais: false, marcaNoVertice: false }).pence.acabamento).toBe(false);
+  });
+
+  it('com a opção, a pence aberta fica desenhada e o contorno ganha o bico; a mensagem diz', () => {
+    const resultado = aplicarPence('pence-no-contorno', com({ pence: { ...ABRIR, acabamento: true } }), [molde()], molde(), estado, ids());
+    const aberta = resultado.pecas[0]!;
+    const pence = pencesDaPeca(aberta)[0]!;
+
+    expect(pence.tipo).toBe('marcada');
+    expect(pence.bico).toBeDefined();
+    expect(aberta.linhasInternas).toHaveLength(1);
+    expect(resultado.recado).toMatch(/^Pence aberta em “Frente”, com acabamento \(desenhada, com o bico no contorno\): abertura de 40,0 mm, profundidade de 100,0 mm\. A peça passou de/);
+    // As medidas dela abrem como as da pence aberta por pivô.
+    expect(dialogoDeEditarPence(aberta, pence.id)!.titulo).toBe('Pence aberta por pivô: medidas');
+    const mudada = aplicarEdicaoDaPence([aberta], aberta, pence.id, { abertura: 60, profundidade: 100, apagar: false }, ids()).pecas[0]!;
+    expect(pencesDaPeca(mudada)[0]!.bico).toBeDefined();
+  });
+
+  it('sem a opção, ou fora do Abrir, nada de bico', () => {
+    const semOpcao = aplicarPence('pence-no-contorno', com({ pence: ABRIR }), [molde()], molde(), estado, ids());
+    expect(pencesDaPeca(semOpcao.pecas[0]!)[0]!.tipo).toBe('recortada');
+    expect(semOpcao.recado).not.toMatch(/acabamento/);
+
+    const recortar = com({ pence: { ...ABRIR, modo: 'recortar', acabamento: true, perpendicular: true } });
+    const recortada = aplicarPence('pence-no-contorno', recortar, [molde()], molde(), { inicio: NO_ALTO, fim: null, livres: [] }, ids());
+    expect(pencesDaPeca(recortada.pecas[0]!)[0]!.tipo).toBe('recortada');
+    expect(recortada.recado).not.toMatch(/acabamento/);
   });
 });

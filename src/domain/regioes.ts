@@ -128,7 +128,12 @@ export function levarOQueEstaNaRegiao(
             // O pivô é um ponto do contorno: anda se estiver na borda que anda, esteja a pence onde estiver.
             const comPivo = pence.pivo && naBordaQueAnda(pence.pivo) ? { ...pence, pivo: movimento.ponto(pence.pivo) } : pence;
             return anda
-              ? { ...comPivo, pontos: levar(pence.pontos), ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}) }
+              ? {
+                  ...comPivo,
+                  pontos: levar(pence.pontos),
+                  ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}),
+                  ...(pence.bico ? { bico: movimento.ponto(pence.bico) } : {}),
+                }
               : comPivo;
           }),
         }
