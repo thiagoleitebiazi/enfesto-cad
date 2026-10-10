@@ -116,6 +116,8 @@ export function levarOQueEstaNaRegiao(
               parada: [ponta(prega.parada[0]), ponta(prega.parada[1])] as const,
               movida: [ponta(prega.movida[0]), ponta(prega.movida[1])] as const,
               linhas: prega.linhas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
+              // As linhas guardadas estão em cima da borda parada da prega: andam com ela.
+              ...(prega.linhasTiradas ? { linhasTiradas: prega.linhasTiradas.map((l) => (naBordaQueAnda(prega.parada[0]) ? levar(l) : l)) } : {}),
             };
           }),
         }

@@ -692,3 +692,55 @@ describe('pence com acabamento: desenhada, com o bico no contorno', () => {
     expect(area(removerPence(levada, aDela(levada).id).contorno)).toBeCloseTo(60000, 6);
   });
 });
+
+describe('as medidas digitadas são as que a pence passa a ter, também em borda curva ou em canto', () => {
+  // Um contorno com o alto em arco (pontos a cada 20 mm, subindo até 30 mm no meio), como uma cintura.
+  const ARCO = Array.from({ length: 11 }, (_, i) => ponto(200 - i * 20, 300 + 30 * Math.sin((Math.PI * i) / 10)));
+  const comArco = (): Molde => molde({ contorno: [ponto(0, 0), ponto(200, 0), ...ARCO.slice(0, -1), ponto(0, 300)] });
+  const NO_MEIO_DO_ARCO = (peca: Molde): PosicaoNoContorno => ({ indiceAresta: peca.contorno.findIndex((p) => p.x === 100 && p.y === 330), ponto: ponto(100, 330) });
+
+  it('criada na curva, a pence tem a abertura pedida, em linha reta', () => {
+    const peca = comArco();
+    const comPence = criarPence(peca, NO_MEIO_DO_ARCO(peca), { ...RECORTAR, aberturaMm: 60, profundidadeMm: 80, piquesLaterais: false, marcaNoVertice: false }, ids());
+    const medidas = medidasDaPence(pencesDaPeca(comPence)[0]!);
+
+    expect(medidas.aberturaMm).toBeCloseTo(60, 5);
+    expect(medidas.profundidadeMm).toBeCloseTo(80, 5);
+    expect(medidas.desvioMm).toBeCloseTo(0, 5);
+  });
+
+  it('mudadas as medidas, o diálogo lê de volta exatamente as que foram digitadas — abertura, profundidade e desvio', () => {
+    const peca = comArco();
+    const comPence = criarPence(peca, NO_MEIO_DO_ARCO(peca), { ...RECORTAR, aberturaMm: 40, profundidadeMm: 80, piquesLaterais: false, marcaNoVertice: false }, ids());
+    const mudada = alterarPence(comPence, pencesDaPeca(comPence)[0]!.id, { aberturaMm: 70, profundidadeMm: 55, desvioMm: 8 }, ids());
+    const medidas = medidasDaPence(pencesDaPeca(mudada)[0]!);
+
+    expect(medidas.aberturaMm).toBeCloseTo(70, 5);
+    expect(medidas.profundidadeMm).toBeCloseTo(55, 5);
+    expect(medidas.desvioMm).toBeCloseTo(8, 5);
+  });
+
+  it('num canto da peça, também', () => {
+    const noCanto = criarPence(molde(), { indiceAresta: 2, ponto: ponto(200, 300) }, { ...RECORTAR, aberturaMm: 20, profundidadeMm: 60, piquesLaterais: false, marcaNoVertice: false }, ids());
+    expect(medidasDaPence(pencesDaPeca(noCanto)[0]!).aberturaMm).toBeCloseTo(20, 5);
+
+    const mudada = alterarPence(noCanto, pencesDaPeca(noCanto)[0]!.id, { aberturaMm: 30, profundidadeMm: 50, desvioMm: 0 }, ids());
+    const medidas = medidasDaPence(pencesDaPeca(mudada)[0]!);
+    expect(medidas.aberturaMm).toBeCloseTo(30, 5);
+    expect(medidas.profundidadeMm).toBeCloseTo(50, 5);
+    expect(medidas.desvioMm).toBeCloseTo(0, 5);
+  });
+
+  it('aplicar as mesmas medidas de novo não tira a pence do lugar', () => {
+    const peca = comArco();
+    const comPence = criarPence(peca, { indiceAresta: 3, ponto: ponto(170, 300 + 30 * Math.sin((Math.PI * 1.5) / 10)) }, { ...RECORTAR, aberturaMm: 30, profundidadeMm: 60, piquesLaterais: false, marcaNoVertice: false }, ids());
+    const antes = pencesDaPeca(comPence)[0]!;
+    const medidas = medidasDaPence(antes);
+    const depois = pencesDaPeca(alterarPence(comPence, antes.id, medidas, ids()))[0]!;
+
+    antes.pontos.forEach((p, i) => {
+      expect(depois.pontos[i]!.x).toBeCloseTo(p.x, 5);
+      expect(depois.pontos[i]!.y).toBeCloseTo(p.y, 5);
+    });
+  });
+});

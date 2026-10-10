@@ -126,8 +126,12 @@ interface PregaAplicada {
   readonly regiao: Contorno;
 }
 
-/** Abre uma prega na reta de `a` a `b` (pontos do contorno da peça). */
-function abrirUmaPrega(molde: Molde, a: Ponto2D, b: Ponto2D, opcoes: OpcoesDePregas, novoId: () => string): PregaAplicada {
+/**
+ * Abre uma prega na reta de `a` a `b` (pontos do contorno da peça).
+ * `linhasTiradas` são as linhas internas que estavam em cima dessa reta e já
+ * saíram da peça: ficam no registro, para voltarem se a prega for tirada.
+ */
+function abrirUmaPrega(molde: Molde, a: Ponto2D, b: Ponto2D, opcoes: OpcoesDePregas, novoId: () => string, linhasTiradas: readonly Contorno[] = []): PregaAplicada {
   const contorno = molde.contorno;
   const comprimento = distancia(a, b);
   if (comprimento < MESMO_PONTO_MM) throw new Error('A linha da prega precisa de dois pontos diferentes do contorno.');
@@ -195,6 +199,7 @@ function abrirUmaPrega(molde: Molde, a: Ponto2D, b: Ponto2D, opcoes: OpcoesDePre
     movida: [a2, b2],
     linhas: [...linhas, ...setas],
     pontasCriadas: [!jaEraPonto(a), !jaEraPonto(b)],
+    ...(linhasTiradas.length > 0 ? { linhasTiradas } : {}),
     ...(novos.length > 0 ? { piques: novos.map((q) => q.id) } : {}),
   };
   const aberta: Molde = {
@@ -243,10 +248,12 @@ export function criarPregas(
     }
   }
   // A linha interna que estava em cima da linha da prega (a reta auxiliar que a indicou) sai: a prega desenha a dela.
+  // Fica guardada no registro da primeira prega, e volta se essa prega for tirada.
   let atual = semAsLinhasDaReta(molde, a.ponto, b.ponto);
+  const tiradas = molde.linhasInternas.filter((l) => !atual.linhasInternas.includes(l));
   for (let i = 0; i < retas.length; i++) {
     const [de, ate] = retas[i]!;
-    const aplicada = abrirUmaPrega(atual, de, ate, opcoes, novoId);
+    const aplicada = abrirUmaPrega(atual, de, ate, opcoes, novoId, i === 0 ? tiradas : []);
     atual = aplicada.molde;
     // As retas seguintes que estão no lado que andou vão junto com ele.
     for (let j = i + 1; j < retas.length; j++) {
@@ -384,14 +391,16 @@ export function removerPrega(molde: Molde, id: string): Molde {
   }
   const semEla: Molde = {
     ...molde,
-    linhasInternas,
+    // As linhas que a prega tinha tirado de cima da linha dela voltam (estão do lado parado: não andam).
+    linhasInternas: [...linhasInternas, ...(prega.linhasTiradas ?? [])],
     piques: molde.piques.filter((q) => !piquesDela.has(q.id)),
     pregas: (molde.pregas ?? []).filter((q) => q.id !== id),
   };
   const base = levarOQueEstaNaRegiao(semEla, queAnda, queAnda, queFica, volta);
   const [criouA, criouB] = prega.pontasCriadas;
   const saem = [...(criouA ? [a] : []), ...(criouB ? [b] : [])];
-  const fechado = semPontosRepetidos([...queFica, ...queAnda.map(volta.ponto)], 1e-4).filter((p) => !saem.some((q) => distancia(p, q) <= 1e-4));
+  // Só sai a ponta que a prega pôs: um ponto do contorno que esteja colado nela (a centésimos de milésimo de milímetro) fica.
+  const fechado = semPontosRepetidos([...queFica, ...queAnda.map(volta.ponto)]).filter((p) => !saem.some((q) => mesmoLugar(p, q)));
   const novoContorno = comecarPeloMenorPontoOriginal(fechado, contorno);
   if (novoContorno.length < 3 || !(area(novoContorno) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área sem essa prega.');
   return comPregasValidas({ ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) });
@@ -412,7 +421,10 @@ export function alterarPrega(molde: Molde, id: string, medidas: MedidasDaPrega, 
     piques: (prega.piques?.length ?? 0) > 0,
   };
   conferirOpcoesDePregas(opcoes);
-  const semEla = removerPrega(molde, id);
+  // Tirada a prega, as linhas que ela tinha tirado voltaram: saem de novo, e ficam no registro da prega nova.
+  const devolvida = removerPrega(molde, id);
+  const semEla = semAsLinhasDaReta(devolvida, prega.parada[0], prega.parada[1]);
+  const tiradas = devolvida.linhasInternas.filter((l) => !semEla.linhasInternas.includes(l));
   const pontaNoContorno = (p: Ponto2D): Ponto2D => pontoMaisProximoNoContorno(p, semEla.contorno).ponto;
-  return abrirUmaPrega(semEla, pontaNoContorno(prega.parada[0]), pontaNoContorno(prega.parada[1]), opcoes, novoId).molde;
+  return abrirUmaPrega(semEla, pontaNoContorno(prega.parada[0]), pontaNoContorno(prega.parada[1]), opcoes, novoId, tiradas).molde;
 }

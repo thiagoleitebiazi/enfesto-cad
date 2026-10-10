@@ -341,9 +341,14 @@ export function regraNaTangente(
   const vizinho = contorno[indiceDoVizinho];
   if (!ponto || !vizinho) throw new Error('Ponto fora do contorno da peça.');
   const atual = regraDoVertice(graduacao, contorno, indice);
-  const doVizinho = regraDoVertice(graduacao, contorno, indiceDoVizinho);
-  /** A direção da aresta no tamanho `t`, com o ponto onde `regra` o põe nesse tamanho. */
+  /**
+   * A direção da aresta no tamanho `t`, com o ponto onde `regra` o põe nesse
+   * tamanho. O vizinho é lido com essa regra já no ponto: se ele é
+   * proporcional, anda junto — senão, num contorno de pontos próximos, o
+   * ponto passaria por cima dele e a direção se inverteria.
+   */
   const direcaoEm = (t: number, regra: readonly Ponto2D[]): Ponto2D => {
+    const doVizinho = regraDoVertice(definirRegra(graduacao, contorno, indice, regra), contorno, indiceDoVizinho);
     const de = somar(ponto, regra[t] ?? ZERO);
     const ate = somar(vizinho, doVizinho[t] ?? ZERO);
     const comprimento = distancia(de, ate);

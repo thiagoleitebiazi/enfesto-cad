@@ -358,6 +358,45 @@ describe('a prega feita por ferramenta fica registrada', () => {
     expect(pregasDaPeca(peca)).toHaveLength(1);
   });
 
+  it('a ponta da prega colada num ponto do contorno: tirada a prega, o ponto do contorno fica', () => {
+    // Como nos moldes reais: a linha da prega acaba a 0,00002 mm do ponto (100, 0), sem ser ele.
+    const comPonto = molde({ contorno: [ponto(0, 0), ponto(100, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)] });
+    const peca = criarPregas(comPonto, na(1, 100.00002, 0), na(3, 100, 300), SIMPLES, null, ids());
+    expect(pregasDaPeca(peca)[0]!.pontasCriadas).toEqual([true, true]);
+
+    const sem = removerPrega(peca, pregasDaPeca(peca)[0]!.id);
+    expect(sem.contorno).toContainEqual(ponto(100, 0));
+    expect(sem.contorno).toHaveLength(5);
+    expect(area(sem.contorno)).toBeCloseTo(60000, 6);
+  });
+
+  it('tirada a prega, a linha interna que ela tinha tirado de cima da linha dela volta', () => {
+    const centro = [ponto(100, 20), ponto(100, 280)];
+    const base = molde({ linhasInternas: [centro, [ponto(20, 20), ponto(30, 30)]] });
+    const peca = criarPregas(base, EMBAIXO, EM_CIMA, SIMPLES, null, ids());
+    expect(pregasDaPeca(peca)[0]!.linhasTiradas).toEqual([centro]);
+
+    const sem = removerPrega(peca, pregasDaPeca(peca)[0]!.id);
+    expect(sem.linhasInternas).toHaveLength(2);
+    expect(sem.linhasInternas).toContainEqual(centro);
+    // Mudada a prega, a linha continua guardada; tirada depois, volta.
+    const mudada = alterarPrega(peca, pregasDaPeca(peca)[0]!.id, { modo: 'dupla', larguraMm: 10, largura2Mm: 10 }, ids());
+    expect(mudada.linhasInternas).not.toContainEqual(centro);
+    expect(pregasDaPeca(mudada)[0]!.linhasTiradas).toEqual([centro]);
+    expect(removerPrega(mudada, pregasDaPeca(mudada)[0]!.id).linhasInternas).toContainEqual(centro);
+    // Sem linha em cima da prega, o registro não guarda nada.
+    expect(pregasDaPeca(criarPregas(molde(), EMBAIXO, EM_CIMA, SIMPLES, null, ids()))[0]!.linhasTiradas).toBeUndefined();
+  });
+
+  it('com várias pregas, a linha tirada fica no registro da primeira, e acompanha a peça movida', () => {
+    const centro = [ponto(100, 20), ponto(100, 280)];
+    const tres = criarPregas(molde({ linhasInternas: [centro] }), EMBAIXO, EM_CIMA, { ...SIMPLES, quantidade: 3, distanciaMm: 30 }, ponto(150, 150), ids());
+    expect(pregasDaPeca(tres).map((q) => q.linhasTiradas?.length ?? 0)).toEqual([1, 0, 0]);
+
+    const levada = transladarMolde(tres, ponto(10, 20), 'outra');
+    expect(pregasDaPeca(levada)[0]!.linhasTiradas).toEqual([[ponto(110, 40), ponto(110, 300)]]);
+  });
+
   it('pregaPerto acha a prega em cuja faixa o ponto está', () => {
     const peca = comPrega();
 

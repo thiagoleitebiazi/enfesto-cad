@@ -2,6 +2,7 @@ import {
   andarNoContorno,
   area,
   areaAssinada,
+  comprimentoDaLinha,
   distancia,
   perimetro,
   pontoDentroDoContorno,
@@ -55,6 +56,8 @@ export const MAXIMO_DE_PENCES = 20;
 const MESMO_PONTO_MM = 1e-6;
 /** Quanto (mm) a perna da pence é encurtada junto ao contorno, para o teste de cruzamento não acusar a própria ponta. */
 const FOLGA_DA_PONTA_MM = 0.01;
+/** A reta entre as pontas da pence fica a menos disto (mm) da abertura pedida. */
+const FOLGA_DA_ABERTURA_MM = 1e-7;
 const AREA_MINIMA_MM2 = 1e-6;
 const ORIGEM: Ponto2D = { x: 0, y: 0 };
 
@@ -113,10 +116,43 @@ export interface GeometriaDaPence {
 }
 
 /**
+ * As duas pontas de uma pence centrada em `posicao`, com `aberturaMm` de uma
+ * à outra **em linha reta**: cada uma anda o mesmo tanto sobre o contorno, para
+ * um lado e para o outro. Numa borda reta, é meia abertura para cada lado;
+ * numa curva ou num canto, um pouco mais, até a reta entre as duas ter a
+ * medida pedida — a mesma que o diálogo das medidas lê da pence depois.
+ */
+function pontasDaPence(contorno: Contorno, posicao: PosicaoNoContorno, aberturaMm: number): { readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno } {
+  const limite = perimetro(contorno) / 4;
+  if (aberturaMm / 2 >= limite) throw new Error('A abertura da pence é grande demais para esse contorno.');
+  const em = (andado: number) => ({ inicio: andarNoContorno(contorno, posicao, -andado), fim: andarNoContorno(contorno, posicao, andado) });
+  const reta = (andado: number): number => {
+    const pontas = em(andado);
+    return distancia(pontas.inicio.ponto, pontas.fim.ponto);
+  };
+  let menor = aberturaMm / 2;
+  // Na borda reta, andar meia abertura para cada lado já dá a medida.
+  if (reta(menor) >= aberturaMm - FOLGA_DA_ABERTURA_MM) return em(menor);
+  let maior = menor;
+  while (reta(maior) < aberturaMm) {
+    if (maior >= limite) throw new Error('A abertura da pence é grande demais para esse contorno.');
+    menor = maior;
+    maior = Math.min(maior * 1.25, limite);
+  }
+  for (let passo = 0; passo < 60 && maior - menor > FOLGA_DA_ABERTURA_MM / 10; passo++) {
+    const meio = (menor + maior) / 2;
+    if (reta(meio) < aberturaMm) menor = meio;
+    else maior = meio;
+  }
+  return em(maior);
+}
+
+/**
  * Onde ficam as pontas e o vértice de uma pence centrada em `posicao`: as
- * pontas a meia abertura de cada lado, andando sobre o contorno, e o vértice
- * à profundidade pedida — em esquadro com a linha que liga as pontas ou, com
- * `apontarPara`, na direção desse ponto.
+ * pontas à abertura pedida uma da outra, em linha reta, igualmente afastadas
+ * da posição sobre o contorno, e o vértice à profundidade pedida — em
+ * esquadro com a linha que liga as pontas ou, com `apontarPara`, na direção
+ * desse ponto.
  */
 export function geometriaDaPence(
   molde: Molde,
@@ -127,9 +163,7 @@ export function geometriaDaPence(
 ): GeometriaDaPence {
   conferirMedidasDaPence(aberturaMm, profundidadeMm);
   const contorno = molde.contorno;
-  if (aberturaMm >= perimetro(contorno) / 2) throw new Error('A abertura da pence é grande demais para esse contorno.');
-  const inicio = andarNoContorno(contorno, posicao, -aberturaMm / 2);
-  const fim = andarNoContorno(contorno, posicao, aberturaMm / 2);
+  const { inicio, fim } = pontasDaPence(contorno, posicao, aberturaMm);
   if (distancia(inicio.ponto, fim.ponto) < MESMO_PONTO_MM) throw new Error('A abertura da pence é pequena demais.');
   const aoLongo = unitario(inicio.ponto, fim.ponto);
   const sentido = sentidoDe(contorno);
@@ -927,16 +961,30 @@ export function alterarPence(molde: Molde, id: string, medidas: MedidasDaPence, 
       (pence.marcas?.length ?? 0) > 0,
     );
   }
-  const { meio, aoLongo, paraOVertice } = eixosDaPence(pence);
-  const vertice = ponto(
-    meio.x + paraOVertice.x * medidas.profundidadeMm + aoLongo.x * medidas.desvioMm,
-    meio.y + paraOVertice.y * medidas.profundidadeMm + aoLongo.y * medidas.desvioMm,
-  );
+  const [a, , b] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D];
   const semEla = removerPence(molde, id);
-  const centro = pontoMaisProximoNoContorno(meio, semEla.contorno);
+  const contorno = semEla.contorno;
+  const noContorno = (p: Ponto2D): PosicaoNoContorno => {
+    const perto = pontoMaisProximoNoContorno(p, contorno);
+    return { indiceAresta: perto.indiceAresta, ponto: perto.ponto };
+  };
+  // O centro da pence é o ponto do contorno a meio caminho, sobre ele, entre as duas pontas: é onde ela foi posta.
+  const adiante = comprimentoDaLinha(trechoDoContorno(contorno, noContorno(a), noContorno(b)));
+  const paraTras = comprimentoDaLinha(trechoDoContorno(contorno, noContorno(b), noContorno(a)));
+  const centro = adiante <= paraTras ? andarNoContorno(contorno, noContorno(a), adiante / 2) : andarNoContorno(contorno, noContorno(a), -paraTras / 2);
+  // O vértice fica à profundidade e ao desvio pedidos em relação à reta entre as pontas NOVAS: são as medidas que a pence passa a ter.
+  const pontas = pontasDaPence(contorno, centro, medidas.aberturaMm);
+  const meio = meioDe(pontas.inicio.ponto, pontas.fim.ponto);
+  const aoLongo = unitario(pontas.inicio.ponto, pontas.fim.ponto);
+  const sentido = sentidoDe(contorno);
+  const paraDentro = ponto(-aoLongo.y * sentido, aoLongo.x * sentido);
+  const vertice = ponto(
+    meio.x + paraDentro.x * medidas.profundidadeMm + aoLongo.x * medidas.desvioMm,
+    meio.y + paraDentro.y * medidas.profundidadeMm + aoLongo.y * medidas.desvioMm,
+  );
   return criarPence(
     semEla,
-    { indiceAresta: centro.indiceAresta, ponto: centro.ponto },
+    centro,
     {
       aberturaMm: medidas.aberturaMm,
       // A profundidade pedida é em esquadro; com desvio, o vértice fica um pouco mais longe do meio.

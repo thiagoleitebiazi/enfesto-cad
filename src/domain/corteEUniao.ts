@@ -35,8 +35,18 @@ const MESMO_PONTO_MM = 1e-6;
 /** Quanto (mm) a reta de corte é encurtada em cada ponta para o teste de cruzamento não acusar os próprios extremos. */
 const FOLGA_DAS_PONTAS_DO_CORTE_MM = 0.01;
 const AREA_MINIMA_DE_UMA_PARTE_MM2 = 1e-6;
+/** A seta do fio que não cabe na parte encolhe por este fator, até este número de vezes. */
+const FATOR_DE_REDUCAO_DO_FIO = 0.75;
+const REDUCOES_DO_FIO = 12;
 /** Um vértice a menos disso (mm) da reta de dobra conta como estando sobre ela. */
 const TOLERANCIA_DA_DOBRA_MM = 1e-6;
+/**
+ * Ao procurar onde uma reta cruza o contorno, o ponto dele a menos disso (mm)
+ * da reta é o cruzamento: um milésimo de milímetro. Nos moldes reais, a reta
+ * "pelo meio" passa a nanômetros de um ponto do contorno sem acertá-lo nas
+ * contas; sem essa folga, nascia um ponto novo colado no que já existia.
+ */
+const VERTICE_NA_RETA_MM = 1e-3;
 
 function ponto(x: number, y: number): Ponto2D {
   return { x, y };
@@ -80,13 +90,32 @@ function contornoMaisProximo(p: Ponto2D, contornos: readonly Contorno[]): number
   return melhor;
 }
 
-/** A linha de fio da parte: a original, se cabe inteira nela; senão, a mesma seta levada ao meio da parte. */
+/**
+ * A linha de fio da parte: a original, se cabe inteira nela; senão, a mesma
+ * seta levada ao meio da parte. Se nem no meio ela cabe (a parte é mais curta
+ * que a seta, ou tem uma reentrância ali), a seta encolhe em torno do meio
+ * dela, sem mudar de direção, até caber.
+ */
 export function fioDaParte(fio: LinhaDeFio, contorno: Contorno): LinhaDeFio {
-  if (pontoDentroDoContorno(fio.inicio, contorno) && pontoDentroDoContorno(fio.fim, contorno)) return fio;
+  const cabe = (seta: LinhaDeFio): boolean => pontoDentroDoContorno(seta.inicio, contorno) && pontoDentroDoContorno(seta.fim, contorno);
+  if (cabe(fio)) return fio;
   const caixa = retanguloEnvolvente(contorno);
-  const dx = (caixa.minX + caixa.maxX) / 2 - (fio.inicio.x + fio.fim.x) / 2;
-  const dy = (caixa.minY + caixa.maxY) / 2 - (fio.inicio.y + fio.fim.y) / 2;
-  return { inicio: ponto(fio.inicio.x + dx, fio.inicio.y + dy), fim: ponto(fio.fim.x + dx, fio.fim.y + dy) };
+  const meio = ponto((caixa.minX + caixa.maxX) / 2, (caixa.minY + caixa.maxY) / 2);
+  const dx = meio.x - (fio.inicio.x + fio.fim.x) / 2;
+  const dy = meio.y - (fio.inicio.y + fio.fim.y) / 2;
+  const noMeio: LinhaDeFio = { inicio: ponto(fio.inicio.x + dx, fio.inicio.y + dy), fim: ponto(fio.fim.x + dx, fio.fim.y + dy) };
+  // Sem o meio dentro da parte não há em torno do que encolher: a seta fica no meio, como sempre.
+  if (cabe(noMeio) || !pontoDentroDoContorno(meio, contorno)) return noMeio;
+  let fator = 1;
+  for (let vez = 0; vez < REDUCOES_DO_FIO; vez++) {
+    fator *= FATOR_DE_REDUCAO_DO_FIO;
+    const menor: LinhaDeFio = {
+      inicio: ponto(meio.x + (noMeio.inicio.x - meio.x) * fator, meio.y + (noMeio.inicio.y - meio.y) * fator),
+      fim: ponto(meio.x + (noMeio.fim.x - meio.x) * fator, meio.y + (noMeio.fim.y - meio.y) * fator),
+    };
+    if (cabe(menor)) return menor;
+  }
+  return noMeio;
 }
 
 /**
@@ -163,9 +192,9 @@ export function cruzamentosDaReta(contorno: Contorno, p: Ponto2D, q: Ponto2D): P
   for (let i = 0; i < n; i++) {
     const d0 = d[i]!;
     const d1 = d[(i + 1) % n]!;
-    if (Math.abs(d0) <= TOLERANCIA_DA_DOBRA_MM) {
+    if (Math.abs(d0) <= VERTICE_NA_RETA_MM) {
       cruzamentos.push({ indiceAresta: i, ponto: contorno[i]! });
-    } else if (Math.abs(d1) > TOLERANCIA_DA_DOBRA_MM && d0 * d1 < 0) {
+    } else if (Math.abs(d1) > VERTICE_NA_RETA_MM && d0 * d1 < 0) {
       const t = d0 / (d0 - d1);
       const a = contorno[i]!;
       const b = contorno[(i + 1) % n]!;
@@ -677,7 +706,9 @@ export function removerFaixaDoMolde(
     : unirMoldes(dePerto, arestaDePerto, { ...deLonge, id: `${molde.id}-parte` }, arestaDeLonge);
   if (!(area(unida.contorno) > AREA_MINIMA_DE_UMA_PARTE_MM2)) throw new Error('A peça ficaria sem área sem essa faixa.');
   return {
-    peca: unida,
+    // A parte que tem a linha de fio não saiu do lugar: a seta original fica onde estava se ainda cabe na peça unida;
+    // senão, vai para o meio dela (e encolhe, se a peça ficou mais curta que a seta).
+    peca: { ...unida, linhaDeFio: fioDaParte(molde.linhaDeFio, unida.contorno) },
     faixa: { ...faixa, id: novoId, nome: `${molde.nome} (2)` },
     degrauMm: Math.abs(distancia(a1.ponto, b1.ponto) - distancia(a2, b2)),
   };

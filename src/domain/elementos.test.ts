@@ -211,8 +211,10 @@ describe('extrair molde', () => {
     expect(extraida.marcas.map((m) => m.posicao)).toEqual([ponto(150, 50)]);
     expect(extraida.marcas[0]!.id).not.toBe('baixo');
     expect(extraida.piques).toHaveLength(1);
-    // A linha de fio da origem, de y = 50 a y = 250, não cabe na região: vai para o meio dela.
-    expect(extraida.linhaDeFio.inicio.y).toBeCloseTo(-50, 6);
+    // A linha de fio da origem, de y = 50 a y = 250, não cabe na região (100 mm de altura): vai para o meio dela
+    // e encolhe até caber — 200 × 0,75³ ≈ 84 mm, de y ≈ 7,8 a y ≈ 92,2 —, em vez de sobrar para fora da peça.
+    expect(extraida.linhaDeFio.inicio.y).toBeCloseTo(50 - (200 * 0.75 ** 3) / 2, 6);
+    expect(extraida.linhaDeFio.fim.y).toBeCloseTo(50 + (200 * 0.75 ** 3) / 2, 6);
     expect(origem.linhasInternas).toHaveLength(3);
   });
 

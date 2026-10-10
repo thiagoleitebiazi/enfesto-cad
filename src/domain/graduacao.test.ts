@@ -531,6 +531,19 @@ describe('regraNaTangente', () => {
     expect(regra[0]!.y).not.toBe(0);
   });
 
+  it('seguindo cada tamanho, o vizinho proporcional anda junto: o ponto não passa por cima dele', () => {
+    // Como nos moldes de contorno denso: o ponto vizinho está a 10 mm, e o passo é de 15.
+    const denso = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(190, 300), ponto(0, 300)];
+    const graduacao = iniciarGraduacao(denso, ['PP', 'P', 'M', 'G', 'GG'], 2);
+    const regra = regraNaTangente(graduacao, denso, 2, 3, 15, { usarContornoBase: false, incremental: true, tamanho: null });
+
+    // A aresta é reta: seguindo ou não, o ponto anda 15 mm por tamanho na mesma direção.
+    regra.forEach((d, t) => {
+      expect(d.x).toBeCloseTo(-15 * (t - 2), 9);
+      expect(d.y).toBeCloseTo(0, 9);
+    });
+  });
+
   it('a partir do base (sem incremental), cada tamanho fica à distância do base', () => {
     expect(regraNaTangente(cinco, RETANGULO, 2, 3, 5, { ...PELO_BASE, incremental: false })).toEqual([ponto(5, 0), ponto(5, 0), ZERO, ponto(-5, 0), ponto(-5, 0)]);
     // A partir do base, a direção é a do base mesmo sem "Usar contorno base": não há tamanho vizinho de onde sair.

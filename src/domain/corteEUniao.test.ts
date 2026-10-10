@@ -14,6 +14,7 @@ import {
   dobraPeloMeio,
   dobrarMolde,
   encostarMolde,
+  fioDaParte,
   fioNoCentro,
   metadeDoMolde,
   removerFaixaDoMolde,
@@ -623,6 +624,60 @@ describe('desdobrarMolde com a metade guardada', () => {
   });
 });
 
+describe('fioDaParte', () => {
+  const FIO_COMPRIDO = { inicio: ponto(100, 20), fim: ponto(100, 280) };
+
+  it('a seta que cabe fica onde está; a que não cabe ali vai para o meio da parte', () => {
+    expect(fioDaParte(FIO_COMPRIDO, RETANGULO)).toBe(FIO_COMPRIDO);
+    const deslocada = fioDaParte({ inicio: ponto(300, 20), fim: ponto(300, 280) }, RETANGULO);
+    expect(deslocada).toEqual(FIO_COMPRIDO);
+  });
+
+  it('a seta mais comprida que a parte encolhe em torno do meio até caber, sem mudar de direção', () => {
+    // A parte tem 100 mm de altura; a seta, 260.
+    const baixa = [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(0, 100)];
+    const curta = fioDaParte(FIO_COMPRIDO, baixa);
+
+    expect(curta.inicio.x).toBeCloseTo(100, 9);
+    expect(curta.fim.x).toBeCloseTo(100, 9);
+    expect((curta.inicio.y + curta.fim.y) / 2).toBeCloseTo(50, 9);
+    expect(curta.fim.y - curta.inicio.y).toBeGreaterThan(0);
+    expect(curta.fim.y - curta.inicio.y).toBeLessThan(100);
+    // A maior das reduções que cabe: 260 × 0,75⁴ ≈ 82 mm.
+    expect(curta.fim.y - curta.inicio.y).toBeCloseTo(260 * 0.75 ** 4, 6);
+  });
+
+  it('se o meio da parte está fora dela (um "L"), a seta fica no meio como sempre', () => {
+    const noMeio = fioDaParte({ inicio: ponto(900, 20), fim: ponto(900, 280) }, EM_L);
+    expect(noMeio.fim.y - noMeio.inicio.y).toBeCloseTo(260, 9);
+  });
+
+  it('num "U", com o meio no vão, a seta não encolhe até ficar atravessada no vão com as pontas nas pernas', () => {
+    // Pernas de x = 0 a 50 e de 150 a 200; o vão entre elas vai de y = 100 para cima. O meio da caixa, (100, 150), está no vão.
+    const emU = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(150, 300), ponto(150, 100), ponto(50, 100), ponto(50, 300), ponto(0, 300)];
+    const seta = fioDaParte({ inicio: ponto(-50, 900), fim: ponto(250, 900) }, emU);
+
+    // Encolhida a 168,75 mm, as pontas cairiam dentro das pernas; mas o meio dela ficaria no ar: fica como sempre, no meio e inteira.
+    expect(seta.fim.x - seta.inicio.x).toBeCloseTo(300, 9);
+    expect(seta.inicio.y).toBeCloseTo(150, 9);
+  });
+});
+
+describe('cruzamentosDaReta nos moldes reais', () => {
+  it('o ponto do contorno a nanômetros da reta é o cruzamento: não nasce um ponto novo colado nele', () => {
+    // O canto (200, 150) está a 0,00002 mm da reta em pé que passa por y = 150,00002.
+    const comPonto = [ponto(0, 0), ponto(200, 0), ponto(200, 150), ponto(200, 300), ponto(0, 300)];
+    const cruzamentos = cruzamentosDaReta(comPonto, ponto(0, 150.00002), ponto(200, 150.00002));
+
+    expect(cruzamentos).toHaveLength(2);
+    expect(cruzamentos.map((c) => c.ponto)).toContainEqual(ponto(200, 150));
+    // A dois milésimos de milímetro, já é outro ponto: o cruzamento cai na aresta.
+    const longe = cruzamentosDaReta(comPonto, ponto(0, 150.002), ponto(200, 150.002));
+    expect(longe.map((c) => c.ponto)).not.toContainEqual(ponto(200, 150));
+    expect(longe).toHaveLength(2);
+  });
+});
+
 describe('cortarMoldeComOpcoes', () => {
   // O corte em pé, em x = 50: a parte maior vai de x = 50 a 200, e a nova, de 0 a 50.
   const [a, b] = [na(0, 50, 0), na(2, 50, 300)];
@@ -742,6 +797,20 @@ describe('remover região: manter a região e unir o que sobra', () => {
     expect(Math.min(...xs)).toBeCloseTo(40, 6);
     expect(Math.max(...xs)).toBeCloseTo(200, 6);
     expect(area(unida.contorno)).toBeCloseTo(48000, 6);
+  });
+
+  it('a linha de fio que não cabe mais na peça unida vai para o meio dela', () => {
+    // O fio atravessa a peça de lado a lado, por cima das duas retas: tirada a faixa, ele sobra para fora.
+    const peca = molde({ linhaDeFio: { inicio: ponto(10, 150), fim: ponto(190, 150) } });
+    const { peca: unida } = removerFaixaDoMolde(peca, na(0, 100, 0), na(2, 100, 300), ponto(140, 0), ponto(140, 300), 'faixa');
+    const xs = unida.contorno.map((p) => p.x);
+    const [minX, maxX] = [Math.min(...xs), Math.max(...xs)];
+
+    expect(maxX - minX).toBeCloseTo(160, 6);
+    // Na mesma direção e centrada na peça que ficou; como a peça (160 mm) ficou mais curta que a seta (180), ela encolheu uma vez: 135 mm.
+    expect(unida.linhaDeFio.fim.x - unida.linhaDeFio.inicio.x).toBeCloseTo(180 * 0.75, 6);
+    expect((unida.linhaDeFio.inicio.x + unida.linhaDeFio.fim.x) / 2).toBeCloseTo((minX + maxX) / 2, 6);
+    expect(unida.linhaDeFio.inicio.y).toBeCloseTo(150, 6);
   });
 
   it('retas de comprimentos diferentes deixam um degrau, que é dito', () => {

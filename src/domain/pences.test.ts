@@ -107,10 +107,27 @@ describe('criarPence, recortada', () => {
     expect(comPence.contorno.some((p) => Math.abs(p.x - 100) < 1e-6 && Math.abs(p.y - 200) < 1e-6)).toBe(true);
   });
 
-  it('a pence num canto abre meia abertura para cada aresta', () => {
+  it('a pence num canto: as pontas andam o mesmo tanto por cada aresta, até a reta entre elas ter a abertura pedida', () => {
     const { inicio, fim } = geometriaDaPence(molde(), na(2, 200, 300), 40, 50);
-    expect(inicio.ponto).toEqual(ponto(200, 280));
-    expect(fim.ponto).toEqual(ponto(180, 300));
+    // Com o canto em esquadro, cada ponta fica a 40 / √2 dele: a reta de uma à outra mede 40.
+    const cateto = 40 / Math.SQRT2;
+    expect(inicio.ponto.x).toBeCloseTo(200, 6);
+    expect(inicio.ponto.y).toBeCloseTo(300 - cateto, 6);
+    expect(fim.ponto.x).toBeCloseTo(200 - cateto, 6);
+    expect(fim.ponto.y).toBeCloseTo(300, 6);
+    expect(Math.hypot(inicio.ponto.x - fim.ponto.x, inicio.ponto.y - fim.ponto.y)).toBeCloseTo(40, 6);
+  });
+
+  it('na borda reta, as pontas ficam exatamente a meia abertura de cada lado', () => {
+    const { inicio, fim } = geometriaDaPence(molde(), na(2, 100, 300), 40, 50);
+    expect(inicio.ponto).toEqual(ponto(120, 300));
+    expect(fim.ponto).toEqual(ponto(80, 300));
+  });
+
+  it('a abertura que não cabe no contorno é recusada', () => {
+    expect(() => geometriaDaPence(molde(), na(2, 200, 300), 600, 50)).toThrow('grande demais');
+    // Num canto, a reta entre as pontas cresce menos que o caminho: a abertura que a peça não alcança é recusada.
+    expect(() => geometriaDaPence(molde(), na(2, 200, 300), 360, 50)).toThrow('grande demais');
   });
 
   it('recusa abertura ou profundidade que não seja maior que zero', () => {

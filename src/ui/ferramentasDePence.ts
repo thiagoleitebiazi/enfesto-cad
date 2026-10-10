@@ -636,7 +636,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             opcoes: [...MODOS_DE_PENCE, { valor: 'abrir', rotulo: 'Abrir: acrescenta a abertura, girando a peça em torno de um pivô' }],
             inicial: opcoes.pence.modo,
           },
-          { tipo: 'medida', id: 'abertura', rotulo: 'Abertura (mm)', inicial: paraCampo(opcoes.pence.aberturaMm) },
+          { tipo: 'medida', id: 'abertura', rotulo: 'Abertura (mm): de uma ponta à outra, em linha reta', inicial: paraCampo(opcoes.pence.aberturaMm) },
           { tipo: 'medida', id: 'profundidade', rotulo: 'Profundidade (mm)', inicial: paraCampo(opcoes.pence.profundidadeMm) },
           {
             tipo: 'caixa',
@@ -709,7 +709,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             rotulo: 'Distância entre as pences (mm), de centro a centro',
             inicial: paraCampo(opcoes.multiplas.distanciaMm),
           },
-          { tipo: 'medida', id: 'abertura', rotulo: 'Abertura de cada uma (mm)', inicial: paraCampo(opcoes.multiplas.aberturaMm) },
+          { tipo: 'medida', id: 'abertura', rotulo: 'Abertura de cada uma (mm): de uma ponta à outra, em linha reta', inicial: paraCampo(opcoes.multiplas.aberturaMm) },
           { tipo: 'medida', id: 'profundidade', rotulo: 'Profundidade (mm)', inicial: paraCampo(opcoes.multiplas.profundidadeMm) },
           { tipo: 'escolha', id: 'modo', rotulo: 'O que fazer', opcoes: MODOS_DE_PENCE, inicial: opcoes.multiplas.modo },
           { tipo: 'caixa', id: 'piquesLaterais', rotulo: 'Piques laterais: um em cada ponta de cada pence', inicial: opcoes.multiplas.piquesLaterais },

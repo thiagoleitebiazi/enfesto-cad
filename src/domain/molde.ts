@@ -140,6 +140,8 @@ export interface PregaDaPeca {
   readonly movida: readonly [Ponto2D, Ponto2D];
   /** As linhas internas que a prega desenhou: as de dobra e as setas. */
   readonly linhas: readonly Contorno[];
+  /** As linhas internas que estavam em cima da linha da prega e saíram quando ela abriu (a reta auxiliar, uma linha de centro): voltam quando a prega é tirada. */
+  readonly linhasTiradas?: readonly Contorno[];
   /** Cada ponta da linha da prega foi posta no contorno por ela (não era um ponto dele)? Tirada a prega, a ponta posta por ela sai junto. */
   readonly pontasCriadas: readonly [boolean, boolean];
   /** Os piques que a ferramenta pôs junto com a prega. */
@@ -366,6 +368,7 @@ export function pregasLevadas(pregas: readonly PregaDaPeca[], ponto: (p: Ponto2D
     parada: [ponto(prega.parada[0]), ponto(prega.parada[1])],
     movida: [ponto(prega.movida[0]), ponto(prega.movida[1])],
     linhas: prega.linhas.map((linha) => linha.map(ponto)),
+    ...(prega.linhasTiradas ? { linhasTiradas: prega.linhasTiradas.map((linha) => linha.map(ponto)) } : {}),
   }));
 }
 
