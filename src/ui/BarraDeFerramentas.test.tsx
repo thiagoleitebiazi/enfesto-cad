@@ -112,6 +112,8 @@ function propsBase(): Props {
     onEntrarModoCirculo: vi.fn(),
     onUsarFerramentaDeMolde: vi.fn(),
     temOutraPeca: true,
+    onUsarFerramentaDeArco: vi.fn(),
+    onEntrarModoCotaRaio: vi.fn(),
     onUsarFerramentaDeGraduacao: vi.fn(),
     temGraduacao: false,
     temOutrasMarcadas: false,
@@ -277,7 +279,6 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
   it('os motivos são os de cada família de ferramenta', () => {
     renderizar('Construção');
     expect(botao('Estender reta').title).toContain('trabalha sobre elementos de modelagem');
-    expect(botao('Arco tangente a 2 arcos').title).toContain('precisa de um arco como elemento');
     expect(botao('Inserir texto').title).toContain('não há textos soltos no desenho');
     cleanup();
 
@@ -288,7 +289,6 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
     cleanup();
 
     renderizar('Conferência');
-    expect(botao('Raio').title).toContain('precisa de um arco');
     expect(botao('Conferir').title).toContain('operação de modelagem');
   });
 
@@ -552,6 +552,39 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     expect(props.onAbrirCostura).toHaveBeenCalledTimes(2);
     expect(props.onRemoverCostura).toHaveBeenCalledTimes(1);
     expect(props.onConverterEmContorno).toHaveBeenCalledTimes(1);
+  });
+
+  it('Construção: os três arcos que dependem de reconhecer arcos no contorno chamam a ferramenta de cada um', () => {
+    const props = renderizar('Construção');
+
+    for (const nome of ['Arco tangente à reta ou arco', 'Arco tangente a arco e reta', 'Arco tangente a 2 arcos']) fireEvent.click(botao(nome));
+
+    expect(vi.mocked(props.onUsarFerramentaDeArco).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'arco-tangente-a-elemento',
+      'arco-tangente-arco-reta',
+      'arco-tangente-2-arcos',
+    ]);
+  });
+
+  it.each([
+    ['Arco tangente à reta ou arco', 'arco-tangente-a-elemento'],
+    ['Arco tangente a arco e reta', 'arco-tangente-arco-reta'],
+    ['Arco tangente a 2 arcos', 'arco-tangente-2-arcos'],
+  ] as const)('Construção: %s aparece pressionado enquanto é a ferramenta ligada', (nome, modo) => {
+    renderizar('Construção', { modo });
+
+    expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Conferência: Raio liga a cota de raio', () => {
+    const props = renderizar('Conferência');
+
+    fireEvent.click(botao('Raio'));
+
+    expect(props.onEntrarModoCotaRaio).toHaveBeenCalledTimes(1);
+    cleanup();
+    renderizar('Conferência', { modo: 'cota-raio' });
+    expect(botao('Raio')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('Produção: Bainha, Dobrar, Desdobrar, Cortar, Unir e Remover região chamam a ferramenta de cada um', () => {

@@ -10,7 +10,7 @@ import { distancia, type Ponto2D } from '../core/geometria';
  * troca os eixos (ui/transformacaoDeTela.ts): a horizontal é o Y do mundo e a
  * vertical, o X.
  */
-export type Cota = CotaLinear | CotaDeAngulo | CotaDePerimetro;
+export type Cota = CotaLinear | CotaDeAngulo | CotaDePerimetro | CotaDeRaio;
 
 /** Distância entre dois pontos, medida numa direção: a reta que os liga, a horizontal ou a vertical. */
 export interface CotaLinear {
@@ -40,6 +40,14 @@ export interface CotaDePerimetro {
   readonly id: string;
   readonly tipo: 'perimetro';
   readonly posicao: Ponto2D;
+}
+
+/** Raio de um arco do contorno: a distância do `centro` ao ponto `noArco`, desenhada como um raio do círculo. */
+export interface CotaDeRaio {
+  readonly id: string;
+  readonly tipo: 'raio';
+  readonly centro: Ponto2D;
+  readonly noArco: Ponto2D;
 }
 
 /** Dois pontos a menos disso (mm) são o mesmo: não há o que medir entre eles. */
@@ -97,6 +105,17 @@ export function cotaDePerimetro(id: string, posicao: Ponto2D): CotaDePerimetro {
   return { id, tipo: 'perimetro', posicao };
 }
 
+/** "Raio": do centro do arco a um ponto dele. */
+export function cotaDeRaio(id: string, centro: Ponto2D, noArco: Ponto2D): CotaDeRaio {
+  if (distancia(centro, noArco) < MESMO_PONTO_MM) throw new Error('O raio precisa de um centro e de um ponto do arco diferentes.');
+  return { id, tipo: 'raio', centro, noArco };
+}
+
+/** O raio da cota, em mm. */
+export function valorDaCotaDeRaio(cota: CotaDeRaio): number {
+  return distancia(cota.centro, cota.noArco);
+}
+
 /** A medida da cota linear, em mm: quanto `de` e `ate` distam na direção dela. */
 export function valorDaCotaLinear(cota: CotaLinear): number {
   return Math.abs(escalar({ x: cota.ate.x - cota.de.x, y: cota.ate.y - cota.de.y }, cota.direcao));
@@ -140,6 +159,7 @@ export function bissetrizDaCotaDeAngulo(cota: CotaDeAngulo): Ponto2D {
 /** O ponto do mundo em que o número da cota é escrito (e onde um clique a escolhe para apagar). */
 export function ancoraDoRotulo(cota: Cota): Ponto2D {
   if (cota.tipo === 'perimetro') return cota.posicao;
+  if (cota.tipo === 'raio') return { x: (cota.centro.x + cota.noArco.x) / 2, y: (cota.centro.y + cota.noArco.y) / 2 };
   if (cota.tipo === 'linear') return geometriaDaCotaLinear(cota).meio;
   const bissetriz = bissetrizDaCotaDeAngulo(cota);
   return { x: cota.vertice.x + bissetriz.x * cota.raioMm, y: cota.vertice.y + bissetriz.y * cota.raioMm };
@@ -152,6 +172,7 @@ export function ancoraDoRotulo(cota: Cota): Ponto2D {
  */
 export function transformarCota(cota: Cota, ponto: (p: Ponto2D) => Ponto2D, vetor: (v: Ponto2D) => Ponto2D): Cota {
   if (cota.tipo === 'perimetro') return { ...cota, posicao: ponto(cota.posicao) };
+  if (cota.tipo === 'raio') return { ...cota, centro: ponto(cota.centro), noArco: ponto(cota.noArco) };
   if (cota.tipo === 'angulo') {
     return { ...cota, de: ponto(cota.de), vertice: ponto(cota.vertice), ate: ponto(cota.ate) };
   }

@@ -7,6 +7,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
+import { linhaDoArcoTangente } from '../core/arcos';
 import { ajustarCurvaAosExtremos, arcoPorTresPontos, curvaPorPontos, reamostrarLinha } from '../core/curvas';
 
 /**
@@ -21,7 +22,8 @@ export type FerramentaDeTrecho =
   | 'arco-3-pontos'
   | 'editar-pontos-de-curva'
   | 'cadastrar-curva'
-  | 'curva-predefinida';
+  | 'curva-predefinida'
+  | 'arco-tangente-a-elemento';
 
 /** Os extremos do trecho, já presos ao contorno, e os pontos livres clicados (por onde a curva passa). */
 export interface TrechoEmEdicao {
@@ -127,6 +129,8 @@ export function linhaNovaDoTrecho(
     return opcoes.forma ? ajustarCurvaAosExtremos(opcoes.forma, inicio.ponto, fim, opcoes.espelhar ?? false) : null;
   }
   if (!fimNoContorno) return null;
+  // Sai de `inicio` dando continuidade ao elemento vizinho; lança erro se não há arco que chegue ao fim.
+  if (ferramenta === 'arco-tangente-a-elemento') return linhaDoArcoTangente(contorno, inicio, fimNoContorno);
   const caminho = caminhoDoTrecho(contorno, inicio, fimNoContorno);
   if (ferramenta === 'cadastrar-curva') return caminho;
   return opcoes.quantidadeDePontos ? reamostrarLinha(caminho, opcoes.quantidadeDePontos) : null;
@@ -163,7 +167,12 @@ export function previaDoTrecho(
   const livres =
     ferramenta === 'arco-2-pontos' && estado.fim && estado.livres.length === 0 && mouse ? [mouse.livre] : estado.livres;
   const fim = fimNoContorno?.ponto ?? mouse?.livre ?? null;
-  const novo = fim ? linhaNovaDoTrecho(ferramenta, contorno, estado.inicio, fim, livres, opcoes, fimNoContorno) : null;
+  let novo: Ponto2D[] | null = null;
+  try {
+    novo = fim ? linhaNovaDoTrecho(ferramenta, contorno, estado.inicio, fim, livres, opcoes, fimNoContorno) : null;
+  } catch {
+    // Com o mouse ali a linha não existe (um arco tangente impossível, por exemplo): fica sem prévia.
+  }
   // Indicar um trecho sem trocá-lo (cadastrar, contar pontos) não tem linha nova a mostrar.
   const soIndica = ferramenta === 'cadastrar-curva' || ferramenta === 'editar-pontos-de-curva';
   return { novo: soIndica ? null : novo, substituido, marcas };

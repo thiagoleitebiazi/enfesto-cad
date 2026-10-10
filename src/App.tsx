@@ -84,6 +84,16 @@ import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
 import { expandirTamanhos } from './domain/tamanhosGraduados';
+import {
+  arredondarCanto,
+  cotaDeRaioEm,
+  ehFerramentaDeCanto,
+  ferramentaDoCanto,
+  nomeDaFerramentaDeCanto,
+  recusaDoCanto,
+  type FerramentaDeCanto,
+} from './ui/ferramentasDeArco';
+import { valorDaCotaDeRaio } from './domain/cota';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
 import {
   curvaDoTrecho,
@@ -312,7 +322,8 @@ function ehFerramentaDeTrecho(modo: ModoDeDesenho): modo is FerramentaDeTrecho {
     modo === 'arco-3-pontos' ||
     modo === 'editar-pontos-de-curva' ||
     modo === 'cadastrar-curva' ||
-    modo === 'curva-predefinida'
+    modo === 'curva-predefinida' ||
+    modo === 'arco-tangente-a-elemento'
   );
 }
 
@@ -1068,7 +1079,7 @@ export default function App(): React.JSX.Element {
 
   /** As ferramentas que mexem no contorno precisam de uma peça selecionada. */
   const entrarModoNaPecaSelecionada = useCallback(
-    (ferramenta: FerramentaDeTrecho | 'arco-tangente') => {
+    (ferramenta: FerramentaDeTrecho | FerramentaDeCanto) => {
       if (selecionadoId) entrarModoDeConstrucao(ferramenta);
     },
     [selecionadoId, entrarModoDeConstrucao],
@@ -2085,15 +2096,42 @@ export default function App(): React.JSX.Element {
         }
         return;
       }
-      if (modo === 'arco-tangente') {
+      if (ehFerramentaDeCanto(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
-        setRecadoDaFerramenta(null);
         const canto = posicaoNoContornoPerto(semCaptura, peca.contorno, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
-        // Só um vértice serve: o arco é tangente às duas arestas que se encontram nele.
-        if (canto && distancia(canto.ponto, peca.contorno[canto.indiceAresta]!) < 1e-9) {
-          setDialogoDeFerramenta({ tipo: 'raio-do-arco', indice: canto.indiceAresta });
+        // Só um vértice serve: o arco é tangente aos dois elementos que se encontram nele.
+        if (!canto || distancia(canto.ponto, peca.contorno[canto.indiceAresta]!) >= 1e-9) {
+          setRecadoDaFerramenta(null);
+          return;
         }
+        // Cada ferramenta vale para um tipo de canto; a recusa diz qual é a certa.
+        const recusa = recusaDoCanto(modo, peca.contorno, canto.indiceAresta);
+        setRecadoDaFerramenta(recusa);
+        if (!recusa) setDialogoDeFerramenta({ tipo: 'raio-do-arco', indice: canto.indiceAresta });
+        return;
+      }
+      if (modo === 'cota-raio') {
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        // Um clique no número de uma cota a apaga, como nas outras cotas.
+        const cotaClicada = cotaSobOPonto(pecas, semCaptura, raioMm);
+        if (cotaClicada) {
+          aplicarMudanca(pecas.map((p) => (p.id === cotaClicada.pecaId ? removerCota(p, cotaClicada.cotaId) : p)));
+          setRecadoDaFerramenta(null);
+          return;
+        }
+        const alvo = alvoDaMedicao(semCaptura, pecas, raioMm);
+        if (!alvo || alvo.tipo !== 'contorno') {
+          setRecadoDaFerramenta('Clique sobre o contorno de uma peça, num arco.');
+          return;
+        }
+        const cota = cotaDeRaioEm(alvo.peca.contorno, alvo.posicao, proximoId());
+        if (!cota) {
+          setRecadoDaFerramenta('Esse trecho do contorno é uma reta: a cota de raio é para arcos, cantos arredondados e círculos.');
+          return;
+        }
+        aplicarMudanca(pecas.map((p) => (p.id === alvo.peca.id ? adicionarCota(p, cota) : p)));
+        setRecadoDaFerramenta(`Raio de ${formatarMm(valorDaCotaDeRaio(cota))} em “${alvo.peca.nome}”.`);
         return;
       }
       if (modo === 'circulo') {
@@ -2544,6 +2582,16 @@ export default function App(): React.JSX.Element {
           : 'Arco por 3 pontos: clique no contorno, onde o arco termina (um clique fora dele troca o ponto de passagem).' + fim;
       case 'arco-tangente':
         return 'Arco tangente a 2 retas: clique num canto da peça selecionada e digite o raio.' + fim;
+      case 'arco-tangente-arco-reta':
+        return 'Arco tangente a arco e reta: clique num canto em que um arco encontra uma reta e digite o raio.' + fim;
+      case 'arco-tangente-2-arcos':
+        return 'Arco tangente a 2 arcos: clique num canto em que dois arcos se encontram e digite o raio.' + fim;
+      case 'arco-tangente-a-elemento':
+        return !trecho.inicio
+          ? 'Arco tangente à reta ou arco: clique no contorno da peça selecionada, onde o arco começa — ele sai dali dando continuidade ao elemento vizinho.' + fim
+          : 'Arco tangente à reta ou arco: clique no contorno, onde o arco termina — ele entra no lugar do trecho em destaque.' + fim;
+      case 'cota-raio':
+        return 'Raio: clique sobre um arco do contorno de uma peça. Para apagar uma cota, clique no número dela.' + fim;
       case 'editar-pontos-de-curva':
         return !trecho.inicio
           ? 'Editar pontos de curva: clique no contorno da peça selecionada, no começo do trecho.' + fim
@@ -2821,6 +2869,8 @@ export default function App(): React.JSX.Element {
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
         onEntrarModoArcoTangente={() => entrarModoNaPecaSelecionada('arco-tangente')}
+        onUsarFerramentaDeArco={entrarModoNaPecaSelecionada}
+        onEntrarModoCotaRaio={() => entrarModoDeConstrucao('cota-raio')}
         onEntrarModoEditarPontosDeCurva={() => entrarModoNaPecaSelecionada('editar-pontos-de-curva')}
         onEntrarModoCadastrarCurva={() => entrarModoNaPecaSelecionada('cadastrar-curva')}
         onAbrirCurvaPredefinida={() => selecionadoId && setDialogoDeFerramenta({ tipo: 'escolher-curva' })}
@@ -3274,13 +3324,13 @@ export default function App(): React.JSX.Element {
       )}
       {dialogoDeFerramenta?.tipo === 'raio-do-arco' && pecaSelecionada && (
         <DialogoDeCampos
-          titulo="Arco tangente a 2 retas"
+          titulo={nomeDaFerramentaDeCanto(ferramentaDoCanto(pecaSelecionada.contorno, dialogoDeFerramenta.indice))}
           resumo={[
             ['Peça', pecaSelecionada.nome],
             ['Canto', `ponto ${dialogoDeFerramenta.indice + 1}`],
           ]}
           campos={[{ tipo: 'medida', id: 'raio', rotulo: 'Raio do arco (mm)', inicial: '10' }]}
-          nota="O canto vira um arco tangente às duas arestas que se encontram nele. Um raio grande demais para as arestas é reduzido ao que cabe."
+          nota="O canto vira um arco tangente aos dois elementos que se encontram nele. Entre duas retas, um raio grande demais é reduzido ao que cabe; com um arco de um dos lados, o raio que não cabe é recusado."
           rotuloDoBotao="Criar arco"
           onAplicar={(valores) => {
             const raioMm = Number(valores.raio);
@@ -3288,7 +3338,7 @@ export default function App(): React.JSX.Element {
             try {
               aplicarMudanca(
                 pecas.map((p) =>
-                  p.id === pecaSelecionada.id ? arredondarCantoDoMolde(p, dialogoDeFerramenta.indice, raioMm) : p,
+                  p.id === pecaSelecionada.id ? arredondarCanto(p, dialogoDeFerramenta.indice, raioMm) : p,
                 ),
               );
               return null;

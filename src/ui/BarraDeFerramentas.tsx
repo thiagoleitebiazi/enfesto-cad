@@ -110,6 +110,9 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoArco2Pontos: () => void;
   readonly onEntrarModoArco3Pontos: () => void;
   readonly onEntrarModoArcoTangente: () => void;
+  /** Os arcos que dependem de reconhecer arcos no contorno: tangente a um elemento, a arco e reta, e a 2 arcos. */
+  readonly onUsarFerramentaDeArco: (ferramenta: 'arco-tangente-a-elemento' | 'arco-tangente-arco-reta' | 'arco-tangente-2-arcos') => void;
+  readonly onEntrarModoCotaRaio: () => void;
   readonly onEntrarModoEditarPontosDeCurva: () => void;
   readonly onEntrarModoCadastrarCurva: () => void;
   readonly onAbrirCurvaPredefinida: () => void;
@@ -130,8 +133,6 @@ interface BarraDeFerramentasProps {
 const SO_PARA_ELEMENTOS =
   'indisponível neste programa: trabalha sobre elementos de modelagem (linhas soltas), e aqui só existem peças fechadas';
 
-const SO_ENTRE_ARCOS =
-  'indisponível neste programa: precisa de um arco como elemento para tangenciar, e aqui os arcos viram pontos do contorno, sem centro nem raio guardados';
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
 const SEM_PECA = 'selecione uma peça primeiro';
@@ -723,7 +724,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={props.onEntrarModoArco3Pontos}
                   />
-                  <Ferramenta tamanho="icone" rotulo="Arco tangente à reta ou arco" icone="arco-tangente-reta" indisponivel={SO_ENTRE_ARCOS} />
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco tangente à reta ou arco"
+                    icone="arco-tangente-reta"
+                    pressionado={props.modo === 'arco-tangente-a-elemento'}
+                    dica="Arco tangente à reta ou arco: troca um trecho do contorno por um arco que sai do primeiro ponto dando continuidade à reta ou ao arco vizinho — clique no contorno, onde o arco começa e onde termina"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeArco('arco-tangente-a-elemento')}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
@@ -739,9 +748,20 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="icone"
                     rotulo="Arco tangente a arco e reta"
                     icone="arco-tangente-arco-reta"
-                    indisponivel={SO_ENTRE_ARCOS}
+                    pressionado={props.modo === 'arco-tangente-arco-reta'}
+                    dica="Arco tangente a arco e reta, dado o raio: clique num canto em que um arco encontra uma reta e digite o raio — o canto vira um arco tangente aos dois"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeArco('arco-tangente-arco-reta')}
                   />
-                  <Ferramenta tamanho="icone" rotulo="Arco tangente a 2 arcos" icone="arco-tangente-2-arcos" indisponivel={SO_ENTRE_ARCOS} />
+                  <Ferramenta
+                    tamanho="icone"
+                    rotulo="Arco tangente a 2 arcos"
+                    icone="arco-tangente-2-arcos"
+                    pressionado={props.modo === 'arco-tangente-2-arcos'}
+                    dica="Arco tangente a 2 arcos, dado o raio: clique num canto em que dois arcos se encontram e digite o raio — o canto vira um arco tangente aos dois"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeArco('arco-tangente-2-arcos')}
+                  />
                 </div>
               </div>
 
@@ -1466,7 +1486,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Raio"
                     icone="raio"
-                    indisponivel="indisponível neste programa: a cota de raio precisa de um arco, e aqui as curvas são sequências de pontos, sem raio guardado"
+                    pressionado={props.modo === 'cota-raio'}
+                    dica="Raio: cota do raio de um arco do contorno — clique sobre o arco (vale para arcos, cantos arredondados e círculos)"
+                    falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                    onClick={props.onEntrarModoCotaRaio}
                   />
                 </div>
               </div>

@@ -4,6 +4,7 @@ import {
   bissetrizDaCotaDeAngulo,
   geometriaDaCotaLinear,
   valorDaCotaDeAngulo,
+  valorDaCotaDeRaio,
   valorDaCotaLinear,
   type Cota,
 } from '../domain/cota';
@@ -112,6 +113,10 @@ export type ModoDeDesenho =
   | 'arco-2-pontos'
   | 'arco-3-pontos'
   | 'arco-tangente'
+  | 'arco-tangente-a-elemento'
+  | 'arco-tangente-arco-reta'
+  | 'arco-tangente-2-arcos'
+  | 'cota-raio'
   | 'editar-pontos-de-curva'
   | 'cadastrar-curva'
   | 'curva-predefinida'
@@ -170,6 +175,9 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'arco-2-pontos',
   'arco-3-pontos',
   'arco-tangente',
+  'arco-tangente-a-elemento',
+  'arco-tangente-arco-reta',
+  'arco-tangente-2-arcos',
   'editar-pontos-de-curva',
   'cadastrar-curva',
   'curva-predefinida',
@@ -578,6 +586,28 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         const tela = mundoParaTela(cota.posicao, transform);
         ctx.textAlign = 'center';
         desenharRotuloComFundo(ctx, `Perímetro: ${formatarMm(perimetroDaPecaMm)}`, tela.x, tela.y + 4, cor);
+        ctx.textAlign = 'left';
+        return;
+      }
+      if (cota.tipo === 'raio') {
+        // Um raio do círculo: do centro (marcado com uma cruz) ao ponto do arco, com a seta nele.
+        const centro = mundoParaTela(cota.centro, transform);
+        const noArco = mundoParaTela(cota.noArco, transform);
+        ctx.beginPath();
+        ctx.moveTo(centro.x - 4, centro.y);
+        ctx.lineTo(centro.x + 4, centro.y);
+        ctx.moveTo(centro.x, centro.y - 4);
+        ctx.lineTo(centro.x, centro.y + 4);
+        ctx.moveTo(centro.x, centro.y);
+        ctx.lineTo(noArco.x, noArco.y);
+        const comprimento = Math.hypot(noArco.x - centro.x, noArco.y - centro.y) || 1;
+        const u = { x: (noArco.x - centro.x) / comprimento, y: (noArco.y - centro.y) / comprimento };
+        ctx.moveTo(noArco.x - u.x * 8 - u.y * 3, noArco.y - u.y * 8 + u.x * 3);
+        ctx.lineTo(noArco.x, noArco.y);
+        ctx.lineTo(noArco.x - u.x * 8 + u.y * 3, noArco.y - u.y * 8 - u.x * 3);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        desenharRotuloComFundo(ctx, `R ${formatarMm(valorDaCotaDeRaio(cota))}`, (centro.x + noArco.x) / 2, (centro.y + noArco.y) / 2 + 4, cor);
         ctx.textAlign = 'left';
         return;
       }
