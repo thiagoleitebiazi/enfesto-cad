@@ -43,6 +43,19 @@ import {
   retaCompleta,
   type FerramentaDeMolde,
 } from './ui/ferramentasDeMolde';
+import {
+  aplicarPence,
+  cliqueDePence,
+  dialogoDaPence,
+  ehFerramentaDePence,
+  instrucaoDaPence,
+  lerDialogoDaPence,
+  OPCOES_INICIAIS_DAS_PENCES,
+  penceCompleta,
+  previaDaPence,
+  type FerramentaDePence,
+  type OpcoesDasPences,
+} from './ui/ferramentasDePence';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
 import {
   curvaDoTrecho,
@@ -283,7 +296,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'espiral' }
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
-  | { readonly tipo: 'unir' };
+  | { readonly tipo: 'unir' }
+  | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence };
 
 /** Número para um campo de diálogo, com vírgula decimal. */
 function paraCampo(valor: number): string {
@@ -377,6 +391,8 @@ export default function App(): React.JSX.Element {
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
+  // Pences e pregas: o que cada diálogo deixou escolhido.
+  const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -1017,14 +1033,16 @@ export default function App(): React.JSX.Element {
     [selecionadoId, entrarModoDeConstrucao],
   );
 
-  /** Cortar, dobrar, unir e bainha: as duas últimas pedem antes as opções, num diálogo. */
+  /** Ferramentas da aba Produção: as que têm opções pedem-nas antes, num diálogo; as outras ligam direto. */
   const usarFerramentaDeMolde = useCallback(
-    (ferramenta: FerramentaDeMolde) => {
+    (ferramenta: FerramentaDeMolde | FerramentaDePence) => {
       if (!selecionadoId) return;
       if (ferramenta === 'bainha' || ferramenta === 'unir') setDialogoDeFerramenta({ tipo: ferramenta });
-      else entrarModoDeConstrucao(ferramenta);
+      else if (ehFerramentaDePence(ferramenta) && dialogoDaPence(ferramenta, opcoesDasPences)) {
+        setDialogoDeFerramenta({ tipo: 'pence', ferramenta });
+      } else entrarModoDeConstrucao(ferramenta);
     },
-    [selecionadoId, entrarModoDeConstrucao],
+    [selecionadoId, opcoesDasPences, entrarModoDeConstrucao],
   );
 
   const entrarModoDeCota = useCallback((ferramenta: FerramentaDeCota) => {
@@ -1882,6 +1900,30 @@ export default function App(): React.JSX.Element {
         }
         return;
       }
+      if (ehFerramentaDePence(modo)) {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const { estado, recusa } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+          noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
+          livre: semCaptura,
+        });
+        setRecadoDaFerramenta(recusa);
+        if (recusa) return;
+        if (!penceCompleta(modo, opcoesDasPences, estado)) {
+          setTrecho(estado);
+          return;
+        }
+        setTrecho(SEM_TRECHO);
+        try {
+          const resultado = aplicarPence(modo, opcoesDasPences, pecas, peca, estado, proximoId);
+          aplicarMudanca([...resultado.pecas]);
+          setRecadoDaFerramenta(resultado.recado);
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
       if (modo === 'desdobrar') {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -1979,6 +2021,7 @@ export default function App(): React.JSX.Element {
       espiralPendente,
       opcoesDeBainha,
       unirApenasMovendo,
+      opcoesDasPences,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2310,6 +2353,13 @@ export default function App(): React.JSX.Element {
           : {};
       return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
     }
+    if (pecaSelecionada && ehFerramentaDePence(modo)) {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const mouse = cursorMundo
+        ? { noContorno: posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm), livre: cursorMundo }
+        : null;
+      return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
+    }
     if (pecaSelecionada && (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'desdobrar' || modo === 'unir')) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const contorno = pecaSelecionada.contorno;
@@ -2343,6 +2393,7 @@ export default function App(): React.JSX.Element {
     curvaEscolhida,
     espiralPendente,
     opcoesDeBainha,
+    opcoesDasPences,
     pontosEmEdicao,
     transform.escalaPxPorMm,
   ]);
@@ -2350,6 +2401,7 @@ export default function App(): React.JSX.Element {
   /** O texto da ferramenta de curva ou arco ligada, conforme o que já foi clicado. */
   const textoDaConstrucao = ((): string | null => {
     const fim = ' Esc sai.';
+    if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
     switch (modo) {
       case 'curva':
         if (!trecho.inicio) return 'Curva: clique no contorno da peça selecionada, onde a curva começa.' + fim;
@@ -2418,6 +2470,10 @@ export default function App(): React.JSX.Element {
         return null;
     }
   })();
+
+  // O diálogo de opções da ferramenta de pence ou prega que foi pedida.
+  const dialogoDePence =
+    dialogoDeFerramenta?.tipo === 'pence' ? dialogoDaPence(dialogoDeFerramenta.ferramenta, opcoesDasPences) : null;
 
   const textoDaFaixa = ((): React.ReactNode => {
     if (ferramentaDeVista === 'mao') return 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.';
@@ -2913,6 +2969,27 @@ export default function App(): React.JSX.Element {
             entrarModoDeConstrucao('unir');
             setUnirApenasMovendo(valores.apenasMover === true);
             return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'pence' && dialogoDePence && pecaSelecionada && (
+        <DialogoDeCampos
+          key={dialogoDeFerramenta.ferramenta}
+          titulo={dialogoDePence.titulo}
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDePence.campos}
+          nota={dialogoDePence.nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            try {
+              const novas = lerDialogoDaPence(dialogoDeFerramenta.ferramenta, opcoesDasPences, valores);
+              entrarModoDeConstrucao(dialogoDeFerramenta.ferramenta);
+              setOpcoesDasPences(novas);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
           }}
           onFechar={() => setDialogoDeFerramenta(null)}
         />

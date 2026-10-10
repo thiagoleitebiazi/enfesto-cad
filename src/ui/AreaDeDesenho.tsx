@@ -119,7 +119,13 @@ export type ModoDeDesenho =
   | 'dobrar'
   | 'desdobrar'
   | 'unir'
-  | 'bainha';
+  | 'bainha'
+  | 'pence-no-contorno'
+  | 'pence-interna'
+  | 'fechar-pence'
+  | 'transferir-pence'
+  | 'multiplas-pences'
+  | 'pregas';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -140,8 +146,8 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
 /**
  * Modos que mostram as alças dos vértices da peça selecionada: os de edição
  * de vértice e as ferramentas que pedem pontos do contorno dela (curvas,
- * arcos, cortar, dobrar, unir e bainha) — nestas o clique segue para a
- * ferramenta, sem agarrar o vértice.
+ * arcos, cortar, dobrar, unir, bainha, pences e pregas) — nestas o clique
+ * segue para a ferramenta, sem agarrar o vértice.
  */
 const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   ...MODOS_DE_EDICAO_DE_VERTICE,
@@ -158,6 +164,12 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'desdobrar',
   'unir',
   'bainha',
+  'pence-no-contorno',
+  'pence-interna',
+  'fechar-pence',
+  'transferir-pence',
+  'multiplas-pences',
+  'pregas',
 ]);
 
 /**
@@ -278,6 +290,8 @@ export interface PreviaNoDesenho {
   readonly novoFechado?: boolean;
   /** O trecho do contorno que vai sair, ou que foi indicado (em destaque). */
   readonly substituido?: readonly Ponto2D[] | null;
+  /** Linhas que vão entrar na peça além do contorno (tracejadas, na cor de edição). */
+  readonly linhas?: readonly (readonly Ponto2D[])[];
   /** Pontos já indicados no contorno. */
   readonly marcas?: readonly Ponto2D[];
 }
@@ -1203,6 +1217,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 4]);
         tracar(previa.novo, previa.novoFechado === true);
+        ctx.setLineDash([]);
+      }
+      if (previa.linhas && previa.linhas.length > 0) {
+        ctx.strokeStyle = COR_EM_EDICAO;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        for (const linha of previa.linhas) if (linha.length > 1) tracar(linha, false);
         ctx.setLineDash([]);
       }
       ctx.lineJoin = 'miter';

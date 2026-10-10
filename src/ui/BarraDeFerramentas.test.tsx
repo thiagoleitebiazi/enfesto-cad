@@ -279,7 +279,8 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
     cleanup();
 
     renderizar('Produção');
-    expect(botao('Pence interna').title).toContain('são feitas na modelagem');
+    expect(botao('Extrair molde').title).toContain('trabalha sobre elementos de modelagem');
+    expect(botao('Linha de simetria').title).toContain('o encaixe não dobra moldes');
     expect(botao('Digitalizar').title).toContain('mesa digitalizadora');
     cleanup();
 
@@ -460,6 +461,43 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
   });
 
+  it('Produção: Pregas e as cinco ferramentas de pence chamam a ferramenta de cada uma', () => {
+    const props = renderizar('Produção');
+
+    for (const nome of ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences']) {
+      fireEvent.click(botao(nome));
+    }
+
+    expect(vi.mocked(props.onUsarFerramentaDeMolde).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'pregas',
+      'pence-no-contorno',
+      'pence-interna',
+      'fechar-pence',
+      'transferir-pence',
+      'multiplas-pences',
+    ]);
+  });
+
+  it.each([
+    ['Pregas', 'pregas'],
+    ['Pence no contorno', 'pence-no-contorno'],
+    ['Pence interna', 'pence-interna'],
+    ['Fechar pence', 'fechar-pence'],
+    ['Transferir pence', 'transferir-pence'],
+    ['Múltiplas pences', 'multiplas-pences'],
+  ] as const)('Produção: %s aparece pressionado enquanto é a ferramenta ligada', (nome, modo) => {
+    renderizar('Produção', { modo });
+
+    expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+    expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
+  });
+
+  it('Produção: só ficam desligadas as três ferramentas que dependem do que este programa não tem', () => {
+    renderizar('Produção');
+
+    expect(botoesDesligados().map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Extrair molde', 'Digitalizar', 'Linha de simetria']);
+  });
+
   it('Produção: Dobrar e Desdobrar avisam na dica que o manual da referência não os descreve', () => {
     renderizar('Produção');
 
@@ -583,6 +621,12 @@ describe('BarraDeFerramentas: o que falta para usar', () => {
       'Cortar',
       'Unir',
       'Remover região',
+      'Pregas',
+      'Pence no contorno',
+      'Pence interna',
+      'Fechar pence',
+      'Transferir pence',
+      'Múltiplas pences',
     ]) {
       expect(botao(nome)).toBeDisabled();
       expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);

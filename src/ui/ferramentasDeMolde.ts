@@ -40,6 +40,8 @@ export interface PreviaDeFerramentaDeMolde {
   readonly novo?: readonly Ponto2D[] | null;
   readonly novoFechado?: boolean;
   readonly substituido?: readonly Ponto2D[] | null;
+  /** Linhas que vão entrar na peça além do contorno (pernas de pence, linhas de dobra). */
+  readonly linhas?: readonly (readonly Ponto2D[])[];
   readonly marcas?: readonly Ponto2D[];
 }
 

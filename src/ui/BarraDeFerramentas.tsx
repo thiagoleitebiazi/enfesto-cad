@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
 import { ajustarCompactacao } from './compactacaoDaFita';
 import type { FerramentaDeMolde } from './ferramentasDeMolde';
+import type { FerramentaDePence } from './ferramentasDePence';
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
@@ -113,8 +114,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirCurvaPredefinida: () => void;
   readonly onAbrirEspiral: () => void;
   readonly onEntrarModoCirculo: () => void;
-  /** Cortar, Remover região, Dobrar, Desdobrar, Unir e Bainha (aba Produção), na peça selecionada. */
-  readonly onUsarFerramentaDeMolde: (ferramenta: FerramentaDeMolde) => void;
+  /** Cortar, unir, dobrar, bainha, pences e pregas (aba Produção), na peça selecionada. */
+  readonly onUsarFerramentaDeMolde: (ferramenta: FerramentaDeMolde | FerramentaDePence) => void;
   /** Há pelo menos duas peças no projeto (Unir precisa de outra além da selecionada). */
   readonly temOutraPeca: boolean;
 }
@@ -126,8 +127,6 @@ const SO_ENTRE_ARCOS =
   'indisponível neste programa: precisa de um arco como elemento para tangenciar, e aqui os arcos viram pontos do contorno, sem centro nem raio guardados';
 const SEM_GRADUACAO =
   'indisponível neste programa: não há graduação — cada tamanho entra como uma peça própria, já graduada';
-const SO_NA_MODELAGEM =
-  'indisponível neste programa: pences e pregas são feitas na modelagem; aqui os moldes chegam prontos para o encaixe';
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
 const SEM_PECA = 'selecione uma peça primeiro';
@@ -859,23 +858,61 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Pregas e Pences">
-                <Ferramenta tamanho="grande" rotulo="Pregas" icone="pregas" indisponivel={SO_NA_MODELAGEM} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Pregas"
+                  icone="pregas"
+                  pressionado={props.modo === 'pregas'}
+                  dica="Pregas: abre a peça numa linha, de um ponto do contorno a outro, com o tecido que a prega consome — simples ou dupla, uma ou várias, com as linhas de dobra desenhadas"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeMolde('pregas')}
+                />
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Pence no', 'contorno']}
                   icone="pence-no-contorno"
-                  indisponivel={SO_NA_MODELAGEM}
+                  pressionado={props.modo === 'pence-no-contorno'}
+                  dica="Pence no contorno: cria uma pence com a abertura e a profundidade pedidas — recortada (o contorno entra por ela), marcada (só desenhada) ou aberta em torno de um pivô"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeMolde('pence-no-contorno')}
                 />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Pence interna" icone="pence-interna" indisponivel={SO_NA_MODELAGEM} />
-                  <Ferramenta tamanho="pequeno" rotulo="Fechar pence" icone="fechar-pence" indisponivel={SO_NA_MODELAGEM} />
-                  <Ferramenta tamanho="pequeno" rotulo="Transferir pence" icone="transferir-pence" indisponivel={SO_NA_MODELAGEM} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Pence interna"
+                    icone="pence-interna"
+                    pressionado={props.modo === 'pence-interna'}
+                    dica="Pence interna: desenha uma pence em losango dentro da peça, com duas alturas, a largura e o ângulo em relação à linha de fio"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('pence-interna')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Fechar pence"
+                    icone="fechar-pence"
+                    pressionado={props.modo === 'fechar-pence'}
+                    dica="Fechar pence: fecha uma pence recortada — girando um lado da peça em torno de um pivô, ou só o recorte, deixando a pence marcada"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('fechar-pence')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Transferir pence"
+                    icone="transferir-pence"
+                    pressionado={props.modo === 'transferir-pence'}
+                    dica="Transferir pence: leva uma pence recortada para outro lugar do contorno, com o mesmo vértice e o mesmo ângulo — clique no vértice da pence e depois na nova posição. A área da peça não muda"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('transferir-pence')}
+                  />
                 </div>
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Múltiplas', 'pences']}
                   icone="multiplas-pences"
-                  indisponivel={SO_NA_MODELAGEM}
+                  pressionado={props.modo === 'multiplas-pences'}
+                  dica="Múltiplas pences: cria várias pences iguais de uma vez, espaçadas ao longo do contorno (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeMolde('multiplas-pences')}
                 />
               </div>
 

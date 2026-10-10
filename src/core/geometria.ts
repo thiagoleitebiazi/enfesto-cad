@@ -344,6 +344,39 @@ export function trechoDoContorno(contorno: Contorno, de: PosicaoNoContorno, ate:
 }
 
 /**
+ * O ponto do perímetro a `distanciaMm` de `de`, andando no sentido da
+ * numeração dos vértices — ou no contrário, com distância negativa. Quando
+ * cai num vértice, devolve o vértice (a aresta que começa nele).
+ */
+export function andarNoContorno(contorno: Contorno, de: PosicaoNoContorno, distanciaMm: number): PosicaoNoContorno {
+  const n = contorno.length;
+  if (n < 2 || !Number.isInteger(de.indiceAresta) || de.indiceAresta < 0 || de.indiceAresta >= n) {
+    throw new Error('Posição fora do contorno.');
+  }
+  if (!Number.isFinite(distanciaMm) || Math.abs(distanciaMm) >= perimetro(contorno)) {
+    throw new Error('Distância maior que o perímetro do contorno.');
+  }
+  const paraFrente = distanciaMm >= 0;
+  let resto = Math.abs(distanciaMm);
+  let i = de.indiceAresta;
+  let p = de.ponto;
+  for (let passos = 0; passos <= n; passos++) {
+    // Para a frente, a aresta termina no vértice seguinte; para trás, começa no próprio vértice `i`.
+    const alvo = paraFrente ? contorno[(i + 1) % n]! : contorno[i]!;
+    const trecho = distancia(p, alvo);
+    if (resto < trecho - EPSILON_DE_POSICAO_MM) {
+      const k = resto / trecho;
+      return { indiceAresta: i, ponto: { x: p.x + (alvo.x - p.x) * k, y: p.y + (alvo.y - p.y) * k } };
+    }
+    if (resto <= trecho + EPSILON_DE_POSICAO_MM) return { indiceAresta: paraFrente ? (i + 1) % n : i, ponto: alvo };
+    resto -= trecho;
+    p = alvo;
+    i = paraFrente ? (i + 1) % n : (i - 1 + n) % n;
+  }
+  throw new Error('Distância maior que o perímetro do contorno.');
+}
+
+/**
  * Dos dois caminhos que ligam `a` e `b` sobre o perímetro, o mais curto —
  * já orientado no sentido da numeração dos vértices (`de` → `ate`).
  * `invertido` diz que esse caminho vai de `b` para `a`.

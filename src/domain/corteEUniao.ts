@@ -38,7 +38,7 @@ function arestas(contorno: Contorno): Array<readonly [Ponto2D, Ponto2D]> {
 }
 
 /** Recusa o corte que não é uma reta inteira por dentro da peça, de um ponto do contorno a outro. */
-function exigirCorteValido(molde: Molde, a: Ponto2D, b: Ponto2D): void {
+export function exigirCorteValido(molde: Molde, a: Ponto2D, b: Ponto2D): void {
   const comprimento = distancia(a, b);
   if (comprimento < FOLGA_DAS_PONTAS_DO_CORTE_MM * 4) {
     throw new Error('O corte precisa de dois pontos diferentes do contorno.');

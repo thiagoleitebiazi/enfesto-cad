@@ -1,0 +1,379 @@
+import { describe, it, expect } from 'vitest';
+import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
+import { criarMolde, type Molde } from '../domain/molde';
+import {
+  aplicarPence,
+  cliqueDePence,
+  dialogoDaPence,
+  ehFerramentaDePence,
+  instrucaoDaPence,
+  lerDialogoDaPence,
+  OPCOES_INICIAIS_DAS_PENCES,
+  penceCompleta,
+  previaDaPence,
+  type FerramentaDePence,
+  type OpcoesDasPences,
+} from './ferramentasDePence';
+import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
+
+// Retângulo de 200 × 300 mm, com a linha de fio à esquerda; e o mesmo com uma pence recortada no alto (vértice no ponto 5).
+const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+const COM_PENCE = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)];
+
+function molde(contorno = RETANGULO): Molde {
+  return criarMolde(
+    { nome: 'Frente', referencia: 'REF', tamanho: 'M', contorno, linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) } },
+    'f',
+  );
+}
+
+function na(indiceAresta: number, x: number, y: number): PosicaoNoContorno {
+  return { indiceAresta, ponto: ponto(x, y) };
+}
+
+const noContorno = (posicao: PosicaoNoContorno): CliqueDeTrecho => ({ noContorno: posicao, livre: posicao.ponto });
+const solto = (x: number, y: number): CliqueDeTrecho => ({ noContorno: null, livre: ponto(x, y) });
+const ids = (): (() => string) => {
+  let n = 0;
+  return () => `novo-${++n}`;
+};
+
+const O = OPCOES_INICIAIS_DAS_PENCES;
+const com = (parte: Partial<OpcoesDasPences>): OpcoesDasPences => ({ ...O, ...parte });
+const NO_ALTO = na(2, 100, 300);
+const VERTICE = na(4, 100, 200);
+const TODAS: readonly FerramentaDePence[] = [
+  'pence-no-contorno',
+  'pence-interna',
+  'fechar-pence',
+  'transferir-pence',
+  'multiplas-pences',
+  'pregas',
+];
+
+/** Dá os cliques em ordem e devolve o estado final. */
+function clicar(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, peca: Molde, cliques: readonly CliqueDeTrecho[]): TrechoEmEdicao {
+  return cliques.reduce((estado, clique) => cliqueDePence(ferramenta, opcoes, peca, estado, clique).estado, SEM_TRECHO);
+}
+
+describe('quais modos são ferramentas de pence', () => {
+  it('reconhece as seis', () => {
+    for (const modo of TODAS) expect(ehFerramentaDePence(modo)).toBe(true);
+    for (const modo of ['selecionar', 'cortar', 'bainha', 'pence']) expect(ehFerramentaDePence(modo)).toBe(false);
+  });
+});
+
+describe('os cliques de cada ferramenta', () => {
+  it('pence recortada em esquadro: um clique no contorno basta; fora dele, não conta', () => {
+    expect(penceCompleta('pence-no-contorno', O, SEM_TRECHO)).toBe(false);
+    expect(cliqueDePence('pence-no-contorno', O, molde(), SEM_TRECHO, solto(50, 50)).estado).toBe(SEM_TRECHO);
+    const estado = clicar('pence-no-contorno', O, molde(), [noContorno(NO_ALTO)]);
+    expect(estado.inicio).toEqual(NO_ALTO);
+    expect(penceCompleta('pence-no-contorno', O, estado)).toBe(true);
+  });
+
+  it('pence sem o vértice em esquadro: o segundo clique, em qualquer lugar, aponta a pence', () => {
+    const opcoes = com({ pence: { ...O.pence, perpendicular: false } });
+    const umClique = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO)]);
+    expect(penceCompleta('pence-no-contorno', opcoes, umClique)).toBe(false);
+    const dois = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO), solto(160, 220)]);
+    expect(dois.livres).toEqual([ponto(160, 220)]);
+    expect(penceCompleta('pence-no-contorno', opcoes, dois)).toBe(true);
+  });
+
+  it('pence aberta: a posição e o pivô, os dois no contorno e diferentes', () => {
+    const opcoes = com({ pence: { ...O.pence, modo: 'abrir' } });
+    const umClique = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO)]);
+    expect(cliqueDePence('pence-no-contorno', opcoes, molde(), umClique, solto(100, 100)).estado).toBe(umClique);
+    expect(cliqueDePence('pence-no-contorno', opcoes, molde(), umClique, noContorno(NO_ALTO)).estado).toBe(umClique);
+    const dois = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO), noContorno(na(0, 100, 0))]);
+    expect(dois.fim).toEqual(na(0, 100, 0));
+    expect(penceCompleta('pence-no-contorno', opcoes, dois)).toBe(true);
+  });
+
+  it('pence interna: um clique em qualquer lugar', () => {
+    const estado = clicar('pence-interna', O, molde(), [solto(100, 150)]);
+    expect(estado).toEqual({ inicio: null, fim: null, livres: [ponto(100, 150)] });
+    expect(penceCompleta('pence-interna', O, estado)).toBe(true);
+  });
+
+  it('fechar e transferir: o primeiro clique tem de ser no vértice de uma pence recortada, e o clique errado diz por quê', () => {
+    for (const ferramenta of ['fechar-pence', 'transferir-pence'] as const) {
+      const noCanto = cliqueDePence(ferramenta, O, molde(COM_PENCE), SEM_TRECHO, noContorno(na(1, 200, 0)));
+      expect(noCanto.estado).toBe(SEM_TRECHO);
+      expect(noCanto.recusa).toMatch(/não é o vértice de uma pence recortada/);
+      const naAresta = cliqueDePence(ferramenta, O, molde(COM_PENCE), SEM_TRECHO, noContorno(na(0, 100, 0)));
+      expect(naAresta.recusa).toMatch(/não é o vértice de uma pence recortada/);
+      const foraDoContorno = cliqueDePence(ferramenta, O, molde(COM_PENCE), SEM_TRECHO, solto(100, 100));
+      expect(foraDoContorno).toEqual({ estado: SEM_TRECHO, recusa: null });
+      const noVertice = cliqueDePence(ferramenta, O, molde(COM_PENCE), SEM_TRECHO, noContorno(VERTICE));
+      expect(noVertice).toEqual({ estado: { ...SEM_TRECHO, inicio: VERTICE }, recusa: null });
+    }
+  });
+
+  it('fechar: com "Somente o recorte" o vértice basta; sem, falta o pivô', () => {
+    const noVertice = clicar('fechar-pence', O, molde(COM_PENCE), [noContorno(VERTICE)]);
+    expect(penceCompleta('fechar-pence', O, noVertice)).toBe(false);
+    expect(penceCompleta('fechar-pence', com({ fecharSomenteORecorte: true }), noVertice)).toBe(true);
+    const comPivo = clicar('fechar-pence', O, molde(COM_PENCE), [noContorno(VERTICE), noContorno(na(0, 100, 0))]);
+    expect(penceCompleta('fechar-pence', O, comPivo)).toBe(true);
+  });
+
+  it('pregas: as duas pontas e, com mais de uma prega, o lado', () => {
+    const duasPontas = clicar('pregas', O, molde(), [noContorno(na(0, 100, 0)), noContorno(NO_ALTO)]);
+    expect(penceCompleta('pregas', O, duasPontas)).toBe(true);
+    const variasPregas = com({ pregas: { ...O.pregas, quantidade: 3 } });
+    expect(penceCompleta('pregas', variasPregas, duasPontas)).toBe(false);
+    const comLado = clicar('pregas', variasPregas, molde(), [noContorno(na(0, 100, 0)), noContorno(NO_ALTO), solto(150, 150)]);
+    expect(penceCompleta('pregas', variasPregas, comLado)).toBe(true);
+  });
+
+  it('depois de completa, mais cliques não mudam nada', () => {
+    const estado = clicar('multiplas-pences', O, molde(), [noContorno(NO_ALTO)]);
+    expect(cliqueDePence('multiplas-pences', O, molde(), estado, noContorno(na(0, 50, 0))).estado).toBe(estado);
+  });
+});
+
+describe('aplicarPence', () => {
+  it('pence recortada: tira o triângulo e conta as medidas e a área', () => {
+    const opcoes = com({ pence: { ...O.pence, aberturaMm: 40, profundidadeMm: 100, piquesLaterais: false } });
+    const estado = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO)]);
+    const resultado = aplicarPence('pence-no-contorno', opcoes, [molde()], molde(), estado, ids());
+    expect(area(resultado.pecas[0]!.contorno)).toBeCloseTo(58000, 6);
+    expect(resultado.recado).toBe(
+      'Pence recortada em “Frente”: abertura de 40,0 mm, profundidade de 100,0 mm. A peça passou de 600,0 cm² para 580,0 cm².',
+    );
+  });
+
+  it('pence marcada: o contorno não muda', () => {
+    const opcoes = com({ pence: { ...O.pence, modo: 'marcar' } });
+    const estado = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO)]);
+    const resultado = aplicarPence('pence-no-contorno', opcoes, [molde()], molde(), estado, ids());
+    expect(resultado.pecas[0]!.contorno).toEqual(RETANGULO);
+    expect(resultado.pecas[0]!.linhasInternas).toHaveLength(1);
+    expect(resultado.pecas[0]!.marcas).toHaveLength(1);
+    expect(resultado.recado).toBe('Pence marcada em “Frente”: abertura de 30,0 mm, profundidade de 100,0 mm.');
+  });
+
+  it('pence apontada pelo segundo clique', () => {
+    const opcoes = com({ pence: { ...O.pence, perpendicular: false, aberturaMm: 40, profundidadeMm: 100 } });
+    const estado = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO), solto(160, 220)]);
+    const nova = aplicarPence('pence-no-contorno', opcoes, [molde()], molde(), estado, ids()).pecas[0]!;
+    expect(nova.contorno.some((p) => Math.abs(p.x - 160) < 1e-6 && Math.abs(p.y - 220) < 1e-6)).toBe(true);
+  });
+
+  it('pence aberta: a peça ganha área', () => {
+    const opcoes = com({ pence: { ...O.pence, modo: 'abrir', aberturaMm: 60 } });
+    const estado = clicar('pence-no-contorno', opcoes, molde(), [noContorno(NO_ALTO), noContorno(na(0, 100, 0))]);
+    const resultado = aplicarPence('pence-no-contorno', opcoes, [molde()], molde(), estado, ids());
+    expect(area(resultado.pecas[0]!.contorno)).toBeGreaterThan(60000);
+    expect(resultado.recado).toMatch(/^Pence aberta em “Frente”: abertura de 60,0 mm, profundidade de 100,0 mm\. A peça passou de 600,0 cm² para 6\d\d,\d cm²\.$/);
+  });
+
+  it('pence interna, múltiplas pences e pregas', () => {
+    const interna = aplicarPence('pence-interna', O, [molde()], molde(), clicar('pence-interna', O, molde(), [solto(100, 150)]), ids());
+    expect(interna.pecas[0]!.linhasInternas).toHaveLength(2);
+    expect(interna.recado).toBe('Pence interna desenhada em “Frente”.');
+
+    const multiplas = aplicarPence('multiplas-pences', O, [molde()], molde(), clicar('multiplas-pences', O, molde(), [noContorno(NO_ALTO)]), ids());
+    // Duas pences de 20 × 80.
+    expect(area(multiplas.pecas[0]!.contorno)).toBeCloseTo(60000 - 2 * 800, 6);
+    expect(multiplas.recado).toBe('2 pences recortadas em “Frente”, a cada 60,0 mm. A peça passou de 600,0 cm² para 584,0 cm².');
+
+    const pregas = aplicarPence('pregas', O, [molde()], molde(), clicar('pregas', O, molde(), [noContorno(na(0, 100, 0)), noContorno(NO_ALTO)]), ids());
+    expect(area(pregas.pecas[0]!.contorno)).toBeCloseTo(72000, 6);
+    expect(pregas.recado).toBe('1 prega aberta em “Frente”. A peça passou de 600,0 cm² para 720,0 cm².');
+  });
+
+  it('transferir e fechar', () => {
+    const peca = molde(COM_PENCE);
+    const transferir = clicar('transferir-pence', O, peca, [noContorno(VERTICE), noContorno(na(1, 200, 200))]);
+    const transferida = aplicarPence('transferir-pence', O, [peca], peca, transferir, ids());
+    expect(area(transferida.pecas[0]!.contorno)).toBeCloseTo(58000, 6);
+    expect(transferida.recado).toBe('Pence transferida em “Frente”, com o mesmo vértice e o mesmo ângulo. A área continua 580,0 cm².');
+
+    const soORecorte = com({ fecharSomenteORecorte: true });
+    const fechada = aplicarPence('fechar-pence', soORecorte, [peca], peca, clicar('fechar-pence', soORecorte, peca, [noContorno(VERTICE)]), ids());
+    expect(fechada.pecas[0]!.contorno).toHaveLength(6);
+    expect(fechada.recado).toMatch(/a pence ficou marcada\. A peça passou de 580,0 cm² para 600,0 cm²\.$/);
+
+    const comPivo = clicar('fechar-pence', O, peca, [noContorno(VERTICE), noContorno(na(0, 100, 0))]);
+    const girada = aplicarPence('fechar-pence', O, [peca], peca, comPivo, ids());
+    expect(girada.recado).toBe('Pence fechada em “Frente”, girando em torno do pivô. A peça passou de 580,0 cm² para 540,0 cm².');
+  });
+
+  it('fechar com pivô: quando as pontas não ficam à mesma distância do pivô, a mensagem diz o degrau que sobrou', () => {
+    const peca = molde(COM_PENCE);
+    // Do pivô (150, 0): 301,5 mm até a ponta (120, 300) e 308,1 mm até a ponta (80, 300).
+    const estado = clicar('fechar-pence', O, peca, [noContorno(VERTICE), noContorno(na(0, 150, 0))]);
+    const resultado = aplicarPence('fechar-pence', O, [peca], peca, estado, ids());
+    expect(resultado.recado).toMatch(/sobrou um degrau de 6,6 mm entre elas, para acertar com Mover ponto\.$/);
+    // Com o pivô no meio, (100, 0), as pontas se encontram: sem aviso.
+    const noMeio = clicar('fechar-pence', O, peca, [noContorno(VERTICE), noContorno(na(0, 100, 0))]);
+    expect(aplicarPence('fechar-pence', O, [peca], peca, noMeio, ids()).recado).not.toMatch(/degrau/);
+  });
+
+  it('só troca a peça indicada, e lança o erro do domínio quando não dá', () => {
+    const outra = criarMolde({ nome: 'Costas', referencia: 'R', tamanho: 'M', contorno: RETANGULO, linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) } }, 'c');
+    const estado = clicar('pence-no-contorno', O, molde(), [noContorno(NO_ALTO)]);
+    const resultado = aplicarPence('pence-no-contorno', O, [outra, molde()], molde(), estado, ids());
+    expect(resultado.pecas[0]).toBe(outra);
+    expect(resultado.pecas[1]!.id).toBe('f');
+
+    const fundaDemais = com({ pence: { ...O.pence, profundidadeMm: 900 } });
+    expect(() => aplicarPence('pence-no-contorno', fundaDemais, [molde()], molde(), estado, ids())).toThrow(/fora da peça/);
+    expect(() => aplicarPence('pregas', O, [molde()], molde(), SEM_TRECHO, ids())).toThrow(/Faltam pontos/);
+  });
+});
+
+describe('previaDaPence', () => {
+  it('sem mouse, só os pontos já clicados', () => {
+    expect(previaDaPence('pregas', O, molde(), { ...SEM_TRECHO, inicio: na(0, 100, 0) }, null)).toEqual({ marcas: [ponto(100, 0)] });
+  });
+
+  it('pence recortada: com o mouse no contorno, mostra o contorno como ficaria', () => {
+    const previa = previaDaPence('pence-no-contorno', O, molde(), SEM_TRECHO, noContorno(NO_ALTO));
+    expect(previa.novoFechado).toBe(true);
+    expect(previa.novo).toHaveLength(7);
+    expect(previa.linhas).toEqual([]);
+  });
+
+  it('pence marcada: o contorno não aparece como novo; aparecem as pernas', () => {
+    const opcoes = com({ pence: { ...O.pence, modo: 'marcar' } });
+    const previa = previaDaPence('pence-no-contorno', opcoes, molde(), SEM_TRECHO, noContorno(NO_ALTO));
+    expect(previa.novo).toBeUndefined();
+    expect(previa.linhas).toHaveLength(1);
+    expect(previa.linhas![0]).toHaveLength(3);
+  });
+
+  it('com o mouse fora do contorno e nada clicado, não mostra nada', () => {
+    expect(previaDaPence('pence-no-contorno', O, molde(), SEM_TRECHO, solto(50, 50))).toEqual({ marcas: [] });
+  });
+
+  it('pence interna: o losango segue o mouse; onde não cabe, some', () => {
+    expect(previaDaPence('pence-interna', O, molde(), SEM_TRECHO, solto(100, 150)).linhas).toHaveLength(2);
+    expect(previaDaPence('pence-interna', O, molde(), SEM_TRECHO, solto(100, 290))).toEqual({ marcas: [] });
+  });
+
+  it('pregas: do primeiro ponto ao mouse, uma reta; com o mouse na outra borda, a peça aberta e as linhas de dobra', () => {
+    const umaPonta: TrechoEmEdicao = { ...SEM_TRECHO, inicio: na(0, 100, 0) };
+    expect(previaDaPence('pregas', O, molde(), umaPonta, solto(120, 100))).toEqual({
+      novo: [ponto(100, 0), ponto(120, 100)],
+      marcas: [ponto(100, 0)],
+    });
+    const aberta = previaDaPence('pregas', O, molde(), umaPonta, noContorno(NO_ALTO));
+    expect(aberta.novoFechado).toBe(true);
+    expect(aberta.novo).toHaveLength(8);
+    // Três linhas de dobra e a seta.
+    expect(aberta.linhas).toHaveLength(4);
+  });
+
+  it('transferir: com o vértice indicado e o mouse no contorno, mostra a peça com a pence no lugar novo', () => {
+    const noVertice: TrechoEmEdicao = { ...SEM_TRECHO, inicio: VERTICE };
+    const previa = previaDaPence('transferir-pence', O, molde(COM_PENCE), noVertice, noContorno(na(1, 200, 200)));
+    expect(previa.novoFechado).toBe(true);
+    expect(previa.novo).toHaveLength(8);
+    expect(previa.marcas).toEqual([ponto(100, 200)]);
+  });
+
+  it('quando o clique não daria certo ali, fica a reta até o mouse', () => {
+    const noVertice: TrechoEmEdicao = { ...SEM_TRECHO, inicio: VERTICE };
+    // A nova posição em cima de uma perna da própria pence.
+    const previa = previaDaPence('transferir-pence', O, molde(COM_PENCE), noVertice, noContorno(na(3, 110, 250)));
+    expect(previa.novo).toEqual([ponto(100, 200), ponto(110, 250)]);
+    expect(previa.novoFechado).toBeUndefined();
+  });
+});
+
+describe('instrucaoDaPence', () => {
+  it('diz o próximo clique de cada ferramenta e termina com "Esc sai."', () => {
+    for (const ferramenta of TODAS) {
+      const texto = instrucaoDaPence(ferramenta, O, SEM_TRECHO);
+      expect(texto.endsWith(' Esc sai.')).toBe(true);
+      expect(texto).toMatch(/clique/);
+    }
+  });
+
+  it('muda conforme o que já foi clicado e conforme as opções', () => {
+    const comInicio: TrechoEmEdicao = { ...SEM_TRECHO, inicio: NO_ALTO };
+    expect(instrucaoDaPence('pence-no-contorno', O, SEM_TRECHO)).toMatch(/^Pence \(recortar\): clique no contorno/);
+    expect(instrucaoDaPence('pence-no-contorno', O, comInicio)).toMatch(/para onde o vértice deve apontar/);
+    const abrir = com({ pence: { ...O.pence, modo: 'abrir' } });
+    expect(instrucaoDaPence('pence-no-contorno', abrir, comInicio)).toMatch(/no pivô/);
+    expect(instrucaoDaPence('transferir-pence', O, comInicio)).toMatch(/na nova posição/);
+    expect(instrucaoDaPence('fechar-pence', O, comInicio)).toMatch(/no pivô/);
+    expect(instrucaoDaPence('pregas', O, comInicio)).toMatch(/na outra ponta/);
+    expect(instrucaoDaPence('pregas', O, { ...comInicio, fim: na(0, 100, 0) })).toMatch(/do lado em que as outras pregas/);
+  });
+});
+
+describe('diálogos', () => {
+  it('cada ferramenta que tem opções abre com o que foi usado por último; "Transferir pence" não pergunta nada', () => {
+    expect(dialogoDaPence('transferir-pence', O)).toBeNull();
+    for (const ferramenta of TODAS.filter((f) => f !== 'transferir-pence')) {
+      const dialogo = dialogoDaPence(ferramenta, O)!;
+      expect(dialogo.titulo.length).toBeGreaterThan(3);
+      expect(dialogo.campos.length).toBeGreaterThan(0);
+      expect(dialogo.nota).toMatch(/Depois de confirmar, clique/);
+      expect(new Set(dialogo.campos.map((c) => c.id)).size).toBe(dialogo.campos.length);
+    }
+    const dialogo = dialogoDaPence('pence-no-contorno', com({ pence: { ...O.pence, aberturaMm: 12.5, modo: 'marcar' } }))!;
+    expect(dialogo.campos.find((c) => c.id === 'abertura')!.inicial).toBe('12,5');
+    expect(dialogo.campos.find((c) => c.id === 'modo')!.inicial).toBe('marcar');
+  });
+
+  it('as ferramentas que o manual da referência não descreve dizem isso na nota', () => {
+    expect(dialogoDaPence('multiplas-pences', O)!.nota).toMatch(/leitura natural/);
+    expect(dialogoDaPence('fechar-pence', O)!.nota).toMatch(/leitura natural/);
+  });
+
+  it('lê as opções da pence no contorno e recusa medidas que não servem', () => {
+    const valores = { modo: 'abrir', abertura: 45, profundidade: 120, perpendicular: false, piquesLaterais: true, marcaNoVertice: false };
+    expect(lerDialogoDaPence('pence-no-contorno', O, valores).pence).toEqual({
+      modo: 'abrir',
+      aberturaMm: 45,
+      profundidadeMm: 120,
+      perpendicular: false,
+      piquesLaterais: true,
+      marcaNoVertice: false,
+    });
+    expect(() => lerDialogoDaPence('pence-no-contorno', O, { ...valores, abertura: 0 })).toThrow(/abertura/);
+    // As outras ferramentas não mudam.
+    expect(lerDialogoDaPence('pence-no-contorno', O, valores).pregas).toBe(O.pregas);
+  });
+
+  it('lê as opções da pence interna, do fechar e das múltiplas pences', () => {
+    const interna = lerDialogoDaPence('pence-interna', O, { altura1: 50, altura2: 70, largura: 16, angulo: -15, linhaAuxiliar: false, marcas: true });
+    expect(interna.interna).toEqual({ altura1Mm: 50, altura2Mm: 70, larguraMm: 16, anguloGraus: -15, linhaAuxiliar: false, marcas: true });
+    expect(() => lerDialogoDaPence('pence-interna', O, { altura1: 0, altura2: 70, largura: 16, angulo: 0 })).toThrow(/alturas/);
+
+    expect(lerDialogoDaPence('fechar-pence', O, { somenteORecorte: true }).fecharSomenteORecorte).toBe(true);
+    expect(lerDialogoDaPence('transferir-pence', O, {})).toBe(O);
+
+    const valores = { quantidade: 4, distancia: 50, abertura: 20, profundidade: 70, modo: 'marcar', piquesLaterais: false, marcaNoVertice: true };
+    expect(lerDialogoDaPence('multiplas-pences', O, valores).multiplas).toEqual({
+      quantidade: 4,
+      distanciaMm: 50,
+      aberturaMm: 20,
+      profundidadeMm: 70,
+      modo: 'marcar',
+      piquesLaterais: false,
+      marcaNoVertice: true,
+    });
+    expect(() => lerDialogoDaPence('multiplas-pences', O, { ...valores, quantidade: 1 })).toThrow(/número de pences/);
+    expect(() => lerDialogoDaPence('multiplas-pences', O, { ...valores, distancia: 20 })).toThrow(/maior que a abertura/);
+  });
+
+  it('lê as opções das pregas: Largura 2 e a distância podem ficar em branco', () => {
+    const umaPrega = lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 1, largura: 25, piques: false });
+    expect(umaPrega.pregas).toEqual({ modo: 'dupla', quantidade: 1, distanciaMm: O.pregas.distanciaMm, larguraMm: 25, piques: false });
+    const comLargura2 = lerDialogoDaPence('pregas', O, { modo: 'simples-esquerda', quantidade: 3, distancia: 40, largura: 25, largura2: 35, piques: true });
+    expect(comLargura2.pregas).toEqual({ modo: 'simples-esquerda', quantidade: 3, distanciaMm: 40, larguraMm: 25, largura2Mm: 35, piques: true });
+  });
+
+  it('pregas: com mais de uma, a distância é obrigatória', () => {
+    expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 2, largura: 25, piques: false })).toThrow(/distância/);
+    expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 0, largura: 25, piques: false })).toThrow(/número de pregas/);
+    expect(() => lerDialogoDaPence('pregas', O, { modo: 'dupla', quantidade: 1, largura: 0, piques: false })).toThrow(/largura/);
+  });
+});
