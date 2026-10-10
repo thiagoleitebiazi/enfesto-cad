@@ -6,6 +6,8 @@ import { rotacoesPermitidas, type Molde } from '../domain/molde';
 export interface OpcoesAvancadasDeNesting {
   readonly limiteDeTempoMinutos?: number;
   readonly aproveitamentoDesejadoPercentual?: number;
+  /** Cada tamanho das peças graduadas entra no encaixe como uma peça própria (só vem quando há peças graduadas). */
+  readonly todosOsTamanhos?: boolean;
 }
 
 interface PainelDeNestingProps {
@@ -22,6 +24,13 @@ interface PainelDeNestingProps {
 export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element {
   const [limiteDeTempoMinutos, setLimiteDeTempoMinutos] = useState('');
   const [aproveitamentoDesejadoPercentual, setAproveitamentoDesejadoPercentual] = useState('');
+  const temGraduadas = props.pecas.some((p) => p.graduacao !== undefined);
+  const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
+  /** Os tamanhos com que a peça entra no encaixe: todos os da graduação, só o base, ou o dela. */
+  const tamanhosDa = (p: Molde): string => {
+    if (!p.graduacao) return p.tamanho.trim() === '' ? '—' : p.tamanho;
+    return todosOsTamanhos ? p.graduacao.tamanhos.join(', ') : p.graduacao.tamanhos[p.graduacao.base]!;
+  };
 
   function aoCalcular(): void {
     const minutos = Number(limiteDeTempoMinutos);
@@ -31,6 +40,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(aproveitamentoDesejadoPercentual.trim() !== '' && aproveitamento > 0
         ? { aproveitamentoDesejadoPercentual: aproveitamento }
         : {}),
+      ...(temGraduadas ? { todosOsTamanhos } : {}),
     });
   }
 
@@ -71,6 +81,19 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por
                 posicionar.
               </p>
+              {temGraduadas && (
+                <>
+                  <label className="opcao-em-linha">
+                    <input type="checkbox" checked={todosOsTamanhos} onChange={(e) => setTodosOsTamanhos(e.target.checked)} />
+                    Encaixar todos os tamanhos das peças graduadas
+                  </label>
+                  <p className="legenda-inline">
+                    {todosOsTamanhos
+                      ? 'Cada tamanho entra como uma peça própria. Ao aplicar o encaixe, as peças graduadas passam a ser essas peças, sem graduação (Ctrl+Z desfaz).'
+                      : 'Só o tamanho base de cada peça graduada entra no encaixe.'}
+                  </p>
+                </>
+              )}
             </form>
 
             <div className="painel-de-nesting-config-pecas">
@@ -79,6 +102,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 <thead>
                   <tr>
                     <th>Peça</th>
+                    <th>Tamanho</th>
                     <th>Qtd</th>
                     <th>Rotação</th>
                     <th>Espelho</th>
@@ -88,6 +112,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                   {props.pecas.map((p) => (
                     <tr key={p.id}>
                       <td>{p.nome}</td>
+                      <td>{tamanhosDa(p)}</td>
                       <td>{p.quantidade}</td>
                       <td>{rotacoesPermitidas(p.restricaoDeRotacao).map((r) => `${r}°`).join(', ')}</td>
                       <td>{p.restricaoDeRotacao.permiteEspelhamento ? 'Sim' : 'Não'}</td>

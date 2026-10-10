@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
 import {
+  deslocamentoNoPonto,
   agruparPonto,
   alternarPontoGraduado,
   apagarRegras,
@@ -145,6 +146,48 @@ describe('deslocamentosDoContorno', () => {
     expect(deslocamentosDoContorno(solta, RETANGULO)).toEqual(RETANGULO.map(() => [ZERO, ZERO, ZERO]));
     expect(semPontosSoltos(solta, RETANGULO).pontos).toHaveLength(4);
     expect(semPontosSoltos(nova(), RETANGULO)).toEqual(nova());
+  });
+});
+
+describe('deslocamentoNoPonto: o que anda um ponto de dentro da peça', () => {
+  // Só o canto (200, 300) anda, (10, 20).
+  const SO_UM_CANTO = [ZERO, ZERO, ponto(10, 20), ZERO];
+
+  it('em cima de um ponto do contorno, é o deslocamento dele', () => {
+    expect(deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(200, 300))).toEqual(ponto(10, 20));
+    expect(deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(0, 0))).toEqual(ZERO);
+  });
+
+  it('sobre uma aresta, é a proporção entre as duas pontas', () => {
+    esperarPontos([deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(200, 150))], [ponto(5, 10)]);
+    esperarPontos([deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(50, 300))], [ponto(2.5, 5)]);
+    esperarPontos([deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(100, 0))], [ZERO]);
+  });
+
+  it('dentro, fica entre os valores das bordas: mais perto do canto que anda, anda mais', () => {
+    const perto = deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(180, 270));
+    const longe = deslocamentoNoPonto(RETANGULO, SO_UM_CANTO, ponto(20, 30));
+    expect(perto.x).toBeGreaterThan(longe.x);
+    expect(perto.x).toBeLessThan(10);
+    expect(longe.x).toBeGreaterThan(0);
+    // A direção é a do canto: y anda o dobro de x.
+    expect(perto.y).toBeCloseTo(perto.x * 2, 9);
+  });
+
+  it('se o contorno todo anda igual, o ponto de dentro anda igual', () => {
+    const todos = RETANGULO.map(() => ponto(7, -3));
+    esperarPontos([deslocamentoNoPonto(RETANGULO, todos, ponto(63, 141))], [ponto(7, -3)]);
+  });
+
+  it('se o contorno cresce por igual, o ponto de dentro cresce na mesma proporção', () => {
+    // 10% em x e 20% em y, a partir de (0, 0).
+    const crescendo = RETANGULO.map((p) => ponto(p.x * 0.1, p.y * 0.2));
+    esperarPontos([deslocamentoNoPonto(RETANGULO, crescendo, ponto(63, 141))], [ponto(6.3, 28.2)]);
+    // Também num contorno que não é convexo.
+    const emL = [ponto(0, 0), ponto(300, 0), ponto(300, 100), ponto(100, 100), ponto(100, 300), ponto(0, 300)];
+    const doL = emL.map((p) => ponto(p.x * 0.1, p.y * 0.2));
+    esperarPontos([deslocamentoNoPonto(emL, doL, ponto(50, 250))], [ponto(5, 50)]);
+    esperarPontos([deslocamentoNoPonto(emL, doL, ponto(250, 50))], [ponto(25, 10)]);
   });
 });
 

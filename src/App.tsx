@@ -83,6 +83,7 @@ import {
 import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
+import { expandirTamanhos } from './domain/tamanhosGraduados';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
 import {
   curvaDoTrecho,
@@ -1617,10 +1618,20 @@ export default function App(): React.JSX.Element {
   }, [enfesto, pecas.length]);
 
   const calcularNestingAutomatico = useCallback(
-    (opcoesAvancadas: { limiteDeTempoMinutos?: number; aproveitamentoDesejadoPercentual?: number }) => {
+    (opcoesAvancadas: { limiteDeTempoMinutos?: number; aproveitamentoDesejadoPercentual?: number; todosOsTamanhos?: boolean }) => {
       if (!enfesto || pecas.length === 0) return;
+      // Com todos os tamanhos, cada peça graduada entra como uma peça comum por tamanho.
+      let paraEncaixar: readonly Molde[] = pecas;
+      if (opcoesAvancadas.todosOsTamanhos) {
+        try {
+          paraEncaixar = expandirTamanhos(pecas, proximoId);
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+          return;
+        }
+      }
       setResultadoNesting(null);
-      setProgressoNesting({ colocadas: 0, total: pecas.reduce((soma, p) => soma + p.quantidade, 0) });
+      setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
       setNestingExecutando(true);
 
       const worker = new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
@@ -1638,7 +1649,7 @@ export default function App(): React.JSX.Element {
       };
       const mensagemIniciar: MensagemParaWorker = {
         tipo: 'iniciar',
-        pecas,
+        pecas: paraEncaixar,
         enfesto,
         ...(opcoesAvancadas.limiteDeTempoMinutos !== undefined
           ? { limiteDeTempoMs: opcoesAvancadas.limiteDeTempoMinutos * 60_000 }

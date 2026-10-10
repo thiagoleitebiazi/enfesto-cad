@@ -16,7 +16,7 @@ import {
   type Molde,
 } from './molde';
 import { criarPregas } from './pregas';
-import { definirTamanhosDoMolde, moldeDoTamanho, separarTamanhos, unirTamanhos } from './tamanhosGraduados';
+import { definirTamanhosDoMolde, expandirTamanhos, moldeDoTamanho, separarTamanhos, unirTamanhos } from './tamanhosGraduados';
 
 // Retângulo de 200 × 300 mm. Tamanhos P, M e G, com o M de base.
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -95,6 +95,13 @@ describe('definirTamanhosDoMolde', () => {
     esperarPontos(contornoDoTamanho(baseNoG.graduacao!, baseNoG.contorno, 1), RETANGULO);
   });
 
+  it('trocando o base, o que está dentro da peça passa a ter a forma desse tamanho também', () => {
+    const comMarca = { ...graduada(), marcas: [{ id: 'botao', posicao: ponto(200, 300) }, { id: 'centro', posicao: ponto(0, 0) }] };
+    const baseNoG = definirTamanhosDoMolde(comMarca, ['P', 'M', 'G'], 'G');
+    // A marca em cima do canto graduado vai com ele; a do canto parado fica.
+    esperarPontos([baseNoG.marcas[0]!.posicao, baseNoG.marcas[1]!.posicao], [ponto(210, 320), ponto(0, 0)]);
+  });
+
   it('trocando o base, os piques acompanham as arestas', () => {
     const comPique = adicionarPique(graduada(), ponto(200, 150), 'lateral');
     const baseNoG = definirTamanhosDoMolde(comPique, ['P', 'M', 'G'], 'G');
@@ -115,11 +122,49 @@ describe('moldeDoTamanho', () => {
     expect(area(solta.contorno)).toBeCloseTo(63500, 6);
   });
 
-  it('os piques ficam na mesma proporção da aresta; o resto fica como no base', () => {
+  it('os piques ficam na mesma proporção da aresta', () => {
     const original = adicionarPique(graduada(), ponto(200, 150), 'lateral');
     const solta = moldeDoTamanho(original, G, 'm-g');
     esperarPontos([solta.piques[0]!.posicao], [ponto(205, 160)]);
-    expect(solta.linhaDeFio).toEqual(original.linhaDeFio);
+  });
+
+  it('a linha de fio anda inteira, sem mudar de direção nem de comprimento', () => {
+    const original = graduada();
+    const { inicio, fim } = moldeDoTamanho(original, G, 'm-g').linhaDeFio;
+    // O meio do fio, (50, 150), está a um quarto da largura e a meia altura: anda 1/8 do que anda o canto.
+    esperarPontos([inicio, fim], [ponto(51.25, 52.5), ponto(51.25, 252.5)]);
+  });
+
+  it('o que está dentro acompanha na proporção: um furo, uma linha interna e uma marca', () => {
+    // A peça inteira cresce 10% em x e 20% em y a partir de (0, 0): cada canto anda (0,1·x; 0,2·y) no G.
+    const comTamanhos = definirTamanhosDoMolde(
+      molde({ furos: [[ponto(50, 50), ponto(100, 50), ponto(100, 100)]], linhasInternas: [[ponto(20, 150), ponto(180, 150)]] }),
+      ['M', 'G'],
+      'M',
+    );
+    let g = comTamanhos.graduacao!;
+    RETANGULO.forEach((p, i) => {
+      g = definirRegra(g, RETANGULO, i, [ZERO, ponto(p.x * 0.1, p.y * 0.2)]);
+    });
+    const comMarca = { ...comTamanhos, graduacao: g, marcas: [{ id: 'botao', posicao: ponto(150, 250) }] };
+    const solta = moldeDoTamanho(comMarca, 1, 'm-g');
+    esperarPontos(solta.contorno, [ponto(0, 0), ponto(220, 0), ponto(220, 360), ponto(0, 360)]);
+    esperarPontos(solta.furos[0]!, [ponto(55, 60), ponto(110, 60), ponto(110, 120)]);
+    esperarPontos(solta.linhasInternas[0]!, [ponto(22, 180), ponto(198, 180)]);
+    esperarPontos([solta.marcas[0]!.posicao], [ponto(165, 300)]);
+    // O furo cresceu na mesma proporção da peça: 1,1 × 1,2.
+    expect(area(solta.furos[0]!)).toBeCloseTo(1250 * 1.32, 6);
+  });
+
+  it('se o tamanho só muda a peça de lugar, tudo vai junto, sem deformar', () => {
+    const comTamanhos = definirTamanhosDoMolde(molde({ furos: [[ponto(50, 50), ponto(100, 50), ponto(100, 100)]] }), ['M', 'G'], 'M');
+    let g = comTamanhos.graduacao!;
+    RETANGULO.forEach((_, i) => {
+      g = definirRegra(g, RETANGULO, i, [ZERO, ponto(7, -3)]);
+    });
+    const solta = moldeDoTamanho({ ...comTamanhos, graduacao: g }, 1, 'm-g');
+    esperarPontos(solta.furos[0]!, [ponto(57, 47), ponto(107, 47), ponto(107, 97)]);
+    esperarPontos([solta.linhaDeFio.inicio, solta.linhaDeFio.fim], [ponto(57, 47), ponto(57, 247)]);
   });
 
   it('recusa a peça sem graduação e o tamanho que ficaria sem área', () => {
@@ -131,6 +176,28 @@ describe('moldeDoTamanho', () => {
       g = definirRegra(g, RETANGULO, i, [ponto(0 - p.x, 0 - p.y), ZERO]);
     });
     expect(() => moldeDoTamanho({ ...base, graduacao: g }, 0, 'x')).toThrow(/ficaria sem área/);
+  });
+});
+
+describe('expandirTamanhos', () => {
+  it('cada peça graduada vira uma peça comum por tamanho; a do base continua sendo ela', () => {
+    const comum = molde({ nome: 'Bolso' }, 'b');
+    const expandidas = expandirTamanhos([graduada(), comum], ids());
+    expect(expandidas.map((p) => [p.id, p.nome, p.tamanho])).toEqual([
+      ['novo-1', 'Frente', 'P'],
+      ['m1', 'Frente', 'M'],
+      ['novo-2', 'Frente', 'G'],
+      ['b', 'Bolso', 'M'],
+    ]);
+    expect(expandidas.every((p) => !('graduacao' in p))).toBe(true);
+    expect(expandidas[3]).toBe(comum);
+    expect(area(expandidas[2]!.contorno)).toBeCloseTo(63500, 6);
+    expect(expandidas[1]!.contorno).toEqual(RETANGULO);
+  });
+
+  it('sem peças graduadas, devolve as mesmas peças', () => {
+    const pecas = [molde(), molde({ nome: 'Bolso' }, 'b')];
+    expect(expandirTamanhos(pecas, ids())).toEqual(pecas);
   });
 });
 

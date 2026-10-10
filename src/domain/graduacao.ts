@@ -191,6 +191,51 @@ export function contornoDoTamanho(graduacao: Graduacao, contorno: Contorno, tama
   return deslocamentosDoContorno(graduacao, contorno).map((regra, i) => somar(contorno[i]!, regra[tamanho] ?? ZERO));
 }
 
+/**
+ * Quanto anda, num tamanho, um ponto qualquer da peça (um furo, uma marca, a
+ * ponta de uma linha interna), dados os deslocamentos dos pontos do contorno
+ * nesse tamanho. É a média deles por coordenadas de valor médio: em cima de
+ * um ponto do contorno dá o deslocamento dele; sobre uma aresta, a proporção
+ * entre as duas pontas; e, se o contorno todo anda, cresce ou encolhe por
+ * igual, o ponto de dentro faz exatamente o mesmo.
+ */
+export function deslocamentoNoPonto(contorno: Contorno, deslocamentos: readonly Ponto2D[], p: Ponto2D): Ponto2D {
+  const n = contorno.length;
+  if (n === 0) return ZERO;
+  const s = contorno.map((v) => ({ x: v.x - p.x, y: v.y - p.y }));
+  const r = s.map((v) => Math.hypot(v.x, v.y));
+  const meiaArea: number[] = [];
+  const escalar: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    if (r[i]! < NO_MESMO_LUGAR_MM) return deslocamentos[i] ?? ZERO;
+    meiaArea.push((s[i]!.x * s[j]!.y - s[i]!.y * s[j]!.x) / 2);
+    escalar.push(s[i]!.x * s[j]!.x + s[i]!.y * s[j]!.y);
+    // Sobre a aresta: a proporção entre as duas pontas.
+    if (Math.abs(meiaArea[i]!) < 1e-9 && escalar[i]! < 0) {
+      const a = deslocamentos[i] ?? ZERO;
+      const b = deslocamentos[j] ?? ZERO;
+      const soma = r[i]! + r[j]!;
+      return { x: (r[j]! * a.x + r[i]! * b.x) / soma, y: (r[j]! * a.y + r[i]! * b.y) / soma };
+    }
+  }
+  let x = 0;
+  let y = 0;
+  let pesos = 0;
+  for (let i = 0; i < n; i++) {
+    const antes = (i - 1 + n) % n;
+    const depois = (i + 1) % n;
+    let peso = 0;
+    if (Math.abs(meiaArea[antes]!) >= 1e-9) peso += (r[antes]! - escalar[antes]! / r[i]!) / meiaArea[antes]!;
+    if (Math.abs(meiaArea[i]!) >= 1e-9) peso += (r[depois]! - escalar[i]! / r[i]!) / meiaArea[i]!;
+    const d = deslocamentos[i] ?? ZERO;
+    x += peso * d.x;
+    y += peso * d.y;
+    pesos += peso;
+  }
+  return Math.abs(pesos) < 1e-12 ? ZERO : { x: x / pesos, y: y / pesos };
+}
+
 /** O contorno de cada tamanho, na ordem da lista (o do base é o próprio contorno). */
 export function contornosDosTamanhos(graduacao: Graduacao, contorno: Contorno): Ponto2D[][] {
   const deslocamentos = deslocamentosDoContorno(graduacao, contorno);

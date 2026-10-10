@@ -1,6 +1,8 @@
 import { area, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
+import { transformarCota } from './cota';
 import {
-  contornoDoTamanho,
+  deslocamentoNoPonto,
+  deslocamentosDoContorno,
   indiceDoTamanho,
   iniciarGraduacao,
   semPontosSoltos,
@@ -19,6 +21,39 @@ const AREA_MINIMA_MM2 = 1e-6;
 const ZERO: Ponto2D = { x: 0, y: 0 };
 
 /**
+ * A peça com a forma de um tamanho da graduação (o resto fica como está): o
+ * contorno desse tamanho e, acompanhando-o na proporção, o que está dentro —
+ * furos, linhas internas, marcas e cotas. Os piques ficam na mesma proporção
+ * das arestas, e a linha de fio anda inteira, sem mudar de direção nem de
+ * comprimento, o que anda o meio dela.
+ */
+function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): Molde {
+  if (tamanho === graduacao.base) return molde;
+  const base = molde.contorno;
+  const doTamanho = deslocamentosDoContorno(graduacao, base).map((regra) => regra[tamanho] ?? ZERO);
+  const levar = (p: Ponto2D): Ponto2D => {
+    const d = deslocamentoNoPonto(base, doTamanho, p);
+    return { x: p.x + d.x, y: p.y + d.y };
+  };
+  const contorno = base.map((p, i) => ({ x: p.x + doTamanho[i]!.x, y: p.y + doTamanho[i]!.y }));
+  const fio = molde.linhaDeFio;
+  const doFio = deslocamentoNoPonto(base, doTamanho, { x: (fio.inicio.x + fio.fim.x) / 2, y: (fio.inicio.y + fio.fim.y) / 2 });
+  return {
+    ...molde,
+    contorno,
+    furos: molde.furos.map((furo) => furo.map(levar)),
+    linhasInternas: molde.linhasInternas.map((linha) => linha.map(levar)),
+    marcas: molde.marcas.map((m) => ({ ...m, posicao: levar(m.posicao) })),
+    piques: reancorarPiques(molde.piques, base, contorno),
+    linhaDeFio: {
+      inicio: { x: fio.inicio.x + doFio.x, y: fio.inicio.y + doFio.y },
+      fim: { x: fio.fim.x + doFio.x, y: fio.fim.y + doFio.y },
+    },
+    ...(molde.cotas ? { cotas: molde.cotas.map((c) => transformarCota(c, levar, (v) => v)) } : {}),
+  };
+}
+
+/**
  * Define os tamanhos da peça e qual deles é o base. Sem graduação ainda, os
  * cantos do contorno entram como pontos graduados, sem deslocamento. Com
  * graduação, as regras dos tamanhos que continuam (pelo nome) ficam; um
@@ -35,9 +70,9 @@ export function definirTamanhosDoMolde(molde: Molde, tamanhos: readonly string[]
   // De que tamanho antigo vem cada tamanho novo (-1: é um tamanho que não existia).
   const antigoDe = tamanhos.map((nome) => indiceDoTamanho(atual.tamanhos, nome));
   const antigoDoBase = antigoDe[base]!;
-  const contorno =
-    antigoDoBase >= 0 && antigoDoBase !== atual.base ? contornoDoTamanho(atual, molde.contorno, antigoDoBase) : molde.contorno;
-  if (!(area(contorno) > AREA_MINIMA_MM2)) throw new Error(`O tamanho “${tamanhos[base]}” não tem área para ser o base.`);
+  // Trocando o base, a peça inteira (contorno e o que está dentro) passa a ter a forma desse tamanho.
+  const naForma = antigoDoBase >= 0 && antigoDoBase !== atual.base ? naFormaDoTamanho(molde, atual, antigoDoBase) : molde;
+  if (!(area(naForma.contorno) > AREA_MINIMA_MM2)) throw new Error(`O tamanho “${tamanhos[base]}” não tem área para ser o base.`);
   const pontos: PontoGraduado[] = atual.pontos.map((p) => {
     const doBase = antigoDoBase >= 0 ? (p.deslocamentos[antigoDoBase] ?? ZERO) : ZERO;
     return {
@@ -49,33 +84,37 @@ export function definirTamanhosDoMolde(molde: Molde, tamanhos: readonly string[]
       }),
     };
   });
-  return {
-    ...molde,
-    contorno,
-    piques: reancorarPiques(molde.piques, molde.contorno, contorno),
-    tamanho: tamanhos[base]!,
-    graduacao: { tamanhos: [...tamanhos], base, pontos },
-  };
+  return { ...naForma, tamanho: tamanhos[base]!, graduacao: { tamanhos: [...tamanhos], base, pontos } };
 }
 
 /**
- * A peça de um tamanho, solta da graduação: o contorno desse tamanho, com os
- * piques na mesma proporção das arestas, e o nome do tamanho nas
- * propriedades. Furos, linhas internas, marcas e linha de fio ficam como no
- * base — a graduação é só do contorno.
+ * A peça de um tamanho, solta da graduação: o contorno desse tamanho, com o
+ * que está dentro (furos, linhas internas, marcas, cotas e linha de fio)
+ * acompanhando na proporção, os piques na mesma proporção das arestas, e o
+ * nome do tamanho nas propriedades.
  */
 export function moldeDoTamanho(molde: Molde, tamanho: number, novoId: string): Molde {
   const graduacao = molde.graduacao;
   if (!graduacao) throw new Error(`A peça “${molde.nome}” não tem graduação.`);
-  const contorno = contornoDoTamanho(graduacao, molde.contorno, tamanho);
-  if (!(area(contorno) > AREA_MINIMA_MM2)) throw new Error(`O tamanho “${graduacao.tamanhos[tamanho]}” de “${molde.nome}” ficaria sem área.`);
-  return {
-    ...semGraduacao(molde),
-    id: novoId,
-    contorno,
-    tamanho: graduacao.tamanhos[tamanho]!,
-    piques: reancorarPiques(molde.piques, molde.contorno, contorno),
-  };
+  if (!Number.isInteger(tamanho) || tamanho < 0 || tamanho >= graduacao.tamanhos.length) throw new Error('Tamanho fora da graduação.');
+  const naForma = naFormaDoTamanho(molde, graduacao, tamanho);
+  if (!(area(naForma.contorno) > AREA_MINIMA_MM2)) {
+    throw new Error(`O tamanho “${graduacao.tamanhos[tamanho]}” de “${molde.nome}” ficaria sem área.`);
+  }
+  return { ...semGraduacao(naForma), id: novoId, tamanho: graduacao.tamanhos[tamanho]! };
+}
+
+/**
+ * As peças como vão para o encaixe quando todos os tamanhos entram: cada peça
+ * graduada vira uma peça comum por tamanho (a do base continua sendo ela, com
+ * o mesmo id), na ordem dos tamanhos; as outras ficam como estão.
+ */
+export function expandirTamanhos(pecas: readonly Molde[], novoId: () => string): Molde[] {
+  return pecas.flatMap((peca) => {
+    const graduacao = peca.graduacao;
+    if (!graduacao) return [peca];
+    return graduacao.tamanhos.map((_, t) => (t === graduacao.base ? semGraduacao(peca) : moldeDoTamanho(peca, t, novoId())));
+  });
 }
 
 /**
