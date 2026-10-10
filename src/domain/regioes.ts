@@ -106,6 +106,20 @@ export function levarOQueEstaNaRegiao(
           ),
         }
       : {}),
+    // A prega registrada: cada ponta anda com a borda em que está, e cada linha, como a linha interna que ela é.
+    ...(molde.pregas
+      ? {
+          pregas: molde.pregas.map((prega) => {
+            const ponta = (p: Ponto2D): Ponto2D => (naBordaQueAnda(p) ? movimento.ponto(p) : p);
+            return {
+              ...prega,
+              parada: [ponta(prega.parada[0]), ponta(prega.parada[1])] as const,
+              movida: [ponta(prega.movida[0]), ponta(prega.movida[1])] as const,
+              linhas: prega.linhas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
+            };
+          }),
+        }
+      : {}),
     // A pence do contorno anda com a borda em que está; a marcada e a interna, com a linha interna delas.
     ...(molde.pences
       ? {

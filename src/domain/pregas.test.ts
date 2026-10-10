@@ -1,7 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { area, distancia, ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
-import { adicionarMarca, adicionarPique, criarMolde, type DadosDeNovoMolde, type Molde } from './molde';
-import { criarPregas, MAXIMO_DE_PREGAS, type OpcoesDePregas } from './pregas';
+import { definirRegra } from './graduacao';
+import { adicionarMarca, adicionarPique, criarMolde, transladarMolde, type DadosDeNovoMolde, type Molde } from './molde';
+import {
+  alterarPrega,
+  comPregasValidas,
+  criarPregas,
+  faixaDaPrega,
+  MAXIMO_DE_PREGAS,
+  medidasDaPrega,
+  pregaPerto,
+  pregasDaPeca,
+  removerPrega,
+  type OpcoesDePregas,
+} from './pregas';
+import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 
 // Retângulo de 200 × 300 mm, anti-horário, com a linha de fio à esquerda (x = 50): o lado esquerdo fica parado.
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -209,5 +222,137 @@ describe('criarPregas, o que é recusado', () => {
     expect(() => criarPregas(molde(), EMBAIXO, EM_CIMA, { ...SIMPLES, larguraMm: 5, largura2Mm: 200 }, null, ids())).toThrow(
       /diferença entre as duas larguras/,
     );
+  });
+});
+
+describe('a prega feita por ferramenta fica registrada', () => {
+  const comPrega = (opcoes: OpcoesDePregas = SIMPLES, base: Molde = molde()): Molde => criarPregas(base, EMBAIXO, EM_CIMA, opcoes, null, ids());
+  const aPrega = (peca: Molde) => pregasDaPeca(peca)[0]!;
+
+  it('guarda as duas bordas da abertura, as linhas que desenhou e as medidas', () => {
+    const peca = comPrega();
+
+    expect(pregasDaPeca(peca)).toHaveLength(1);
+    expect(aPrega(peca)).toMatchObject({ modo: 'simples-direita', pontasCriadas: [true, true] });
+    esperarPontos([...aPrega(peca).parada, ...aPrega(peca).movida], [ponto(100, 0), ponto(100, 300), ponto(140, 0), ponto(140, 300)]);
+    // Três linhas de dobra e uma seta.
+    expect(aPrega(peca).linhas).toHaveLength(4);
+    expect(aPrega(peca).piques).toBeUndefined();
+    expect(medidasDaPrega(aPrega(peca))).toEqual({ modo: 'simples-direita', larguraMm: 20, largura2Mm: 20 });
+    esperarPontos(faixaDaPrega(aPrega(peca)), [ponto(100, 0), ponto(100, 300), ponto(140, 300), ponto(140, 0)]);
+  });
+
+  it('tirada a prega, a peça fecha de volta e o que estava no lado que andou volta junto', () => {
+    const base = adicionarMarca(molde({ linhasInternas: [[ponto(150, 50), ponto(150, 250)]] }), ponto(160, 100), 'marca');
+    const peca = comPrega(SIMPLES, base);
+    expect(peca.marcas[0]!.posicao).toEqual(ponto(200, 100));
+
+    const sem = removerPrega(peca, aPrega(peca).id);
+    esperarPontos(sem.contorno, RETANGULO);
+    expect(area(sem.contorno)).toBeCloseTo(60000, 6);
+    expect(sem.linhasInternas).toHaveLength(1);
+    esperarPontos(sem.linhasInternas[0]!, [ponto(150, 50), ponto(150, 250)]);
+    expect(sem.marcas[0]!.posicao.x).toBeCloseTo(160, 6);
+    expect('pregas' in sem).toBe(false);
+  });
+
+  it('com larguras diferentes nas duas pontas, as medidas são lidas certas e a peça fecha de volta', () => {
+    const peca = comPrega({ ...SIMPLES, largura2Mm: 30 });
+    const medidas = medidasDaPrega(aPrega(peca));
+
+    expect(medidas.larguraMm).toBeCloseTo(20, 6);
+    expect(medidas.largura2Mm).toBeCloseTo(30, 6);
+    esperarPontos(removerPrega(peca, aPrega(peca).id).contorno, RETANGULO);
+  });
+
+  it('as pontas que já eram pontos do contorno ficam nele; os piques da prega saem com ela', () => {
+    const comPontos = molde({ contorno: [ponto(0, 0), ponto(100, 0), ponto(200, 0), ponto(200, 300), ponto(100, 300), ponto(0, 300)] });
+    const peca = criarPregas(comPontos, na(1, 100, 0), na(4, 100, 300), { ...SIMPLES, piques: true }, null, ids());
+
+    expect(aPrega(peca).pontasCriadas).toEqual([false, false]);
+    expect(aPrega(peca).piques).toHaveLength(6);
+    const sem = removerPrega(peca, aPrega(peca).id);
+    expect(sem.contorno).toHaveLength(6);
+    expect(sem.piques).toHaveLength(0);
+    expect(area(sem.contorno)).toBeCloseTo(60000, 6);
+  });
+
+  it('vale também no contorno que corre no outro sentido', () => {
+    const aoContrario = molde({ contorno: [...RETANGULO].reverse() });
+    const peca = criarPregas(aoContrario, na(2, 100, 0), na(0, 100, 300), SIMPLES, null, ids());
+
+    expect(pregasDaPeca(peca)).toHaveLength(1);
+    const sem = removerPrega(peca, aPrega(peca).id);
+    expect(sem.contorno).toHaveLength(4);
+    expect(Math.abs(area(sem.contorno))).toBeCloseTo(60000, 6);
+    for (const canto of RETANGULO) expect(sem.contorno.some((q) => distancia(q, canto) < 1e-6)).toBe(true);
+  });
+
+  it('mudada, a prega é aberta de novo na mesma linha, com o modo e as larguras novos, e continua com piques', () => {
+    const peca = comPrega({ ...SIMPLES, piques: true });
+    const mudada = alterarPrega(peca, aPrega(peca).id, { modo: 'dupla', larguraMm: 10, largura2Mm: 10 }, ids());
+
+    expect(pregasDaPeca(mudada)).toHaveLength(1);
+    expect(medidasDaPrega(aPrega(mudada))).toEqual({ modo: 'dupla', larguraMm: 10, largura2Mm: 10 });
+    // A dupla consome quatro larguras: 40 mm em 300 de altura.
+    expect(area(mudada.contorno)).toBeCloseTo(60000 + 40 * 300, 6);
+    // Cinco linhas de dobra e duas setas; um pique em cada ponta de cada linha de dobra.
+    expect(dobrasDe(mudada)).toHaveLength(5);
+    expect(setasDe(mudada)).toHaveLength(2);
+    expect(mudada.piques).toHaveLength(10);
+    expect(() => alterarPrega(peca, aPrega(peca).id, { modo: 'dupla', larguraMm: 0, largura2Mm: 10 }, ids())).toThrow(/largura/);
+    expect(() => alterarPrega(peca, 'outra', { modo: 'dupla', larguraMm: 10, largura2Mm: 10 }, ids())).toThrow('mexida à mão');
+  });
+
+  it('várias pregas: cada uma tem o seu registro, e tirar a do meio leva as seguintes junto', () => {
+    const tres = criarPregas(molde(), EMBAIXO, EM_CIMA, { ...SIMPLES, quantidade: 3, distanciaMm: 30 }, ponto(150, 150), ids());
+    expect(pregasDaPeca(tres)).toHaveLength(3);
+    expect(area(tres.contorno)).toBeCloseTo(60000 + 3 * 40 * 300, 6);
+
+    const duas = removerPrega(tres, pregasDaPeca(tres)[1]!.id);
+    expect(pregasDaPeca(duas)).toHaveLength(2);
+    expect(area(duas.contorno)).toBeCloseTo(60000 + 2 * 40 * 300, 6);
+    // As duas que ficaram ainda fecham: sobra o retângulo.
+    const uma = removerPrega(duas, pregasDaPeca(duas)[1]!.id);
+    const nenhuma = removerPrega(uma, pregasDaPeca(uma)[0]!.id);
+    esperarPontos(nenhuma.contorno, RETANGULO);
+    expect(nenhuma.linhasInternas).toHaveLength(0);
+  });
+
+  it('o registro deixa de valer se uma linha da prega é apagada ou uma borda é mexida', () => {
+    const peca = comPrega();
+    const semUmaLinha = { ...peca, linhasInternas: peca.linhasInternas.slice(1) };
+    expect(pregasDaPeca(semUmaLinha)).toHaveLength(0);
+    expect('pregas' in comPregasValidas(semUmaLinha)).toBe(false);
+    expect(() => removerPrega(semUmaLinha, aPrega(peca).id)).toThrow('mexida à mão');
+
+    const bordaMexida = { ...peca, contorno: peca.contorno.map((p) => (distancia(p, ponto(140, 0)) < 1e-6 ? ponto(140, -5) : p)) };
+    expect(pregasDaPeca(bordaMexida)).toHaveLength(0);
+    expect(comPregasValidas(peca)).toBe(peca);
+  });
+
+  it('a prega acompanha a peça movida e o tamanho da graduação', () => {
+    const levada = transladarMolde(comPrega(), ponto(10, 20), 'outra');
+    expect(pregasDaPeca(levada)).toHaveLength(1);
+    esperarPontos([...aPrega(levada).parada], [ponto(110, 20), ponto(110, 320)]);
+    expect(area(removerPrega(levada, aPrega(levada).id).contorno)).toBeCloseTo(60000, 6);
+
+    // No G, o canto de baixo do lado que andou sai 24 mm: as pontas da prega nessa aresta andam na proporção, e o registro vai junto.
+    let graduada = definirTamanhosDoMolde(comPrega(), ['M', 'G'], 'M');
+    const canto = graduada.contorno.findIndex((p) => distancia(p, ponto(240, 0)) < 1e-6);
+    graduada = { ...graduada, graduacao: definirRegra(graduada.graduacao!, graduada.contorno, canto, [ponto(0, 0), ponto(24, 0)]) };
+    const g = moldeDoTamanho(graduada, 1, 'g');
+    expect(pregasDaPeca(g)).toHaveLength(1);
+    expect(aPrega(g).parada[0].x).toBeCloseTo(110, 6);
+    expect(aPrega(g).movida[0].x).toBeCloseTo(154, 6);
+  });
+
+  it('pregaPerto acha a prega em cuja faixa o ponto está', () => {
+    const peca = comPrega();
+
+    expect(pregaPerto(peca, ponto(120, 150), 0)?.id).toBe(aPrega(peca).id);
+    expect(pregaPerto(peca, ponto(50, 150), 0)).toBeNull();
+    expect(pregaPerto(peca, ponto(95, 150), 6)?.id).toBe(aPrega(peca).id);
+    expect(pregaPerto(peca, ponto(95, 150), 2)).toBeNull();
   });
 });

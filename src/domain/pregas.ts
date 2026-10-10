@@ -1,4 +1,5 @@
 import {
+  area,
   areaAssinada,
   distancia,
   pontoDentroDoContorno,
@@ -9,9 +10,10 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { exigirCorteValido } from './corteEUniao';
-import { piquesQueFicamNoContorno, type Molde, type Pique } from './molde';
+import { piquesQueFicamNoContorno, semCampo, type Molde, type Pique, type PregaDaPeca } from './molde';
 import {
   comecarPeloMenorPontoOriginal,
+  distanciaAteALinha,
   giroEDeslocamento,
   levarOQueEstaNaRegiao,
   regiaoQueAnda,
@@ -184,13 +186,25 @@ function abrirUmaPrega(molde: Molde, a: Ponto2D, b: Ponto2D, opcoes: OpcoesDePre
         }),
       )
     : [];
+  const jaEraPonto = (p: Ponto2D): boolean => contorno.some((v) => distancia(v, p) <= NO_MESMO_LUGAR_MM);
+  // A prega fica registrada: as duas bordas da abertura e as linhas que desenhou, para mudar as larguras ou tirá-la depois.
+  const registro: PregaDaPeca = {
+    id: novoId(),
+    modo: opcoes.modo,
+    parada: [a, b],
+    movida: [a2, b2],
+    linhas: [...linhas, ...setas],
+    pontasCriadas: [!jaEraPonto(a), !jaEraPonto(b)],
+    ...(novos.length > 0 ? { piques: novos.map((q) => q.id) } : {}),
+  };
+  const aberta: Molde = {
+    ...base,
+    contorno: novoContorno,
+    linhasInternas: [...base.linhasInternas, ...linhas, ...setas],
+    piques: [...piquesQueFicamNoContorno(base.piques, novoContorno), ...novos],
+  };
   return {
-    molde: {
-      ...base,
-      contorno: novoContorno,
-      linhasInternas: [...base.linhasInternas, ...linhas, ...setas],
-      piques: [...piquesQueFicamNoContorno(base.piques, novoContorno), ...novos],
-    },
+    molde: { ...aberta, pregas: [...pregasDaPeca(aberta), registro] },
     movimento,
     regiao: cadeias[anda],
   };
@@ -240,4 +254,164 @@ export function criarPregas(
     }
   }
   return atual;
+}
+
+// ---------------------------------------------------------------------------
+// As pregas registradas na peça
+// ---------------------------------------------------------------------------
+
+const NO_MESMO_LUGAR_MM = 1e-6;
+const AREA_MINIMA_MM2 = 1e-6;
+
+function mesmoLugar(p: Ponto2D, q: Ponto2D): boolean {
+  return distancia(p, q) <= NO_MESMO_LUGAR_MM;
+}
+
+/** A linha é a mesma sequência de pontos, num sentido ou no outro. */
+function mesmaLinha(linha: readonly Ponto2D[], pontos: readonly Ponto2D[]): boolean {
+  if (linha.length !== pontos.length) return false;
+  return linha.every((p, i) => mesmoLugar(p, pontos[i]!)) || linha.every((p, i) => mesmoLugar(p, pontos[pontos.length - 1 - i]!));
+}
+
+/**
+ * Onde as quatro pontas da prega estão no contorno, e se o lado que andou
+ * vem depois da ponta parada na numeração (`adiante`). `null` se as pontas
+ * já não estão no contorno como foram postas: cada parada vizinha da movida.
+ */
+function pontasNoContorno(
+  contorno: Contorno,
+  prega: PregaDaPeca,
+): { readonly a: number; readonly a2: number; readonly b: number; readonly b2: number; readonly adiante: boolean } | null {
+  const n = contorno.length;
+  const indiceDe = (p: Ponto2D): number => contorno.findIndex((v) => mesmoLugar(v, p));
+  const [a, a2, b, b2] = [indiceDe(prega.parada[0]), indiceDe(prega.movida[0]), indiceDe(prega.parada[1]), indiceDe(prega.movida[1])];
+  if (a < 0 || a2 < 0 || b < 0 || b2 < 0) return null;
+  if (a2 === (a + 1) % n && b === (b2 + 1) % n) return { a, a2, b, b2, adiante: true };
+  if (a === (a2 + 1) % n && b2 === (b + 1) % n) return { a, a2, b, b2, adiante: false };
+  return null;
+}
+
+function pregaEstaNaPeca(molde: Molde, prega: PregaDaPeca): boolean {
+  if (!pontasNoContorno(molde.contorno, prega)) return false;
+  // Cada linha da prega tem a sua linha interna (uma para cada, sem repetir).
+  const livres = [...molde.linhasInternas];
+  return prega.linhas.every((linha) => {
+    const onde = livres.findIndex((l) => mesmaLinha(l, linha));
+    if (onde < 0) return false;
+    livres.splice(onde, 1);
+    return true;
+  });
+}
+
+/** As pregas registradas que continuam na peça como foram postas. */
+export function pregasDaPeca(molde: Molde): PregaDaPeca[] {
+  return (molde.pregas ?? []).filter((prega) => pregaEstaNaPeca(molde, prega));
+}
+
+/** A peça sem os registros de prega que deixaram de valer (as bordas ou as linhas deles mudaram). */
+export function comPregasValidas(molde: Molde): Molde {
+  if (!molde.pregas) return molde;
+  const validas = pregasDaPeca(molde);
+  if (validas.length === 0) return semCampo(molde, 'pregas');
+  return validas.length === molde.pregas.length ? molde : { ...molde, pregas: validas };
+}
+
+/** A faixa de tecido que a prega abriu: as duas pontas paradas e as duas que andaram, em volta. */
+export function faixaDaPrega(prega: PregaDaPeca): Ponto2D[] {
+  return [prega.parada[0], prega.parada[1], prega.movida[1], prega.movida[0]];
+}
+
+/** A prega registrada em que o ponto está (dentro da faixa dela) ou de que está mais perto, a até `raioMm`. */
+export function pregaPerto(molde: Molde, p: Ponto2D, raioMm: number): PregaDaPeca | null {
+  let melhor: { prega: PregaDaPeca; distancia: number } | null = null;
+  for (const prega of pregasDaPeca(molde)) {
+    const faixa = faixaDaPrega(prega);
+    const d = pontoDentroDoContorno(p, faixa) ? 0 : distanciaAteALinha(p, [...faixa, faixa[0]!]);
+    if (d <= raioMm && (!melhor || d < melhor.distancia)) melhor = { prega, distancia: d };
+  }
+  return melhor ? melhor.prega : null;
+}
+
+export interface MedidasDaPrega {
+  readonly modo: ModoDePrega;
+  /** A largura (a profundidade da dobra) na primeira ponta da linha da prega (mm). */
+  readonly larguraMm: number;
+  /** A largura na segunda ponta (mm). */
+  readonly largura2Mm: number;
+}
+
+/** As medidas de uma prega registrada, lidas das bordas dela. */
+export function medidasDaPrega(prega: PregaDaPeca): MedidasDaPrega {
+  const [a, b] = prega.parada;
+  const [a2, b2] = prega.movida;
+  const partes = largurasConsumidas(prega.modo);
+  const comprimento = distancia(a, b);
+  // Em `b`, a abertura conta em esquadro com a linha da prega: o lado que andou pode ter girado.
+  const emB = comprimento < MESMO_PONTO_MM ? distancia(b, b2) : Math.abs((b.x - a.x) * (b2.y - a.y) - (b.y - a.y) * (b2.x - a.x)) / comprimento;
+  return { modo: prega.modo, larguraMm: distancia(a, a2) / partes, largura2Mm: emB / partes };
+}
+
+function pregaRegistrada(molde: Molde, id: string): PregaDaPeca {
+  const prega = pregasDaPeca(molde).find((q) => q.id === id);
+  if (!prega) throw new Error('Essa prega foi mexida à mão e já não pode ser mudada pelas medidas.');
+  return prega;
+}
+
+/**
+ * A peça sem a prega: o lado que andou volta para junto do outro, levando o
+ * que está nele, e as linhas de dobra, as setas e os piques da prega saem. As
+ * pontas que a prega tinha posto no contorno saem também.
+ */
+export function removerPrega(molde: Molde, id: string): Molde {
+  const prega = pregaRegistrada(molde, id);
+  const contorno = molde.contorno;
+  const onde = pontasNoContorno(contorno, prega)!;
+  const [a, b] = prega.parada;
+  const [a2, b2] = prega.movida;
+  const no = (indice: number): PosicaoNoContorno => ({ indiceAresta: indice, ponto: contorno[indice]! });
+  const queAnda = onde.adiante ? trechoDoContorno(contorno, no(onde.a2), no(onde.b2)) : trechoDoContorno(contorno, no(onde.b2), no(onde.a2));
+  const queFica = onde.adiante ? trechoDoContorno(contorno, no(onde.b), no(onde.a)) : trechoDoContorno(contorno, no(onde.a), no(onde.b));
+  // O movimento de volta: desfaz o giro em torno da ponta que andou e traz essa ponta para cima da parada.
+  const giro = ((Math.atan2(b2.y - a2.y, b2.x - a2.x) - Math.atan2(b.y - a.y, b.x - a.x)) * 180) / Math.PI;
+  const volta = giroEDeslocamento(a2, -giro, ponto(a.x - a2.x, a.y - a2.y));
+
+  const piquesDela = new Set(prega.piques ?? []);
+  const linhasInternas = [...molde.linhasInternas];
+  for (const linha of prega.linhas) {
+    const qual = linhasInternas.findIndex((l) => mesmaLinha(l, linha));
+    if (qual >= 0) linhasInternas.splice(qual, 1);
+  }
+  const semEla: Molde = {
+    ...molde,
+    linhasInternas,
+    piques: molde.piques.filter((q) => !piquesDela.has(q.id)),
+    pregas: (molde.pregas ?? []).filter((q) => q.id !== id),
+  };
+  const base = levarOQueEstaNaRegiao(semEla, queAnda, queAnda, queFica, volta);
+  const [criouA, criouB] = prega.pontasCriadas;
+  const saem = [...(criouA ? [a] : []), ...(criouB ? [b] : [])];
+  const fechado = semPontosRepetidos([...queFica, ...queAnda.map(volta.ponto)], 1e-4).filter((p) => !saem.some((q) => distancia(p, q) <= 1e-4));
+  const novoContorno = comecarPeloMenorPontoOriginal(fechado, contorno);
+  if (novoContorno.length < 3 || !(area(novoContorno) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área sem essa prega.');
+  return comPregasValidas({ ...base, contorno: novoContorno, piques: piquesQueFicamNoContorno(base.piques, novoContorno) });
+}
+
+/**
+ * Muda uma prega já feita: ela é tirada e aberta de novo na mesma linha, com
+ * o tipo e as larguras dados. Continua com piques, se tinha.
+ */
+export function alterarPrega(molde: Molde, id: string, medidas: MedidasDaPrega, novoId: () => string): Molde {
+  const prega = pregaRegistrada(molde, id);
+  const opcoes: OpcoesDePregas = {
+    modo: medidas.modo,
+    quantidade: 1,
+    distanciaMm: 0,
+    larguraMm: medidas.larguraMm,
+    largura2Mm: medidas.largura2Mm,
+    piques: (prega.piques?.length ?? 0) > 0,
+  };
+  conferirOpcoesDePregas(opcoes);
+  const semEla = removerPrega(molde, id);
+  const pontaNoContorno = (p: Ponto2D): Ponto2D => pontoMaisProximoNoContorno(p, semEla.contorno).ponto;
+  return abrirUmaPrega(semEla, pontaNoContorno(prega.parada[0]), pontaNoContorno(prega.parada[1]), opcoes, novoId).molde;
 }

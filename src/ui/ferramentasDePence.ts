@@ -24,7 +24,18 @@ import {
   type ModoDePence,
   type OpcoesDePenceInterna,
 } from '../domain/pences';
-import { conferirOpcoesDePregas, criarPregas, MAXIMO_DE_PREGAS, type ModoDePrega, type OpcoesDePregas } from '../domain/pregas';
+import {
+  alterarPrega,
+  conferirOpcoesDePregas,
+  criarPregas,
+  faixaDaPrega,
+  MAXIMO_DE_PREGAS,
+  medidasDaPrega,
+  pregasDaPeca,
+  removerPrega,
+  type ModoDePrega,
+  type OpcoesDePregas,
+} from '../domain/pregas';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
 import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
@@ -149,12 +160,16 @@ export interface CliqueDePence {
   readonly editar?: string;
   /** O clique caiu numa pence que não tem registro: abre as medidas dela, e é aplicando que ela passa a ter (o registro que teria). */
   readonly reconhecer?: PenceDaPeca;
+  /** Com "Pregas": o clique caiu dentro de uma prega já feita, e abre as medidas dela (o id do registro). */
+  readonly editarPrega?: string;
 }
 
 /** Um clique com a ferramenta de pence ligada: além do que todo clique traz, a pence que está sob ele (se há) — a registrada, ou a que não tem registro. */
 export interface CliqueNaPence extends CliqueDeTrecho {
   readonly pence?: string | null;
   readonly semRegistro?: PenceDaPeca | null;
+  /** A prega registrada em cuja faixa o clique caiu (se há). */
+  readonly prega?: string | null;
 }
 
 /** O id que a pence reconhecida leva enquanto é só uma candidata (no desenho, sob o mouse). */
@@ -194,6 +209,10 @@ export function cliqueDePence(
       pence !== undefined &&
       ((ferramenta === 'pence-no-contorno' && pence.tipo !== 'interna') || (ferramenta === 'pence-interna' && pence.tipo === 'interna'));
     if (pence && daFerramenta) return { estado, recusa: null, editar: pence.id };
+  }
+  // Com "Pregas", o clique dentro de uma prega já feita — e fora do contorno, onde começaria outra — abre as medidas dela.
+  if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.prega && pregasDaPeca(peca).some((q) => q.id === clique.prega)) {
+    return { estado, recusa: null, editarPrega: clique.prega };
   }
   // O mesmo com a pence que não tem registro (de projeto antigo, importada ou desenhada à mão).
   if (!estado.inicio && clique.semRegistro) {
@@ -321,8 +340,15 @@ export function previaDaPence(
 ): PreviaDeFerramentaDeMolde {
   // Os pontos já clicados e, nas ferramentas que mexem em pences, o vértice de cada pence registrada.
   const dasPences = ferramenta === 'pregas' || ferramenta === 'multiplas-pences' ? [] : pencesDaPeca(peca).map((pence) => pence.pontos[pence.tipo === 'interna' ? 0 : 1]!);
-  const marcas = [...dasPences, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
+  // Com "Pregas", o meio de cada prega registrada: é onde se clica para mudá-la.
+  const dasPregas = ferramenta === 'pregas' ? pregasDaPeca(peca).map((prega) => meioDaFaixa(faixaDaPrega(prega))) : [];
+  const marcas = [...dasPences, ...dasPregas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
   if (!mouse) return { marcas };
+  const pregaSobOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).editarPrega;
+  if (pregaSobOMouse) {
+    const faixa = faixaDaPrega(pregasDaPeca(peca).find((q) => q.id === pregaSobOMouse)!);
+    return { marcas, substituido: [...faixa, faixa[0]!] };
+  }
   // Com o mouse em cima de uma pence já feita, o clique abre as medidas dela: a pence fica em destaque.
   const { editar: sobOMouse, reconhecer } = cliqueDePence(ferramenta, opcoes, peca, estado, mouse);
   const emDestaque = sobOMouse ? pencesDaPeca(peca).find((q) => q.id === sobOMouse) : reconhecer;
@@ -347,10 +373,19 @@ export function previaDaPence(
   return distancia(ate, estado.inicio.ponto) > MESMO_PONTO_MM ? { novo: [estado.inicio.ponto, ate], marcas } : { marcas };
 }
 
+/** O meio dos quatro cantos da faixa de uma prega. */
+function meioDaFaixa(faixa: readonly Ponto2D[]): Ponto2D {
+  return { x: faixa.reduce((s, p) => s + p.x, 0) / faixa.length, y: faixa.reduce((s, p) => s + p.y, 0) / faixa.length };
+}
+
 const ESC = ' Esc sai.';
 
-/** A instrução do próximo clique, para a faixa de mensagens. `temPences`: a peça tem pences registradas, que um clique pode abrir. */
-export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, estado: TrechoEmEdicao, temPences = false): string {
+/**
+ * A instrução do próximo clique, para a faixa de mensagens. `temPences`: a
+ * peça tem pences registradas, que um clique pode abrir. `temPregas`: o mesmo
+ * para as pregas.
+ */
+export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasPences, estado: TrechoEmEdicao, temPences = false, temPregas = false): string {
   // A pence sem registro (de projeto antigo, importada ou desenhada à mão) também abre as medidas.
   const semRegistro = ferramenta === 'pence-interna' ? 'no losango já desenhado' : 'no vértice de uma pence que já esteja no contorno';
   const ouMudar = temPences
@@ -379,11 +414,58 @@ export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDa
     case 'multiplas-pences':
       return 'Múltiplas pences: clique no contorno da peça selecionada, no meio do grupo de pences.' + ESC;
     case 'pregas':
-      if (!estado.inicio) return 'Pregas: clique no contorno da peça selecionada, numa ponta da linha da prega.' + ESC;
+      if (!estado.inicio) {
+        const ouMudarPrega = temPregas ? ' Ou clique dentro de uma prega já feita (as marcadas com um anel) para mudar as larguras dela ou tirá-la.' : '';
+        return 'Pregas: clique no contorno da peça selecionada, numa ponta da linha da prega.' + ouMudarPrega + ESC;
+      }
       return !estado.fim
         ? 'Pregas: clique no contorno, na outra ponta da linha da prega.' + ESC
         : 'Pregas: clique do lado em que as outras pregas devem ficar.' + ESC;
   }
+}
+
+const MODOS_DE_PREGA: ReadonlyArray<{ readonly valor: ModoDePrega; readonly rotulo: string }> = [
+  { valor: 'simples-direita', rotulo: 'Simples, dobrada para a direita' },
+  { valor: 'simples-esquerda', rotulo: 'Simples, dobrada para a esquerda' },
+  { valor: 'dupla', rotulo: 'Dupla: duas dobras que se encontram no meio' },
+];
+
+/** O diálogo das medidas de uma prega já feita; `null` se ela não está mais na peça como foi posta. */
+export function dialogoDeEditarPrega(peca: Molde, id: string): DialogoDePence | null {
+  const prega = pregasDaPeca(peca).find((q) => q.id === id);
+  if (!prega) return null;
+  const { modo, larguraMm, largura2Mm } = medidasDaPrega(prega);
+  return {
+    titulo: 'Prega: medidas',
+    campos: [
+      { tipo: 'escolha', id: 'modo', rotulo: 'Modo', opcoes: MODOS_DE_PREGA, inicial: modo },
+      { tipo: 'medida', id: 'largura', rotulo: 'Largura na primeira ponta da linha (mm)', inicial: paraCampo(arredondar(larguraMm)) },
+      { tipo: 'medida', id: 'largura2', rotulo: 'Largura na segunda ponta (mm)', inicial: paraCampo(arredondar(largura2Mm)) },
+      { tipo: 'caixa', id: 'apagar', rotulo: 'Tirar esta prega (a peça fecha de volta)', inicial: false },
+    ],
+    nota: 'A prega é tirada e aberta de novo na mesma linha, com o modo e as larguras novos: o lado da peça que andou volta e anda de novo, levando o que está nele. Tirando a prega, esse lado volta para junto do outro, e as linhas de dobra, as setas e os piques dela saem.',
+  };
+}
+
+/** Aplica o diálogo das medidas na prega: muda-a ou, com "Tirar", fecha a peça de volta. Lança erro quando as medidas não servem. */
+export function aplicarEdicaoDaPrega(pecas: readonly Molde[], peca: Molde, id: string, valores: ValoresDoDialogo, novoId: () => string): ResultadoDeFerramentaDeMolde {
+  if (!pregasDaPeca(peca).some((q) => q.id === id)) throw new Error('Essa prega foi mexida à mão e já não pode ser mudada pelas medidas.');
+  const areas = (nova: Molde): string => `A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.`;
+  if (valores.apagar === true) {
+    const sem = removerPrega(peca, id);
+    return { pecas: trocar(pecas, peca.id, sem), recado: `Prega tirada de “${peca.nome}”: o lado que tinha andado voltou. ${areas(sem)}` };
+  }
+  const modo = MODOS_DE_PREGA.find((m) => m.valor === valores.modo)?.valor ?? 'simples-direita';
+  const medidas = { modo, larguraMm: Number(valores.largura), largura2Mm: Number(valores.largura2) };
+  const nova = alterarPrega(peca, id, medidas, novoId);
+  const larguras =
+    Math.abs(medidas.larguraMm - medidas.largura2Mm) < 0.005
+      ? `largura de ${formatarMm(medidas.larguraMm)}`
+      : `larguras de ${formatarMm(medidas.larguraMm)} e ${formatarMm(medidas.largura2Mm)}`;
+  return {
+    pecas: trocar(pecas, peca.id, nova),
+    recado: `Prega de “${peca.nome}” aberta de novo: ${modo === 'dupla' ? 'dupla' : 'simples'}, ${larguras}. ${areas(nova)}`,
+  };
 }
 
 /** O que a explicação do diálogo diz antes, quando a pence não tinha registro. */

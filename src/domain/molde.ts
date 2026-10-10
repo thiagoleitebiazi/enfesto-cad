@@ -120,6 +120,27 @@ export interface PenceDaPeca {
 }
 
 /**
+ * Uma prega aberta por ferramenta, guardada pelas duas bordas da abertura e
+ * pelas linhas que desenhou. Com o registro, dá para mudar as larguras depois
+ * e para tirar a prega, fechando a peça de volta. O registro só vale enquanto
+ * as bordas e as linhas continuam na peça como foram postas.
+ */
+export interface PregaDaPeca {
+  readonly id: string;
+  readonly modo: 'simples-direita' | 'simples-esquerda' | 'dupla';
+  /** A borda da abertura do lado que ficou parado: as duas pontas da linha da prega. */
+  readonly parada: readonly [Ponto2D, Ponto2D];
+  /** A borda do lado que andou: as mesmas duas pontas, levadas pela abertura. Cada uma é vizinha, no contorno, da ponta parada dela. */
+  readonly movida: readonly [Ponto2D, Ponto2D];
+  /** As linhas internas que a prega desenhou: as de dobra e as setas. */
+  readonly linhas: readonly Contorno[];
+  /** Cada ponta da linha da prega foi posta no contorno por ela (não era um ponto dele)? Tirada a prega, a ponta posta por ela sai junto. */
+  readonly pontasCriadas: readonly [boolean, boolean];
+  /** Os piques que a ferramenta pôs junto com a prega. */
+  readonly piques?: readonly string[];
+}
+
+/**
  * A metade que o "Dobrar" tirou da peça com "Manter dobra do molde" ligado:
  * fica guardada, fora do desenho, para o "Desdobrar" trazê-la de volta como
  * era — em vez de espelhar a metade que ficou.
@@ -175,6 +196,8 @@ export interface Molde {
   readonly pences?: readonly PenceDaPeca[];
   /** As curvas e os arcos feitos pelas ferramentas da aba Construção, para mexer nos pontos de passagem depois. */
   readonly curvas?: readonly CurvaDaPeca[];
+  /** As pregas abertas por ferramenta, com as bordas e as linhas delas (para mudar as larguras e tirar depois). */
+  readonly pregas?: readonly PregaDaPeca[];
 }
 
 export interface DadosDeNovoMolde {
@@ -318,7 +341,7 @@ function acompanhandoOsPontos(molde: Molde, contornoNovo: Contorno): { readonly 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
 export function semCampo(
   molde: Molde,
-  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas',
+  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas' | 'pregas',
 ): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
@@ -330,7 +353,17 @@ export function semGraduacao(molde: Molde): Molde {
   return semCampo(molde, 'graduacao');
 }
 
-/** Os textos, a linha de simetria, a metade guardada, as pences e as curvas da peça levados por uma transformação, prontos para espalhar no molde novo. */
+/** As pregas registradas com os pontos delas levados por `ponto`. */
+export function pregasLevadas(pregas: readonly PregaDaPeca[], ponto: (p: Ponto2D) => Ponto2D): readonly PregaDaPeca[] {
+  return pregas.map((prega) => ({
+    ...prega,
+    parada: [ponto(prega.parada[0]), ponto(prega.parada[1])],
+    movida: [ponto(prega.movida[0]), ponto(prega.movida[1])],
+    linhas: prega.linhas.map((linha) => linha.map(ponto)),
+  }));
+}
+
+/** Os textos, a linha de simetria, a metade guardada, as pences, as curvas e as pregas da peça levados por uma transformação, prontos para espalhar no molde novo. */
 function anotacoesTransformadas(
   molde: Molde,
   ponto: (p: Ponto2D) => Ponto2D,
@@ -340,9 +373,11 @@ function anotacoesTransformadas(
   readonly dobraMantida?: MetadeGuardada;
   readonly pences?: readonly PenceDaPeca[];
   readonly curvas?: readonly CurvaDaPeca[];
+  readonly pregas?: readonly PregaDaPeca[];
 } {
   const guardada = molde.dobraMantida;
   return {
+    ...(molde.pregas ? { pregas: pregasLevadas(molde.pregas, ponto) } : {}),
     ...(molde.curvas
       ? { curvas: molde.curvas.map((curva) => ({ ...curva, controles: curva.controles.map(ponto), pontos: curva.pontos.map(ponto) })) }
       : {}),

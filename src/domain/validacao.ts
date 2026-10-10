@@ -31,11 +31,18 @@ export interface ToleranciasDeValidacao {
   readonly dimensaoMinimaPlausivelMm: number;
   /** Peças com maior dimensão acima disto disparam aviso de escala suspeita (mm). */
   readonly dimensaoMaximaPlausivelMm: number;
+  /**
+   * Quanto uma peça pode passar da área útil sem contar como fora dela (mm).
+   * É só para o ruído das contas: girar e deslocar um lado da peça (pences,
+   * pregas) pode deixar um ponto a um bilionésimo de milímetro da borda.
+   */
+  readonly folgaNosLimitesMm: number;
 }
 
 export const TOLERANCIAS_PADRAO: ToleranciasDeValidacao = {
   dimensaoMinimaPlausivelMm: 5,
   dimensaoMaximaPlausivelMm: 10000,
+  folgaNosLimitesMm: 1e-6,
 };
 
 function validarContornosIndividuais(pecas: readonly Molde[]): ProblemaDeValidacao[] {
@@ -97,7 +104,7 @@ function validarSobreposicaoEEspacamento(
   return problemas;
 }
 
-function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): ProblemaDeValidacao[] {
+function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto, folgaMm: number): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
   const minX = enfesto.margemLateralMm;
   const maxX = enfesto.larguraUtilMm - enfesto.margemLateralMm;
@@ -107,7 +114,7 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
   for (const peca of pecas) {
     if (peca.contorno.length === 0) continue;
     const bbox = retanguloEnvolvente(peca.contorno);
-    if (bbox.minX < minX || bbox.maxX > maxX || bbox.minY < minY || bbox.maxY > maxY) {
+    if (bbox.minX < minX - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < minY - folgaMm || bbox.maxY > maxY + folgaMm) {
       problemas.push({
         tipo: 'fora-dos-limites',
         severidade: 'erro',
@@ -171,7 +178,7 @@ export function validarProjeto(
     ...validarEscala(pecas, tolerancias),
   ];
   if (enfesto) {
-    problemas.push(...validarLimitesDoTecido(pecas, enfesto));
+    problemas.push(...validarLimitesDoTecido(pecas, enfesto, tolerancias.folgaNosLimitesMm));
   }
   return problemas;
 }

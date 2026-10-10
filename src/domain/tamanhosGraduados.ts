@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { reancorarPiques, semGraduacao, transladarMolde, type Molde } from './molde';
+import { pregasLevadas, reancorarPiques, semGraduacao, transladarMolde, type Molde } from './molde';
 
 /**
  * O que a graduação faz com a peça inteira: definir os tamanhos, tirar um
@@ -85,6 +85,7 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
           })),
         }
       : {}),
+    ...(molde.pregas ? { pregas: pregasLevadas(molde.pregas, levar) } : {}),
     ...(guardada && dobraDoTamanho
       ? {
           dobraMantida: {

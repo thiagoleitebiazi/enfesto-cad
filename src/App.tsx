@@ -47,6 +47,8 @@ import {
   aplicarPence,
   cliqueDePence,
   aplicarEdicaoDaPence,
+  aplicarEdicaoDaPrega,
+  dialogoDeEditarPrega,
   dialogoDaPence,
   dialogoDeEditarPence,
   ehFerramentaDePence,
@@ -138,6 +140,7 @@ import {
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
 import { comPenceReconhecida, pencePerto, pencesDaPeca } from './domain/pences';
+import { pregaPerto, pregasDaPeca } from './domain/pregas';
 import { comArcoRegistrado, comCurvaRegistrada } from './domain/curvasDaPeca';
 import {
   apagarAlca,
@@ -431,6 +434,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'dobrar' }
   | { readonly tipo: 'conferir' }
   | { readonly tipo: 'editar-pence'; readonly id: string; readonly reconhecer?: PenceDaPeca }
+  | { readonly tipo: 'editar-prega'; readonly id: string }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -2424,14 +2428,20 @@ export default function App(): React.JSX.Element {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const { estado, recusa, editar, reconhecer } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+        const { estado, recusa, editar, reconhecer, editarPrega } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
           noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
           livre: semCaptura,
           pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
           semRegistro: penceSemRegistroSobOClique(modo, peca, semCaptura, raioMm),
+          prega: pregaPerto(peca, semCaptura, 0)?.id ?? null,
         });
         setRecadoDaFerramenta(recusa);
         if (recusa) return;
+        // Com "Pregas", o clique dentro de uma prega já feita abre as medidas dela.
+        if (editarPrega) {
+          setDialogoDeFerramenta({ tipo: 'editar-prega', id: editarPrega });
+          return;
+        }
         // O clique caiu numa pence já feita: abrem-se as medidas dela.
         if (editar) {
           setDialogoDeFerramenta({ tipo: 'editar-pence', id: editar });
@@ -2975,6 +2985,7 @@ export default function App(): React.JSX.Element {
             livre: cursorMundo,
             pence: pencePerto(pecaSelecionada, cursorMundo, raioMm)?.id ?? null,
             semRegistro: penceSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo, raioMm),
+            prega: pregaPerto(pecaSelecionada, cursorMundo, 0)?.id ?? null,
           }
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
@@ -3042,7 +3053,13 @@ export default function App(): React.JSX.Element {
   const textoDaConstrucao = ((): string | null => {
     const fim = ' Esc sai.';
     if (ehFerramentaDePence(modo)) {
-      return instrucaoDaPence(modo, opcoesDasPences, trecho, pecaSelecionada ? pencesDaPeca(pecaSelecionada).length > 0 : false);
+      return instrucaoDaPence(
+        modo,
+        opcoesDasPences,
+        trecho,
+        pecaSelecionada ? pencesDaPeca(pecaSelecionada).length > 0 : false,
+        pecaSelecionada ? pregasDaPeca(pecaSelecionada).length > 0 : false,
+      );
     }
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
@@ -3861,6 +3878,33 @@ export default function App(): React.JSX.Element {
               onAplicar={(valores) => {
                 try {
                   const resultado = aplicarEdicaoDaPence(pecas, pecaDaPence, dialogoDeFerramenta.id, valores, proximoId);
+                  aplicarMudanca([...resultado.pecas]);
+                  setRecadoDaFerramenta(resultado.recado);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
+      {dialogoDeFerramenta?.tipo === 'editar-prega' &&
+        pecaSelecionada &&
+        (() => {
+          const dialogo = dialogoDeEditarPrega(pecaSelecionada, dialogoDeFerramenta.id);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={dialogoDeFerramenta.id}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', pecaSelecionada.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao="Aplicar"
+              onAplicar={(valores) => {
+                try {
+                  const resultado = aplicarEdicaoDaPrega(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, proximoId);
                   aplicarMudanca([...resultado.pecas]);
                   setRecadoDaFerramenta(resultado.recado);
                   return null;

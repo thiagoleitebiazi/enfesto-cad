@@ -2,8 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { area, ponto, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
 import { abrirPence, comPenceReconhecida, criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
+import { criarPregas, medidasDaPrega, pregasDaPeca } from '../domain/pregas';
 import {
   aplicarEdicaoDaPence,
+  aplicarEdicaoDaPrega,
+  dialogoDeEditarPrega,
   aplicarPence,
   cliqueDePence,
   dialogoDaPence,
@@ -594,5 +597,83 @@ describe('a pence aberta por pivô: medidas e fechar', () => {
 
     expect(area(resultado.pecas[0]!.contorno)).toBeCloseTo(60000, 6);
     expect(resultado.recado).toMatch(/^Pence fechada em “Frente”, em torno do pivô em que foi aberta: a peça voltou a ser a de antes\. A peça passou de \d+,\d cm² para 600,0 cm²\.$/);
+  });
+});
+
+describe('uma prega já feita: abrir as medidas, mudar e tirar', () => {
+  const novoId = ids();
+  // Uma prega simples de 20 mm na linha de (100, 0) a (100, 300): a faixa dela vai de x = 100 a x = 140.
+  const comPrega = (): Molde =>
+    criarPregas(molde(), na(0, 100, 0), NO_ALTO, { modo: 'simples-direita', quantidade: 1, distanciaMm: 0, larguraMm: 20, piques: false }, null, novoId);
+  const idDaPrega = (peca: Molde): string => pregasDaPeca(peca)[0]!.id;
+  const dentroDaFaixa = (peca: Molde) => ({ noContorno: null, livre: ponto(120, 150), prega: idDaPrega(peca) });
+
+  it('com “Pregas”, o clique dentro da faixa de uma prega registrada pede as medidas dela', () => {
+    const peca = comPrega();
+
+    expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, dentroDaFaixa(peca))).toEqual({ estado: SEM_TRECHO, recusa: null, editarPrega: idDaPrega(peca) });
+    // No contorno, o clique é o começo de outra prega; com outra ferramenta, ou com um ponto já clicado, também não abre.
+    expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, { ...dentroDaFaixa(peca), noContorno: na(1, 120, 0) }).editarPrega).toBeUndefined();
+    expect(cliqueDePence('pence-interna', O, peca, SEM_TRECHO, dentroDaFaixa(peca)).editarPrega).toBeUndefined();
+    expect(cliqueDePence('pregas', O, peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, dentroDaFaixa(peca)).editarPrega).toBeUndefined();
+    expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, { ...dentroDaFaixa(peca), prega: 'outra' }).editarPrega).toBeUndefined();
+  });
+
+  it('a prévia marca o meio de cada prega e destaca a faixa da que está sob o mouse', () => {
+    const peca = comPrega();
+
+    expect(previaDaPence('pregas', O, peca, SEM_TRECHO, null)).toEqual({ marcas: [ponto(120, 150)] });
+    expect(previaDaPence('pregas', O, peca, SEM_TRECHO, dentroDaFaixa(peca))).toEqual({
+      marcas: [ponto(120, 150)],
+      substituido: [ponto(100, 0), ponto(100, 300), ponto(140, 300), ponto(140, 0), ponto(100, 0)],
+    });
+    // As ferramentas de pence não marcam as pregas.
+    expect(previaDaPence('pence-no-contorno', O, peca, SEM_TRECHO, null)).toEqual({ marcas: [] });
+  });
+
+  it('o diálogo abre com o modo e as larguras lidos da prega', () => {
+    const peca = comPrega();
+    const dialogo = dialogoDeEditarPrega(peca, idDaPrega(peca))!;
+
+    expect(dialogo.titulo).toBe('Prega: medidas');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['modo', 'simples-direita'],
+      ['largura', '20'],
+      ['largura2', '20'],
+      ['apagar', false],
+    ]);
+    expect(dialogoDeEditarPrega(peca, 'outra')).toBeNull();
+  });
+
+  it('mudar as larguras abre a prega de novo e diz como a área ficou', () => {
+    const peca = comPrega();
+    const igual = aplicarEdicaoDaPrega([peca], peca, idDaPrega(peca), { modo: 'dupla', largura: 10, largura2: 10, apagar: false }, novoId);
+    expect(medidasDaPrega(pregasDaPeca(igual.pecas[0]!)[0]!)).toEqual({ modo: 'dupla', larguraMm: 10, largura2Mm: 10 });
+    expect(igual.recado).toBe('Prega de “Frente” aberta de novo: dupla, largura de 10,0 mm. A peça passou de 720,0 cm² para 720,0 cm².');
+
+    const diferente = aplicarEdicaoDaPrega([peca], peca, idDaPrega(peca), { modo: 'simples-esquerda', largura: 20, largura2: 30, apagar: false }, novoId);
+    expect(diferente.recado).toMatch(/^Prega de “Frente” aberta de novo: simples, larguras de 20,0 mm e 30,0 mm\. A peça passou de 720,0 cm² para 749,9 cm²\.$/);
+  });
+
+  it('tirar a prega fecha a peça de volta', () => {
+    const peca = comPrega();
+    const resultado = aplicarEdicaoDaPrega([peca], peca, idDaPrega(peca), { modo: 'simples-direita', largura: 20, largura2: 20, apagar: true }, novoId);
+
+    expect(resultado.pecas[0]!.contorno).toHaveLength(4);
+    expect(pregasDaPeca(resultado.pecas[0]!)).toHaveLength(0);
+    expect(resultado.recado).toBe('Prega tirada de “Frente”: o lado que tinha andado voltou. A peça passou de 720,0 cm² para 600,0 cm².');
+  });
+
+  it('medidas que não servem dão erro, e a prega que não está mais registrada também', () => {
+    const peca = comPrega();
+
+    expect(() => aplicarEdicaoDaPrega([peca], peca, idDaPrega(peca), { modo: 'dupla', largura: 0, largura2: 10, apagar: false }, novoId)).toThrow(/largura/);
+    expect(() => aplicarEdicaoDaPrega([peca], peca, 'outra', { modo: 'dupla', largura: 10, largura2: 10, apagar: false }, novoId)).toThrow(/mexida à mão/);
+  });
+
+  it('a instrução avisa do clique que abre as medidas, quando a peça tem pregas registradas', () => {
+    expect(instrucaoDaPence('pregas', O, SEM_TRECHO, false, true)).toMatch(/Ou clique dentro de uma prega já feita \(as marcadas com um anel\) para mudar as larguras dela ou tirá-la\. Esc sai\.$/);
+    expect(instrucaoDaPence('pregas', O, SEM_TRECHO)).not.toMatch(/prega já feita/);
+    expect(instrucaoDaPence('pregas', O, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, false, true)).not.toMatch(/prega já feita/);
   });
 });

@@ -82,6 +82,16 @@ describe('validarProjeto — fora dos limites do tecido', () => {
     expect(problemas.some((p) => p.tipo === 'fora-dos-limites')).toBe(true);
   });
 
+  it('o ruído das contas na borda não conta como fora: a peça encostada na borda está dentro', () => {
+    const enfesto = enfestoBase({ larguraUtilMm: 300, margemLateralMm: 0 } as Partial<ConfiguracaoDeEnfesto>);
+    // Um ponto a 1,4e-15 mm para fora, como o que sobra de girar e deslocar um lado da peça.
+    const naBorda = [pecaRetangular('a', -1.4210854715202005e-15, 50, 100, 100)];
+    expect(validarProjeto(naBorda, enfesto).some((p) => p.tipo === 'fora-dos-limites')).toBe(false);
+    // Um centésimo de milímetro para fora já é fora.
+    const umCentesimoFora = [pecaRetangular('a', -0.01, 50, 100, 100)];
+    expect(validarProjeto(umCentesimoFora, enfesto).some((p) => p.tipo === 'fora-dos-limites')).toBe(true);
+  });
+
   it('nenhum problema de limite sem configuração de enfesto (null)', () => {
     const pecas = [pecaRetangular('a', -9999, 0, 100, 100)];
     const problemas = validarProjeto(pecas, null);
