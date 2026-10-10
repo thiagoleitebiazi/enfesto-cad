@@ -55,9 +55,9 @@ resolvê-las:
 
 ## Verificação (Electron real, build de produção)
 
-- **Testes:** 1011/1011 em 56 arquivos (eram 995 em 55).
+- **Testes:** 1009/1009 em 56 arquivos (eram 995 em 55).
   - Novos: média dos deslocamentos 5, peça de um tamanho com o que está
-    dentro 4, troca do base 1, abrir os tamanhos para o encaixe 2, diálogo do
+    dentro 3, troca do base 1, abrir os tamanhos para o encaixe 2, diálogo do
     Nesting 3. Um teste antigo, que conferia o fio parado, passou a conferir o
     fio andando.
   - Typecheck limpo. Lint com 1 aviso antigo, não relacionado.
