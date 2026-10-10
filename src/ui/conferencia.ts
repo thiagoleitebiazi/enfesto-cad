@@ -32,11 +32,17 @@ export const SEM_CONFERENCIA: EstadoDaConferencia = { inicio: null, costuras: []
 export interface OpcoesDaConferencia {
   /** "Descontar": quanto a 1ª costura encolhe ao costurar (mm). */
   readonly descontarMm: number;
+  /** "Usar costura": as costuras são conferidas a esta distância para dentro do contorno (mm); zero, pelo contorno. */
+  readonly costuraMm: number;
+  /** "Atual": o ponto de encontro fica a esta distância do começo das costuras (mm); `null`, onde o mouse está. */
+  readonly atualMm: number | null;
+  /** "Referência": a costura em que se conta a diferença — o que falta dela depois do ponto atual. */
+  readonly referencia: 1 | 2;
   /** O que o clique deixa no ponto de encontro: um pique em cada peça, um ponto (marca), ou nada. */
   readonly marcar: 'pique' | 'ponto' | 'nada';
 }
 
-export const OPCOES_INICIAIS_DA_CONFERENCIA: OpcoesDaConferencia = { descontarMm: 0, marcar: 'pique' };
+export const OPCOES_INICIAIS_DA_CONFERENCIA: OpcoesDaConferencia = { descontarMm: 0, costuraMm: 0, atualMm: null, referencia: 1, marcar: 'pique' };
 
 /** Até esta diferença (mm) duas costuras conferem: é menos do que se corta ou se costura com precisão. */
 export const FOLGA_DA_CONFERENCIA_MM = 0.5;
@@ -54,6 +60,29 @@ export function dialogoDaConferencia(opcoes: OpcoesDaConferencia): { readonly ca
         inicial: String(opcoes.descontarMm).replace('.', ','),
       },
       {
+        tipo: 'medida',
+        id: 'costura',
+        rotulo: 'Usar costura (mm): conferir a esta distância para dentro do contorno (0 = pelo contorno)',
+        inicial: String(opcoes.costuraMm).replace('.', ','),
+      },
+      {
+        tipo: 'medida',
+        id: 'atual',
+        rotulo: 'Atual (mm): fixar o ponto de encontro a esta distância do começo (em branco, vale o mouse)',
+        inicial: opcoes.atualMm === null ? '' : String(opcoes.atualMm).replace('.', ','),
+        opcional: true,
+      },
+      {
+        tipo: 'escolha',
+        id: 'referencia',
+        rotulo: 'Referência: a costura em que se conta a diferença (o que falta dela)',
+        opcoes: [
+          { valor: '1', rotulo: 'A 1ª costura' },
+          { valor: '2', rotulo: 'A 2ª costura' },
+        ],
+        inicial: String(opcoes.referencia),
+      },
+      {
         tipo: 'escolha',
         id: 'marcar',
         rotulo: 'O clique no ponto de encontro',
@@ -65,15 +94,19 @@ export function dialogoDaConferencia(opcoes: OpcoesDaConferencia): { readonly ca
         inicial: opcoes.marcar,
       },
     ],
-    nota: 'Depois de confirmar, indique a 1ª costura com dois cliques no contorno — o começo, que é o ponto de referência, e o fim — e a 2ª do mesmo jeito, começando pelo ponto que casa com o começo da 1ª. Vale o caminho mais curto entre os dois pontos. Depois, passe o mouse pela 1ª costura: a outra peça anda sobre ela, como se estivesse sendo costurada. Da referência ficaram de fora “Usar costura” (conferir pela linha de corte) e digitar o valor de “Atual”.',
+    nota: 'Depois de confirmar, indique a 1ª costura com dois cliques no contorno — o começo, que é o ponto de referência, e o fim — e a 2ª do mesmo jeito, começando pelo ponto que casa com o começo da 1ª. Vale o caminho mais curto entre os dois pontos. Depois, passe o mouse pela 1ª costura: a outra peça anda sobre ela, como se estivesse sendo costurada. Com “Usar costura”, o que se confere é a linha a essa distância para dentro do contorno — para o molde que já tem a costura no contorno. Com “Atual” preenchido, o ponto de encontro fica nessa distância, e um clique em qualquer lugar o marca.',
   };
 }
 
 export function lerDialogoDaConferencia(valores: ValoresDoDialogo): OpcoesDaConferencia {
   const descontarMm = Number(valores.descontar);
   if (!Number.isFinite(descontarMm) || descontarMm < 0) throw new Error('O desconto não pode ser negativo.');
+  const costuraMm = valores.costura === undefined ? 0 : Number(valores.costura);
+  if (!Number.isFinite(costuraMm) || costuraMm < 0) throw new Error('A costura a usar não pode ser negativa.');
+  const atualMm = valores.atual === undefined ? null : Number(valores.atual);
+  if (atualMm !== null && (!Number.isFinite(atualMm) || atualMm < 0)) throw new Error('O valor de “Atual” não pode ser negativo.');
   const marcar = valores.marcar === 'ponto' || valores.marcar === 'nada' ? valores.marcar : 'pique';
-  return { descontarMm, marcar };
+  return { descontarMm, costuraMm, atualMm, referencia: valores.referencia === '2' ? 2 : 1, marcar };
 }
 
 /** O ponto da linha a `s` mm do começo dela (dentro dos limites da linha) e a direção em que ela segue ali. */
@@ -108,6 +141,45 @@ export function comprimentoMaisPerto(linha: readonly Ponto2D[], p: Ponto2D): { r
     andado += d;
   }
   return melhor;
+}
+
+/** Até quanto (em vezes a distância) um canto da linha deslocada pode se afastar do canto de origem: acima disso o canto é cortado. */
+const LIMITE_DO_CANTO = 4;
+
+/**
+ * A linha levada `distanciaMm` para dentro da peça, em esquadro: é a linha de
+ * costura de um trecho do contorno que já inclui a costura. Nos cantos, as
+ * retas deslocadas se encontram; nas pontas, o ponto anda em esquadro.
+ */
+export function linhaParaDentro(linha: readonly Ponto2D[], contorno: readonly Ponto2D[], distanciaMm: number): Ponto2D[] {
+  const pontos = linha.filter((p, i) => i === 0 || distancia(p, linha[i - 1]!) >= MESMO_PONTO_MM);
+  if (distanciaMm <= 0 || pontos.length < 2) return [...linha];
+  // O lado de dentro, visto de quem anda pela linha: a peça fica à esquerda ou à direita do primeiro trecho que dá para testar.
+  const tangente = (i: number): Ponto2D => {
+    const d = distancia(pontos[i]!, pontos[i + 1]!);
+    return { x: (pontos[i + 1]!.x - pontos[i]!.x) / d, y: (pontos[i + 1]!.y - pontos[i]!.y) / d };
+  };
+  const meioDoPrimeiro = { x: (pontos[0]!.x + pontos[1]!.x) / 2, y: (pontos[0]!.y + pontos[1]!.y) / 2 };
+  const t0 = tangente(0);
+  const aEsquerda = pontoDentroDoContorno({ x: meioDoPrimeiro.x - t0.y * PASSO_PARA_O_LADO_MM, y: meioDoPrimeiro.y + t0.x * PASSO_PARA_O_LADO_MM }, contorno);
+  const lado = aEsquerda ? 1 : -1;
+  const normal = (i: number): Ponto2D => {
+    const t = tangente(i);
+    return { x: -t.y * lado, y: t.x * lado };
+  };
+  return pontos.map((p, i) => {
+    if (i === 0) return { x: p.x + normal(0).x * distanciaMm, y: p.y + normal(0).y * distanciaMm };
+    if (i === pontos.length - 1) return { x: p.x + normal(i - 1).x * distanciaMm, y: p.y + normal(i - 1).y * distanciaMm };
+    const a = normal(i - 1);
+    const b = normal(i);
+    // A bissetriz dos dois lados, esticada para as duas retas deslocadas se encontrarem nela.
+    const soma = { x: a.x + b.x, y: a.y + b.y };
+    const comprimento = Math.hypot(soma.x, soma.y);
+    if (comprimento < 1e-9) return { x: p.x + a.x * distanciaMm, y: p.y + a.y * distanciaMm };
+    const bissetriz = { x: soma.x / comprimento, y: soma.y / comprimento };
+    const k = Math.min(LIMITE_DO_CANTO, 1 / Math.max(1e-9, bissetriz.x * a.x + bissetriz.y * a.y));
+    return { x: p.x + bissetriz.x * distanciaMm * k, y: p.y + bissetriz.y * distanciaMm * k };
+  });
 }
 
 /**
@@ -202,11 +274,13 @@ export function cliqueDaConferencia(
       return { estado, recado: 'O fim da costura precisa ser outro ponto do contorno.' };
     }
     const peca = pecas.find((q) => q.id === perto.pecaId)!;
-    const pontos = caminhoDoTrecho(peca.contorno, estado.inicio.posicao, perto.posicao);
+    // Com "Usar costura", vale a linha de costura: o trecho do contorno levado para dentro da peça.
+    const pontos = linhaParaDentro(caminhoDoTrecho(peca.contorno, estado.inicio.posicao, perto.posicao), peca.contorno, opcoes.costuraMm);
     return { estado: { inicio: null, costuras: [...estado.costuras, { pecaId: peca.id, pontos }] }, recado: null };
   }
 
-  const onde = comprimentoMaisPerto(costura1.pontos, p);
+  // Com "Atual" preenchido, o ponto de encontro é o dessa distância, e o clique vale em qualquer lugar.
+  const onde = pontoAtual(opcoes, costura1.pontos, p)!;
   if (onde.distancia > raioMm) return { estado, recado: 'Clique em cima da 1ª costura (a que está em destaque) para marcar o ponto de encontro.' };
   if (opcoes.marcar === 'nada') return { estado, recado: `Ponto de encontro a ${formatarMm(onde.s)} do começo das costuras (a marcação está desligada: nada foi marcado).` };
   if (onde.s > comprimentoDaLinha(costura2.pontos) + FOLGA_DA_CONFERENCIA_MM) {
@@ -225,8 +299,20 @@ export function cliqueDaConferencia(
   };
 }
 
-/** A prévia: as costuras indicadas e, com as duas postas, a 2ª peça encostada na 1ª no ponto sob o mouse. */
-export function previaDaConferencia(pecas: readonly Molde[], estado: EstadoDaConferencia, mouse: Ponto2D | null, raioMm: number): PreviaDeFerramentaDeMolde {
+/** Onde está o ponto de encontro na 1ª costura: na distância de "Atual", se foi dada; senão, no ponto dela mais perto do mouse. */
+function pontoAtual(opcoes: OpcoesDaConferencia, costura1: readonly Ponto2D[], mouse: Ponto2D | null): { readonly s: number; readonly distancia: number } | null {
+  if (opcoes.atualMm !== null) return { s: Math.min(opcoes.atualMm, comprimentoDaLinha(costura1)), distancia: 0 };
+  return mouse ? comprimentoMaisPerto(costura1, mouse) : null;
+}
+
+/** A prévia: as costuras indicadas e, com as duas postas, a 2ª peça encostada na 1ª no ponto atual (o do mouse, ou o de "Atual"). */
+export function previaDaConferencia(
+  opcoes: OpcoesDaConferencia,
+  pecas: readonly Molde[],
+  estado: EstadoDaConferencia,
+  mouse: Ponto2D | null,
+  raioMm: number,
+): PreviaDeFerramentaDeMolde {
   const [costura1, costura2] = estado.costuras;
   if (!costura1 || !costura2) {
     const base: PreviaDeFerramentaDeMolde = costura1 ? { substituido: costura1.pontos } : {};
@@ -240,8 +326,9 @@ export function previaDaConferencia(pecas: readonly Molde[], estado: EstadoDaCon
   const base: PreviaDeFerramentaDeMolde = { substituido: costura1.pontos, linhas: [costura2.pontos] };
   const primeira = pecas.find((q) => q.id === costura1.pecaId);
   const segunda = pecas.find((q) => q.id === costura2.pecaId);
-  if (!mouse || !primeira || !segunda) return base;
-  const { s } = comprimentoMaisPerto(costura1.pontos, mouse);
+  const onde = pontoAtual(opcoes, costura1.pontos, mouse);
+  if (!onde || !primeira || !segunda) return base;
+  const { s } = onde;
   return {
     ...base,
     novo: segundaPecaEncostada(primeira, costura1.pontos, segunda, costura2.pontos, s),
@@ -273,7 +360,14 @@ export function textoDaConferencia(opcoes: OpcoesDaConferencia, estado: EstadoDa
   }
   const comprimento2 = comprimentoDaLinha(costura2.pontos);
   const veredito = vereditoDaConferencia(comprimento1, comprimento2, opcoes.descontarMm);
-  const atual = mouse ? ` Atual: ${formatarMm(Math.min(comprimentoMaisPerto(costura1.pontos, mouse).s, comprimento1))} do começo.` : '';
+  const onde = pontoAtual(opcoes, costura1.pontos, mouse);
+  // A diferença é o que falta da costura de referência depois do ponto atual.
+  const daReferencia = opcoes.referencia === 2 ? comprimento2 : comprimento1;
+  const atual = onde
+    ? ` Atual: ${formatarMm(Math.min(onde.s, comprimento1))} do começo; diferença (o que falta da ${opcoes.referencia}ª): ${formatarMm(Math.max(0, daReferencia - onde.s))}.`
+    : '';
   const clique = opcoes.marcar === 'nada' ? '' : ` Um clique marca ${opcoes.marcar === 'pique' ? 'um pique' : 'um ponto'} de encontro nas duas.`;
-  return `${veredito}. Passe o mouse pela 1ª costura: a outra peça anda sobre ela.${clique}${atual}` + fim;
+  const comoAnda = opcoes.atualMm === null ? 'Passe o mouse pela 1ª costura: a outra peça anda sobre ela.' : 'A outra peça está encostada no ponto de “Atual”.';
+  const pelaCostura = opcoes.costuraMm > 0 ? ` (pela linha de costura, a ${formatarMm(opcoes.costuraMm)} do contorno)` : '';
+  return `${veredito}${pelaCostura}. ${comoAnda}${clique}${atual}` + fim;
 }

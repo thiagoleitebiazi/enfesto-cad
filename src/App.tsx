@@ -1482,15 +1482,8 @@ export default function App(): React.JSX.Element {
         return;
       }
       if (ferramenta === 'unir-tamanhos') {
-        try {
-          const resultado = aplicarUnir(pecas, peca, idsSelecionadosEmLote);
-          const novasPecas = [...resultado.pecas];
-          aplicarMudanca(novasPecas);
-          setIdsSelecionadosEmLote(new Set());
-          avisar(resultado.recado, novasPecas);
-        } catch (e) {
-          avisar(e instanceof Error ? e.message : String(e));
-        }
+        // Vale também para a peça que ainda não é graduada: é unindo que ela passa a ser.
+        setDialogoDeFerramenta({ tipo: 'graduacao', ferramenta });
         return;
       }
       if (!peca.graduacao) return;
@@ -1498,7 +1491,7 @@ export default function App(): React.JSX.Element {
       else if (dialogoDaGraduacao(ferramenta, opcoesDaGraduacao, peca)) setDialogoDeFerramenta({ tipo: 'graduacao', ferramenta });
       else if (ehModoDeGraduacao(ferramenta)) entrarModoDeConstrucao(ferramenta);
     },
-    [pecas, selecionadoId, idsSelecionadosEmLote, opcoesDaGraduacao, aplicarMudanca, avisar, entrarModoDeConstrucao],
+    [pecas, selecionadoId, opcoesDaGraduacao, entrarModoDeConstrucao],
   );
 
   const excluirRegraCadastrada = useCallback(
@@ -2915,7 +2908,9 @@ export default function App(): React.JSX.Element {
         : null;
       return previaDaPence(modo, opcoesDasPences, pecaSelecionada, trecho, mouse);
     }
-    if (modo === 'conferir') return previaDaConferencia(pecas, conferencia, cursorMundo, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+    if (modo === 'conferir') {
+      return previaDaConferencia(opcoesDaConferencia, pecas, conferencia, cursorMundo, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
+    }
     if (pecaSelecionada && modo === 'dobrar') {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
@@ -2964,6 +2959,7 @@ export default function App(): React.JSX.Element {
     opcoesDaGraduacao,
     opcoesDeElemento,
     opcoesDeDobrar,
+    opcoesDaConferencia,
     conferencia,
     alcaDeCurva,
     pontosEmEdicao,
@@ -4018,14 +4014,17 @@ export default function App(): React.JSX.Element {
             const ferramenta = dialogoDeFerramenta.ferramenta;
             try {
               const novas = lerDialogoDaGraduacao(ferramenta, opcoesDaGraduacao, valores);
-              // "Separar" e "Remover do molde inteiro" agem na hora; as outras ligam a ferramenta.
+              // "Separar", "Unir" e "Remover do molde inteiro" agem na hora; as outras ligam a ferramenta.
               const naHora =
                 ferramenta === 'separar-tamanhos'
                   ? aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
-                  : ferramenta === 'remover-graduacao' && novas.remover.onde === 'molde'
-                    ? aplicarRemoverDoMolde(novas, pecas, pecaSelecionada)
-                    : null;
+                  : ferramenta === 'unir-tamanhos'
+                    ? aplicarUnir(pecas, pecaSelecionada, idsSelecionadosEmLote, novas.unir.ajustarCurvas)
+                    : ferramenta === 'remover-graduacao' && novas.remover.onde === 'molde'
+                      ? aplicarRemoverDoMolde(novas, pecas, pecaSelecionada)
+                      : null;
               setOpcoesDaGraduacao(novas);
+              if (ferramenta === 'unir-tamanhos') setIdsSelecionadosEmLote(new Set());
               if (naHora) {
                 const novasPecas = [...naHora.pecas];
                 aplicarMudanca(novasPecas);

@@ -1,6 +1,7 @@
 import { area, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
 import { transformarCota } from './cota';
 import {
+  cantosDoContorno,
   deslocamentoNoPonto,
   deslocamentosDoContorno,
   indiceDoTamanho,
@@ -164,10 +165,15 @@ export function separarTamanhos(
  * tamanho dela. As peças têm de ter o mesmo número de pontos no contorno, na
  * mesma ordem, e um tamanho diferente cada uma (o das propriedades). São
  * comparadas com o início da linha de fio de cada uma posto no mesmo lugar, e
- * os tamanhos ficam em ordem de área. Todos os pontos do contorno ficam
- * graduados, com o deslocamento exato de cada tamanho.
+ * os tamanhos ficam em ordem de área.
+ *
+ * Com `ajustarCurvas`, todos os pontos do contorno ficam graduados, com o
+ * deslocamento exato de cada tamanho: as curvas de cada tamanho saem iguais
+ * às das peças unidas. Sem isso, só os cantos ficam graduados, e os pontos de
+ * curva entre eles andam na proporção — a graduação fica mais simples de
+ * mexer, mas as curvas dos outros tamanhos são só aproximadas.
  */
-export function unirTamanhos(base: Molde, outras: readonly Molde[]): Molde {
+export function unirTamanhos(base: Molde, outras: readonly Molde[], ajustarCurvas = true): Molde {
   if (outras.length === 0) throw new Error('Marque na lista as peças dos outros tamanhos.');
   const todas = [base, ...outras];
   const semTamanho = todas.find((p) => p.tamanho.trim() === '');
@@ -185,13 +191,16 @@ export function unirTamanhos(base: Molde, outras: readonly Molde[]): Molde {
   const graduacao: Graduacao = {
     tamanhos: emOrdem.map((p) => p.tamanho.trim()),
     base: emOrdem.indexOf(base),
-    pontos: base.contorno.map((posicao, i) => ({
-      posicao,
-      deslocamentos: emOrdem.map((p) => {
-        const q = p.contorno[i]!;
-        return { x: q.x - p.linhaDeFio.inicio.x - (posicao.x - origem.x), y: q.y - p.linhaDeFio.inicio.y - (posicao.y - origem.y) };
-      }),
-    })),
+    pontos: (ajustarCurvas ? base.contorno.map((_, i) => i) : cantosDoContorno(base.contorno)).map((i) => {
+      const posicao = base.contorno[i]!;
+      return {
+        posicao,
+        deslocamentos: emOrdem.map((p) => {
+          const q = p.contorno[i]!;
+          return { x: q.x - p.linhaDeFio.inicio.x - (posicao.x - origem.x), y: q.y - p.linhaDeFio.inicio.y - (posicao.y - origem.y) };
+        }),
+      };
+    }),
   };
   return { ...base, graduacao };
 }

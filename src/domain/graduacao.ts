@@ -308,6 +308,26 @@ export function regraPeloTamanhoDeReferencia(graduacao: Graduacao, deslocamento:
   return regraPorPasso(graduacao, { x: deslocamento.x / passos, y: deslocamento.y / passos });
 }
 
+/**
+ * A regra do modo "Proporcional": o ponto anda `noMenor` no menor tamanho e
+ * `noMaior` no maior, e os tamanhos entre o base e cada ponta ficam com a
+ * parte proporcional à distância deles ao base. De um lado sem tamanhos (o
+ * base é a ponta), o deslocamento desse lado não conta.
+ */
+export function regraProporcional(graduacao: Graduacao, noMenor: Ponto2D | null, noMaior: Ponto2D | null): Ponto2D[] {
+  const ultimo = graduacao.tamanhos.length - 1;
+  const parte = (deslocamento: Ponto2D | null, fracao: number): Ponto2D => {
+    // Zero vezes um número negativo dá "-0": fica zero.
+    const vezes = (valor: number): number => (valor * fracao === 0 ? 0 : valor * fracao);
+    return deslocamento ? { x: vezes(deslocamento.x), y: vezes(deslocamento.y) } : ZERO;
+  };
+  return graduacao.tamanhos.map((_, t) => {
+    if (t < graduacao.base) return parte(noMenor, (graduacao.base - t) / graduacao.base);
+    if (t > graduacao.base) return parte(noMaior, (t - graduacao.base) / (ultimo - graduacao.base));
+    return ZERO;
+  });
+}
+
 /** A regra `atual` com `nova` no eixo dado: nos dois, só no `x` ou só no `y`. */
 export function regraNoEixo(atual: readonly Ponto2D[], nova: readonly Ponto2D[], eixo: EixoDaGraduacao): Ponto2D[] {
   return atual.map((d, t) => {

@@ -255,6 +255,52 @@ describe('Mouse', () => {
   });
 });
 
+describe('Mouse, modo Proporcional', () => {
+  const PROPORCIONAL = com({ mouse: { modo: 'proporcional' } });
+  const cinco = (): Molde => graduada(['PP', 'P', 'M', 'G', 'GG']);
+
+  it('dois cliques: onde o ponto fica no menor tamanho e onde fica no maior; os do meio levam a parte proporcional', () => {
+    const peca = cinco();
+    const ponto3 = clicar('graduar-mouse', PROPORCIONAL, peca, noPonto(2));
+    // No PP, o ponto 3 (200, 300) vai para (180, 260); o clique fica guardado, à espera do maior.
+    const menor = clicar('graduar-mouse', PROPORCIONAL, peca, solto(180, 260), ponto3.estado);
+    expect(menor.pecas).toBeUndefined();
+    expect(menor.estado.livres).toEqual([ponto(180, 260)]);
+
+    const maior = clicar('graduar-mouse', PROPORCIONAL, peca, solto(230, 360), menor.estado);
+    expect(regraDo(maior, 2)).toEqual([ponto(-20, -40), ponto(-10, -20), ZERO, ponto(15, 30), ponto(30, 60)]);
+    expect(maior.estado).toBe(SEM_TRECHO);
+    expect(maior.recado).toBe('Ponto 3 graduado pelo mouse, na proporção: no tamanho GG, DX 60,0 mm e DY 30,0 mm; no tamanho PP, DX -40,0 mm e DY -20,0 mm.');
+  });
+
+  it('com o base na ponta de baixo, um clique só: o do maior tamanho', () => {
+    const peca = definirTamanhosDoMolde(molde(), ['M', 'G', 'GG'], 'M');
+    const ponto3 = clicar('graduar-mouse', PROPORCIONAL, peca, noPonto(2));
+    const resultado = clicar('graduar-mouse', PROPORCIONAL, peca, solto(220, 340), ponto3.estado);
+
+    expect(regraDo(resultado, 2)).toEqual([ZERO, ponto(10, 20), ponto(20, 40)]);
+  });
+
+  it('com o base na ponta de cima, um clique só: o do menor tamanho', () => {
+    const peca = definirTamanhosDoMolde(molde(), ['PP', 'P', 'M'], 'M');
+    const ponto3 = clicar('graduar-mouse', PROPORCIONAL, peca, noPonto(2));
+    const resultado = clicar('graduar-mouse', PROPORCIONAL, peca, solto(180, 260), ponto3.estado);
+
+    expect(regraDo(resultado, 2)).toEqual([ponto(-20, -40), ponto(-10, -20), ZERO]);
+  });
+
+  it('a prévia mostra o menor tamanho no primeiro clique e o maior no segundo', () => {
+    const peca = cinco();
+    const ponto3: TrechoEmEdicao = { ...SEM_TRECHO, inicio: { indiceAresta: 2, ponto: RETANGULO[2]! } };
+
+    expect(previaDaGraduacao('graduar-mouse', PROPORCIONAL, peca, ponto3, ponto(180, 260)).novo![2]).toEqual(ponto(180, 260));
+    const comOMenor = { ...ponto3, livres: [ponto(180, 260)] };
+    expect(previaDaGraduacao('graduar-mouse', PROPORCIONAL, peca, comOMenor, ponto(230, 360)).novo![2]).toEqual(ponto(230, 360));
+    expect(instrucaoDaGraduacao('graduar-mouse', PROPORCIONAL, ponto3, null)).toMatch(/no menor tamanho/);
+    expect(instrucaoDaGraduacao('graduar-mouse', PROPORCIONAL, comOMenor, null)).toMatch(/agora clique onde o ponto 3 deve ficar no maior tamanho/);
+  });
+});
+
 describe('Tangente', () => {
   it('o ponto anda a distância por tamanho na direção da aresta que sai dele', () => {
     // Do ponto 3, (200, 300), a aresta vai para o ponto 4, (0, 300): direção −x.
@@ -445,6 +491,31 @@ describe('o que age na hora', () => {
     expect(resultado.recado).toBe('“Frente” agora é graduada nos tamanhos M e G, com o M de base. A peça do outro tamanho foi reunida nela.');
   });
 
+  it('Unir sem “Ajustar curvas”: só os cantos ficam graduados, e a mensagem diz', () => {
+    // Um ponto no meio do lado direito, que não é canto: com a opção, fica graduado; sem ela, anda na proporção.
+    const comMeio = (id: string, tamanho: string, largura: number, x0: number): Molde =>
+      molde(
+        {
+          tamanho,
+          contorno: [ponto(x0, 0), ponto(x0 + largura, 0), ponto(x0 + largura, 150), ponto(x0 + largura, 300), ponto(x0, 300)],
+          linhaDeFio: { inicio: ponto(x0 + 50, 50), fim: ponto(x0 + 50, 250) },
+        },
+        id,
+      );
+    const m = comMeio('f', 'M', 200, 0);
+    const g = comMeio('g', 'G', 240, 500);
+
+    const exata = aplicarUnir([m, g], m, new Set(['g']));
+    expect(exata.pecas[0]!.graduacao!.pontos).toHaveLength(5);
+    expect(exata.recado).not.toMatch(/cantos/);
+
+    const simples = aplicarUnir([m, g], m, new Set(['g']), false);
+    expect(simples.pecas[0]!.graduacao!.pontos).toHaveLength(4);
+    expect(simples.recado).toMatch(/Só os 4 cantos ficaram graduados; os pontos de curva andam na proporção\.$/);
+    // O ponto do meio continua no lugar certo: anda na proporção dos cantos vizinhos.
+    expect(regraDoVertice(simples.pecas[0]!.graduacao!, simples.pecas[0]!.contorno, 2)[1]).toEqual(ponto(40, 0));
+  });
+
   it('Unir sem peças marcadas explica o que falta', () => {
     expect(() => aplicarUnir([molde()], molde(), new Set())).toThrow(/Marque na lista/);
   });
@@ -471,16 +542,17 @@ describe('diálogos das ferramentas', () => {
     'remover-graduacao',
     'copiar-graduacao',
     'separar-tamanhos',
+    'unir-tamanhos',
   ];
 
-  it('oito ferramentas perguntam antes; as outras ligam direto', () => {
+  it('nove ferramentas perguntam antes; as outras ligam direto', () => {
     for (const ferramenta of COM_DIALOGO) {
       const dialogo = dialogoDaGraduacao(ferramenta, O, graduada())!;
       expect(dialogo.titulo.length).toBeGreaterThan(5);
       expect(dialogo.campos.length).toBeGreaterThan(0);
       expect(new Set(dialogo.campos.map((c) => c.id)).size).toBe(dialogo.campos.length);
     }
-    for (const ferramenta of ['graduar-tabela', 'graduar-regras', 'criar-regra', 'deduzir-graduacao', 'graduar-curva', 'unir-tamanhos'] as const) {
+    for (const ferramenta of ['graduar-tabela', 'graduar-regras', 'criar-regra', 'deduzir-graduacao', 'graduar-curva'] as const) {
       expect(dialogoDaGraduacao(ferramenta, O, graduada())).toBeNull();
     }
   });
@@ -501,7 +573,9 @@ describe('diálogos das ferramentas', () => {
 
   it('onde o manual dá os passos mas não a conta, o diálogo diz o que é leitura nossa', () => {
     expect(dialogoDaGraduacao('ajustar-graduacao', O, graduada())!.nota).toMatch(/dá esses passos, mas não a conta; a proporção é a nossa leitura/);
-    expect(dialogoDaGraduacao('graduar-mouse', O, graduada())!.nota).toMatch(/“Proporcional” da referência não existe aqui/);
+    expect(dialogoDaGraduacao('graduar-mouse', O, graduada())!.nota).toMatch(/no Proporcional, dois: onde o ponto fica no menor tamanho e onde fica no maior/);
+    // "Unir" pergunta mesmo na peça que ainda não tem graduação: é unindo que ela passa a ter.
+    expect(dialogoDaGraduacao('unir-tamanhos', O, molde())!.campos.map((c) => c.id)).toEqual(['ajustarCurvas']);
   });
 
   it('lê as opções de cada diálogo', () => {
@@ -509,6 +583,9 @@ describe('diálogos das ferramentas', () => {
     expect(lerDialogoDaGraduacao('ajustar-graduacao', O, { eixo: 'dy' }).ajustar).toEqual({ eixo: 'dy' });
     expect(lerDialogoDaGraduacao('agrupar-graduacao', O, { dx: 40, dy: 0, tamanho: 'G' }).agrupar).toEqual({ dxMm: 40, dyMm: 0, tamanho: 'G' });
     expect(lerDialogoDaGraduacao('graduar-mouse', O, { modo: 'incremental' }).mouse).toEqual({ modo: 'incremental' });
+    expect(lerDialogoDaGraduacao('graduar-mouse', O, { modo: 'proporcional' }).mouse).toEqual({ modo: 'proporcional' });
+    expect(lerDialogoDaGraduacao('graduar-mouse', O, { modo: 'outro' }).mouse).toEqual({ modo: 'absoluto' });
+    expect(lerDialogoDaGraduacao('unir-tamanhos', O, { ajustarCurvas: false }).unir).toEqual({ ajustarCurvas: false });
     expect(lerDialogoDaGraduacao('graduar-tangente', O, { distancia: 7, inverter: true }).tangente).toEqual({ distanciaMm: 7, inverter: true });
     expect(lerDialogoDaGraduacao('remover-graduacao', O, { onde: 'molde', eixo: 'dy' }).remover).toEqual({ onde: 'molde', eixo: 'dy' });
     expect(lerDialogoDaGraduacao('copiar-graduacao', O, { eixo: 'dx', inverterDx: true, inverterDy: false, destino: 'todos' }).copiar).toEqual({

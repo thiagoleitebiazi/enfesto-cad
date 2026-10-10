@@ -7,6 +7,7 @@ import {
   dialogoDaConferencia,
   FOLGA_DA_CONFERENCIA_MM,
   lerDialogoDaConferencia,
+  linhaParaDentro,
   OPCOES_INICIAIS_DA_CONFERENCIA,
   pontoNoComprimento,
   previaDaConferencia,
@@ -89,11 +90,20 @@ describe('a janela do Conferir', () => {
   it('pede o desconto e o que o clique marca, e diz o que ficou de fora', () => {
     const { campos, nota } = dialogoDaConferencia(O);
 
-    expect(campos.map((c) => c.id)).toEqual(['descontar', 'marcar']);
-    expect(nota).toMatch(/ficaram de fora “Usar costura”/);
-    expect(lerDialogoDaConferencia({ descontar: 12.5, marcar: 'ponto' })).toEqual({ descontarMm: 12.5, marcar: 'ponto' });
-    expect(lerDialogoDaConferencia({ descontar: 0, marcar: 'outra' })).toEqual({ descontarMm: 0, marcar: 'pique' });
-    expect(() => lerDialogoDaConferencia({ descontar: -1, marcar: 'pique' })).toThrow('não pode ser negativo');
+    expect(campos.map((c) => c.id)).toEqual(['descontar', 'costura', 'atual', 'referencia', 'marcar']);
+    expect(nota).toMatch(/Com “Usar costura”, o que se confere é a linha a essa distância para dentro do contorno/);
+    expect(lerDialogoDaConferencia({ descontar: 12.5, costura: 10, atual: 80, referencia: '2', marcar: 'ponto' })).toEqual({
+      descontarMm: 12.5,
+      costuraMm: 10,
+      atualMm: 80,
+      referencia: 2,
+      marcar: 'ponto',
+    });
+    // "Atual" em branco não vem no que o diálogo entrega: vale o mouse.
+    expect(lerDialogoDaConferencia({ descontar: 0, costura: 0, referencia: '1', marcar: 'outra' })).toEqual(O);
+    expect(() => lerDialogoDaConferencia({ descontar: -1, costura: 0, referencia: '1', marcar: 'pique' })).toThrow('desconto não pode ser negativo');
+    expect(() => lerDialogoDaConferencia({ descontar: 0, costura: -2, referencia: '1', marcar: 'pique' })).toThrow('costura a usar não pode ser negativa');
+    expect(() => lerDialogoDaConferencia({ descontar: 0, costura: 0, atual: -5, referencia: '1', marcar: 'pique' })).toThrow('“Atual” não pode ser negativo');
   });
 });
 
@@ -166,10 +176,10 @@ describe('andar a 2ª peça sobre a 1ª', () => {
 
   it('a prévia destaca a 1ª costura, mostra a 2ª e a peça encostada no ponto sob o mouse', () => {
     const estado = comAsDuas();
-    const semMouse = previaDaConferencia(pecas, estado, null, RAIO);
+    const semMouse = previaDaConferencia(O, pecas, estado, null, RAIO);
     expect(semMouse).toEqual({ substituido: [ponto(200, 0), ponto(200, 300)], linhas: [[ponto(500, 0), ponto(500, 300)]] });
 
-    const previa = previaDaConferencia(pecas, estado, ponto(205, 120), RAIO);
+    const previa = previaDaConferencia(O, pecas, estado, ponto(205, 120), RAIO);
     expect(previa.marcas).toEqual([ponto(200, 120)]);
     expect(previa.novoFechado).toBe(true);
     expect(previa.novo).toHaveLength(4);
@@ -178,9 +188,9 @@ describe('andar a 2ª peça sobre a 1ª', () => {
   it('indicando uma costura, a prévia mostra o começo e o caminho até o mouse', () => {
     const comeco = clicar(SEM_CONFERENCIA, 200, 0).estado;
 
-    expect(previaDaConferencia(pecas, comeco, null, RAIO)).toEqual({ marcas: [ponto(200, 0)] });
-    expect(previaDaConferencia(pecas, comeco, ponto(203, 150), RAIO)).toEqual({ marcas: [ponto(200, 0)], novo: [ponto(200, 0), ponto(200, 150)] });
-    expect(previaDaConferencia(pecas, SEM_CONFERENCIA, ponto(0, 0), RAIO)).toEqual({});
+    expect(previaDaConferencia(O, pecas, comeco, null, RAIO)).toEqual({ marcas: [ponto(200, 0)] });
+    expect(previaDaConferencia(O, pecas, comeco, ponto(203, 150), RAIO)).toEqual({ marcas: [ponto(200, 0)], novo: [ponto(200, 0), ponto(200, 150)] });
+    expect(previaDaConferencia(O, pecas, SEM_CONFERENCIA, ponto(0, 0), RAIO)).toEqual({});
   });
 });
 
@@ -216,6 +226,62 @@ describe('marcar o ponto de encontro', () => {
   });
 });
 
+describe('Usar costura, Atual e Referência', () => {
+  it('linhaParaDentro leva o trecho para dentro da peça, em esquadro, e dobra os cantos', () => {
+    // O lado direito da Frente (x = 200), 10 mm para dentro: x = 190.
+    expect(linhaParaDentro([ponto(200, 0), ponto(200, 300)], frente.contorno, 10)).toEqual([ponto(190, 0), ponto(190, 300)]);
+    // Dobrando o canto de baixo: as duas retas deslocadas se encontram em (190, 290).
+    const comCanto = linhaParaDentro([ponto(200, 0), ponto(200, 300), ponto(0, 300)], frente.contorno, 10);
+    expect(comCanto[1]!.x).toBeCloseTo(190, 9);
+    expect(comCanto[1]!.y).toBeCloseTo(290, 9);
+    expect(comCanto[2]).toEqual(ponto(0, 290));
+    // Sem distância, é a própria linha.
+    expect(linhaParaDentro([ponto(200, 0), ponto(200, 300)], frente.contorno, 0)).toEqual([ponto(200, 0), ponto(200, 300)]);
+  });
+
+  it('com “Usar costura”, as costuras indicadas são as linhas a essa distância para dentro de cada peça', () => {
+    const comCostura = { ...O, costuraMm: 10 };
+    let estado = clicar(SEM_CONFERENCIA, 200, 0, comCostura).estado;
+    estado = clicar(estado, 200, 300, comCostura).estado;
+    estado = clicar(estado, 500, 0, comCostura).estado;
+    estado = clicar(estado, 500, 300, comCostura).estado;
+
+    expect(estado.costuras[0]!.pontos).toEqual([ponto(190, 0), ponto(190, 300)]);
+    expect(estado.costuras[1]!.pontos).toEqual([ponto(510, 0), ponto(510, 300)]);
+    expect(textoDaConferencia(comCostura, estado, null)).toMatch(/conferem — 1ª: 300,0 mm · 2ª: 300,0 mm \(pela linha de costura, a 10,0 mm do contorno\)\./);
+    // O pique é do contorno: fica no ponto dele em frente ao ponto de encontro.
+    const marcado = cliqueDaConferencia(comCostura, pecas, estado, ponto(190, 120), RAIO, ids());
+    expect(marcado.pecas![0]!.piques.map((q) => q.posicao)).toEqual([ponto(200, 120)]);
+    expect(marcado.pecas![1]!.piques.map((q) => q.posicao)).toEqual([ponto(500, 120)]);
+  });
+
+  it('com “Atual” preenchido, o ponto de encontro é o dessa distância, com o mouse onde estiver', () => {
+    const fixo = { ...O, atualMm: 80 };
+    const estado = comAsDuas();
+
+    expect(previaDaConferencia(fixo, pecas, estado, null, RAIO).marcas).toEqual([ponto(200, 80)]);
+    expect(previaDaConferencia(fixo, pecas, estado, ponto(900, 900), RAIO).marcas).toEqual([ponto(200, 80)]);
+    const marcado = cliqueDaConferencia(fixo, pecas, estado, ponto(900, 900), RAIO, ids());
+    expect(marcado.pecas![0]!.piques.map((q) => q.posicao)).toEqual([ponto(200, 80)]);
+    expect(marcado.pecas![1]!.piques[0]!.posicao.x).toBe(500);
+    expect(marcado.pecas![1]!.piques[0]!.posicao.y).toBeCloseTo(80, 9);
+    expect(textoDaConferencia(fixo, estado, null)).toMatch(/A outra peça está encostada no ponto de “Atual”\..*Atual: 80,0 mm do começo; diferença \(o que falta da 1ª\): 220,0 mm\./);
+  });
+
+  it('“Atual” maior que a 1ª costura para no fim dela', () => {
+    expect(previaDaConferencia({ ...O, atualMm: 999 }, pecas, comAsDuas(), null, RAIO).marcas).toEqual([ponto(200, 300)]);
+  });
+
+  it('a Referência diz de qual costura é a diferença: o que falta dela depois do ponto atual', () => {
+    const estado = comAsDuas(manga);
+
+    expect(textoDaConferencia({ ...O, referencia: 1 }, estado, ponto(200, 100))).toMatch(/diferença \(o que falta da 1ª\): 200,0 mm/);
+    expect(textoDaConferencia({ ...O, referencia: 2 }, estado, ponto(200, 100))).toMatch(/diferença \(o que falta da 2ª\): 140,0 mm/);
+    // Depois do fim da 2ª costura, não falta nada dela.
+    expect(textoDaConferencia({ ...O, referencia: 2 }, estado, ponto(200, 290))).toMatch(/diferença \(o que falta da 2ª\): 0,0 mm/);
+  });
+});
+
 describe('textoDaConferencia', () => {
   it('guia os quatro cliques e termina com "Esc sai."', () => {
     let estado = SEM_CONFERENCIA;
@@ -238,9 +304,9 @@ describe('textoDaConferencia', () => {
 
   it('com as duas, dá o veredito, onde o mouse está e o que o clique marca', () => {
     expect(textoDaConferencia(O, comAsDuas(), ponto(200, 120))).toBe(
-      'As duas costuras conferem — 1ª: 300,0 mm · 2ª: 300,0 mm. Passe o mouse pela 1ª costura: a outra peça anda sobre ela. Um clique marca um pique de encontro nas duas. Atual: 120,0 mm do começo. Esc sai.',
+      'As duas costuras conferem — 1ª: 300,0 mm · 2ª: 300,0 mm. Passe o mouse pela 1ª costura: a outra peça anda sobre ela. Um clique marca um pique de encontro nas duas. Atual: 120,0 mm do começo; diferença (o que falta da 1ª): 180,0 mm. Esc sai.',
     );
-    expect(textoDaConferencia({ descontarMm: 0, marcar: 'nada' }, comAsDuas(manga), null)).toBe(
+    expect(textoDaConferencia({ ...O, marcar: 'nada' }, comAsDuas(manga), null)).toBe(
       'Não conferem: a 1ª é 60,0 mm maior (25,0%) — 1ª: 300,0 mm · 2ª: 240,0 mm. Passe o mouse pela 1ª costura: a outra peça anda sobre ela. Esc sai.',
     );
   });

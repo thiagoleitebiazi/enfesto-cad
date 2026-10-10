@@ -21,6 +21,7 @@ import {
   regraNoEixo,
   regraPeloTamanhoDeReferencia,
   regraPorPasso,
+  regraProporcional,
   removerPontoGraduado,
   semPontosSoltos,
   tamanhoDeReferencia,
@@ -454,5 +455,23 @@ describe('ajustarEntre', () => {
     expect(() => ajustarEntre(g, contorno, 1, [2], 1, 'ambos')).toThrow('diferente do inicial');
     expect(() => ajustarEntre(g, contorno, 1, [1, 2], 4, 'ambos')).toThrow('não entram entre os ajustados');
     expect(() => ajustarEntre(g, contorno, 1, [9], 4, 'ambos')).toThrow('Ponto fora do contorno');
+  });
+});
+
+describe('regraProporcional', () => {
+  const cinco = iniciarGraduacao(RETANGULO, ['PP', 'P', 'M', 'G', 'GG'], 2);
+
+  it('o menor e o maior tamanho levam o deslocamento dado; os do meio, a parte proporcional à distância ao base', () => {
+    expect(regraProporcional(cinco, ponto(-20, -40), ponto(30, 60))).toEqual([ponto(-20, -40), ponto(-10, -20), ZERO, ponto(15, 30), ponto(30, 60)]);
+  });
+
+  it('os dois lados são independentes: não precisam ser o contrário um do outro', () => {
+    expect(regraProporcional(cinco, ponto(0, -10), ponto(40, 0))).toEqual([ponto(0, -10), ponto(0, -5), ZERO, ponto(20, 0), ponto(40, 0)]);
+  });
+
+  it('do lado que não tem tamanhos, ou sem deslocamento dado, o ponto não anda', () => {
+    const soMaiores = iniciarGraduacao(RETANGULO, ['M', 'G', 'GG'], 0);
+    expect(regraProporcional(soMaiores, ponto(-9, -9), ponto(20, 40))).toEqual([ZERO, ponto(10, 20), ponto(20, 40)]);
+    expect(regraProporcional(cinco, null, ponto(30, 60))).toEqual([ZERO, ZERO, ZERO, ponto(15, 30), ponto(30, 60)]);
   });
 });

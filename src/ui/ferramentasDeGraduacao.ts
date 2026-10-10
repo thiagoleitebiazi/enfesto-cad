@@ -14,6 +14,7 @@ import {
   regraNoEixo,
   regraPeloTamanhoDeReferencia,
   regraPorPasso,
+  regraProporcional,
   tamanhoDeReferencia,
   verticesGraduados,
   type EixoDaGraduacao,
@@ -83,7 +84,9 @@ export interface OpcoesDaGraduacao {
   readonly ajustar: { readonly eixo: EixoNaTela };
   /** A distância de um tamanho ao vizinho, no ponto de referência (zero empilha), e o tamanho a mexer (ou "todos"). */
   readonly agrupar: { readonly dxMm: number; readonly dyMm: number; readonly tamanho: string };
-  readonly mouse: { readonly modo: 'absoluto' | 'incremental' };
+  readonly mouse: { readonly modo: 'absoluto' | 'incremental' | 'proporcional' };
+  /** "Unir": todos os pontos graduados, para as curvas de cada tamanho saírem exatas. */
+  readonly unir: { readonly ajustarCurvas: boolean };
   readonly tangente: { readonly distanciaMm: number; readonly inverter: boolean };
   readonly remover: { readonly onde: 'pontos' | 'molde'; readonly eixo: EixoNaTela };
   readonly copiar: {
@@ -103,6 +106,7 @@ export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
   ajustar: { eixo: 'dx-dy' },
   agrupar: { dxMm: 0, dyMm: 0, tamanho: TODOS_OS_TAMANHOS },
   mouse: { modo: 'absoluto' },
+  unir: { ajustarCurvas: true },
   tangente: { distanciaMm: 5, inverter: false },
   remover: { onde: 'pontos', eixo: 'dx-dy' },
   copiar: { eixo: 'dx-dy', inverterDx: false, inverterDy: false, destino: 'cliques' },
@@ -246,11 +250,12 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
             opcoes: [
               { valor: 'absoluto', rotulo: 'Absoluto: no tamanho da ponta (o maior), e os outros vão por passos iguais' },
               { valor: 'incremental', rotulo: 'Incremental: no tamanho seguinte ao base, e cada tamanho anda o mesmo tanto' },
+              { valor: 'proporcional', rotulo: 'Proporcional: no menor e no maior tamanho, e os do meio ficam com a parte proporcional' },
             ],
             inicial: opcoes.mouse.modo,
           },
         ],
-        nota: 'Depois de confirmar, clique num ponto do contorno e, em seguida, onde ele deve ficar. O desenho mostra o tamanho da ponta enquanto o mouse anda. O modo “Proporcional” da referência não existe aqui: os pontos de curva já andam sempre na proporção dos vizinhos.',
+        nota: 'Depois de confirmar, clique num ponto do contorno e, em seguida, onde ele deve ficar. No Absoluto e no Incremental, um clique; no Proporcional, dois: onde o ponto fica no menor tamanho e onde fica no maior. O desenho mostra o tamanho que está sendo indicado enquanto o mouse anda.',
         rotuloDoBotao: INDICAR,
       };
     case 'graduar-tangente':
@@ -303,6 +308,15 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
         nota: 'Depois de confirmar, clique no ponto de onde copiar e, em seguida, nos pontos que devem receber a regra.',
         rotuloDoBotao: INDICAR,
       };
+    case 'unir-tamanhos':
+      return {
+        titulo: 'Unir tamanhos',
+        campos: [
+          { tipo: 'caixa', id: 'ajustarCurvas', rotulo: 'Ajustar curvas: todos os pontos graduados, para as curvas de cada tamanho saírem exatas', inicial: opcoes.unir.ajustarCurvas },
+        ],
+        nota: 'A peça selecionada passa a ser a graduada, e as marcadas na lista viram os outros tamanhos dela. Sem “Ajustar curvas”, só os cantos ficam graduados e os pontos de curva andam na proporção: a graduação fica mais simples de mexer, mas as curvas dos outros tamanhos são só aproximadas.',
+        rotuloDoBotao: 'Unir',
+      };
     case 'separar-tamanhos': {
       const graduacao = peca.graduacao;
       if (!graduacao) return null;
@@ -342,7 +356,9 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
     case 'agrupar-graduacao':
       return { ...opcoes, agrupar: { dxMm: numero('dx'), dyMm: numero('dy'), tamanho: String(valores.tamanho) } };
     case 'graduar-mouse':
-      return { ...opcoes, mouse: { modo: valores.modo === 'incremental' ? 'incremental' : 'absoluto' } };
+      return { ...opcoes, mouse: { modo: valores.modo === 'incremental' || valores.modo === 'proporcional' ? valores.modo : 'absoluto' } };
+    case 'unir-tamanhos':
+      return { ...opcoes, unir: { ajustarCurvas: caixa('ajustarCurvas') } };
     case 'graduar-tangente':
       if (numero('distancia') === 0) throw new Error('A distância por tamanho precisa ser diferente de zero.');
       return { ...opcoes, tangente: { distanciaMm: numero('distancia'), inverter: caixa('inverter') } };
@@ -393,9 +409,9 @@ export function aplicarSeparar(opcoes: OpcoesDaGraduacao, pecas: readonly Molde[
 }
 
 /** "Unir": a peça selecionada vira a graduada, e as marcadas na lista viram os outros tamanhos dela. */
-export function aplicarUnir(pecas: readonly Molde[], peca: Molde, marcadas: ReadonlySet<string>): ResultadoDeFerramentaDeMolde {
+export function aplicarUnir(pecas: readonly Molde[], peca: Molde, marcadas: ReadonlySet<string>, ajustarCurvas = true): ResultadoDeFerramentaDeMolde {
   const outras = pecas.filter((p) => marcadas.has(p.id) && p.id !== peca.id);
-  const unida = unirTamanhos(peca, outras);
+  const unida = unirTamanhos(peca, outras, ajustarCurvas);
   const graduacao = unida.graduacao!;
   const saem = new Set(outras.map((p) => p.id));
   return {
@@ -404,7 +420,9 @@ export function aplicarUnir(pecas: readonly Molde[], peca: Molde, marcadas: Read
       peca.id,
       unida,
     ),
-    recado: `“${peca.nome}” agora é graduada nos tamanhos ${lista(graduacao.tamanhos)}, com o ${graduacao.tamanhos[graduacao.base]} de base. ${outras.length === 1 ? 'A peça do outro tamanho foi reunida' : `As ${outras.length} peças dos outros tamanhos foram reunidas`} nela.`,
+    recado: `“${peca.nome}” agora é graduada nos tamanhos ${lista(graduacao.tamanhos)}, com o ${graduacao.tamanhos[graduacao.base]} de base. ${outras.length === 1 ? 'A peça do outro tamanho foi reunida' : `As ${outras.length} peças dos outros tamanhos foram reunidas`} nela.${
+      ajustarCurvas ? '' : ` Só os ${graduacao.pontos.length} cantos ficaram graduados; os pontos de curva andam na proporção.`
+    }`,
   };
 }
 
@@ -455,6 +473,18 @@ function clicadosNoAjuste(peca: Molde, estado: TrechoEmEdicao): number[] {
   return estado.livres.map((p) => peca.contorno.findIndex((v) => distancia(v, p) < MESMO_PONTO_MM)).filter((i) => i >= 0);
 }
 
+/**
+ * No modo "Proporcional" do mouse, o que o próximo clique indica: com tamanhos
+ * dos dois lados do base, primeiro o menor e depois o maior; com tamanhos de
+ * um lado só, só esse.
+ */
+function faseDoProporcional(graduacao: Graduacao, estado: TrechoEmEdicao): 'menor-e-depois-maior' | 'maior' | 'so-menor' {
+  const temMenores = graduacao.base > 0;
+  const temMaiores = graduacao.base < graduacao.tamanhos.length - 1;
+  if (temMenores && !temMaiores) return 'so-menor';
+  return temMenores && estado.livres.length === 0 ? 'menor-e-depois-maior' : 'maior';
+}
+
 /** A regra da origem como chega ao destino em "Copiar graduação": com os sinais invertidos, se pedido. */
 function regraCopiada(origem: readonly Ponto2D[], opcoes: OpcoesDaGraduacao['copiar']): Ponto2D[] {
   return origem.map((d) => {
@@ -491,6 +521,20 @@ export function cliqueDeGraduacao(
     const i = estado.inicio.indiceAresta;
     const anda = { x: clique.livre.x - contorno[i]!.x, y: clique.livre.y - contorno[i]!.y };
     if (Math.hypot(anda.x, anda.y) < MESMO_PONTO_MM) return { estado, recado: null };
+    if (opcoes.mouse.modo === 'proporcional') {
+      const fase = faseDoProporcional(graduacao, estado);
+      // Com tamanhos dos dois lados do base, o primeiro clique é o do menor: fica guardado à espera do maior.
+      if (fase === 'menor-e-depois-maior') return { estado: { ...estado, livres: [clique.livre] }, recado: null };
+      const noMenor = fase === 'so-menor' ? anda : estado.livres[0] ? { x: estado.livres[0].x - contorno[i]!.x, y: estado.livres[0].y - contorno[i]!.y } : null;
+      const regra = regraProporcional(graduacao, noMenor, fase === 'so-menor' ? null : anda);
+      return com(
+        definirRegra(graduacao, contorno, i, regra),
+        `Ponto ${i + 1} graduado pelo mouse, na proporção: ${descreverRegra(graduacao, regra)}${
+          noMenor ? `; no tamanho ${graduacao.tamanhos[0]}, DX ${mm(paraATela(noMenor).dx)} e DY ${mm(paraATela(noMenor).dy)}` : ''
+        }.`,
+        SEM_TRECHO,
+      );
+    }
     const regra = opcoes.mouse.modo === 'absoluto' ? regraPeloTamanhoDeReferencia(graduacao, anda) : regraPorPasso(graduacao, anda);
     return com(definirRegra(graduacao, contorno, i, regra), `Ponto ${i + 1} graduado pelo mouse: ${descreverRegra(graduacao, regra)}.`, SEM_TRECHO);
   }
@@ -644,6 +688,18 @@ export function previaDaGraduacao(
   const i = estado.inicio.indiceAresta;
   const anda = { x: mouse.x - peca.contorno[i]!.x, y: mouse.y - peca.contorno[i]!.y };
   if (Math.hypot(anda.x, anda.y) < MESMO_PONTO_MM) return { marcas };
+  if (opcoes.mouse.modo === 'proporcional') {
+    // O tamanho que o clique vai indicar: o menor ou o maior, com o ponto onde o mouse está.
+    const fase = faseDoProporcional(graduacao, estado);
+    const doMenor = fase !== 'maior';
+    const guardado = estado.livres[0] ? { x: estado.livres[0].x - peca.contorno[i]!.x, y: estado.livres[0].y - peca.contorno[i]!.y } : null;
+    const regraDeAgora = regraProporcional(graduacao, doMenor ? anda : guardado, doMenor ? null : anda);
+    return {
+      novo: contornoDoTamanho(definirRegra(graduacao, peca.contorno, i, regraDeAgora), peca.contorno, doMenor ? 0 : graduacao.tamanhos.length - 1),
+      novoFechado: true,
+      marcas,
+    };
+  }
   const regra = opcoes.mouse.modo === 'absoluto' ? regraPeloTamanhoDeReferencia(graduacao, anda) : regraPorPasso(graduacao, anda);
   const comARegra = definirRegra(graduacao, peca.contorno, i, regra);
   return { novo: contornoDoTamanho(comARegra, peca.contorno, tamanhoDeReferencia(graduacao)), novoFechado: true, marcas };
@@ -665,9 +721,17 @@ export function instrucaoDaGraduacao(modo: ModoDeGraduacao, opcoes: OpcoesDaGrad
         ? `Ajustar: a partir do ponto ${numero}, clique nos pontos a ajustar e, por último, no ponto final.` + ESC
         : `Ajustar: o tracejado mostra o tamanho da ponta com ${estado.livres.length - 1} ponto(s) ajustado(s). Clique de novo no último ponto para confirmar — ou em mais pontos; o último clicado é o final.` + ESC;
     case 'graduar-mouse':
-      return !estado.inicio
-        ? 'Mouse: clique no ponto do contorno a graduar.' + ESC
-        : `Mouse: clique onde o ponto ${numero} deve ficar ${opcoes.mouse.modo === 'absoluto' ? 'no tamanho da ponta' : 'no tamanho seguinte ao base'} — o tracejado mostra o tamanho da ponta.` + ESC;
+      if (!estado.inicio) return 'Mouse: clique no ponto do contorno a graduar.' + ESC;
+      if (opcoes.mouse.modo === 'proporcional') {
+        return (
+          (estado.livres.length === 0
+            ? `Mouse (proporcional): clique onde o ponto ${numero} deve ficar no menor tamanho — ou no maior, se não há tamanho menor que o base. O tracejado mostra esse tamanho.`
+            : `Mouse (proporcional): agora clique onde o ponto ${numero} deve ficar no maior tamanho — o tracejado mostra esse tamanho.`) + ESC
+        );
+      }
+      return (
+        `Mouse: clique onde o ponto ${numero} deve ficar ${opcoes.mouse.modo === 'absoluto' ? 'no tamanho da ponta' : 'no tamanho seguinte ao base'} — o tracejado mostra o tamanho da ponta.` + ESC
+      );
     case 'graduar-tangente':
       return `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} por tamanho, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um.` + ESC;
     case 'graduar-regras':
