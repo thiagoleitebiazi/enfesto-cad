@@ -56,6 +56,33 @@ import {
   type FerramentaDePence,
   type OpcoesDasPences,
 } from './ui/ferramentasDePence';
+import {
+  aplicarRemoverDoMolde,
+  aplicarSeparar,
+  aplicarTamanhos,
+  aplicarUnir,
+  cliqueDeGraduacao,
+  dialogoDaGraduacao,
+  dialogoDeTamanhos,
+  ehModoDeGraduacao,
+  instrucaoDaGraduacao,
+  lerDialogoDaGraduacao,
+  mesmosTamanhos,
+  OPCOES_INICIAIS_DA_GRADUACAO,
+  previaDaGraduacao,
+  type FerramentaDeGraduacao,
+  type OpcoesDaGraduacao,
+} from './ui/ferramentasDeGraduacao';
+import {
+  gravarRegrasCadastradas,
+  lerRegrasCadastradas,
+  regraDoPonto,
+  regraParaAGraduacao,
+  type RegraCadastrada,
+} from './ui/regrasDeGraduacao';
+import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
+import { PainelDeRegras } from './ui/PainelDeRegras';
+import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
 import {
   curvaDoTrecho,
@@ -297,7 +324,12 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'unir' }
-  | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence };
+  | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
+  | { readonly tipo: 'tamanhos' }
+  | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
+  | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
+  | { readonly tipo: 'nome-da-regra'; readonly indice: number }
+  | { readonly tipo: 'escolher-regra' };
 
 /** Número para um campo de diálogo, com vírgula decimal. */
 function paraCampo(valor: number): string {
@@ -393,6 +425,14 @@ export default function App(): React.JSX.Element {
   const [unirApenasMovendo, setUnirApenasMovendo] = useState(false);
   // Pences e pregas: o que cada diálogo deixou escolhido.
   const [opcoesDasPences, setOpcoesDasPences] = useState<OpcoesDasPences>(OPCOES_INICIAIS_DAS_PENCES);
+  // Graduação: as opções dos diálogos, o cadastro de regras deste computador, a
+  // regra escolhida em "Regras" e a regra guardada pelo "Copiar" da tabela.
+  const [opcoesDaGraduacao, setOpcoesDaGraduacao] = useState<OpcoesDaGraduacao>(OPCOES_INICIAIS_DA_GRADUACAO);
+  const [regrasDoUsuario, setRegrasDoUsuario] = useState<readonly RegraCadastrada[]>(() =>
+    lerRegrasCadastradas(window.localStorage),
+  );
+  const [regraEscolhida, setRegraEscolhida] = useState<RegraCadastrada | null>(null);
+  const [regraCopiada, setRegraCopiada] = useState<RegraCadastrada | null>(null);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -1183,6 +1223,48 @@ export default function App(): React.JSX.Element {
   }, [pecas, alvosDeCostura, aplicarMudanca, avisar]);
 
   /** "Converter em contorno": a linha de corte das peças selecionadas vira o contorno, e a costura volta a zero. */
+  /**
+   * Ferramentas da aba Graduação. "Tabela" começa pelos tamanhos; "Unir" age
+   * na hora; as que têm opções pedem-nas antes; as outras ligam direto.
+   */
+  const usarFerramentaDeGraduacao = useCallback(
+    (ferramenta: FerramentaDeGraduacao) => {
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      if (!peca) return;
+      if (ferramenta === 'graduar-tabela') {
+        setDialogoDeFerramenta({ tipo: 'tamanhos' });
+        return;
+      }
+      if (ferramenta === 'unir-tamanhos') {
+        try {
+          const resultado = aplicarUnir(pecas, peca, idsSelecionadosEmLote);
+          const novasPecas = [...resultado.pecas];
+          aplicarMudanca(novasPecas);
+          setIdsSelecionadosEmLote(new Set());
+          avisar(resultado.recado, novasPecas);
+        } catch (e) {
+          avisar(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
+      if (!peca.graduacao) return;
+      if (ferramenta === 'graduar-regras') setDialogoDeFerramenta({ tipo: 'escolher-regra' });
+      else if (dialogoDaGraduacao(ferramenta, opcoesDaGraduacao, peca)) setDialogoDeFerramenta({ tipo: 'graduacao', ferramenta });
+      else if (ehModoDeGraduacao(ferramenta)) entrarModoDeConstrucao(ferramenta);
+    },
+    [pecas, selecionadoId, idsSelecionadosEmLote, opcoesDaGraduacao, aplicarMudanca, avisar, entrarModoDeConstrucao],
+  );
+
+  const excluirRegraCadastrada = useCallback(
+    (id: string) => {
+      const novas = regrasDoUsuario.filter((r) => r.id !== id);
+      gravarRegrasCadastradas(window.localStorage, novas);
+      setRegrasDoUsuario(novas);
+      if (regraEscolhida?.id === id) setRegraEscolhida(null);
+    },
+    [regrasDoUsuario, regraEscolhida],
+  );
+
   const converterEmContorno = useCallback(() => {
     const comCostura = alvosDeCostura.filter((p) => p.margemDeCosturaMm > 0);
     if (comCostura.length === 0) return;
@@ -1900,6 +1982,30 @@ export default function App(): React.JSX.Element {
         }
         return;
       }
+      if (ehModoDeGraduacao(modo)) {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const resultado = cliqueDeGraduacao(
+          modo,
+          opcoesDaGraduacao,
+          pecas,
+          peca,
+          trecho,
+          { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
+          { regra: regraEscolhida, novoGrupo: proximoId },
+        );
+        setTrecho(resultado.estado);
+        setRecadoDaFerramenta(resultado.recado);
+        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
+        if (resultado.abrir) {
+          setDialogoDeFerramenta({
+            tipo: resultado.abrir.tipo === 'tabela' ? 'tabela-do-ponto' : 'nome-da-regra',
+            indice: resultado.abrir.indice,
+          });
+        }
+        return;
+      }
       if (ehFerramentaDePence(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2022,6 +2128,8 @@ export default function App(): React.JSX.Element {
       opcoesDeBainha,
       unirApenasMovendo,
       opcoesDasPences,
+      opcoesDaGraduacao,
+      regraEscolhida,
       aplicarTrecho,
       transform.escalaPxPorMm,
       aplicarMudanca,
@@ -2353,6 +2461,9 @@ export default function App(): React.JSX.Element {
           : {};
       return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
     }
+    if (pecaSelecionada && ehModoDeGraduacao(modo)) {
+      return previaDaGraduacao(modo, opcoesDaGraduacao, pecaSelecionada, trecho, cursorMundo);
+    }
     if (pecaSelecionada && ehFerramentaDePence(modo)) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const mouse = cursorMundo
@@ -2394,6 +2505,7 @@ export default function App(): React.JSX.Element {
     espiralPendente,
     opcoesDeBainha,
     opcoesDasPences,
+    opcoesDaGraduacao,
     pontosEmEdicao,
     transform.escalaPxPorMm,
   ]);
@@ -2402,6 +2514,7 @@ export default function App(): React.JSX.Element {
   const textoDaConstrucao = ((): string | null => {
     const fim = ' Esc sai.';
     if (ehFerramentaDePence(modo)) return instrucaoDaPence(modo, opcoesDasPences, trecho);
+    if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEscolhida);
     switch (modo) {
       case 'curva':
         if (!trecho.inicio) return 'Curva: clique no contorno da peça selecionada, onde a curva começa.' + fim;
@@ -2468,6 +2581,31 @@ export default function App(): React.JSX.Element {
           : 'Bainha: clique no contorno, onde a bainha termina — a sobra tracejada entra no lugar do trecho em destaque.' + fim;
       default:
         return null;
+    }
+  })();
+
+  // Diálogos da graduação: o das opções da ferramenta pedida e o da tabela do ponto clicado.
+  const dialogoDeGraduacao =
+    dialogoDeFerramenta?.tipo === 'graduacao' && pecaSelecionada
+      ? dialogoDaGraduacao(dialogoDeFerramenta.ferramenta, opcoesDaGraduacao, pecaSelecionada)
+      : null;
+  const pontoDaGraduacao = ((): {
+    readonly indice: number;
+    readonly graduacao: NonNullable<Molde['graduacao']>;
+    readonly regra: readonly Ponto2D[];
+  } | null => {
+    if (dialogoDeFerramenta?.tipo !== 'tabela-do-ponto' && dialogoDeFerramenta?.tipo !== 'nome-da-regra') return null;
+    const graduacao = pecaSelecionada?.graduacao;
+    const indice = dialogoDeFerramenta.indice;
+    if (!pecaSelecionada || !graduacao || indice >= pecaSelecionada.contorno.length) return null;
+    return { indice, graduacao, regra: regraDoVertice(graduacao, pecaSelecionada.contorno, indice) };
+  })();
+  const regraParaColar = ((): readonly Ponto2D[] | null => {
+    if (!regraCopiada || !pontoDaGraduacao) return null;
+    try {
+      return regraParaAGraduacao(regraCopiada, pontoDaGraduacao.graduacao);
+    } catch {
+      return null;
     }
   })();
 
@@ -2679,6 +2817,9 @@ export default function App(): React.JSX.Element {
         onEntrarModoCirculo={() => entrarModoDeConstrucao('circulo')}
         onUsarFerramentaDeMolde={usarFerramentaDeMolde}
         temOutraPeca={pecas.length >= 2}
+        onUsarFerramentaDeGraduacao={usarFerramentaDeGraduacao}
+        temGraduacao={pecaSelecionada?.graduacao !== undefined}
+        temOutrasMarcadas={[...idsSelecionadosEmLote].some((id) => id !== selecionadoId)}
         onAlinhar={alinharSelecionadas}
         podeAlinhar={idsSelecionadosEmLote.size >= 2}
       />
@@ -2986,6 +3127,132 @@ export default function App(): React.JSX.Element {
               const novas = lerDialogoDaPence(dialogoDeFerramenta.ferramenta, opcoesDasPences, valores);
               entrarModoDeConstrucao(dialogoDeFerramenta.ferramenta);
               setOpcoesDasPences(novas);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'tamanhos' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Graduação: tamanhos"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeTamanhos(pecaSelecionada).campos}
+          nota={dialogoDeTamanhos(pecaSelecionada).nota}
+          rotuloDoBotao="Indicar no desenho"
+          onAplicar={(valores) => {
+            try {
+              const comTamanhos = aplicarTamanhos(pecaSelecionada, valores);
+              // Confirmar sem mudar nada não gasta um passo de desfazer.
+              if (!mesmosTamanhos(pecaSelecionada, comTamanhos)) {
+                aplicarMudanca(pecas.map((p) => (p.id === pecaSelecionada.id ? comTamanhos : p)));
+              }
+              entrarModoDeConstrucao('graduar-tabela');
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'graduacao' && dialogoDeGraduacao && pecaSelecionada && (
+        <DialogoDeCampos
+          key={dialogoDeFerramenta.ferramenta}
+          titulo={dialogoDeGraduacao.titulo}
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={dialogoDeGraduacao.campos}
+          nota={dialogoDeGraduacao.nota}
+          rotuloDoBotao={dialogoDeGraduacao.rotuloDoBotao}
+          onAplicar={(valores) => {
+            const ferramenta = dialogoDeFerramenta.ferramenta;
+            try {
+              const novas = lerDialogoDaGraduacao(ferramenta, opcoesDaGraduacao, valores);
+              // "Separar" e "Remover do molde inteiro" agem na hora; as outras ligam a ferramenta.
+              const naHora =
+                ferramenta === 'separar-tamanhos'
+                  ? aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
+                  : ferramenta === 'remover-graduacao' && novas.remover.onde === 'molde'
+                    ? aplicarRemoverDoMolde(novas, pecas, pecaSelecionada)
+                    : null;
+              setOpcoesDaGraduacao(novas);
+              if (naHora) {
+                const novasPecas = [...naHora.pecas];
+                aplicarMudanca(novasPecas);
+                cancelarModo();
+                avisar(naHora.recado, novasPecas);
+              } else if (ehModoDeGraduacao(ferramenta)) {
+                entrarModoDeConstrucao(ferramenta);
+              }
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'escolher-regra' && (
+        <PainelDeRegras
+          regras={regrasDoUsuario}
+          idInicial={regraEscolhida?.id ?? null}
+          onEscolher={(regra) => {
+            entrarModoDeConstrucao('graduar-regras');
+            setRegraEscolhida(regra);
+          }}
+          onExcluir={excluirRegraCadastrada}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'tabela-do-ponto' && pontoDaGraduacao && pecaSelecionada && (
+        <PainelDeTabelaDeGraduacao
+          key={pontoDaGraduacao.indice}
+          nomeDaPeca={pecaSelecionada.nome}
+          numeroDoPonto={pontoDaGraduacao.indice + 1}
+          graduado={pontoGraduadoEm(pontoDaGraduacao.graduacao, pecaSelecionada.contorno, pontoDaGraduacao.indice) !== null}
+          emGrupo={
+            pontoGraduadoEm(pontoDaGraduacao.graduacao, pecaSelecionada.contorno, pontoDaGraduacao.indice)?.grupo !== undefined
+          }
+          tamanhos={pontoDaGraduacao.graduacao.tamanhos}
+          base={pontoDaGraduacao.graduacao.base}
+          deslocamentos={pontoDaGraduacao.regra}
+          copiada={regraParaColar}
+          onCopiar={(deslocamentos) =>
+            setRegraCopiada(regraDoPonto('copiada', 'copiada', pontoDaGraduacao.graduacao, deslocamentos))
+          }
+          onAplicar={(deslocamentos) => {
+            try {
+              const graduacao = definirRegra(pontoDaGraduacao.graduacao, pecaSelecionada.contorno, pontoDaGraduacao.indice, deslocamentos);
+              aplicarMudanca(pecas.map((p) => (p.id === pecaSelecionada.id ? { ...p, graduacao } : p)));
+              setRecadoDaFerramenta(`Ponto ${pontoDaGraduacao.indice + 1} graduado pela tabela.`);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'nome-da-regra' && pontoDaGraduacao && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Criar regra"
+          resumo={[
+            ['Peça', pecaSelecionada.nome],
+            ['Ponto', String(pontoDaGraduacao.indice + 1)],
+            ['Tamanhos', pontoDaGraduacao.graduacao.tamanhos.join(', ')],
+          ]}
+          campos={[{ tipo: 'texto', id: 'nome', rotulo: 'Nome da regra', inicial: '' }]}
+          nota="A regra guarda o que este ponto anda em cada tamanho. Fica no cadastro deste computador, em “Regras”, e vale para as peças que têm esses tamanhos."
+          rotuloDoBotao="Criar regra"
+          onAplicar={(valores) => {
+            try {
+              const regra = regraDoPonto(proximoId(), String(valores.nome), pontoDaGraduacao.graduacao, pontoDaGraduacao.regra);
+              const novas = [...regrasDoUsuario, regra];
+              if (!gravarRegrasCadastradas(window.localStorage, novas)) return 'Não foi possível guardar a regra neste computador.';
+              setRegrasDoUsuario(novas);
+              setRecadoDaFerramenta(`Regra “${regra.nome}” criada: está em “Regras”.`);
               return null;
             } catch (e) {
               return e instanceof Error ? e.message : String(e);

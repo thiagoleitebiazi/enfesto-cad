@@ -112,6 +112,9 @@ function propsBase(): Props {
     onEntrarModoCirculo: vi.fn(),
     onUsarFerramentaDeMolde: vi.fn(),
     temOutraPeca: true,
+    onUsarFerramentaDeGraduacao: vi.fn(),
+    temGraduacao: false,
+    temOutrasMarcadas: false,
   };
 }
 
@@ -289,18 +292,137 @@ describe('BarraDeFerramentas: ferramentas que não existem neste programa', () =
     expect(botao('Conferir').title).toContain('operação de modelagem');
   });
 
-  it('Graduação: nenhuma ferramenta está disponível, e a aba diz por quê sem precisar do mouse', () => {
+  it('Graduação: a aba explica, sem precisar do mouse, que a peça desenhada é o tamanho base', () => {
     renderizar('Graduação');
 
-    expect(botoesDesligados()).toHaveLength(14);
-    expect(botao('Tabela').title).toContain('não há graduação');
-    expect(screen.getByText(/Este programa não faz graduação/)).toBeInTheDocument();
+    expect(screen.getByText(/A peça desenhada é o tamanho base/)).toBeInTheDocument();
   });
 
   it('a nota da Graduação não aparece nas outras abas', () => {
     renderizar('Produção');
 
-    expect(screen.queryByText(/Este programa não faz graduação/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/A peça desenhada é o tamanho base/)).not.toBeInTheDocument();
+  });
+});
+
+describe('BarraDeFerramentas: Graduação', () => {
+  afterEach(() => cleanup());
+
+  const QUE_PEDEM_TAMANHOS = [
+    'Automático',
+    'Mouse',
+    'Tangente',
+    'Regras',
+    'Criar regra',
+    'Remover graduação',
+    'Separar',
+    'Agrupar',
+    'Deduzir',
+    'Copiar graduação',
+    'Ajustar',
+    'Graduar curva',
+  ];
+
+  it('na peça sem tamanhos, só a Tabela está ligada: é por ela que a graduação começa', () => {
+    renderizar('Graduação');
+
+    expect(botao('Tabela')).toBeEnabled();
+    for (const nome of QUE_PEDEM_TAMANHOS) {
+      expect(botao(nome)).toBeDisabled();
+      expect(botao(nome).title).toBe(`${nome} — defina os tamanhos primeiro, em “Tabela”`);
+    }
+    expect(botao('Unir').title).toBe('Unir — marque na lista as peças dos outros tamanhos');
+  });
+
+  it('na peça graduada, todas ficam ligadas; Unir pede as peças dos outros tamanhos marcadas na lista', () => {
+    renderizar('Graduação', { temGraduacao: true });
+    expect(botoesDesligados().map((b) => b.textContent?.trim())).toEqual(['Unir']);
+    cleanup();
+
+    renderizar('Graduação', { temOutrasMarcadas: true });
+    expect(botao('Unir')).toBeEnabled();
+  });
+
+  it('sem peça selecionada, todas ficam desligadas e dizem o que falta', () => {
+    renderizar('Graduação', { temSelecao: false, temSelecaoUnica: false, temGraduacao: false });
+
+    expect(botoesDesligados()).toHaveLength(14);
+    for (const nome of ['Tabela', 'Unir', ...QUE_PEDEM_TAMANHOS]) {
+      expect(botao(nome).title).toBe(`${nome} — selecione uma peça primeiro`);
+    }
+  });
+
+  it('cada botão chama a ferramenta dele', () => {
+    const props = renderizar('Graduação', { temGraduacao: true, temOutrasMarcadas: true });
+
+    const nomes = [
+      'Tabela',
+      'Automático',
+      'Mouse',
+      'Tangente',
+      'Regras',
+      'Criar regra',
+      'Remover graduação',
+      'Separar',
+      'Unir',
+      'Agrupar',
+      'Deduzir',
+      'Copiar graduação',
+      'Ajustar',
+      'Graduar curva',
+    ];
+    for (const nome of nomes) fireEvent.click(botao(nome));
+
+    expect(vi.mocked(props.onUsarFerramentaDeGraduacao).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'graduar-tabela',
+      'graduar-automatico',
+      'graduar-mouse',
+      'graduar-tangente',
+      'graduar-regras',
+      'criar-regra',
+      'remover-graduacao',
+      'separar-tamanhos',
+      'unir-tamanhos',
+      'agrupar-graduacao',
+      'deduzir-graduacao',
+      'copiar-graduacao',
+      'ajustar-graduacao',
+      'graduar-curva',
+    ]);
+  });
+
+  it.each([
+    ['Tabela', 'graduar-tabela'],
+    ['Automático', 'graduar-automatico'],
+    ['Mouse', 'graduar-mouse'],
+    ['Tangente', 'graduar-tangente'],
+    ['Regras', 'graduar-regras'],
+    ['Criar regra', 'criar-regra'],
+    ['Remover graduação', 'remover-graduacao'],
+    ['Agrupar', 'agrupar-graduacao'],
+    ['Deduzir', 'deduzir-graduacao'],
+    ['Copiar graduação', 'copiar-graduacao'],
+    ['Ajustar', 'ajustar-graduacao'],
+    ['Graduar curva', 'graduar-curva'],
+  ] as const)('%s aparece pressionado enquanto é a ferramenta ligada', (nome, modo) => {
+    renderizar('Graduação', { modo, temGraduacao: true });
+
+    expect(botao(nome)).toHaveAttribute('aria-pressed', 'true');
+    expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
+  });
+
+  it('Separar e Unir agem na hora: não têm estado de pressionado', () => {
+    renderizar('Graduação', { temGraduacao: true, temOutrasMarcadas: true });
+
+    expect(botao('Separar')).not.toHaveAttribute('aria-pressed');
+    expect(botao('Unir')).not.toHaveAttribute('aria-pressed');
+  });
+
+  it('as ferramentas que o manual da referência não descreve dizem isso na dica', () => {
+    renderizar('Graduação', { temGraduacao: true });
+
+    expect(botao('Deduzir').title).toContain('leitura natural');
+    expect(botao('Graduar curva').title).toContain('leitura natural');
   });
 });
 

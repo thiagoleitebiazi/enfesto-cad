@@ -3,6 +3,7 @@ import type { ModoDeDesenho } from './AreaDeDesenho';
 import { ajustarCompactacao } from './compactacaoDaFita';
 import type { FerramentaDeMolde } from './ferramentasDeMolde';
 import type { FerramentaDePence } from './ferramentasDePence';
+import type { FerramentaDeGraduacao } from './ferramentasDeGraduacao';
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
@@ -118,6 +119,12 @@ interface BarraDeFerramentasProps {
   readonly onUsarFerramentaDeMolde: (ferramenta: FerramentaDeMolde | FerramentaDePence) => void;
   /** Há pelo menos duas peças no projeto (Unir precisa de outra além da selecionada). */
   readonly temOutraPeca: boolean;
+  /** As ferramentas da aba Graduação, na peça selecionada. */
+  readonly onUsarFerramentaDeGraduacao: (ferramenta: FerramentaDeGraduacao) => void;
+  /** A peça selecionada já tem tamanhos definidos (é graduada). */
+  readonly temGraduacao: boolean;
+  /** Além da peça selecionada, há outras marcadas na lista (para "Unir" os tamanhos). */
+  readonly temOutrasMarcadas: boolean;
 }
 
 const SO_PARA_ELEMENTOS =
@@ -125,12 +132,11 @@ const SO_PARA_ELEMENTOS =
 
 const SO_ENTRE_ARCOS =
   'indisponível neste programa: precisa de um arco como elemento para tangenciar, e aqui os arcos viram pontos do contorno, sem centro nem raio guardados';
-const SEM_GRADUACAO =
-  'indisponível neste programa: não há graduação — cada tamanho entra como uma peça própria, já graduada';
 const SEM_TEXTO =
   'indisponível neste programa: não há textos soltos no desenho; o nome da peça aparece sobre a linha de fio';
 const SEM_PECA = 'selecione uma peça primeiro';
 const SEM_PECAS = 'não há peças no projeto';
+const SEM_TAMANHOS = 'defina os tamanhos primeiro, em “Tabela”';
 
 /**
  * Dica de um botão pequeno sem peça selecionada. Começa pelo nome da
@@ -242,6 +248,8 @@ const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
  */
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
   const [abaAtiva, setAbaAtiva] = useState<Aba>('inicio');
+  // O que falta para usar uma ferramenta de graduação: uma peça selecionada, com tamanhos definidos.
+  const faltaParaGraduar = !props.temSelecaoUnica ? SEM_PECA : props.temGraduacao ? null : SEM_TAMANHOS;
   const conteudoRef = useRef<HTMLDivElement | null>(null);
 
   // Mede antes da pintura: ao trocar de aba (outros botões) e sempre que a
@@ -988,15 +996,63 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           {abaAtiva === 'graduacao' && (
             <>
               <div className="grupo-de-ferramentas" role="group" aria-label="Graduar">
-                <Ferramenta tamanho="grande" rotulo="Tabela" icone="tabela-de-graduacao" indisponivel={SEM_GRADUACAO} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Tabela"
+                  icone="tabela-de-graduacao"
+                  pressionado={props.modo === 'graduar-tabela'}
+                  dica="Tabela: define os tamanhos da peça selecionada e, clicando num ponto do contorno, o quanto ele anda (DX e DY) em cada tamanho"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeGraduacao('graduar-tabela')}
+                />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Automático" icone="graduar-automatico" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Mouse" icone="graduar-mouse" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Tangente" icone="graduar-tangente" indisponivel={SEM_GRADUACAO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Automático"
+                    icone="graduar-automatico"
+                    pressionado={props.modo === 'graduar-automatico'}
+                    dica="Automático: dá aos pontos clicados a mesma diferença de DX e de DY de um tamanho para o seguinte"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('graduar-automatico')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Mouse"
+                    icone="graduar-mouse"
+                    pressionado={props.modo === 'graduar-mouse'}
+                    dica="Mouse: clique num ponto e depois onde ele deve ficar no tamanho da ponta — os outros tamanhos vão por passos iguais"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('graduar-mouse')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Tangente"
+                    icone="graduar-tangente"
+                    pressionado={props.modo === 'graduar-tangente'}
+                    dica="Tangente: os pontos clicados andam uma distância por tamanho na direção da própria aresta"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('graduar-tangente')}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Regras" icone="regras" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Criar regra" icone="criar-regra" indisponivel={SEM_GRADUACAO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Regras"
+                    icone="regras"
+                    pressionado={props.modo === 'graduar-regras'}
+                    dica="Regras: escolhe uma regra de graduação guardada e a aplica aos pontos clicados"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('graduar-regras')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Criar regra"
+                    icone="criar-regra"
+                    pressionado={props.modo === 'criar-regra'}
+                    dica="Criar regra: guarda a graduação de um ponto, com um nome, para usar em outros pontos e em outras peças"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('criar-regra')}
+                  />
                 </div>
               </div>
 
@@ -1005,18 +1061,75 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo={['Remover', 'graduação']}
                   icone="remover-graduacao"
-                  indisponivel={SEM_GRADUACAO}
+                  pressionado={props.modo === 'remover-graduacao'}
+                  dica="Remover graduação: apaga o DX, o DY ou os dois dos pontos clicados — ou do molde inteiro, que volta a ser uma peça de um tamanho só"
+                  falta={faltaParaGraduar}
+                  onClick={() => props.onUsarFerramentaDeGraduacao('remover-graduacao')}
                 />
-                <Ferramenta tamanho="grande" rotulo="Separar" icone="separar-graduacao" indisponivel={SEM_GRADUACAO} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Separar"
+                  icone="separar-graduacao"
+                  dica="Separar: cria uma peça própria para um tamanho (ou para todos), ao lado da peça graduada — é assim que os tamanhos vão para o encaixe"
+                  falta={faltaParaGraduar}
+                  onClick={() => props.onUsarFerramentaDeGraduacao('separar-tamanhos')}
+                />
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Unir" icone="unir-graduacao" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Agrupar" icone="agrupar-graduacao" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Deduzir" icone="deduzir-graduacao" indisponivel={SEM_GRADUACAO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Unir"
+                    icone="unir-graduacao"
+                    dica="Unir: junta peças de tamanhos diferentes numa peça graduada — a selecionada é o base, e as marcadas na lista viram os outros tamanhos (mesmos pontos, na mesma ordem, e um tamanho diferente em cada uma)"
+                    falta={!props.temSelecaoUnica ? SEM_PECA : props.temOutrasMarcadas ? null : 'marque na lista as peças dos outros tamanhos'}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('unir-tamanhos')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Agrupar"
+                    icone="agrupar-graduacao"
+                    pressionado={props.modo === 'agrupar-graduacao'}
+                    dica="Agrupar: os pontos clicados recebem a regra do primeiro e passam a ser graduados juntos; um clique num ponto do grupo tira-o dele"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('agrupar-graduacao')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Deduzir"
+                    icone="deduzir-graduacao"
+                    pressionado={props.modo === 'deduzir-graduacao'}
+                    dica="Deduzir: desconta de todos os pontos a graduação do ponto clicado — ele passa a ser o ponto fixo, onde os tamanhos ficam empilhados (o manual da referência não descreve esta ferramenta; esta é a leitura natural)"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('deduzir-graduacao')}
+                  />
                 </div>
                 <div className="coluna-de-ferramenta">
-                  <Ferramenta tamanho="pequeno" rotulo="Copiar graduação" icone="copiar-graduacao" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Ajustar" icone="ajustar-graduacao" indisponivel={SEM_GRADUACAO} />
-                  <Ferramenta tamanho="pequeno" rotulo="Graduar curva" icone="graduar-curva" indisponivel={SEM_GRADUACAO} />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Copiar graduação"
+                    icone="copiar-graduacao"
+                    pressionado={props.modo === 'copiar-graduacao'}
+                    dica="Copiar graduação: leva a regra de um ponto para outros — o DX, o DY ou os dois, com o sinal invertido se pedido"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('copiar-graduacao')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Ajustar"
+                    icone="ajustar-graduacao"
+                    pressionado={props.modo === 'ajustar-graduacao'}
+                    dica="Ajustar: soma um acréscimo de DX e de DY por tamanho à regra que os pontos clicados já têm"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('ajustar-graduacao')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Graduar curva"
+                    icone="graduar-curva"
+                    pressionado={props.modo === 'graduar-curva'}
+                    dica="Graduar curva: torna graduado um ponto que andava na proporção dos vizinhos (um ponto de curva), ou devolve um ponto graduado à proporção (o manual da referência não traz esta ferramenta pelo nome; esta é a leitura natural)"
+                    falta={faltaParaGraduar}
+                    onClick={() => props.onUsarFerramentaDeGraduacao('graduar-curva')}
+                  />
                 </div>
               </div>
             </>
@@ -1506,8 +1619,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
         </div>
         {abaAtiva === 'graduacao' && (
           <p className="nota-da-fita">
-            Este programa não faz graduação: cada tamanho entra como uma peça própria, já graduada (importada do DXF ou do
-            PDF, na aba Encaixe). As ferramentas ficam aqui no lugar de costume, desligadas.
+            A peça desenhada é o tamanho base. &ldquo;Tabela&rdquo; define os tamanhos e a regra de cada ponto; o encaixe usa só o
+            base, e &ldquo;Separar&rdquo; cria as peças dos outros tamanhos.
           </p>
         )}
       </div>

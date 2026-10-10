@@ -8,6 +8,7 @@ import {
   type Cota,
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
+import { contornosDosTamanhos } from '../domain/graduacao';
 import {
   perimetro,
   pontoDentroDoContorno,
@@ -61,6 +62,8 @@ const COR_GRADE = 'rgba(90, 98, 112, 0.38)';
 const COR_IMA = '#d81b60';
 const COR_MEDICAO = '#e65100';
 const COR_COTA = '#455a64';
+/** Os contornos dos outros tamanhos de uma peça graduada, em volta do base. */
+const COR_TAMANHO_GRADUADO = 'rgba(0, 121, 107, 0.8)';
 
 // Numeração de vértices: peças simples numeram todos; contornos com muitos
 // pontos (curvas amostradas) só nos cantos, com espaço mínimo entre números.
@@ -125,7 +128,19 @@ export type ModoDeDesenho =
   | 'fechar-pence'
   | 'transferir-pence'
   | 'multiplas-pences'
-  | 'pregas';
+  | 'pregas'
+  | 'graduar-tabela'
+  | 'graduar-automatico'
+  | 'graduar-mouse'
+  | 'graduar-tangente'
+  | 'graduar-regras'
+  | 'criar-regra'
+  | 'remover-graduacao'
+  | 'agrupar-graduacao'
+  | 'deduzir-graduacao'
+  | 'copiar-graduacao'
+  | 'ajustar-graduacao'
+  | 'graduar-curva';
 
 /**
  * Ferramentas da barra de visualização (embaixo do desenho). Ficam por cima
@@ -146,8 +161,8 @@ const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
 /**
  * Modos que mostram as alças dos vértices da peça selecionada: os de edição
  * de vértice e as ferramentas que pedem pontos do contorno dela (curvas,
- * arcos, cortar, dobrar, unir, bainha, pences e pregas) — nestas o clique
- * segue para a ferramenta, sem agarrar o vértice.
+ * arcos, cortar, dobrar, unir, bainha, pences, pregas e graduação) — nestas
+ * o clique segue para a ferramenta, sem agarrar o vértice.
  */
 const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   ...MODOS_DE_EDICAO_DE_VERTICE,
@@ -170,6 +185,18 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'transferir-pence',
   'multiplas-pences',
   'pregas',
+  'graduar-tabela',
+  'graduar-automatico',
+  'graduar-mouse',
+  'graduar-tangente',
+  'graduar-regras',
+  'criar-regra',
+  'remover-graduacao',
+  'agrupar-graduacao',
+  'deduzir-graduacao',
+  'copiar-graduacao',
+  'ajustar-graduacao',
+  'graduar-curva',
 ]);
 
 /**
@@ -735,6 +762,19 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Peça graduada: os outros tamanhos, em linha fina, em volta do base.
+      if (peca.graduacao) {
+        const base = peca.graduacao.base;
+        ctx.strokeStyle = COR_TAMANHO_GRADUADO;
+        ctx.lineWidth = 1;
+        contornosDosTamanhos(peca.graduacao, peca.contorno).forEach((contorno, t) => {
+          if (t === base) return;
+          ctx.beginPath();
+          traçarContorno(ctx, contorno, transform);
+          ctx.stroke();
+        });
+      }
 
       for (const furo of peca.furos) {
         ctx.beginPath();

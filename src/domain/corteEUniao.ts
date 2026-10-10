@@ -190,6 +190,11 @@ export function desdobrarMolde(molde: Molde, indiceAresta: number, novoId: () =>
   const pontaInicial = molde.contorno[((inicio % n) + n) % n]!;
   const pontaFinal = molde.contorno[fim % n]!;
   const espelhar = (p: Ponto2D): Ponto2D => espelharNaReta(p, a, b);
+  const origemEspelhada = espelhar(ponto(0, 0));
+  const espelharVetor = (v: Ponto2D): Ponto2D => {
+    const e = espelhar(v);
+    return ponto(e.x - origemEspelhada.x, e.y - origemEspelhada.y);
+  };
   // Uma volta: da ponta final da dobra, a metade que existia até a ponta
   // inicial; dali, a metade espelhada, de trás para a frente.
   const volta = [
@@ -213,6 +218,20 @@ export function desdobrarMolde(molde: Molde, indiceAresta: number, novoId: () =>
     linhasInternas: [...molde.linhasInternas, ...molde.linhasInternas.map((l) => l.map(espelhar)), [pontaInicial, pontaFinal]],
     marcas: [...molde.marcas, ...molde.marcas.map((m) => ({ ...m, id: novoId(), posicao: espelhar(m.posicao) }))],
     piques: piquesQueFicamNoContorno([...molde.piques, ...piquesEspelhados], contorno),
+    // Os pontos graduados da metade que existia ganham o par espelhado, com a regra espelhada.
+    ...(molde.graduacao
+      ? {
+          graduacao: {
+            ...molde.graduacao,
+            pontos: [
+              ...molde.graduacao.pontos,
+              ...molde.graduacao.pontos
+                .filter((p) => Math.abs(lado(p.posicao)) > TOLERANCIA_DA_DOBRA_MM)
+                .map((p) => ({ ...p, posicao: espelhar(p.posicao), deslocamentos: p.deslocamentos.map(espelharVetor) })),
+            ],
+          },
+        }
+      : {}),
   };
 }
 
@@ -277,8 +296,14 @@ export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, aresta
   }
   if (contorno.length > 1 && distancia(contorno.at(-1)!, contorno[0]!) <= MESMO_PONTO_MM) contorno.pop();
   const cotas: readonly Cota[] = [...(moldeA.cotas ?? []), ...(b.cotas ?? [])];
+  // A graduação da segunda peça só entra se for nos mesmos tamanhos, com o mesmo base.
+  const gA = moldeA.graduacao;
+  const gB = b.graduacao;
+  const mesmosTamanhos =
+    gA !== undefined && gB !== undefined && gA.base === gB.base && gA.tamanhos.length === gB.tamanhos.length && gA.tamanhos.every((t, i) => t === gB.tamanhos[i]);
   return {
     ...moldeA,
+    ...(gA && gB && mesmosTamanhos ? { graduacao: { ...gA, pontos: [...gA.pontos, ...gB.pontos] } } : {}),
     contorno,
     furos: [...moldeA.furos, ...b.furos],
     linhasInternas: [...moldeA.linhasInternas, ...b.linhasInternas],

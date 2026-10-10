@@ -1,0 +1,363 @@
+import { distancia, type Contorno, type Ponto2D } from '../core/geometria';
+
+/**
+ * Graduação (aba Graduação): a peça desenhada é o tamanho base, e cada
+ * tamanho é o mesmo contorno com os pontos deslocados.
+ *
+ * Só alguns pontos do contorno têm regra própria — os **pontos graduados**,
+ * em geral os cantos. Os outros (os pontos de uma curva, por exemplo) andam
+ * na proporção: cada um fica entre os dois pontos graduados vizinhos, pela
+ * distância percorrida sobre o contorno.
+ *
+ * Um ponto graduado é guardado pela posição que tem no contorno base, e não
+ * pelo número: assim inserir, tirar ou arredondar pontos em outro lugar da
+ * peça não troca a regra de ninguém. O ponto graduado que deixa de coincidir
+ * com um ponto do contorno simplesmente não conta.
+ */
+export interface PontoGraduado {
+  /** Onde o ponto está, no contorno do tamanho base. */
+  readonly posicao: Ponto2D;
+  /** O deslocamento do ponto em cada tamanho, em mm, a partir do base — na ordem de `tamanhos`; no base é zero. */
+  readonly deslocamentos: readonly Ponto2D[];
+  /** Pontos do mesmo grupo são graduados juntos: a regra dada a um vale para todos. */
+  readonly grupo?: string;
+}
+
+export interface Graduacao {
+  /** Os nomes dos tamanhos, do menor ao maior. */
+  readonly tamanhos: readonly string[];
+  /** A posição, em `tamanhos`, do tamanho base — o do contorno desenhado. */
+  readonly base: number;
+  readonly pontos: readonly PontoGraduado[];
+}
+
+/** Sobre qual eixo do mundo uma operação age. Na tela os eixos são trocados: DX é o `y` e DY é o `x`. */
+export type EixoDaGraduacao = 'ambos' | 'x' | 'y';
+
+export const MAXIMO_DE_TAMANHOS = 20;
+/** Um ponto do contorno é um canto quando a direção muda mais que isto (graus); menos, é ponto de curva. */
+export const GIRO_DE_UM_CANTO_GRAUS = 20;
+
+/** Um ponto graduado a menos disso (mm) de um ponto do contorno é esse ponto. */
+const NO_MESMO_LUGAR_MM = 1e-6;
+const ZERO: Ponto2D = { x: 0, y: 0 };
+
+function somar(a: Ponto2D, b: Ponto2D): Ponto2D {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function subtrair(a: Ponto2D, b: Ponto2D): Ponto2D {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+function mesmoNome(a: string, b: string): boolean {
+  return a.trim().toLocaleUpperCase('pt-BR') === b.trim().toLocaleUpperCase('pt-BR');
+}
+
+/** A posição do tamanho de nome `nome` na lista (sem diferenciar maiúsculas), ou -1. */
+export function indiceDoTamanho(tamanhos: readonly string[], nome: string): number {
+  return tamanhos.findIndex((t) => mesmoNome(t, nome));
+}
+
+/**
+ * Os tamanhos digitados numa linha ("P, M, G" ou "36; 38; 40"), na ordem.
+ * Recusa menos de dois, mais que o máximo e nome repetido.
+ */
+export function lerTamanhos(texto: string): string[] {
+  const tamanhos = texto
+    .split(/[,;]/)
+    .map((t) => t.trim())
+    .filter((t) => t !== '');
+  if (tamanhos.length < 2) throw new Error('Informe pelo menos dois tamanhos, separados por vírgula (por exemplo: P, M, G).');
+  if (tamanhos.length > MAXIMO_DE_TAMANHOS) throw new Error(`São aceitos até ${MAXIMO_DE_TAMANHOS} tamanhos.`);
+  const repetido = tamanhos.find((t, i) => tamanhos.findIndex((outro) => mesmoNome(outro, t)) !== i);
+  if (repetido) throw new Error(`O tamanho “${repetido}” aparece mais de uma vez.`);
+  return tamanhos;
+}
+
+/** Os pontos do contorno em que a direção muda mais que `GIRO_DE_UM_CANTO_GRAUS`. */
+export function cantosDoContorno(contorno: Contorno): number[] {
+  const n = contorno.length;
+  const cantos: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const antes = contorno[(i - 1 + n) % n]!;
+    const aqui = contorno[i]!;
+    const depois = contorno[(i + 1) % n]!;
+    const chegada = distancia(antes, aqui);
+    const saida = distancia(aqui, depois);
+    if (chegada === 0 || saida === 0) {
+      cantos.push(i);
+      continue;
+    }
+    const cosseno = ((aqui.x - antes.x) * (depois.x - aqui.x) + (aqui.y - antes.y) * (depois.y - aqui.y)) / (chegada * saida);
+    const giro = (Math.acos(Math.max(-1, Math.min(1, cosseno))) * 180) / Math.PI;
+    if (giro > GIRO_DE_UM_CANTO_GRAUS) cantos.push(i);
+  }
+  return cantos;
+}
+
+function semDeslocamento(quantos: number): Ponto2D[] {
+  return Array.from({ length: quantos }, () => ZERO);
+}
+
+/**
+ * A graduação de partida de um contorno: os tamanhos dados e, como pontos
+ * graduados (ainda sem deslocamento), os cantos do contorno. Os pontos de
+ * curva ficam proporcionais.
+ */
+export function iniciarGraduacao(contorno: Contorno, tamanhos: readonly string[], base: number): Graduacao {
+  if (!Number.isInteger(base) || base < 0 || base >= tamanhos.length) throw new Error('O tamanho base precisa ser um dos tamanhos da lista.');
+  return {
+    tamanhos: [...tamanhos],
+    base,
+    pontos: cantosDoContorno(contorno).map((i) => ({ posicao: contorno[i]!, deslocamentos: semDeslocamento(tamanhos.length) })),
+  };
+}
+
+/** O número (a partir de 0) do ponto do contorno que está em `posicao`, ou -1. */
+function verticeEm(contorno: Contorno, posicao: Ponto2D): number {
+  return contorno.findIndex((p) => distancia(p, posicao) <= NO_MESMO_LUGAR_MM);
+}
+
+/** Para cada ponto do contorno que é graduado, o ponto graduado dele. */
+function graduadosPorVertice(graduacao: Graduacao, contorno: Contorno): Map<number, PontoGraduado> {
+  const mapa = new Map<number, PontoGraduado>();
+  for (const ponto of graduacao.pontos) {
+    const i = verticeEm(contorno, ponto.posicao);
+    if (i >= 0 && !mapa.has(i)) mapa.set(i, ponto);
+  }
+  return mapa;
+}
+
+/** Os números (a partir de 0) dos pontos do contorno que são graduados, em ordem. */
+export function verticesGraduados(graduacao: Graduacao, contorno: Contorno): number[] {
+  return [...graduadosPorVertice(graduacao, contorno).keys()].sort((a, b) => a - b);
+}
+
+/** O ponto graduado que está no ponto `indice` do contorno, ou `null` se ele é proporcional. */
+export function pontoGraduadoEm(graduacao: Graduacao, contorno: Contorno, indice: number): PontoGraduado | null {
+  return graduadosPorVertice(graduacao, contorno).get(indice) ?? null;
+}
+
+/**
+ * O deslocamento de cada ponto do contorno em cada tamanho: `[ponto][tamanho]`.
+ * Os graduados têm a regra deles; os outros ficam, na proporção da distância
+ * andada sobre o contorno, entre o ponto graduado de antes e o de depois. Sem
+ * nenhum ponto graduado, ninguém se desloca.
+ */
+export function deslocamentosDoContorno(graduacao: Graduacao, contorno: Contorno): Ponto2D[][] {
+  const n = contorno.length;
+  const quantos = graduacao.tamanhos.length;
+  const graduados = graduadosPorVertice(graduacao, contorno);
+  const indices = [...graduados.keys()].sort((a, b) => a - b);
+  if (indices.length === 0) return contorno.map(() => semDeslocamento(quantos));
+
+  // Distância andada sobre o contorno, do ponto 0 até cada ponto.
+  const andado: number[] = [0];
+  for (let i = 1; i < n; i++) andado.push(andado[i - 1]! + distancia(contorno[i - 1]!, contorno[i]!));
+  const perimetro = andado[n - 1]! + distancia(contorno[n - 1]!, contorno[0]!);
+  const daquiAte = (de: number, ate: number): number => (andado[ate]! - andado[de]! + perimetro) % perimetro;
+
+  return contorno.map((_, i) => {
+    const proprio = graduados.get(i);
+    if (proprio) return [...proprio.deslocamentos];
+    // O graduado de antes é o último com número menor (ou o último de todos, dando a volta); o de depois, o seguinte.
+    const posicaoDoSeguinte = indices.findIndex((g) => g > i);
+    const depois = indices[posicaoDoSeguinte < 0 ? 0 : posicaoDoSeguinte]!;
+    const antes = indices[(posicaoDoSeguinte < 0 ? indices.length : posicaoDoSeguinte) - 1] ?? indices.at(-1)!;
+    const regraDeAntes = graduados.get(antes)!.deslocamentos;
+    const regraDeDepois = graduados.get(depois)!.deslocamentos;
+    const trecho = antes === depois ? perimetro : daquiAte(antes, depois);
+    const k = trecho > 0 ? daquiAte(antes, i) / trecho : 0;
+    return Array.from({ length: quantos }, (_, t) => {
+      const a = regraDeAntes[t] ?? ZERO;
+      const b = regraDeDepois[t] ?? ZERO;
+      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+    });
+  });
+}
+
+/** A regra (o deslocamento em cada tamanho) do ponto `indice` do contorno, seja ele graduado ou proporcional. */
+export function regraDoVertice(graduacao: Graduacao, contorno: Contorno, indice: number): Ponto2D[] {
+  const regra = deslocamentosDoContorno(graduacao, contorno)[indice];
+  if (!regra) throw new Error('Ponto fora do contorno da peça.');
+  return regra;
+}
+
+/** O contorno do tamanho de posição `tamanho` na lista. */
+export function contornoDoTamanho(graduacao: Graduacao, contorno: Contorno, tamanho: number): Ponto2D[] {
+  if (!Number.isInteger(tamanho) || tamanho < 0 || tamanho >= graduacao.tamanhos.length) throw new Error('Tamanho fora da graduação.');
+  if (tamanho === graduacao.base) return [...contorno];
+  return deslocamentosDoContorno(graduacao, contorno).map((regra, i) => somar(contorno[i]!, regra[tamanho] ?? ZERO));
+}
+
+/** O contorno de cada tamanho, na ordem da lista (o do base é o próprio contorno). */
+export function contornosDosTamanhos(graduacao: Graduacao, contorno: Contorno): Ponto2D[][] {
+  const deslocamentos = deslocamentosDoContorno(graduacao, contorno);
+  return graduacao.tamanhos.map((_, t) =>
+    t === graduacao.base ? [...contorno] : deslocamentos.map((regra, i) => somar(contorno[i]!, regra[t] ?? ZERO)),
+  );
+}
+
+/** Os pontos graduados que ainda estão sobre um ponto do contorno (os outros não contam mais e saem). */
+export function semPontosSoltos(graduacao: Graduacao, contorno: Contorno): Graduacao {
+  const pontos = graduacao.pontos.filter((p) => verticeEm(contorno, p.posicao) >= 0);
+  return pontos.length === graduacao.pontos.length ? graduacao : { ...graduacao, pontos };
+}
+
+function regraCompleta(graduacao: Graduacao, deslocamentos: readonly Ponto2D[]): Ponto2D[] {
+  if (deslocamentos.length !== graduacao.tamanhos.length) throw new Error('A regra precisa ter um deslocamento para cada tamanho.');
+  if (!deslocamentos.every((d) => Number.isFinite(d.x) && Number.isFinite(d.y))) throw new Error('Os deslocamentos precisam ser números.');
+  // O base é a referência: nele o ponto está onde foi desenhado.
+  return deslocamentos.map((d, t) => (t === graduacao.base ? ZERO : { x: d.x, y: d.y }));
+}
+
+/**
+ * Dá ao ponto `indice` do contorno a regra `deslocamentos` (um por tamanho).
+ * Se ele era proporcional, passa a ser graduado; se está num grupo, todos do
+ * grupo recebem a mesma regra.
+ */
+export function definirRegra(graduacao: Graduacao, contorno: Contorno, indice: number, deslocamentos: readonly Ponto2D[]): Graduacao {
+  const posicao = contorno[indice];
+  if (!posicao) throw new Error('Ponto fora do contorno da peça.');
+  const regra = regraCompleta(graduacao, deslocamentos);
+  const limpa = semPontosSoltos(graduacao, contorno);
+  const atual = pontoGraduadoEm(limpa, contorno, indice);
+  if (!atual) return { ...limpa, pontos: [...limpa.pontos, { posicao, deslocamentos: regra }] };
+  return {
+    ...limpa,
+    pontos: limpa.pontos.map((p) => (p === atual || (atual.grupo !== undefined && p.grupo === atual.grupo) ? { ...p, deslocamentos: regra } : p)),
+  };
+}
+
+/** O ponto `indice` deixa de ser graduado e volta a andar na proporção dos vizinhos. */
+export function removerPontoGraduado(graduacao: Graduacao, contorno: Contorno, indice: number): Graduacao {
+  const atual = pontoGraduadoEm(graduacao, contorno, indice);
+  const limpa = semPontosSoltos(graduacao, contorno);
+  return atual ? { ...limpa, pontos: limpa.pontos.filter((p) => p !== atual) } : limpa;
+}
+
+/**
+ * "Graduar curva": o ponto proporcional passa a ser graduado, com a regra que
+ * tinha na proporção (nada muda de lugar, mas ele passa a poder ter regra
+ * própria); o graduado volta a ser proporcional.
+ */
+export function alternarPontoGraduado(graduacao: Graduacao, contorno: Contorno, indice: number): Graduacao {
+  return pontoGraduadoEm(graduacao, contorno, indice)
+    ? removerPontoGraduado(graduacao, contorno, indice)
+    : definirRegra(graduacao, contorno, indice, regraDoVertice(graduacao, contorno, indice));
+}
+
+/** A regra de passo constante: `passo` a mais em cada tamanho acima do base, e a menos em cada um abaixo. */
+export function regraPorPasso(graduacao: Graduacao, passo: Ponto2D): Ponto2D[] {
+  // Zero vezes um número negativo dá "-0": fica zero, para não aparecer assim em lugar nenhum.
+  const vezes = (valor: number, passos: number): number => (valor * passos === 0 ? 0 : valor * passos);
+  return graduacao.tamanhos.map((_, t) => ({ x: vezes(passo.x, t - graduacao.base), y: vezes(passo.y, t - graduacao.base) }));
+}
+
+/** O tamanho da ponta da graduação: o maior, ou o menor quando o base já é o maior. */
+export function tamanhoDeReferencia(graduacao: Graduacao): number {
+  return graduacao.base < graduacao.tamanhos.length - 1 ? graduacao.tamanhos.length - 1 : 0;
+}
+
+/** A regra em que o ponto anda `deslocamento` até o tamanho de referência, por passos iguais. */
+export function regraPeloTamanhoDeReferencia(graduacao: Graduacao, deslocamento: Ponto2D): Ponto2D[] {
+  const passos = tamanhoDeReferencia(graduacao) - graduacao.base;
+  return regraPorPasso(graduacao, { x: deslocamento.x / passos, y: deslocamento.y / passos });
+}
+
+export function somarRegras(a: readonly Ponto2D[], b: readonly Ponto2D[]): Ponto2D[] {
+  return a.map((d, t) => somar(d, b[t] ?? ZERO));
+}
+
+/** A regra `atual` com `nova` no eixo dado: nos dois, só no `x` ou só no `y`. */
+export function regraNoEixo(atual: readonly Ponto2D[], nova: readonly Ponto2D[], eixo: EixoDaGraduacao): Ponto2D[] {
+  return atual.map((d, t) => {
+    const n = nova[t] ?? ZERO;
+    return eixo === 'ambos' ? n : eixo === 'x' ? { x: n.x, y: d.y } : { x: d.x, y: n.y };
+  });
+}
+
+/** A graduação levada por um movimento da peça (`ponto` para posições, `vetor` para deslocamentos). */
+export function transformarGraduacao(graduacao: Graduacao, ponto: (p: Ponto2D) => Ponto2D, vetor: (v: Ponto2D) => Ponto2D): Graduacao {
+  return {
+    ...graduacao,
+    pontos: graduacao.pontos.map((p) => ({ ...p, posicao: ponto(p.posicao), deslocamentos: p.deslocamentos.map(vetor) })),
+  };
+}
+
+/**
+ * A graduação depois que pontos do contorno mudaram de lugar (mesma
+ * quantidade de pontos, mesma ordem): cada ponto graduado acompanha o ponto do
+ * contorno em que estava.
+ */
+export function graduacaoComOsPontosMovidos(graduacao: Graduacao, contornoAntigo: Contorno, contornoNovo: Contorno): Graduacao {
+  if (contornoAntigo === contornoNovo || contornoAntigo.length !== contornoNovo.length) return graduacao;
+  return {
+    ...graduacao,
+    pontos: graduacao.pontos.map((p) => {
+      const i = verticeEm(contornoAntigo, p.posicao);
+      return i >= 0 ? { ...p, posicao: contornoNovo[i]! } : p;
+    }),
+  };
+}
+
+/**
+ * "Deduzir": desconta de todos os pontos a regra do ponto `indice`. Ele passa
+ * a não se deslocar em nenhum tamanho — é o ponto em que os tamanhos ficam
+ * empilhados — e a forma de cada tamanho continua a mesma.
+ */
+export function descontarPonto(graduacao: Graduacao, contorno: Contorno, indice: number): Graduacao {
+  const regra = regraDoVertice(graduacao, contorno, indice);
+  const limpa = semPontosSoltos(graduacao, contorno);
+  return { ...limpa, pontos: limpa.pontos.map((p) => ({ ...p, deslocamentos: p.deslocamentos.map((d, t) => subtrair(d, regra[t] ?? ZERO)) })) };
+}
+
+/**
+ * Apaga a graduação, no eixo dado, do ponto `indice` — que passa a ser um
+ * ponto graduado parado nesse eixo — ou, com `indice` nulo, de todos os
+ * pontos graduados.
+ */
+export function apagarRegras(graduacao: Graduacao, contorno: Contorno, indice: number | null, eixo: EixoDaGraduacao): Graduacao {
+  const zerada = (regra: readonly Ponto2D[]): Ponto2D[] => regraNoEixo(regra, semDeslocamento(regra.length), eixo);
+  if (indice !== null) return definirRegra(graduacao, contorno, indice, zerada(regraDoVertice(graduacao, contorno, indice)));
+  const limpa = semPontosSoltos(graduacao, contorno);
+  return { ...limpa, pontos: limpa.pontos.map((p) => ({ ...p, deslocamentos: zerada(p.deslocamentos) })) };
+}
+
+/**
+ * "Agrupar": põe o ponto `indice` no grupo do ponto `referencia` (ele recebe
+ * a regra da referência, e daí em diante os dois são graduados juntos) — ou
+ * tira, se já está nesse grupo. Devolve também o que foi feito.
+ */
+export function agruparPonto(
+  graduacao: Graduacao,
+  contorno: Contorno,
+  referencia: number,
+  indice: number,
+  novoGrupo: () => string,
+): { readonly graduacao: Graduacao; readonly agrupou: boolean } {
+  if (!contorno[referencia] || !contorno[indice]) throw new Error('Ponto fora do contorno da peça.');
+  if (referencia === indice) throw new Error('Clique em outro ponto para agrupar com o primeiro.');
+  // A referência precisa ser um ponto graduado, com um grupo.
+  let atual = pontoGraduadoEm(graduacao, contorno, referencia)
+    ? semPontosSoltos(graduacao, contorno)
+    : definirRegra(graduacao, contorno, referencia, regraDoVertice(graduacao, contorno, referencia));
+  const daReferencia = pontoGraduadoEm(atual, contorno, referencia)!;
+  const grupo = daReferencia.grupo ?? novoGrupo();
+  if (daReferencia.grupo === undefined) {
+    atual = { ...atual, pontos: atual.pontos.map((p) => (p === daReferencia ? { ...p, grupo } : p)) };
+  }
+  const doPonto = pontoGraduadoEm(atual, contorno, indice);
+  if (doPonto && doPonto.grupo === grupo) {
+    return {
+      graduacao: { ...atual, pontos: atual.pontos.map((p) => (p === doPonto ? { posicao: p.posicao, deslocamentos: p.deslocamentos } : p)) },
+      agrupou: false,
+    };
+  }
+  const membro: PontoGraduado = { posicao: contorno[indice]!, deslocamentos: [...daReferencia.deslocamentos], grupo };
+  return {
+    graduacao: { ...atual, pontos: doPonto ? atual.pontos.map((p) => (p === doPonto ? membro : p)) : [...atual.pontos, membro] },
+    agrupou: true,
+  };
+}

@@ -63,9 +63,10 @@ export function regiaoQueAnda(molde: Molde, regiao0: Contorno, regiao1: Contorno
 
 /**
  * A peça com o que está na região levado pelo movimento: furos, linhas
- * internas, marcas e cotas pela posição (dentro da região), e piques pela
- * borda em que estão (`cadeiaQueAnda`, o trecho do contorno que se move, ou
- * `cadeiaQueFica`). O contorno e a linha de fio não são tocados aqui.
+ * internas, marcas e cotas pela posição (dentro da região), e piques e pontos
+ * graduados pela borda em que estão (`cadeiaQueAnda`, o trecho do contorno
+ * que se move, ou `cadeiaQueFica`). O contorno e a linha de fio não são
+ * tocados aqui.
  */
 export function levarOQueEstaNaRegiao(
   molde: Molde,
@@ -76,16 +77,25 @@ export function levarOQueEstaNaRegiao(
 ): Molde {
   const dentro = (p: Ponto2D): boolean => pontoDentroDoContorno(p, regiao);
   const levar = (linha: Contorno): Contorno => linha.map(movimento.ponto);
+  const naBordaQueAnda = (p: Ponto2D): boolean => distanciaAteALinha(p, cadeiaQueAnda) < distanciaAteALinha(p, cadeiaQueFica) - 1e-9;
   return {
     ...molde,
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),
     linhasInternas: molde.linhasInternas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
     marcas: molde.marcas.map((m) => (dentro(m.posicao) ? { ...m, posicao: movimento.ponto(m.posicao) } : m)),
-    piques: molde.piques.map((p) =>
-      distanciaAteALinha(p.posicao, cadeiaQueAnda) < distanciaAteALinha(p.posicao, cadeiaQueFica) - 1e-9
-        ? { ...p, posicao: movimento.ponto(p.posicao) }
-        : p,
-    ),
+    piques: molde.piques.map((p) => (naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p)),
+    ...(molde.graduacao
+      ? {
+          graduacao: {
+            ...molde.graduacao,
+            pontos: molde.graduacao.pontos.map((p) =>
+              naBordaQueAnda(p.posicao)
+                ? { ...p, posicao: movimento.ponto(p.posicao), deslocamentos: p.deslocamentos.map(movimento.vetor) }
+                : p,
+            ),
+          },
+        }
+      : {}),
     ...(molde.cotas
       ? { cotas: molde.cotas.map((c) => (dentro(ancoraDoRotulo(c)) ? transformarCota(c, movimento.ponto, movimento.vetor) : c)) }
       : {}),

@@ -1,5 +1,6 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { area, somar } from '../core/geometria';
+import { graduacaoComOsPontosMovidos } from './graduacao';
 import { reancorarPiques, type Molde } from './molde';
 
 /**
@@ -177,5 +178,6 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
     marcas,
     linhaDeFio,
     piques: reancorarPiques(molde.piques, molde.contorno, contorno),
+    ...(molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contorno) } : {}),
   };
 }

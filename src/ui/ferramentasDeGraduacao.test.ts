@@ -1,0 +1,508 @@
+import { describe, it, expect } from 'vitest';
+import { area, ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
+import { definirRegra, pontoGraduadoEm, regraDoVertice, verticesGraduados } from '../domain/graduacao';
+import { criarMolde, type DadosDeNovoMolde, type Molde } from '../domain/molde';
+import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
+import {
+  aplicarRemoverDoMolde,
+  aplicarSeparar,
+  aplicarTamanhos,
+  aplicarUnir,
+  cliqueDeGraduacao,
+  dialogoDaGraduacao,
+  dialogoDeTamanhos,
+  ehModoDeGraduacao,
+  instrucaoDaGraduacao,
+  lerDialogoDaGraduacao,
+  mesmosTamanhos,
+  OPCOES_INICIAIS_DA_GRADUACAO,
+  previaDaGraduacao,
+  type CliqueDeGraduacao,
+  type FerramentaDeGraduacao,
+  type ModoDeGraduacao,
+  type OpcoesDaGraduacao,
+} from './ferramentasDeGraduacao';
+import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
+import type { RegraCadastrada } from './regrasDeGraduacao';
+
+// Retângulo de 200 × 300 mm, graduado em P, M e G (base M). Na tela, DX é o y do mundo e DY é o x.
+const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+const ZERO = ponto(0, 0);
+const G = 2;
+const regra = (x: number, y: number): Ponto2D[] => [ponto(0 - x, 0 - y), ZERO, ponto(x, y)];
+
+function molde(sobrescrever: Partial<DadosDeNovoMolde> = {}, id = 'f'): Molde {
+  return criarMolde(
+    { nome: 'Frente', referencia: 'REF', tamanho: 'M', contorno: RETANGULO, linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) }, ...sobrescrever },
+    id,
+  );
+}
+
+function graduada(tamanhos = ['P', 'M', 'G']): Molde {
+  return definirTamanhosDoMolde(molde(), tamanhos, 'M');
+}
+
+/** A peça graduada com o canto (200, 300) — o ponto 3 — andando (10, 20) no G. */
+function comRegraNoCanto(): Molde {
+  const peca = graduada();
+  return { ...peca, graduacao: definirRegra(peca.graduacao!, RETANGULO, 2, regra(10, 20)) };
+}
+
+const O = OPCOES_INICIAIS_DA_GRADUACAO;
+const com = (parte: Partial<OpcoesDaGraduacao>): OpcoesDaGraduacao => ({ ...O, ...parte });
+const noPonto = (i: number): CliqueDeTrecho => {
+  const posicao: PosicaoNoContorno = { indiceAresta: i, ponto: RETANGULO[i]! };
+  return { noContorno: posicao, livre: posicao.ponto };
+};
+const solto = (x: number, y: number): CliqueDeTrecho => ({ noContorno: null, livre: ponto(x, y) });
+const contexto = (regraEscolhida: RegraCadastrada | null = null) => {
+  let n = 0;
+  return { regra: regraEscolhida, novoGrupo: () => `grupo-${++n}` };
+};
+
+function clicar(modo: ModoDeGraduacao, opcoes: OpcoesDaGraduacao, peca: Molde, clique: CliqueDeTrecho, estado: TrechoEmEdicao = SEM_TRECHO): CliqueDeGraduacao {
+  return cliqueDeGraduacao(modo, opcoes, [peca], peca, estado, clique, contexto());
+}
+
+const regraDo = (resultado: CliqueDeGraduacao, i: number): readonly Ponto2D[] => {
+  const peca = resultado.pecas![0]!;
+  return regraDoVertice(peca.graduacao!, peca.contorno, i);
+};
+
+const MODOS: readonly ModoDeGraduacao[] = [
+  'graduar-tabela',
+  'graduar-automatico',
+  'graduar-mouse',
+  'graduar-tangente',
+  'graduar-regras',
+  'criar-regra',
+  'remover-graduacao',
+  'agrupar-graduacao',
+  'deduzir-graduacao',
+  'copiar-graduacao',
+  'ajustar-graduacao',
+  'graduar-curva',
+];
+
+describe('quais ferramentas ficam ligadas à espera de cliques', () => {
+  it('doze são modos; Separar e Unir agem na hora', () => {
+    for (const modo of MODOS) expect(ehModoDeGraduacao(modo)).toBe(true);
+    for (const outra of ['separar-tamanhos', 'unir-tamanhos', 'selecionar', 'pregas']) expect(ehModoDeGraduacao(outra)).toBe(false);
+  });
+});
+
+describe('tamanhos', () => {
+  it('na peça sem graduação, o diálogo sugere P, M, G, com o tamanho da peça de base quando é um deles', () => {
+    const campos = dialogoDeTamanhos(molde({ tamanho: 'G' })).campos;
+    expect(campos.find((c) => c.id === 'tamanhos')!.inicial).toBe('P, M, G');
+    expect(campos.find((c) => c.id === 'base')!.inicial).toBe('G');
+    expect(dialogoDeTamanhos(molde({ tamanho: '42' })).campos.find((c) => c.id === 'base')!.inicial).toBe('M');
+    expect(dialogoDeTamanhos(molde()).nota).toMatch(/Os cantos da peça entram como pontos graduados/);
+  });
+
+  it('na peça graduada, o diálogo mostra os tamanhos e o base dela', () => {
+    const campos = dialogoDeTamanhos(graduada(['36', '38', 'M', '42'])).campos;
+    expect(campos.find((c) => c.id === 'tamanhos')!.inicial).toBe('36, 38, M, 42');
+    expect(campos.find((c) => c.id === 'base')!.inicial).toBe('M');
+  });
+
+  it('aplica os tamanhos do diálogo, e sabe quando nada mudou', () => {
+    const nova = aplicarTamanhos(molde(), { tamanhos: 'P, M, G', base: 'm' });
+    expect(nova.graduacao).toMatchObject({ tamanhos: ['P', 'M', 'G'], base: 1 });
+    expect(mesmosTamanhos(molde(), nova)).toBe(false);
+    expect(mesmosTamanhos(nova, aplicarTamanhos(nova, { tamanhos: 'P,M,G', base: 'M' }))).toBe(true);
+    expect(mesmosTamanhos(nova, aplicarTamanhos(nova, { tamanhos: 'P, M, G, GG', base: 'M' }))).toBe(false);
+  });
+
+  it('recusa a lista que não serve, com a mensagem para o diálogo', () => {
+    expect(() => aplicarTamanhos(molde(), { tamanhos: 'M', base: 'M' })).toThrow(/pelo menos dois tamanhos/);
+    expect(() => aplicarTamanhos(molde(), { tamanhos: 'P, M', base: 'G' })).toThrow(/tamanho base/);
+  });
+});
+
+describe('cliques: o que vale para todas', () => {
+  it('na peça sem tamanhos, o clique só avisa', () => {
+    const resultado = clicar('graduar-automatico', O, molde(), noPonto(2));
+    expect(resultado).toEqual({ estado: SEM_TRECHO, recado: 'Defina os tamanhos primeiro, em “Tabela”.' });
+  });
+
+  it('fora de um ponto do contorno, o clique só avisa onde clicar', () => {
+    for (const modo of MODOS) {
+      const resultado = clicar(modo, O, graduada(), solto(100, 150));
+      expect(resultado.pecas).toBeUndefined();
+      expect(resultado.recado).toMatch(/em cima de um ponto do contorno/);
+    }
+    // No meio de uma aresta também não é um ponto.
+    const naAresta = clicar('graduar-curva', O, graduada(), { noContorno: { indiceAresta: 0, ponto: ponto(100, 0) }, livre: ponto(100, 0) });
+    expect(naAresta.pecas).toBeUndefined();
+  });
+
+  it('só troca a peça clicada', () => {
+    const outra = molde({ nome: 'Costas' }, 'c');
+    const peca = graduada();
+    const resultado = cliqueDeGraduacao('graduar-automatico', O, [outra, peca], peca, SEM_TRECHO, noPonto(2), contexto());
+    expect(resultado.pecas![0]).toBe(outra);
+    expect(resultado.pecas![1]!.id).toBe('f');
+  });
+});
+
+describe('Tabela e Criar regra: o clique pede o diálogo do ponto', () => {
+  it('Tabela abre a tabela do ponto clicado', () => {
+    expect(clicar('graduar-tabela', O, graduada(), noPonto(2))).toEqual({ estado: SEM_TRECHO, recado: null, abrir: { tipo: 'tabela', indice: 2 } });
+  });
+
+  it('Criar regra pede o nome', () => {
+    expect(clicar('criar-regra', O, graduada(), noPonto(1)).abrir).toEqual({ tipo: 'nome-da-regra', indice: 1 });
+  });
+});
+
+describe('Automático e Ajustar', () => {
+  it('Automático: o ponto anda a diferença dada por tamanho — DX na horizontal da tela (o y do mundo)', () => {
+    const resultado = clicar('graduar-automatico', com({ automatico: { dxMm: 10, dyMm: 4 } }), graduada(), noPonto(2));
+    expect(regraDo(resultado, 2)).toEqual(regra(4, 10));
+    expect(resultado.recado).toBe('Ponto 3 graduado: DX 10,0 mm e DY 4,0 mm por tamanho.');
+  });
+
+  it('Automático troca a regra que o ponto tinha', () => {
+    const resultado = clicar('graduar-automatico', com({ automatico: { dxMm: 1, dyMm: 0 } }), comRegraNoCanto(), noPonto(2));
+    expect(regraDo(resultado, 2)).toEqual(regra(0, 1));
+  });
+
+  it('com cinco tamanhos, cada tamanho anda um passo a mais', () => {
+    const resultado = clicar('graduar-automatico', com({ automatico: { dxMm: 5, dyMm: 0 } }), graduada(['PP', 'P', 'M', 'G', 'GG']), noPonto(2));
+    expect(regraDo(resultado, 2).map((d) => d.y)).toEqual([-10, -5, 0, 5, 10]);
+  });
+
+  it('Ajustar soma o acréscimo à regra que o ponto já tem', () => {
+    const resultado = clicar('ajustar-graduacao', com({ ajustar: { dxMm: 2, dyMm: 1 } }), comRegraNoCanto(), noPonto(2));
+    expect(regraDo(resultado, 2)).toEqual(regra(11, 22));
+    expect(resultado.recado).toBe('Ponto 3 ajustado: agora anda, no tamanho G, DX 22,0 mm e DY 11,0 mm.');
+  });
+});
+
+describe('Mouse', () => {
+  const cinco = (): Molde => graduada(['PP', 'P', 'M', 'G', 'GG']);
+
+  it('o primeiro clique indica o ponto; o segundo, onde ele fica', () => {
+    const primeiro = clicar('graduar-mouse', O, cinco(), noPonto(2));
+    expect(primeiro.pecas).toBeUndefined();
+    expect(primeiro.estado.inicio).toEqual({ indiceAresta: 2, ponto: ponto(200, 300) });
+    const segundo = clicar('graduar-mouse', O, cinco(), solto(230, 340), primeiro.estado);
+    expect(segundo.estado).toBe(SEM_TRECHO);
+    // Absoluto: (30, 40) é o que o ponto anda no GG; o G fica na metade.
+    expect(regraDo(segundo, 2)).toEqual([ponto(-30, -40), ponto(-15, -20), ZERO, ponto(15, 20), ponto(30, 40)]);
+    expect(segundo.recado).toBe('Ponto 3 graduado pelo mouse: no tamanho GG, DX 40,0 mm e DY 30,0 mm.');
+  });
+
+  it('incremental: o clique é o tamanho seguinte ao base, e cada tamanho anda o mesmo tanto', () => {
+    const opcoes = com({ mouse: { modo: 'incremental' } });
+    const primeiro = clicar('graduar-mouse', opcoes, cinco(), noPonto(2));
+    const segundo = clicar('graduar-mouse', opcoes, cinco(), solto(230, 340), primeiro.estado);
+    expect(regraDo(segundo, 2)).toEqual([ponto(-60, -80), ponto(-30, -40), ZERO, ponto(30, 40), ponto(60, 80)]);
+  });
+
+  it('o segundo clique em cima do próprio ponto não faz nada', () => {
+    const primeiro = clicar('graduar-mouse', O, cinco(), noPonto(2));
+    const segundo = clicar('graduar-mouse', O, cinco(), solto(200, 300), primeiro.estado);
+    expect(segundo.pecas).toBeUndefined();
+    expect(segundo.estado).toBe(primeiro.estado);
+  });
+
+  it('a prévia mostra o tamanho da ponta com o ponto onde o mouse está', () => {
+    const peca = cinco();
+    const noCanto: TrechoEmEdicao = { ...SEM_TRECHO, inicio: { indiceAresta: 2, ponto: ponto(200, 300) } };
+    const previa = previaDaGraduacao('graduar-mouse', O, peca, noCanto, ponto(230, 340));
+    expect(previa.novoFechado).toBe(true);
+    expect(previa.novo).toEqual([ponto(0, 0), ponto(200, 0), ponto(230, 340), ponto(0, 300)]);
+    expect(previaDaGraduacao('graduar-mouse', O, peca, noCanto, null).novo).toBeUndefined();
+    expect(previaDaGraduacao('graduar-mouse', O, peca, SEM_TRECHO, ponto(230, 340)).novo).toBeUndefined();
+  });
+});
+
+describe('Tangente', () => {
+  it('o ponto anda a distância por tamanho na direção da aresta que sai dele', () => {
+    // Do ponto 3, (200, 300), a aresta vai para o ponto 4, (0, 300): direção −x.
+    const resultado = clicar('graduar-tangente', com({ tangente: { distanciaMm: 5, inverter: false } }), graduada(), noPonto(2));
+    expect(regraDo(resultado, 2)[G]).toEqual(ponto(-5, 0));
+    expect(resultado.recado).toBe('Ponto 3 graduado na tangente: 5,0 mm por tamanho, na direção do ponto 4.');
+  });
+
+  it('invertendo, anda na direção da aresta que chega', () => {
+    // A aresta que chega ao ponto 3 vem do ponto 2, (200, 0): direção −y.
+    const resultado = clicar('graduar-tangente', com({ tangente: { distanciaMm: 5, inverter: true } }), graduada(), noPonto(2));
+    expect(regraDo(resultado, 2)[G]).toEqual(ponto(0, -5));
+    expect(resultado.recado).toMatch(/na direção do ponto 2\.$/);
+  });
+});
+
+describe('Regras', () => {
+  const guardada: RegraCadastrada = { id: 'r1', nome: 'Ombro', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: regra(3, 6) };
+
+  it('sem regra escolhida, o clique avisa', () => {
+    expect(clicar('graduar-regras', O, graduada(), noPonto(2)).recado).toMatch(/Escolha antes uma regra/);
+  });
+
+  it('com a regra escolhida, o ponto clicado a recebe', () => {
+    const peca = graduada();
+    const resultado = cliqueDeGraduacao('graduar-regras', O, [peca], peca, SEM_TRECHO, noPonto(2), contexto(guardada));
+    expect(regraDo(resultado, 2)).toEqual(regra(3, 6));
+    expect(resultado.recado).toBe('Regra “Ombro” aplicada ao ponto 3: no tamanho G, DX 6,0 mm e DY 3,0 mm.');
+  });
+
+  it('a regra que não tem um tamanho da peça é recusada, com a explicação', () => {
+    const peca = graduada(['P', 'M', 'G', 'GG']);
+    const resultado = cliqueDeGraduacao('graduar-regras', O, [peca], peca, SEM_TRECHO, noPonto(2), contexto(guardada));
+    expect(resultado.pecas).toBeUndefined();
+    expect(resultado.recado).toMatch(/A regra “Ombro” não tem o tamanho GG/);
+  });
+});
+
+describe('Remover, Deduzir e Graduar curva', () => {
+  it('Remover apaga o eixo pedido do ponto clicado', () => {
+    const tudo = clicar('remover-graduacao', O, comRegraNoCanto(), noPonto(2));
+    expect(regraDo(tudo, 2)).toEqual([ZERO, ZERO, ZERO]);
+    expect(tudo.recado).toBe('DX e DY apagado do ponto 3: ele fica parado nisso, em todos os tamanhos.');
+    // Apenas DX: zera o y do mundo e deixa o x.
+    const soDx = clicar('remover-graduacao', com({ remover: { onde: 'pontos', eixo: 'dx' } }), comRegraNoCanto(), noPonto(2));
+    expect(regraDo(soDx, 2)).toEqual(regra(10, 0));
+    const soDy = clicar('remover-graduacao', com({ remover: { onde: 'pontos', eixo: 'dy' } }), comRegraNoCanto(), noPonto(2));
+    expect(regraDo(soDy, 2)).toEqual(regra(0, 20));
+  });
+
+  it('Deduzir faz do ponto clicado o ponto fixo', () => {
+    const resultado = clicar('deduzir-graduacao', O, comRegraNoCanto(), noPonto(2));
+    expect(regraDo(resultado, 2)).toEqual([ZERO, ZERO, ZERO]);
+    expect(regraDo(resultado, 0)).toEqual(regra(-10, -20));
+    expect(resultado.recado).toMatch(/^Ponto 3 é agora o ponto fixo/);
+  });
+
+  it('Graduar curva: o ponto graduado volta a proporcional, e o proporcional vira graduado', () => {
+    const tirou = clicar('graduar-curva', O, comRegraNoCanto(), noPonto(1));
+    expect(verticesGraduados(tirou.pecas![0]!.graduacao!, RETANGULO)).toEqual([0, 2, 3]);
+    expect(tirou.recado).toMatch(/^Ponto 2 voltou a ser proporcional/);
+    const pos = clicar('graduar-curva', O, tirou.pecas![0]!, noPonto(1));
+    expect(verticesGraduados(pos.pecas![0]!.graduacao!, RETANGULO)).toEqual([0, 1, 2, 3]);
+    expect(pos.recado).toMatch(/^Ponto 2 agora é um ponto graduado/);
+  });
+});
+
+describe('Agrupar', () => {
+  it('o primeiro clique é a referência; os seguintes entram no grupo dela, e um clique num membro tira-o', () => {
+    const peca = comRegraNoCanto();
+    const referencia = clicar('agrupar-graduacao', O, peca, noPonto(2));
+    expect(referencia.pecas).toBeUndefined();
+    expect(referencia.estado.inicio!.indiceAresta).toBe(2);
+
+    const entrou = clicar('agrupar-graduacao', O, peca, noPonto(1), referencia.estado);
+    expect(entrou.estado).toBe(referencia.estado);
+    expect(regraDo(entrou, 1)).toEqual(regra(10, 20));
+    expect(pontoGraduadoEm(entrou.pecas![0]!.graduacao!, RETANGULO, 1)!.grupo).toBe('grupo-1');
+    expect(entrou.recado).toMatch(/^Ponto 2 agrupado com o ponto 3/);
+
+    const saiu = clicar('agrupar-graduacao', O, entrou.pecas![0]!, noPonto(1), referencia.estado);
+    expect(pontoGraduadoEm(saiu.pecas![0]!.graduacao!, RETANGULO, 1)!.grupo).toBeUndefined();
+    expect(saiu.recado).toMatch(/^Ponto 2 saiu do grupo do ponto 3/);
+  });
+
+  it('clicar na própria referência só avisa', () => {
+    const referencia = clicar('agrupar-graduacao', O, comRegraNoCanto(), noPonto(2));
+    const resultado = clicar('agrupar-graduacao', O, comRegraNoCanto(), noPonto(2), referencia.estado);
+    expect(resultado.pecas).toBeUndefined();
+    expect(resultado.recado).toMatch(/outro ponto/);
+  });
+});
+
+describe('Copiar graduação', () => {
+  const origem = (): TrechoEmEdicao => clicar('copiar-graduacao', O, comRegraNoCanto(), noPonto(2)).estado;
+
+  it('o primeiro clique é a origem; cada clique seguinte recebe a regra', () => {
+    expect(origem().inicio!.indiceAresta).toBe(2);
+    const resultado = clicar('copiar-graduacao', O, comRegraNoCanto(), noPonto(1), origem());
+    expect(regraDo(resultado, 1)).toEqual(regra(10, 20));
+    expect(resultado.estado.inicio!.indiceAresta).toBe(2);
+    expect(resultado.recado).toBe('DX e DY do ponto 3 copiado para o ponto 2.');
+  });
+
+  it('apenas DX ou apenas DY: o outro eixo do destino fica como estava', () => {
+    const soDx = com({ copiar: { ...O.copiar, eixo: 'dx' } });
+    expect(regraDo(clicar('copiar-graduacao', soDx, comRegraNoCanto(), noPonto(1), origem()), 1)).toEqual(regra(0, 20));
+    const soDy = com({ copiar: { ...O.copiar, eixo: 'dy' } });
+    expect(regraDo(clicar('copiar-graduacao', soDy, comRegraNoCanto(), noPonto(1), origem()), 1)).toEqual(regra(10, 0));
+  });
+
+  it('invertendo, a regra chega com o sinal trocado nesse eixo', () => {
+    const invertendoDx = com({ copiar: { ...O.copiar, inverterDx: true } });
+    expect(regraDo(clicar('copiar-graduacao', invertendoDx, comRegraNoCanto(), noPonto(1), origem()), 1)).toEqual(regra(10, -20));
+    const invertendoDy = com({ copiar: { ...O.copiar, inverterDy: true } });
+    expect(regraDo(clicar('copiar-graduacao', invertendoDy, comRegraNoCanto(), noPonto(1), origem()), 1)).toEqual(regra(-10, 20));
+  });
+
+  it('para todos: o clique na origem já copia para os outros pontos graduados', () => {
+    const paraTodos = com({ copiar: { ...O.copiar, destino: 'todos' } });
+    const resultado = clicar('copiar-graduacao', paraTodos, comRegraNoCanto(), noPonto(2));
+    for (const i of [0, 1, 3]) expect(regraDo(resultado, i)).toEqual(regra(10, 20));
+    expect(resultado.estado).toBe(SEM_TRECHO);
+    expect(resultado.recado).toBe('DX e DY do ponto 3 copiado para os outros 3 pontos graduados.');
+  });
+
+  it('clicar de novo na origem só avisa', () => {
+    const resultado = clicar('copiar-graduacao', O, comRegraNoCanto(), noPonto(2), origem());
+    expect(resultado.pecas).toBeUndefined();
+    expect(resultado.recado).toMatch(/Clique noutro ponto/);
+  });
+});
+
+describe('o que age na hora', () => {
+  const ids = (): (() => string) => {
+    let n = 0;
+    return () => `novo-${++n}`;
+  };
+
+  it('Separar todos: uma peça por tamanho que não é o base, depois das que já existem', () => {
+    const peca = comRegraNoCanto();
+    const resultado = aplicarSeparar(O, [peca], peca, ids());
+    expect(resultado.pecas.map((p) => [p.id, p.tamanho])).toEqual([
+      ['f', 'M'],
+      ['novo-1', 'P'],
+      ['novo-2', 'G'],
+    ]);
+    expect(resultado.pecas[0]).toBe(peca);
+    expect(resultado.pecas[2]!.graduacao).toBeUndefined();
+    expect(area(resultado.pecas[2]!.contorno)).toBeCloseTo(63500, 6);
+    expect(resultado.recado).toBe(
+      '2 peças criadas a partir de “Frente”, nos tamanhos P e G: estão em fila depois das que já estavam na mesa, prontas para o encaixe.',
+    );
+  });
+
+  it('Separar põe as peças novas depois de todas as que já estão na mesa, e não só depois da graduada', () => {
+    const peca = comRegraNoCanto();
+    // Outra peça do projeto, logo ao lado da graduada: de y = 350 a y = 650.
+    const vizinha = molde(
+      { nome: 'Costas', contorno: [ponto(0, 350), ponto(200, 350), ponto(200, 650), ponto(0, 650)], linhaDeFio: { inicio: ponto(50, 400), fim: ponto(50, 600) } },
+      'c',
+    );
+    const resultado = aplicarSeparar(com({ separar: { tamanho: 'G' } }), [peca, vizinha], peca, ids());
+    expect(Math.min(...resultado.pecas[2]!.contorno.map((p) => p.y))).toBeCloseTo(670, 6);
+  });
+
+  it('Separar um tamanho só', () => {
+    const peca = comRegraNoCanto();
+    const resultado = aplicarSeparar(com({ separar: { tamanho: 'G' } }), [peca], peca, ids());
+    expect(resultado.pecas).toHaveLength(2);
+    expect(resultado.recado).toBe('Tamanho G de “Frente” separado: é uma peça própria, posta depois das que já estavam na mesa, pronta para o encaixe.');
+  });
+
+  it('Separar recusa o base e a peça sem graduação', () => {
+    const peca = comRegraNoCanto();
+    expect(() => aplicarSeparar(com({ separar: { tamanho: 'M' } }), [peca], peca, ids())).toThrow(/diferente do base/);
+    expect(() => aplicarSeparar(O, [molde()], molde(), ids())).toThrow(/Defina os tamanhos primeiro/);
+  });
+
+  it('Unir: as peças marcadas na lista viram tamanhos da selecionada e saem do projeto', () => {
+    const m = molde();
+    const g = molde({ tamanho: 'G', contorno: [ponto(500, 0), ponto(720, 0), ponto(720, 320), ponto(500, 320)], linhaDeFio: { inicio: ponto(555, 50), fim: ponto(555, 270) } }, 'g');
+    const outra = molde({ nome: 'Costas' }, 'c');
+    const resultado = aplicarUnir([m, g, outra], m, new Set(['g', 'f']));
+    expect(resultado.pecas.map((p) => p.id)).toEqual(['f', 'c']);
+    expect(resultado.pecas[0]!.graduacao).toMatchObject({ tamanhos: ['M', 'G'], base: 0 });
+    expect(resultado.recado).toBe('“Frente” agora é graduada nos tamanhos M e G, com o M de base. A peça do outro tamanho foi reunida nela.');
+  });
+
+  it('Unir sem peças marcadas explica o que falta', () => {
+    expect(() => aplicarUnir([molde()], molde(), new Set())).toThrow(/Marque na lista/);
+  });
+
+  it('Remover do molde inteiro: com DX e DY a peça deixa de ser graduada; com um eixo, ele é zerado em todos os pontos', () => {
+    const peca = comRegraNoCanto();
+    const semNada = aplicarRemoverDoMolde(com({ remover: { onde: 'molde', eixo: 'dx-dy' } }), [peca], peca);
+    expect('graduacao' in semNada.pecas[0]!).toBe(false);
+    expect(semNada.recado).toBe('Graduação removida de “Frente”: ficou só o tamanho M.');
+    const semDx = aplicarRemoverDoMolde(com({ remover: { onde: 'molde', eixo: 'dx' } }), [peca], peca);
+    expect(regraDoVertice(semDx.pecas[0]!.graduacao!, RETANGULO, 2)).toEqual(regra(10, 0));
+    expect(semDx.recado).toBe('DX apagado de todos os pontos graduados de “Frente”.');
+    expect(() => aplicarRemoverDoMolde(O, [molde()], molde())).toThrow(/não tem graduação/);
+  });
+});
+
+describe('diálogos das ferramentas', () => {
+  const COM_DIALOGO: readonly FerramentaDeGraduacao[] = [
+    'graduar-automatico',
+    'ajustar-graduacao',
+    'graduar-mouse',
+    'graduar-tangente',
+    'remover-graduacao',
+    'copiar-graduacao',
+    'separar-tamanhos',
+  ];
+
+  it('sete ferramentas perguntam antes; as outras ligam direto', () => {
+    for (const ferramenta of COM_DIALOGO) {
+      const dialogo = dialogoDaGraduacao(ferramenta, O, graduada())!;
+      expect(dialogo.titulo.length).toBeGreaterThan(5);
+      expect(dialogo.campos.length).toBeGreaterThan(0);
+      expect(new Set(dialogo.campos.map((c) => c.id)).size).toBe(dialogo.campos.length);
+    }
+    for (const ferramenta of ['graduar-tabela', 'graduar-regras', 'criar-regra', 'agrupar-graduacao', 'deduzir-graduacao', 'graduar-curva', 'unir-tamanhos'] as const) {
+      expect(dialogoDaGraduacao(ferramenta, O, graduada())).toBeNull();
+    }
+  });
+
+  it('Separar oferece todos e cada tamanho que não é o base', () => {
+    const dialogo = dialogoDaGraduacao('separar-tamanhos', O, graduada())!;
+    const campo = dialogo.campos[0]!;
+    expect(campo.tipo === 'escolha' && campo.opcoes.map((o) => o.valor)).toEqual(['todos', 'P', 'G']);
+    expect(dialogo.rotuloDoBotao).toBe('Separar');
+    expect(dialogoDaGraduacao('separar-tamanhos', O, molde())).toBeNull();
+  });
+
+  it('as ferramentas sem construção no manual dizem que é a leitura natural', () => {
+    expect(dialogoDaGraduacao('ajustar-graduacao', O, graduada())!.nota).toMatch(/leitura natural/);
+    expect(dialogoDaGraduacao('graduar-mouse', O, graduada())!.nota).toMatch(/“Proporcional” da referência não existe aqui/);
+  });
+
+  it('lê as opções de cada diálogo', () => {
+    expect(lerDialogoDaGraduacao('graduar-automatico', O, { dx: 8, dy: -2 }).automatico).toEqual({ dxMm: 8, dyMm: -2 });
+    expect(lerDialogoDaGraduacao('ajustar-graduacao', O, { dx: 0, dy: 3 }).ajustar).toEqual({ dxMm: 0, dyMm: 3 });
+    expect(lerDialogoDaGraduacao('graduar-mouse', O, { modo: 'incremental' }).mouse).toEqual({ modo: 'incremental' });
+    expect(lerDialogoDaGraduacao('graduar-tangente', O, { distancia: 7, inverter: true }).tangente).toEqual({ distanciaMm: 7, inverter: true });
+    expect(lerDialogoDaGraduacao('remover-graduacao', O, { onde: 'molde', eixo: 'dy' }).remover).toEqual({ onde: 'molde', eixo: 'dy' });
+    expect(lerDialogoDaGraduacao('copiar-graduacao', O, { eixo: 'dx', inverterDx: true, inverterDy: false, destino: 'todos' }).copiar).toEqual({
+      eixo: 'dx',
+      inverterDx: true,
+      inverterDy: false,
+      destino: 'todos',
+    });
+    expect(lerDialogoDaGraduacao('separar-tamanhos', O, { tamanho: 'G' }).separar).toEqual({ tamanho: 'G' });
+    expect(lerDialogoDaGraduacao('graduar-curva', O, {})).toBe(O);
+  });
+
+  it('recusa o ajuste e a tangente que não mudariam nada', () => {
+    expect(() => lerDialogoDaGraduacao('ajustar-graduacao', O, { dx: 0, dy: 0 })).toThrow(/diferente de zero/);
+    expect(() => lerDialogoDaGraduacao('graduar-tangente', O, { distancia: 0, inverter: false })).toThrow(/diferente de zero/);
+  });
+});
+
+describe('prévia e instruções', () => {
+  it('a prévia marca os pontos graduados da peça', () => {
+    expect(previaDaGraduacao('graduar-tabela', O, graduada(), SEM_TRECHO, null)).toEqual({ marcas: RETANGULO });
+    expect(previaDaGraduacao('graduar-tabela', O, molde(), SEM_TRECHO, null)).toEqual({});
+  });
+
+  it('cada ferramenta diz o próximo clique e termina com "Esc sai."', () => {
+    for (const modo of MODOS) {
+      const texto = instrucaoDaGraduacao(modo, O, SEM_TRECHO, null);
+      expect(texto.endsWith(' Esc sai.')).toBe(true);
+      expect(texto.length).toBeGreaterThan(30);
+    }
+  });
+
+  it('a instrução muda com o que já foi clicado e com as opções', () => {
+    const noCanto: TrechoEmEdicao = { ...SEM_TRECHO, inicio: { indiceAresta: 2, ponto: ponto(200, 300) } };
+    expect(instrucaoDaGraduacao('graduar-mouse', O, noCanto, null)).toMatch(/onde o ponto 3 deve ficar no tamanho da ponta/);
+    expect(instrucaoDaGraduacao('agrupar-graduacao', O, noCanto, null)).toMatch(/no grupo do ponto 3/);
+    expect(instrucaoDaGraduacao('copiar-graduacao', O, noCanto, null)).toMatch(/a regra do ponto 3/);
+    expect(instrucaoDaGraduacao('graduar-automatico', com({ automatico: { dxMm: 7, dyMm: 0 } }), SEM_TRECHO, null)).toMatch(/DX 7,0 mm e DY 0,0 mm/);
+    const guardada: RegraCadastrada = { id: 'r', nome: 'Ombro', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: regra(1, 1) };
+    expect(instrucaoDaGraduacao('graduar-regras', O, SEM_TRECHO, guardada)).toMatch(/Regras \(“Ombro”\)/);
+  });
+});

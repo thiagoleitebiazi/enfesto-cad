@@ -1645,3 +1645,46 @@ button:focus-visible {
   background: #f4f6f9;
   border-color: var(--cor-borda-forte);
 }
+
+/* Tabela de graduação de um ponto: um tamanho por linha, DX e DY em colunas. */
+.painel-de-tabela-de-graduacao {
+  min-width: 440px;
+}
+
+.tabela-de-graduacao {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tabela-de-graduacao th,
+.tabela-de-graduacao td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e6e9ee;
+}
+
+.tabela-de-graduacao thead th {
+  color: var(--cor-texto-secundario);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.tabela-de-graduacao tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tabela-de-graduacao td input {
+  width: 100%;
+  min-width: 90px;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabela-de-graduacao tr.linha-do-base th,
+.tabela-de-graduacao tr.linha-do-base td {
+  background: var(--cor-barra-alt);
+  color: var(--cor-texto-secundario);
+}

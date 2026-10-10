@@ -23,6 +23,7 @@ import {
   arredondarCantoDoContorno,
 } from '../core/geometria';
 import { transformarCota, type Cota } from './cota';
+import { graduacaoComOsPontosMovidos, transformarGraduacao, type Graduacao } from './graduacao';
 
 /**
  * Regra crítica (seção 5 do escopo): por padrão nenhuma rotação OU
@@ -83,6 +84,12 @@ export interface Molde {
   readonly anguloDeRotacaoGraus: number;
   /** Cotas presas à peça (aba Conferência). Ausente em peças sem cota e em projetos antigos. */
   readonly cotas?: readonly Cota[];
+  /**
+   * Graduação (aba Graduação): os tamanhos e a regra dos pontos graduados. O
+   * `contorno` é o do tamanho base; o encaixe, a validação e a exportação só
+   * olham para ele. Ausente em peças sem graduação.
+   */
+  readonly graduacao?: Graduacao;
 }
 
 export interface DadosDeNovoMolde {
@@ -176,6 +183,27 @@ function cotasTransformadas(
   return molde.cotas ? { cotas: molde.cotas.map((c) => transformarCota(c, ponto, vetor)) } : {};
 }
 
+/** A graduação da peça levada por uma transformação afim, pronta para espalhar no molde novo (ou nada, sem graduação). */
+function graduacaoTransformada(
+  molde: Molde,
+  ponto: (p: Ponto2D) => Ponto2D,
+  vetor: (v: Ponto2D) => Ponto2D,
+): { readonly graduacao?: Graduacao } {
+  return molde.graduacao ? { graduacao: transformarGraduacao(molde.graduacao, ponto, vetor) } : {};
+}
+
+/** A graduação com cada ponto graduado acompanhando o ponto do contorno que mudou de lugar (mesma quantidade de pontos). */
+function graduacaoAcompanhando(molde: Molde, contornoNovo: Contorno): { readonly graduacao?: Graduacao } {
+  return molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contornoNovo) } : {};
+}
+
+/** A peça sem graduação: fica só o tamanho base, como uma peça comum. */
+export function semGraduacao(molde: Molde): Molde {
+  const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
+  delete copia.graduacao;
+  return copia;
+}
+
 /** Prende uma cota à peça. */
 export function adicionarCota(molde: Molde, cota: Cota): Molde {
   return { ...molde, cotas: [...(molde.cotas ?? []), cota] };
@@ -215,6 +243,11 @@ export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: str
       (p) => somar(p, deslocamento),
       (v) => v,
     ),
+    ...graduacaoTransformada(
+      molde,
+      (p) => somar(p, deslocamento),
+      (v) => v,
+    ),
   };
 }
 
@@ -245,6 +278,11 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
       (p) => rotacionar(p, pivo, anguloGraus),
       (v) => rotacionar(v, ORIGEM, anguloGraus),
     ),
+    ...graduacaoTransformada(
+      molde,
+      (p) => rotacionar(p, pivo, anguloGraus),
+      (v) => rotacionar(v, ORIGEM, anguloGraus),
+    ),
   };
 }
 
@@ -270,6 +308,11 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),
     },
     ...cotasTransformadas(
+      molde,
+      (p) => espelharHorizontal(p, centroX),
+      (v) => ({ x: -v.x, y: v.y }),
+    ),
+    ...graduacaoTransformada(
       molde,
       (p) => espelharHorizontal(p, centroX),
       (v) => ({ x: -v.x, y: v.y }),
@@ -329,7 +372,7 @@ export function reancorarPiques(piques: readonly Pique[], contornoAntigo: Contor
 /** Move o vértice `indice` do contorno. Furos/linhas internas/fio não mudam; piques das duas arestas vizinhas acompanham (`reancorarPiques`). */
 export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Ponto2D): Molde {
   const contorno = moverPontoDoContorno(molde.contorno, indice, novaPosicao);
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno) };
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...graduacaoAcompanhando(molde, contorno) };
 }
 
 /**
@@ -341,7 +384,7 @@ export function moverPontoDoMolde(molde: Molde, indice: number, novaPosicao: Pon
 export function moverVariosPontosDoMolde(molde: Molde, indices: readonly number[], delta: Ponto2D): Molde {
   const indicesSet = new Set(indices);
   const contorno = molde.contorno.map((p, i) => (indicesSet.has(i) ? somar(p, delta) : p));
-  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno) };
+  return { ...molde, contorno, piques: reancorarPiques(molde.piques, molde.contorno, contorno), ...graduacaoAcompanhando(molde, contorno) };
 }
 
 /** Abaixo disso (mm²) o contorno conta como sem área — a mesma tolerância da Cerca. */
@@ -433,7 +476,7 @@ export function redefinirComprimentoDaAresta(
     }
     return pique;
   });
-  return exigirContornoComArea({ ...molde, contorno, piques }, 'com esse comprimento');
+  return exigirContornoComArea({ ...molde, contorno, piques, ...graduacaoAcompanhando(molde, contorno) }, 'com esse comprimento');
 }
 
 /** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */
@@ -510,6 +553,11 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
       fim: escalarPonto(molde.linhaDeFio.fim, origem, fatorX, fatorY),
     },
     ...cotasTransformadas(
+      molde,
+      (p) => escalarPonto(p, origem, fatorX, fatorY),
+      (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
+    ),
+    ...graduacaoTransformada(
       molde,
       (p) => escalarPonto(p, origem, fatorX, fatorY),
       (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
