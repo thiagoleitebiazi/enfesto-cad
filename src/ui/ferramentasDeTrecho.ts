@@ -38,6 +38,8 @@ export interface TrechoEmEdicao {
   readonly grupos?: readonly (readonly Ponto2D[])[];
   /** O tamanho indicado com o mouse, no desenho, pelo nome dele (o "Separar" da graduação). */
   readonly tamanho?: string;
+  /** O id do pique (do contorno ou interno) que o próximo clique leva para outro lugar (o "Alterar" da aba Marcações). */
+  readonly alvo?: string;
 }
 
 export const SEM_TRECHO: TrechoEmEdicao = { inicio: null, fim: null, livres: [] };

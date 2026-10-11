@@ -51,8 +51,7 @@ function propsBase(): Props {
     onEntrarModoSelecionar: vi.fn(),
     onEntrarModoNovoMolde: vi.fn(),
     onEntrarModoNovoFuro: vi.fn(),
-    onEntrarModoPique: vi.fn(),
-    onEntrarModoMarca: vi.fn(),
+    onUsarFerramentaDeMarcacao: vi.fn(),
     onImportarDxf: vi.fn(),
     onImportarPdf: vi.fn(),
     onAbrirTecido: vi.fn(),
@@ -255,12 +254,27 @@ describe('BarraDeFerramentas: abas', () => {
     });
   });
 
-  it('Marcações ganhou o Furo, que saiu da Construção', () => {
+  it('Marcações tem os grupos da referência — Piques, Editar piques e Linhas auxiliares — e, à parte, o Furo', () => {
     const props = renderizar('Marcações');
 
-    expect(gruposDaAba()).toEqual({ Marcações: ['Pique', 'Marca', 'Furo'] });
+    expect(gruposDaAba()).toEqual({
+      Piques: ['Inserir', 'Remover pique', 'Pique texto', 'Múltiplos'],
+      'Editar piques': ['Alinhar', 'Cadastrar pique', 'Substituir', 'Alterar'],
+      'Linhas auxiliares': ['Inserir ou remover'],
+      Furos: ['Furo'],
+    });
     fireEvent.click(botao('Furo'));
     expect(props.onEntrarModoNovoFuro).toHaveBeenCalledTimes(1);
+  });
+
+  it('cada ferramenta da aba Marcações pede a sua, e a que está em uso fica pressionada', () => {
+    const props = renderizar('Marcações', { modo: 'multiplos-piques' });
+    for (const nome of ['Inserir', 'Remover pique', 'Múltiplos', 'Substituir', 'Alterar']) fireEvent.click(botao(nome));
+
+    expect(vi.mocked(props.onUsarFerramentaDeMarcacao).mock.calls.map(([ferramenta]) => ferramenta)).toEqual(['inserir-pique', 'remover-pique', 'multiplos-piques', 'substituir-piques', 'alterar-pique']);
+    expect(botao('Múltiplos')).toHaveAttribute('aria-pressed', 'true');
+    expect(botao('Inserir')).toHaveAttribute('aria-pressed', 'false');
+    expect(botao('Inserir').title).toMatch(/^Inserir pique: põe piques na peça selecionada — na borda ou internos/);
   });
 });
 
@@ -270,8 +284,8 @@ describe('BarraDeFerramentas: ferramentas desligadas', () => {
   const ABAS = ['Início', 'Construção', 'Produção', 'Marcações', 'Graduação', 'Manipulação', 'Conferência', 'Modelo', 'Encaixe'];
   const nomeDo = (b: HTMLButtonElement): string => b.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-  // Marcações e Manipulação ainda escrevem a dica do jeito antigo (só o motivo), e ficam de fora desta regra.
-  it.each(ABAS.filter((a) => a !== 'Marcações' && a !== 'Manipulação'))('%s: sem peça nenhuma, todo botão desligado diz na dica o nome da ferramenta e o motivo', (aba) => {
+  // A Manipulação ainda escreve a dica do jeito antigo (só o motivo), e fica de fora desta regra.
+  it.each(ABAS.filter((a) => a !== 'Manipulação'))('%s: sem peça nenhuma, todo botão desligado diz na dica o nome da ferramenta e o motivo', (aba) => {
     renderizar(aba, { temSelecao: false, temSelecaoUnica: false, podeSelecionarTudo: false });
 
     for (const b of botoesDesligados()) {
@@ -298,7 +312,8 @@ describe('BarraDeFerramentas: ferramentas desligadas', () => {
       cleanup();
     }
 
-    expect(desligadas).toEqual({});
+    // Na aba Marcações, quatro ferramentas ainda entram nas etapas seguintes deste mesmo trabalho.
+    expect(desligadas).toEqual({ Marcações: ['Pique texto', 'Alinhar', 'Cadastrar pique', 'Inserir ou remover'] });
   });
 
   it('Digitalizar e Imagens abrem as imagens do modelo, cada um do seu jeito, mesmo sem peça nenhuma', () => {

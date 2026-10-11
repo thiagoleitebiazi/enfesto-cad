@@ -1,0 +1,912 @@
+import {
+  andarNoContorno,
+  area,
+  areaAssinada,
+  comprimentoDaLinha,
+  distancia,
+  pontoDentroDoContorno,
+  pontoMaisProximoNoContorno,
+  trechoDoContorno,
+  type Ponto2D,
+  type PosicaoNoContorno,
+} from '../core/geometria';
+import { piquePerto } from '../domain/anotacoes';
+import type { FormatoDePique, Marca, Molde, Pique } from '../domain/molde';
+import {
+  conferirFormato,
+  inserirPique,
+  inserirPiqueInterno,
+  marcaPerto,
+  nomeDoFormato,
+  PIQUE_PADRAO,
+  posicaoPelaReferencia,
+  proximoCodigo,
+  semOsPiques,
+  TIPOS_DE_PIQUE,
+  tracosDaMarca,
+  tracosDoPique,
+} from '../domain/piques';
+import { definirGraduacaoDoPique, referenciaSugerida, removerGraduacaoDoPique } from '../domain/piquesGraduados';
+import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
+import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
+import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
+import { formatarMm } from './medidas';
+
+/**
+ * As ferramentas da aba Marcações: o que cada uma pergunta, o que cada clique
+ * faz, o que o desenho mostra e o que a faixa de mensagens diz. As contas e
+ * os formatos dos piques são do domínio (`piques.ts`).
+ *
+ * As medidas são em mm, como no resto do programa (o manual da referência as
+ * dá em cm).
+ */
+export type FerramentaDeMarcacao =
+  | 'inserir-pique'
+  | 'remover-pique'
+  | 'pique-texto'
+  | 'multiplos-piques'
+  | 'alinhar-piques'
+  | 'cadastrar-pique'
+  | 'substituir-piques'
+  | 'alterar-pique'
+  | 'linhas-auxiliares';
+
+/** As que ficam ligadas à espera de cliques no desenho ("Substituir" age pela janela). */
+export type ModoDeMarcacao = 'inserir-pique' | 'remover-pique' | 'multiplos-piques' | 'alterar-pique';
+
+const MODOS: ReadonlySet<string> = new Set<ModoDeMarcacao>(['inserir-pique', 'remover-pique', 'multiplos-piques', 'alterar-pique']);
+
+export function ehModoDeMarcacao(modo: string): modo is ModoDeMarcacao {
+  return MODOS.has(modo);
+}
+
+/** Um formato de pique guardado no cadastro deste computador ("Cadastrar pique"). */
+export interface PiqueCadastrado {
+  readonly id: string;
+  readonly nome: string;
+  readonly descricao: string;
+  readonly forma: readonly (readonly Ponto2D[])[];
+}
+
+export interface OpcoesDeMarcacao {
+  readonly inserir: {
+    readonly formato: FormatoDePique;
+    readonly sobreOContorno: boolean;
+    /** A distância do ponto de referência, sobre o contorno; `null` = o pique fica onde for clicado. */
+    readonly distanciaMm: number | null;
+    readonly codigo: boolean;
+    readonly pontoDeControle: boolean;
+    readonly manterDistancia: boolean;
+    readonly naCostura: 'nao' | 'projetado' | 'estendido';
+    /** No pique interno: ele fica a Dx e Dy (os da tela) do ponto clicado. */
+    readonly usarDxDy: boolean;
+    readonly dxMm: number;
+    readonly dyMm: number;
+  };
+  readonly remover: { readonly doContorno: boolean; readonly internos: boolean };
+  readonly multiplos: {
+    readonly modo: 'mouse' | 'elemento' | 'contorno';
+    readonly por: 'numero' | 'perimetro';
+    readonly quantidade: number;
+    readonly espacoMm: number;
+    readonly formato: FormatoDePique;
+  };
+  readonly substituir: {
+    /** O tipo a substituir, ou `TODOS_OS_TIPOS`. */
+    readonly de: string;
+    readonly onde: 'selecionada' | 'marcadas' | 'todas';
+    readonly acao: 'trocar' | 'marca' | 'remover';
+    readonly formato: FormatoDePique;
+    readonly distanciaMm: number;
+  };
+}
+
+export const TODOS_OS_TIPOS = 'todos-os-tipos';
+/** Quantos piques uma só operação do "Múltiplos" põe, no máximo. */
+export const MAXIMO_DE_PIQUES_DE_UMA_VEZ = 200;
+
+export const OPCOES_INICIAIS_DE_MARCACAO: OpcoesDeMarcacao = {
+  inserir: {
+    formato: PIQUE_PADRAO,
+    sobreOContorno: true,
+    distanciaMm: null,
+    codigo: false,
+    pontoDeControle: false,
+    manterDistancia: false,
+    naCostura: 'nao',
+    usarDxDy: false,
+    dxMm: 0,
+    dyMm: 0,
+  },
+  remover: { doContorno: false, internos: false },
+  multiplos: { modo: 'contorno', por: 'numero', quantidade: 3, espacoMm: 50, formato: PIQUE_PADRAO },
+  substituir: { de: TODOS_OS_TIPOS, onde: 'selecionada', acao: 'trocar', formato: { ...PIQUE_PADRAO, tipo: 'v' }, distanciaMm: 10 },
+};
+
+const MESMO_PONTO_MM = 1e-6;
+const ESC = ' Esc sai.';
+
+function ponto(x: number, y: number): Ponto2D {
+  return { x, y };
+}
+
+function trocar(pecas: readonly Molde[], id: string, nova: Molde): Molde[] {
+  return pecas.map((p) => (p.id === id ? nova : p));
+}
+
+function paraCampo(valor: number): string {
+  const arredondado = Math.round(valor * 100) / 100;
+  return String(arredondado === 0 ? 0 : arredondado).replace('.', ',');
+}
+
+function plural(n: number, um: string, varios: string): string {
+  return `${n} ${n === 1 ? um : varios}`;
+}
+
+/** O tipo de um pique para as listas: o do formato dele; o pique sem formato é o traço. */
+function tipoDo(pique: { readonly formato?: FormatoDePique }): string {
+  return pique.formato?.tipo ?? 'traco';
+}
+
+// ---------------------------------------------------------------------------
+// Os campos do formato, iguais em todas as janelas
+// ---------------------------------------------------------------------------
+
+const DO_CADASTRO = 'cadastrado:';
+
+/** Os campos do formato: o tipo (os do programa e os cadastrados), a largura, a altura e o ângulo. */
+function camposDoFormato(formato: FormatoDePique, cadastrados: readonly PiqueCadastrado[]): CampoDoDialogo[] {
+  const opcoes = [
+    ...TIPOS_DE_PIQUE.map((tipo) => ({ valor: tipo.id, rotulo: `${tipo.nome}: ${tipo.descricao}` })),
+    ...cadastrados.map((c) => ({ valor: DO_CADASTRO + c.id, rotulo: `${c.nome}${c.descricao ? `: ${c.descricao}` : ''} (cadastrado)` })),
+  ];
+  // O formato que veio de um cadastro que já não existe continua na lista, para não ser trocado sem querer.
+  if (!opcoes.some((o) => o.valor === formato.tipo)) opcoes.push({ valor: formato.tipo, rotulo: `${nomeDoFormato(formato)} (do pique)` });
+  return [
+    { tipo: 'escolha', id: 'tipo', rotulo: 'Pique: o tipo', opcoes, inicial: formato.tipo },
+    { tipo: 'medida', id: 'largura', rotulo: 'Largura: ao longo da borda (mm)', inicial: paraCampo(formato.larguraMm) },
+    { tipo: 'medida', id: 'altura', rotulo: 'Altura: para dentro da peça (mm)', inicial: paraCampo(formato.alturaMm) },
+    { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo (graus; 0 = em esquadro com a borda)', inicial: paraCampo(formato.anguloGraus) },
+  ];
+}
+
+/** O formato lido da janela; `atual` é o que valia antes (de onde vem a forma de um pique cadastrado que saiu do cadastro). */
+function formatoLido(valores: ValoresDoDialogo, cadastrados: readonly PiqueCadastrado[], atual: FormatoDePique): FormatoDePique {
+  const tipo = String(valores.tipo);
+  const cadastrado = tipo.startsWith(DO_CADASTRO) ? cadastrados.find((c) => DO_CADASTRO + c.id === tipo) : undefined;
+  const mesmoDeAntes = tipo === atual.tipo && atual.forma ? { forma: atual.forma, ...(atual.nome ? { nome: atual.nome } : {}) } : {};
+  const formato: FormatoDePique = {
+    tipo,
+    larguraMm: Number(valores.largura),
+    alturaMm: Number(valores.altura),
+    anguloGraus: Number(valores.angulo),
+    ...(cadastrado ? { forma: cadastrado.forma, nome: cadastrado.nome } : mesmoDeAntes),
+  };
+  conferirFormato(formato);
+  return formato;
+}
+
+const NOTA_DO_FORMATO =
+  'O manual da referência tem a lista de tipos, a largura, a altura e o ângulo, mas não descreve os tipos nem diz de onde o ângulo é contado: os formatos e o ângulo contado do esquadro com a borda (positivo, no sentido anti-horário da tela) são a nossa leitura.';
+
+// ---------------------------------------------------------------------------
+// As janelas
+// ---------------------------------------------------------------------------
+
+export interface DialogoDeMarcacao {
+  readonly titulo: string;
+  readonly campos: readonly CampoDoDialogo[];
+  readonly nota: string;
+  readonly rotuloDoBotao: string;
+}
+
+/** Os tipos de pique que as peças dadas têm no contorno, na ordem da lista do programa. */
+export function tiposEmUso(pecas: readonly Molde[]): string[] {
+  const usados = new Set(pecas.flatMap((peca) => peca.piques.map(tipoDo)));
+  const doPrograma = TIPOS_DE_PIQUE.map((tipo) => tipo.id).filter((id) => usados.has(id));
+  return [...doPrograma, ...[...usados].filter((id) => !doPrograma.includes(id))];
+}
+
+/** A janela que a ferramenta abre antes dos cliques; `null` na que liga direto. */
+export function dialogoDaMarcacao(
+  ferramenta: FerramentaDeMarcacao,
+  opcoes: OpcoesDeMarcacao,
+  pecas: readonly Molde[],
+  cadastrados: readonly PiqueCadastrado[] = [],
+): DialogoDeMarcacao | null {
+  switch (ferramenta) {
+    case 'inserir-pique': {
+      const o = opcoes.inserir;
+      return {
+        titulo: 'Inserir pique',
+        campos: [
+          ...camposDoFormato(o.formato, cadastrados),
+          { tipo: 'caixa', id: 'sobreOContorno', rotulo: 'Pique sobre o contorno (sem isso, é um pique interno, dentro da peça)', inicial: o.sobreOContorno },
+          {
+            tipo: 'medida',
+            id: 'distancia',
+            rotulo: 'Referência: distância do ponto do contorno mais perto do clique (mm; em branco = onde for clicado)',
+            inicial: o.distanciaMm === null ? '' : paraCampo(o.distanciaMm),
+            opcional: true,
+          },
+          { tipo: 'caixa', id: 'codigo', rotulo: 'Código: cada pique recebe o código seguinte da sequência (para o Relacionamento piques)', inicial: o.codigo },
+          { tipo: 'caixa', id: 'pontoDeControle', rotulo: 'Adicionar ponto de controle: põe também um ponto no contorno, onde o pique fica', inicial: o.pontoDeControle },
+          { tipo: 'caixa', id: 'manterDistancia', rotulo: 'Manter distância nos tamanhos: na peça graduada, a mesma distância do ponto de referência em todos', inicial: o.manterDistancia },
+          {
+            tipo: 'escolha',
+            id: 'naCostura',
+            rotulo: 'Pique na costura: como ele vai para a linha de corte, na peça com margem de costura',
+            opcoes: [
+              { valor: 'nao', rotulo: 'Não vai: fica só no contorno' },
+              { valor: 'projetado', rotulo: 'Projetado: no ponto da linha de corte mais perto dele' },
+              { valor: 'estendido', rotulo: 'Estendido: seguindo o ângulo do pique até a linha de corte' },
+            ],
+            inicial: o.naCostura,
+          },
+          { tipo: 'caixa', id: 'usarDxDy', rotulo: 'Dx e Dy (pique interno): o pique fica a essas distâncias do ponto clicado', inicial: o.usarDxDy },
+          { tipo: 'medida', id: 'dx', rotulo: 'Dx (mm, + para a direita)', inicial: paraCampo(o.dxMm) },
+          { tipo: 'medida', id: 'dy', rotulo: 'Dy (mm, + para baixo)', inicial: paraCampo(o.dyMm) },
+        ],
+        nota:
+          'Depois de confirmar, cada clique põe um pique na peça selecionada: na borda (com “Pique sobre o contorno”) ou dentro dela. Com a distância da referência preenchida, o clique escolhe o ponto do contorno mais perto, e o pique fica a essa distância dele, para o lado do clique. Com Dx e Dy, o clique junto de um ponto do contorno parte dele. ' +
+          NOTA_DO_FORMATO +
+          ' O manual também não diz de onde partem o Dx e o Dy: aqui, do ponto clicado.',
+        rotuloDoBotao: 'Indicar no desenho',
+      };
+    }
+    case 'remover-pique':
+      return {
+        titulo: 'Remover pique',
+        campos: [
+          { tipo: 'caixa', id: 'doContorno', rotulo: 'Todos os piques sobre o contorno', inicial: opcoes.remover.doContorno },
+          { tipo: 'caixa', id: 'internos', rotulo: 'Todos os piques internos (as marcas da peça, com ou sem formato)', inicial: opcoes.remover.internos },
+        ],
+        nota: 'Sem nenhuma das duas marcada, depois de confirmar clique em cima de cada pique que deve sair. Com uma delas marcada, os piques saem da peça selecionada ao confirmar.',
+        rotuloDoBotao: 'Remover',
+      };
+    case 'multiplos-piques': {
+      const o = opcoes.multiplos;
+      return {
+        titulo: 'Inserir múltiplos piques',
+        campos: [
+          {
+            tipo: 'escolha',
+            id: 'modo',
+            rotulo: 'Modo',
+            opcoes: [
+              { valor: 'contorno', rotulo: 'Sobre o contorno: entre dois pontos da borda, no sentido horário' },
+              { valor: 'mouse', rotulo: 'Pontos do mouse: piques internos, na reta entre dois pontos clicados' },
+              { valor: 'elemento', rotulo: 'Elemento: piques internos, ao longo de uma linha interna' },
+            ],
+            inicial: o.modo,
+          },
+          {
+            tipo: 'escolha',
+            id: 'por',
+            rotulo: 'Como distribuir',
+            opcoes: [
+              { valor: 'numero', rotulo: 'Nro. piques: essa quantidade, com espaços iguais, do começo ao fim' },
+              { valor: 'perimetro', rotulo: 'Perímetro: um pique a cada tantos mm, a partir do começo' },
+            ],
+            inicial: o.por,
+          },
+          { tipo: 'inteiro', id: 'quantidade', rotulo: 'Nro. piques', inicial: String(o.quantidade) },
+          { tipo: 'medida', id: 'espaco', rotulo: 'Perímetro: espaço entre um pique e outro (mm)', inicial: paraCampo(o.espacoMm) },
+          ...camposDoFormato(o.formato, cadastrados),
+        ],
+        nota:
+          'Depois de confirmar: sobre o contorno, clique na borda onde os piques começam e onde terminam (eles vão no sentido horário); nos pontos do mouse, clique os dois extremos dentro da peça; no elemento, clique na linha interna. O manual da referência dá os modos e os dois jeitos de distribuir, mas não a conta: os espaços iguais do começo ao fim e a contagem a partir do começo são a nossa leitura. ' +
+          NOTA_DO_FORMATO,
+        rotuloDoBotao: 'Indicar no desenho',
+      };
+    }
+    case 'substituir-piques': {
+      const o = opcoes.substituir;
+      const emUso = tiposEmUso(pecas);
+      return {
+        titulo: 'Substituir piques',
+        campos: [
+          {
+            tipo: 'escolha',
+            id: 'de',
+            rotulo: 'Piques: o tipo a substituir',
+            opcoes: [
+              { valor: TODOS_OS_TIPOS, rotulo: 'Todos os tipos' },
+              ...emUso.map((id) => ({ valor: id, rotulo: nomeDoFormato({ ...PIQUE_PADRAO, tipo: id }) })),
+            ],
+            inicial: o.de === TODOS_OS_TIPOS || emUso.includes(o.de) ? o.de : TODOS_OS_TIPOS,
+          },
+          {
+            tipo: 'escolha',
+            id: 'onde',
+            rotulo: 'Em quais moldes',
+            opcoes: [
+              { valor: 'selecionada', rotulo: 'Só na peça selecionada' },
+              { valor: 'marcadas', rotulo: 'Nas peças marcadas na lista' },
+              { valor: 'todas', rotulo: 'Em todas as peças' },
+            ],
+            inicial: o.onde,
+          },
+          {
+            tipo: 'escolha',
+            id: 'acao',
+            rotulo: 'O que fazer',
+            opcoes: [
+              { valor: 'trocar', rotulo: 'Substituir pelo pique: mesmo lugar, formato novo' },
+              { valor: 'marca', rotulo: 'Substituir por marca: o pique do contorno vira um pique interno, à distância dada' },
+              { valor: 'remover', rotulo: 'Remover piques selecionados' },
+            ],
+            inicial: o.acao,
+          },
+          ...camposDoFormato(o.formato, cadastrados),
+          { tipo: 'medida', id: 'distancia', rotulo: 'Distância: do pique do contorno ao pique interno que o substitui (mm)', inicial: paraCampo(o.distanciaMm) },
+        ],
+        nota: 'Vale para os piques do contorno do tipo escolhido. Ao aplicar, a faixa de mensagens diz quantos foram substituídos ou removidos. O pique interno fica para dentro da peça, em esquadro com a borda.',
+        rotuloDoBotao: 'Aplicar',
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/** As opções com o que a janela da ferramenta entregou. Lança erro quando um valor não serve. */
+export function lerDialogoDaMarcacao(
+  ferramenta: FerramentaDeMarcacao,
+  opcoes: OpcoesDeMarcacao,
+  valores: ValoresDoDialogo,
+  cadastrados: readonly PiqueCadastrado[] = [],
+): OpcoesDeMarcacao {
+  switch (ferramenta) {
+    case 'inserir-pique': {
+      const distancia = valores.distancia === undefined ? null : Number(valores.distancia);
+      if (distancia !== null && distancia < 0) throw new Error('A distância do ponto de referência precisa ser zero ou mais.');
+      return {
+        ...opcoes,
+        inserir: {
+          formato: formatoLido(valores, cadastrados, opcoes.inserir.formato),
+          sobreOContorno: valores.sobreOContorno === true,
+          distanciaMm: distancia,
+          codigo: valores.codigo === true,
+          pontoDeControle: valores.pontoDeControle === true,
+          manterDistancia: valores.manterDistancia === true,
+          naCostura: valores.naCostura === 'projetado' || valores.naCostura === 'estendido' ? valores.naCostura : 'nao',
+          usarDxDy: valores.usarDxDy === true,
+          dxMm: Number(valores.dx),
+          dyMm: Number(valores.dy),
+        },
+      };
+    }
+    case 'remover-pique':
+      return { ...opcoes, remover: { doContorno: valores.doContorno === true, internos: valores.internos === true } };
+    case 'multiplos-piques': {
+      const quantidade = Number(valores.quantidade);
+      const espacoMm = Number(valores.espaco);
+      const por = valores.por === 'perimetro' ? 'perimetro' : 'numero';
+      if (por === 'numero' && (quantidade < 1 || quantidade > MAXIMO_DE_PIQUES_DE_UMA_VEZ)) throw new Error(`O número de piques precisa ficar entre 1 e ${MAXIMO_DE_PIQUES_DE_UMA_VEZ}.`);
+      if (por === 'perimetro' && !(espacoMm > 0)) throw new Error('O espaço entre um pique e outro precisa ser maior que zero.');
+      return {
+        ...opcoes,
+        multiplos: {
+          modo: valores.modo === 'mouse' || valores.modo === 'elemento' ? valores.modo : 'contorno',
+          por,
+          quantidade,
+          espacoMm,
+          formato: formatoLido(valores, cadastrados, opcoes.multiplos.formato),
+        },
+      };
+    }
+    case 'substituir-piques': {
+      const distanciaMm = Number(valores.distancia);
+      const acao = valores.acao === 'marca' || valores.acao === 'remover' ? valores.acao : 'trocar';
+      if (acao === 'marca' && !(distanciaMm > 0)) throw new Error('A distância do pique interno precisa ser maior que zero.');
+      return {
+        ...opcoes,
+        substituir: {
+          de: String(valores.de),
+          onde: valores.onde === 'marcadas' || valores.onde === 'todas' ? valores.onde : 'selecionada',
+          acao,
+          formato: formatoLido(valores, cadastrados, opcoes.substituir.formato),
+          distanciaMm,
+        },
+      };
+    }
+    default:
+      return opcoes;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// O que age pela janela: Remover todos e Substituir
+// ---------------------------------------------------------------------------
+
+/** O "Remover pique" age ao confirmar a janela: uma das caixas de "todos" está marcada. */
+export function removerAgeNaHora(opcoes: OpcoesDeMarcacao): boolean {
+  return opcoes.remover.doContorno || opcoes.remover.internos;
+}
+
+/** "Remover pique" com "todos": tira da peça os piques do contorno, os internos, ou uns e outros. */
+export function aplicarRemoverTodos(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], peca: Molde): ResultadoDeFerramentaDeMolde {
+  const { doContorno, internos } = opcoes.remover;
+  const [doC, int] = [doContorno ? peca.piques.length : 0, internos ? peca.marcas.length : 0];
+  if (doC + int === 0) throw new Error(`“${peca.nome}” não tem ${doContorno && internos ? 'piques' : doContorno ? 'piques no contorno' : 'piques internos'} para remover.`);
+  const partes = [...(doContorno ? [plural(doC, 'pique do contorno', 'piques do contorno')] : []), ...(internos ? [plural(int, 'pique interno', 'piques internos')] : [])];
+  return { pecas: trocar(pecas, peca.id, semOsPiques(peca, opcoes.remover)), recado: `Removidos de “${peca.nome}”: ${partes.join(' e ')}.` };
+}
+
+/** O ponto a `distanciaMm` do pique, para dentro da peça, em esquadro com a borda; `null` se esse ponto cai fora dela. */
+function paraDentroDoPique(peca: Molde, pique: Pique, distanciaMm: number): Ponto2D | null {
+  const n = peca.contorno.length;
+  const a = peca.contorno[pique.indiceAresta % n]!;
+  const b = peca.contorno[(pique.indiceAresta + 1) % n]!;
+  const comprimento = distancia(a, b) || 1;
+  const normal = ponto((b.y - a.y) / comprimento, (0 - (b.x - a.x)) / comprimento);
+  for (const sinal of [1, -1]) {
+    const candidato = ponto(pique.posicao.x + normal.x * distanciaMm * sinal, pique.posicao.y + normal.y * distanciaMm * sinal);
+    if (pontoDentroDoContorno(candidato, peca.contorno)) return candidato;
+  }
+  return null;
+}
+
+/**
+ * "Substituir piques": nos piques do contorno do tipo escolhido, das peças de
+ * id dado, troca o formato, troca-os por piques internos a uma distância, ou
+ * os remove. A mensagem diz quantos.
+ */
+export function aplicarSubstituir(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], alvos: readonly string[], novoId: () => string): ResultadoDeFerramentaDeMolde {
+  const { de, acao, formato, distanciaMm } = opcoes.substituir;
+  if (acao !== 'remover') conferirFormato(formato);
+  if (alvos.length === 0) throw new Error('Não há peça em que substituir: selecione uma, ou marque as peças na lista.');
+  let feitos = 0;
+  let semLugar = 0;
+  const pecasComPique = new Set<string>();
+  const novas = pecas.map((peca) => {
+    if (!alvos.includes(peca.id)) return peca;
+    const doTipo = (pique: Pique): boolean => de === TODOS_OS_TIPOS || tipoDo(pique) === de;
+    const escolhidos = peca.piques.filter(doTipo);
+    if (escolhidos.length === 0) return peca;
+    if (acao === 'trocar') {
+      feitos += escolhidos.length;
+      pecasComPique.add(peca.id);
+      return { ...peca, piques: peca.piques.map((pique) => (doTipo(pique) ? { ...pique, formato } : pique)) };
+    }
+    if (acao === 'remover') {
+      feitos += escolhidos.length;
+      pecasComPique.add(peca.id);
+      return { ...peca, piques: peca.piques.filter((pique) => !doTipo(pique)) };
+    }
+    // Por marca: o pique do contorno sai, e entra um pique interno, para dentro da peça. O que não cabe dentro dela fica como está.
+    const marcas: Marca[] = [];
+    const saem = new Set<string>();
+    for (const pique of escolhidos) {
+      const dentro = paraDentroDoPique(peca, pique, distanciaMm);
+      if (!dentro) {
+        semLugar++;
+        continue;
+      }
+      marcas.push({ id: novoId(), posicao: dentro, formato });
+      saem.add(pique.id);
+    }
+    if (saem.size === 0) return peca;
+    feitos += saem.size;
+    pecasComPique.add(peca.id);
+    return { ...peca, piques: peca.piques.filter((pique) => !saem.has(pique.id)), marcas: [...peca.marcas, ...marcas] };
+  });
+  const doTipoDito = de === TODOS_OS_TIPOS ? '' : ` do tipo ${nomeDoFormato({ ...PIQUE_PADRAO, tipo: de })}`;
+  if (feitos === 0) {
+    throw new Error(
+      semLugar > 0
+        ? `Nenhum pique substituído: a ${formatarMm(distanciaMm)} da borda, o pique interno cairia fora da peça.`
+        : `Não há pique${doTipoDito} no contorno ${alvos.length === 1 ? 'da peça escolhida' : 'das peças escolhidas'}.`,
+    );
+  }
+  const ondeDito = pecasComPique.size === 1 ? 'em 1 peça' : `em ${pecasComPique.size} peças`;
+  const feito =
+    acao === 'trocar'
+      ? `${plural(feitos, 'pique substituído', 'piques substituídos')}${doTipoDito} ${ondeDito}: agora ${feitos === 1 ? 'é' : 'são'} ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.`
+      : acao === 'remover'
+        ? `${plural(feitos, 'pique removido', 'piques removidos')}${doTipoDito} ${ondeDito}.`
+        : `${plural(feitos, 'pique do contorno substituído', 'piques do contorno substituídos')}${doTipoDito} por ${feitos === 1 ? 'pique interno' : 'piques internos'} a ${formatarMm(distanciaMm)} da borda, ${ondeDito}.`;
+  return { pecas: novas, recado: feito + (semLugar > 0 ? ` ${plural(semLugar, 'ficou como estava', 'ficaram como estavam')}: o pique interno cairia fora da peça.` : '') };
+}
+
+// ---------------------------------------------------------------------------
+// Alterar: a janela do pique clicado
+// ---------------------------------------------------------------------------
+
+/** A distância do ponto de número `referencia` até a posição, sobre o contorno: positiva no sentido da numeração, negativa contra ele (o caminho mais curto). */
+function distanciaDaReferencia(peca: Molde, referencia: number, posicao: PosicaoNoContorno): number {
+  const doPonto: PosicaoNoContorno = { indiceAresta: referencia, ponto: peca.contorno[referencia]! };
+  if (distancia(doPonto.ponto, posicao.ponto) <= MESMO_PONTO_MM) return 0;
+  const adiante = comprimentoDaLinha(trechoDoContorno(peca.contorno, doPonto, posicao));
+  const paraTras = comprimentoDaLinha(trechoDoContorno(peca.contorno, posicao, doPonto));
+  return adiante <= paraTras ? adiante : 0 - paraTras;
+}
+
+/** Onde o pique está, como posição no contorno. */
+function noContornoDo(pique: Pique): PosicaoNoContorno {
+  return { indiceAresta: pique.indiceAresta, ponto: pique.posicao };
+}
+
+/** O ponto do contorno mais perto do pique, andando sobre o contorno (o número dele, a partir de 0). */
+function pontoMaisPertoNoContorno(peca: Molde, pique: Pique): number {
+  let melhor = 0;
+  let menor = Infinity;
+  peca.contorno.forEach((_, i) => {
+    const d = Math.abs(distanciaDaReferencia(peca, i, noContornoDo(pique)));
+    if (d < menor) {
+      menor = d;
+      melhor = i;
+    }
+  });
+  return melhor;
+}
+
+/** O pique do contorno "mantém a distância": tem graduação com zero em todos os tamanhos. */
+function mantemDistancia(pique: Pique): boolean {
+  return pique.graduacao !== undefined && pique.graduacao.perimetros.every((valor) => valor === 0);
+}
+
+/** A janela do "Alterar" para o pique (do contorno ou interno) de id dado; `null` se ele não está mais na peça. */
+export function dialogoDeAlterarPique(peca: Molde, id: string, interno: boolean, cadastrados: readonly PiqueCadastrado[] = []): DialogoDeMarcacao | null {
+  const mover: CampoDoDialogo = { tipo: 'caixa', id: 'mover', rotulo: 'Indicar a posição com o mouse: depois de aplicar, o clique seguinte diz onde o pique fica', inicial: false };
+  if (interno) {
+    const marca = peca.marcas.find((m) => m.id === id);
+    if (!marca) return null;
+    return {
+      titulo: 'Alterar pique interno',
+      campos: [...camposDoFormato(marca.formato ?? { ...PIQUE_PADRAO, tipo: 'cruz', alturaMm: PIQUE_PADRAO.larguraMm }, cadastrados), mover],
+      nota: marca.formato
+        ? 'O pique interno é refeito com o formato novo, centrado no mesmo ponto.'
+        : 'Esta marca ainda é só um ponto. Aplicando, ela passa a ser um pique interno com o formato escolhido, centrado no mesmo lugar.',
+      rotuloDoBotao: 'Aplicar',
+    };
+  }
+  const pique = peca.piques.find((q) => q.id === id);
+  if (!pique) return null;
+  const referencia = pontoMaisPertoNoContorno(peca, pique);
+  return {
+    titulo: 'Alterar pique',
+    campos: [
+      ...camposDoFormato(pique.formato ?? PIQUE_PADRAO, cadastrados),
+      { tipo: 'inteiro', id: 'ponto', rotulo: `Ponto: o número do ponto de referência no contorno (1 a ${peca.contorno.length})`, inicial: String(referencia + 1) },
+      {
+        tipo: 'medida',
+        id: 'perimetro',
+        rotulo: 'Perímetro: distância desse ponto ao pique, sobre o contorno (mm; negativa = contra a numeração)',
+        inicial: paraCampo(distanciaDaReferencia(peca, referencia, noContornoDo(pique))),
+      },
+      { tipo: 'texto', id: 'codigo', rotulo: 'Código (em branco = sem código)', inicial: pique.codigo ?? '', opcional: true },
+      {
+        tipo: 'escolha',
+        id: 'naCostura',
+        rotulo: 'Pique na costura',
+        opcoes: [
+          { valor: 'nao', rotulo: 'Não vai: fica só no contorno' },
+          { valor: 'projetado', rotulo: 'Projetado' },
+          { valor: 'estendido', rotulo: 'Estendido' },
+        ],
+        inicial: pique.naCostura ?? 'nao',
+      },
+      ...(peca.graduacao ? [{ tipo: 'caixa', id: 'manterDistancia', rotulo: 'Manter distância: a mesma distância do ponto de referência em todos os tamanhos', inicial: mantemDistancia(pique) } as const] : []),
+      mover,
+    ],
+    nota: pique.formato
+      ? 'O pique é refeito com o formato e no lugar pedidos. O lugar é dado pelo ponto de referência e pela distância dele, sobre o contorno.'
+      : 'Este pique é dos de antes da aba Marcações: um traço para o lado em que o contorno foi desenhado. Aplicando, ele passa a ter formato — e a ser desenhado para dentro da peça.',
+    rotuloDoBotao: 'Aplicar',
+  };
+}
+
+/** O que o "Alterar" devolve: as peças e a mensagem — e, se a posição é para indicar com o mouse, que o clique seguinte é o dela. */
+export interface AlteracaoDoPique extends ResultadoDeFerramentaDeMolde {
+  readonly mover: boolean;
+}
+
+/** Aplica a janela do "Alterar" no pique de id dado. Lança erro quando os valores não servem. */
+export function aplicarAlteracaoDoPique(
+  pecas: readonly Molde[],
+  peca: Molde,
+  id: string,
+  interno: boolean,
+  valores: ValoresDoDialogo,
+  cadastrados: readonly PiqueCadastrado[] = [],
+): AlteracaoDoPique {
+  const mover = valores.mover === true;
+  if (interno) {
+    const marca = peca.marcas.find((m) => m.id === id);
+    if (!marca) throw new Error('Esse pique interno já não está na peça.');
+    const formato = formatoLido(valores, cadastrados, marca.formato ?? PIQUE_PADRAO);
+    const nova = { ...peca, marcas: peca.marcas.map((m) => (m.id === id ? { ...m, formato } : m)) };
+    return { pecas: trocar(pecas, peca.id, nova), recado: `Pique interno de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.`, mover };
+  }
+  const pique = peca.piques.find((q) => q.id === id);
+  if (!pique) throw new Error('Esse pique já não está na peça.');
+  const formato = formatoLido(valores, cadastrados, pique.formato ?? PIQUE_PADRAO);
+  const referencia = Number(valores.ponto) - 1;
+  if (!Number.isInteger(referencia) || referencia < 0 || referencia >= peca.contorno.length) throw new Error(`O ponto de referência precisa ser um número de 1 a ${peca.contorno.length}.`);
+  // A janela mostra o perímetro arredondado: sem mexer no ponto nem no perímetro, o pique fica exatamente onde estava.
+  const referenciaDeAntes = pontoMaisPertoNoContorno(peca, pique);
+  const noMesmoLugar = referencia === referenciaDeAntes && paraCampo(Number(valores.perimetro)) === paraCampo(distanciaDaReferencia(peca, referenciaDeAntes, noContornoDo(pique)));
+  const onde = noMesmoLugar
+    ? noContornoDo(pique)
+    : andarNoContorno(peca.contorno, { indiceAresta: referencia, ponto: peca.contorno[referencia]! }, Number(valores.perimetro));
+  const codigo = valores.codigo === undefined ? '' : String(valores.codigo).trim();
+  const naCostura = valores.naCostura === 'projetado' || valores.naCostura === 'estendido' ? valores.naCostura : null;
+  const semOsCamposOpcionais: { -readonly [K in keyof Pique]: Pique[K] } = { ...pique, posicao: onde.ponto, indiceAresta: onde.indiceAresta, formato };
+  delete semOsCamposOpcionais.codigo;
+  delete semOsCamposOpcionais.naCostura;
+  const alterado: Pique = { ...semOsCamposOpcionais, ...(codigo !== '' ? { codigo } : {}), ...(naCostura ? { naCostura } : {}) };
+  let nova: Molde = { ...peca, piques: peca.piques.map((q) => (q.id === id ? alterado : q)) };
+  if (peca.graduacao && valores.manterDistancia !== undefined) {
+    if (valores.manterDistancia === true) nova = definirGraduacaoDoPique(nova, id, referenciaSugerida(nova, alterado), peca.graduacao.tamanhos.map(() => 0));
+    else if (mantemDistancia(pique)) nova = removerGraduacaoDoPique(nova, id);
+  }
+  const mudouDeLugar = distancia(onde.ponto, pique.posicao) > MESMO_PONTO_MM;
+  return {
+    pecas: trocar(pecas, peca.id, nova),
+    recado: `Pique de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}${mudouDeLugar ? `, agora a ${formatarMm(Math.abs(Number(valores.perimetro)))} do ponto ${referencia + 1}` : ''}.`,
+    mover,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Os cliques
+// ---------------------------------------------------------------------------
+
+export interface CliqueDeMarcacao {
+  readonly estado: TrechoEmEdicao;
+  readonly pecas?: readonly Molde[];
+  readonly recado: string | null;
+  /** O clique pede a janela do "Alterar" para este pique. */
+  readonly abrir?: { readonly id: string; readonly interno: boolean };
+}
+
+export interface ContextoDaMarcacao {
+  /** O raio (mm) em que um clique pega um pique. */
+  readonly raioMm: number;
+  readonly novoId: () => string;
+  /** A linha interna sob o clique (pelo número), se há. */
+  readonly linhaInterna: number | null;
+}
+
+/** O ponto a `s` mm do começo da linha, andando sobre ela. */
+function pontoNaLinha(linha: readonly Ponto2D[], s: number): Ponto2D {
+  let resto = s;
+  for (let i = 1; i < linha.length; i++) {
+    const [a, b] = [linha[i - 1]!, linha[i]!];
+    const trecho = distancia(a, b);
+    if (resto <= trecho || i === linha.length - 1) {
+      const f = trecho === 0 ? 0 : Math.min(1, Math.max(0, resto / trecho));
+      return ponto(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+    }
+    resto -= trecho;
+  }
+  return linha[0]!;
+}
+
+/**
+ * Onde os piques do "Múltiplos" ficam ao longo de uma linha: pelo número, essa
+ * quantidade com espaços iguais do começo ao fim (um só fica no começo); pelo
+ * perímetro, um a cada tantos mm a partir do começo.
+ */
+export function posicoesAoLongo(linha: readonly Ponto2D[], opcoes: OpcoesDeMarcacao['multiplos']): Ponto2D[] {
+  const comprimento = comprimentoDaLinha(linha);
+  if (!(comprimento > MESMO_PONTO_MM)) throw new Error('Os dois pontos precisam ser diferentes.');
+  if (opcoes.por === 'numero') {
+    const n = opcoes.quantidade;
+    return Array.from({ length: n }, (_, k) => pontoNaLinha(linha, n === 1 ? 0 : (comprimento * k) / (n - 1)));
+  }
+  const quantos = Math.floor(comprimento / opcoes.espacoMm + 1e-9) + 1;
+  if (quantos > MAXIMO_DE_PIQUES_DE_UMA_VEZ) throw new Error(`Com esse espaço seriam ${quantos} piques: o máximo de uma vez é ${MAXIMO_DE_PIQUES_DE_UMA_VEZ}.`);
+  return Array.from({ length: quantos }, (_, k) => pontoNaLinha(linha, opcoes.espacoMm * k));
+}
+
+/** O caminho sobre o contorno de `de` a `ate`, no sentido horário de quem olha a tela. */
+export function caminhoHorario(peca: Molde, de: PosicaoNoContorno, ate: PosicaoNoContorno): Ponto2D[] {
+  // A tela é o mundo girado, sem espelhar: o contorno de área positiva anda no sentido anti-horário também na tela.
+  return areaAssinada(peca.contorno) < 0 ? trechoDoContorno(peca.contorno, de, ate) : [...trechoDoContorno(peca.contorno, ate, de)].reverse();
+}
+
+/** Põe na peça um pique do contorno em cada posição (ou um interno, com `interno`). */
+function comVariosPiques(peca: Molde, posicoes: readonly Ponto2D[], formato: FormatoDePique, interno: boolean, novoId: () => string): Molde {
+  return posicoes.reduce<Molde>((m, posicao) => {
+    if (interno) return inserirPiqueInterno(m, posicao, formato, novoId());
+    const noContorno = pontoMaisProximoNoContorno(posicao, m.contorno);
+    return inserirPique(m, { indiceAresta: noContorno.indiceAresta, ponto: noContorno.ponto }, formato, novoId());
+  }, peca);
+}
+
+/** O que um clique faz com a ferramenta ligada, na peça selecionada. */
+export function cliqueDeMarcacao(
+  modo: ModoDeMarcacao,
+  opcoes: OpcoesDeMarcacao,
+  pecas: readonly Molde[],
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  clique: CliqueDeTrecho,
+  contexto: ContextoDaMarcacao,
+): CliqueDeMarcacao {
+  const com = (nova: Molde, recado: string, proximo: TrechoEmEdicao = SEM_TRECHO): CliqueDeMarcacao => ({ estado: proximo, pecas: trocar(pecas, peca.id, nova), recado });
+  try {
+    switch (modo) {
+      case 'inserir-pique': {
+        const o = opcoes.inserir;
+        const medidas = `${nomeDoFormato(o.formato)}, de ${formatarMm(o.formato.larguraMm)} × ${formatarMm(o.formato.alturaMm)}`;
+        if (!o.sobreOContorno) {
+          const base = o.usarDxDy && clique.noContorno ? clique.noContorno.ponto : clique.livre;
+          // Na tela, o Dx é a horizontal (o y do mundo) e o Dy, a vertical para baixo (o x do mundo).
+          const onde = o.usarDxDy ? ponto(base.x + o.dyMm, base.y + o.dxMm) : base;
+          return com(inserirPiqueInterno(peca, onde, o.formato, contexto.novoId()), `Pique interno (${medidas}) posto em “${peca.nome}”.`);
+        }
+        if (!clique.noContorno) return { estado, recado: 'Clique na borda da peça selecionada: é nela que o pique fica.' };
+        const posicao = o.distanciaMm === null ? clique.noContorno : posicaoPelaReferencia(peca.contorno, clique.noContorno, o.distanciaMm, clique.livre);
+        const codigo = o.codigo ? proximoCodigo(pecas) : null;
+        const nova = inserirPique(peca, posicao, o.formato, contexto.novoId(), {
+          ...(codigo ? { codigo } : {}),
+          ...(o.naCostura !== 'nao' ? { naCostura: o.naCostura } : {}),
+          pontoDeControle: o.pontoDeControle,
+          manterDistancia: o.manterDistancia,
+        });
+        const avisos =
+          (o.manterDistancia && !peca.graduacao ? ' “Manter distância nos tamanhos” só vale na peça graduada.' : '') +
+          (o.naCostura !== 'nao' && !(peca.margemDeCosturaMm > 0) ? ' “Pique na costura” só aparece na peça com margem de costura.' : '');
+        return com(nova, `Pique (${medidas}) posto na borda de “${peca.nome}”${codigo ? `, com o código ${codigo}` : ''}${o.pontoDeControle ? ', com um ponto no contorno' : ''}.` + avisos);
+      }
+      case 'remover-pique': {
+        const pique = piquePerto(peca, clique.livre, contexto.raioMm);
+        if (pique) return com({ ...peca, piques: peca.piques.filter((q) => q.id !== pique.id) }, `Pique removido de “${peca.nome}”.`);
+        const marca = marcaPerto(peca, clique.livre, contexto.raioMm);
+        if (marca) return com({ ...peca, marcas: peca.marcas.filter((m) => m.id !== marca.id) }, `Pique interno removido de “${peca.nome}”.`);
+        return { estado, recado: 'Clique em cima de um pique da peça selecionada — do contorno ou interno.' };
+      }
+      case 'alterar-pique': {
+        // Com um pique à espera da posição, o clique diz onde ele fica.
+        if (estado.alvo !== undefined) {
+          const daMarca = peca.marcas.find((m) => m.id === estado.alvo);
+          if (daMarca) {
+            if (!pontoDentroDoContorno(clique.livre, peca.contorno)) return { estado, recado: 'O pique interno precisa ficar dentro da peça: clique dentro dela.' };
+            return com({ ...peca, marcas: peca.marcas.map((m) => (m.id === daMarca.id ? { ...m, posicao: clique.livre } : m)) }, `Pique interno de “${peca.nome}” levado para o ponto clicado.`);
+          }
+          const doPique = peca.piques.find((q) => q.id === estado.alvo);
+          if (!doPique) return { estado: SEM_TRECHO, recado: 'Esse pique já não está na peça.' };
+          if (!clique.noContorno) return { estado, recado: 'Clique na borda da peça: é nela que o pique fica.' };
+          const { ponto: p, indiceAresta } = clique.noContorno;
+          return com({ ...peca, piques: peca.piques.map((q) => (q.id === doPique.id ? { ...q, posicao: p, indiceAresta } : q)) }, `Pique de “${peca.nome}” levado para o ponto clicado.`);
+        }
+        const pique = piquePerto(peca, clique.livre, contexto.raioMm);
+        if (pique) return { estado, recado: null, abrir: { id: pique.id, interno: false } };
+        const marca = marcaPerto(peca, clique.livre, contexto.raioMm);
+        if (marca) return { estado, recado: null, abrir: { id: marca.id, interno: true } };
+        return { estado, recado: 'Clique em cima de um pique da peça selecionada — do contorno ou interno — para mudar o formato e o lugar dele.' };
+      }
+      case 'multiplos-piques': {
+        const o = opcoes.multiplos;
+        const feito = (nova: Molde, quantos: number, onde: string): CliqueDeMarcacao =>
+          com(nova, `${plural(quantos, 'pique posto', 'piques postos')} em “${peca.nome}”, ${onde}: ${nomeDoFormato(o.formato)}, de ${formatarMm(o.formato.larguraMm)} × ${formatarMm(o.formato.alturaMm)}.`);
+        if (o.modo === 'elemento') {
+          const linha = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
+          if (!linha || linha.length < 2) return { estado, recado: 'Clique em cima de uma linha interna da peça selecionada: os piques ficam ao longo dela.' };
+          // A linha pode sair da peça: só entram os piques que caem dentro dela, e a mensagem diz quantos ficaram de fora.
+          const todas = posicoesAoLongo(linha, o);
+          const posicoes = todas.filter((q) => pontoDentroDoContorno(q, peca.contorno));
+          if (posicoes.length === 0) throw new Error('Nenhum ponto dessa linha fica dentro da peça.');
+          const deFora = todas.length - posicoes.length;
+          const posto = feito(comVariosPiques(peca, posicoes, o.formato, true, contexto.novoId), posicoes.length, 'ao longo da linha interna');
+          return deFora === 0 ? posto : { ...posto, recado: `${posto.recado} ${plural(deFora, 'ponto da linha cai', 'pontos da linha caem')} fora da peça e não ${deFora === 1 ? 'recebeu' : 'receberam'} pique.` };
+        }
+        if (o.modo === 'mouse') {
+          const primeiro = estado.livres[0];
+          if (!primeiro) return { estado: { ...SEM_TRECHO, livres: [clique.livre] }, recado: null };
+          const posicoes = posicoesAoLongo([primeiro, clique.livre], o);
+          return feito(comVariosPiques(peca, posicoes, o.formato, true, contexto.novoId), posicoes.length, 'na reta entre os dois pontos');
+        }
+        if (!clique.noContorno) return { estado, recado: 'Clique na borda da peça selecionada.' };
+        if (!estado.inicio) return { estado: { ...SEM_TRECHO, inicio: clique.noContorno }, recado: null };
+        const posicoes = posicoesAoLongo(caminhoHorario(peca, estado.inicio, clique.noContorno), o);
+        return feito(comVariosPiques(peca, posicoes, o.formato, false, contexto.novoId), posicoes.length, 'na borda, no sentido horário');
+      }
+    }
+  } catch (e) {
+    return { estado, recado: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prévia e instruções
+// ---------------------------------------------------------------------------
+
+/** O que o desenho mostra com a ferramenta ligada: o pique como ficaria com o clique, ou o que o clique pega. */
+export function previaDaMarcacao(
+  modo: ModoDeMarcacao,
+  opcoes: OpcoesDeMarcacao,
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  mouse: CliqueDeTrecho | null,
+  contexto: Pick<ContextoDaMarcacao, 'raioMm' | 'linhaInterna'>,
+): PreviaDeFerramentaDeMolde {
+  if (!mouse) return estado.inicio ? { marcas: [estado.inicio.ponto] } : {};
+  try {
+    switch (modo) {
+      case 'inserir-pique': {
+        const o = opcoes.inserir;
+        if (!o.sobreOContorno) {
+          const base = o.usarDxDy && mouse.noContorno ? mouse.noContorno.ponto : mouse.livre;
+          const onde = o.usarDxDy ? ponto(base.x + o.dyMm, base.y + o.dxMm) : base;
+          return pontoDentroDoContorno(onde, peca.contorno) ? { linhas: tracosDaMarca({ id: 'previa', posicao: onde, formato: o.formato }) ?? [] } : {};
+        }
+        if (!mouse.noContorno) return {};
+        const posicao = o.distanciaMm === null ? mouse.noContorno : posicaoPelaReferencia(peca.contorno, mouse.noContorno, o.distanciaMm, mouse.livre);
+        return { linhas: tracosDoPique(peca, { id: 'previa', posicao: posicao.ponto, indiceAresta: posicao.indiceAresta, formato: o.formato }), marcas: [posicao.ponto] };
+      }
+      case 'remover-pique':
+      case 'alterar-pique': {
+        if (modo === 'alterar-pique' && estado.alvo !== undefined) {
+          const doPique = peca.piques.find((q) => q.id === estado.alvo);
+          if (doPique) return mouse.noContorno ? { linhas: tracosDoPique(peca, { ...doPique, posicao: mouse.noContorno.ponto, indiceAresta: mouse.noContorno.indiceAresta }), marcas: [doPique.posicao] } : { marcas: [doPique.posicao] };
+          const daMarca = peca.marcas.find((m) => m.id === estado.alvo);
+          return daMarca ? { linhas: tracosDaMarca({ ...daMarca, posicao: mouse.livre }) ?? [], marcas: [daMarca.posicao] } : {};
+        }
+        const sob = piquePerto(peca, mouse.livre, contexto.raioMm)?.posicao ?? marcaPerto(peca, mouse.livre, contexto.raioMm)?.posicao;
+        return sob ? { marcas: [sob] } : {};
+      }
+      case 'multiplos-piques': {
+        const o = opcoes.multiplos;
+        if (o.modo === 'elemento') {
+          const linha = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
+          return linha && linha.length >= 2 ? { substituido: linha, marcas: posicoesAoLongo(linha, o).filter((q) => pontoDentroDoContorno(q, peca.contorno)) } : {};
+        }
+        if (o.modo === 'mouse') {
+          const primeiro = estado.livres[0];
+          return primeiro ? { novo: [primeiro, mouse.livre], marcas: posicoesAoLongo([primeiro, mouse.livre], o) } : {};
+        }
+        if (!estado.inicio) return mouse.noContorno ? { marcas: [mouse.noContorno.ponto] } : {};
+        if (!mouse.noContorno) return { marcas: [estado.inicio.ponto] };
+        const caminho = caminhoHorario(peca, estado.inicio, mouse.noContorno);
+        return { substituido: caminho, marcas: posicoesAoLongo(caminho, o) };
+      }
+    }
+  } catch {
+    return estado.inicio ? { marcas: [estado.inicio.ponto] } : {};
+  }
+}
+
+/** A instrução do próximo clique, para a faixa de mensagens. */
+export function instrucaoDaMarcacao(modo: ModoDeMarcacao, opcoes: OpcoesDeMarcacao, estado: TrechoEmEdicao): string {
+  switch (modo) {
+    case 'inserir-pique': {
+      const o = opcoes.inserir;
+      if (!o.sobreOContorno) {
+        return `Inserir pique interno (${nomeDoFormato(o.formato)}): clique dentro da peça selecionada${o.usarDxDy ? `, no ponto de onde contar o Dx de ${formatarMm(o.dxMm)} e o Dy de ${formatarMm(o.dyMm)}` : ', onde o pique deve ficar'}.` + ESC;
+      }
+      return (
+        `Inserir pique (${nomeDoFormato(o.formato)}): clique na borda da peça selecionada${o.distanciaMm === null ? ', onde o pique deve ficar' : ` — o pique fica a ${formatarMm(o.distanciaMm)} do ponto do contorno mais perto do clique, para o lado do clique`}. O tracejado mostra.` +
+        ESC
+      );
+    }
+    case 'remover-pique':
+      return 'Remover pique: clique em cima de cada pique que deve sair — do contorno ou interno. O anel mostra o que o clique pega.' + ESC;
+    case 'alterar-pique':
+      return estado.alvo !== undefined
+        ? 'Alterar pique: clique onde o pique deve ficar — na borda, se é do contorno; dentro da peça, se é interno. O tracejado mostra.' + ESC
+        : 'Alterar pique: clique em cima de um pique da peça selecionada para mudar o formato e o lugar dele.' + ESC;
+    case 'multiplos-piques': {
+      const o = opcoes.multiplos;
+      const quantos = o.por === 'numero' ? plural(o.quantidade, 'pique', 'piques') : `um pique a cada ${formatarMm(o.espacoMm)}`;
+      if (o.modo === 'elemento') return `Múltiplos piques (${quantos}): clique numa linha interna da peça selecionada — os piques ficam ao longo dela. Os anéis mostram.` + ESC;
+      if (o.modo === 'mouse') {
+        return (estado.livres.length === 0 ? `Múltiplos piques (${quantos}): clique dentro da peça, onde fica o primeiro.` : 'Múltiplos piques: clique onde fica o último — os anéis mostram onde cada um cai.') + ESC;
+      }
+      return (
+        (estado.inicio
+          ? 'Múltiplos piques: clique na borda, onde os piques terminam — eles vão do primeiro ponto até ali no sentido horário (o trecho em destaque).'
+          : `Múltiplos piques (${quantos}): clique na borda da peça selecionada, onde os piques começam.`) + ESC
+      );
+    }
+  }
+}
+
+/** A área de uma peça em cm², para as mensagens. */
+export function cm2(peca: Molde): string {
+  return `${(area(peca.contorno) / 100).toFixed(1).replace('.', ',')} cm²`;
+}

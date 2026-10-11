@@ -10,6 +10,7 @@ import {
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos } from '../domain/graduacao';
+import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import {
   perimetro,
@@ -98,8 +99,10 @@ export type ModoDeDesenho =
   | 'novo-molde'
   | 'novo-furo'
   | 'definir-fio'
-  | 'pique'
-  | 'marca'
+  | 'inserir-pique'
+  | 'remover-pique'
+  | 'multiplos-piques'
+  | 'alterar-pique'
   | 'mover-ponto'
   | 'modificar'
   | 'inserir-ponto'
@@ -235,6 +238,10 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'copiar-graduacao',
   'ajustar-graduacao',
   'graduar-curva',
+  'inserir-pique',
+  'remover-pique',
+  'multiplos-piques',
+  'alterar-pique',
 ]);
 
 /**
@@ -253,7 +260,6 @@ const MODOS_COM_IMA: ReadonlySet<ModoDeDesenho> = new Set([
   'novo-molde',
   'novo-furo',
   'definir-fio',
-  'marca',
   'definir-cerca',
   'retangulo',
   'sentido-do-fio',
@@ -923,27 +929,25 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.setLineDash([]);
       }
 
+      /** Traça linhas dadas em mm do mundo. */
+      const tracarNoMundo = (tracos: readonly (readonly Ponto2D[])[]): void => {
+        for (const traco of tracos) {
+          ctx.beginPath();
+          traco.forEach((q, k) => {
+            const naTela = mundoParaTela(q, transform);
+            if (k === 0) ctx.moveTo(naTela.x, naTela.y);
+            else ctx.lineTo(naTela.x, naTela.y);
+          });
+          ctx.stroke();
+        }
+      };
+
       for (const pique of peca.piques) {
-        const n = peca.contorno.length;
-        const a = peca.contorno[pique.indiceAresta % n]!;
-        const b = peca.contorno[(pique.indiceAresta + 1) % n]!;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const comprimento = Math.hypot(dx, dy) || 1;
-        const normalX = dy / comprimento;
-        const normalY = -dx / comprimento;
-        const tamanhoMm = 6;
-        const p1 = mundoParaTela(pique.posicao, transform);
-        const p2 = mundoParaTela(
-          { x: pique.posicao.x + normalX * tamanhoMm, y: pique.posicao.y + normalY * tamanhoMm },
-          transform,
-        );
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
+        // O pique pelo formato dele; na peça com margem de costura, também como ele vai para a linha de corte.
         ctx.strokeStyle = COR_PIQUE;
         ctx.lineWidth = 2;
-        ctx.stroke();
+        tracarNoMundo(tracosDoPique(peca, pique));
+        tracarNoMundo(tracosNaLinhaDeCorte(peca, pique) ?? []);
         // O código de relacionamento, escrito do lado de dentro da peça, em frente ao pique:
         // assim a peça vizinha no encaixe nunca o cobre.
         if (pique.codigo) {
@@ -977,6 +981,14 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
 
       for (const marca of peca.marcas) {
+        // A marca com formato é um pique interno: desenhada pelo formato, no lugar do ponto.
+        const doFormato = tracosDaMarca(marca);
+        if (doFormato) {
+          ctx.strokeStyle = COR_MARCA;
+          ctx.lineWidth = 2;
+          tracarNoMundo(doFormato);
+          continue;
+        }
         const p = mundoParaTela(marca.posicao, transform);
         ctx.beginPath();
         ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);

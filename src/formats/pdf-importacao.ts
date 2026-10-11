@@ -90,6 +90,9 @@ function lerElementosDaPagina(streamDaPagina: string): ElementoBruto[] {
       // ponta da seta do fio (triângulo preenchido) — a haste já foi capturada pelo "S"; ignorar.
     } else if (comFill && corPreenchimento && coresIguais(corPreenchimento, COR_MARCA)) {
       elementos.push({ tipo: 'marca', subpaths });
+    } else if (comStroke && corTraco && coresIguais(corTraco, COR_MARCA)) {
+      // O pique interno (a marca com formato) sai traçado, e não preenchido: volta como marca, no meio do desenho dele.
+      elementos.push({ tipo: 'marca', subpaths });
     } else if (comStroke && corTraco && coresIguais(corTraco, COR_FIO)) {
       elementos.push({ tipo: 'fio', subpaths });
     } else if (comStroke && corTraco && coresIguais(corTraco, COR_PIQUE)) {

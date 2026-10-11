@@ -7,6 +7,7 @@ import blobStream from 'blob-stream';
 import type { Molde } from '../domain/molde';
 import { contornoDeCorte } from '../domain/molde';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
+import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 
@@ -104,21 +105,17 @@ function desenharSeta(doc: PDFKit.PDFDocument, inicio: Ponto2D, fim: Ponto2D, or
 
 function desenharPique(doc: PDFKit.PDFDocument, peca: Molde, indice: number, origem: Ponto2D): void {
   const pique = peca.piques[indice]!;
-  const n = peca.contorno.length;
-  const a = peca.contorno[pique.indiceAresta % n]!;
-  const b = peca.contorno[(pique.indiceAresta + 1) % n]!;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const comprimento = Math.hypot(dx, dy) || 1;
-  const normalX = dy / comprimento;
-  const normalY = -dx / comprimento;
-  const tamanhoMm = 6;
-  const p1 = { x: pique.posicao.x, y: pique.posicao.y };
-  const p2 = { x: pique.posicao.x + normalX * tamanhoMm, y: pique.posicao.y + normalY * tamanhoMm };
-  doc
-    .moveTo(mmParaPontos(p1.x - origem.x), mmParaPontos(p1.y - origem.y))
-    .lineTo(mmParaPontos(p2.x - origem.x), mmParaPontos(p2.y - origem.y))
-    .stroke();
+  const tracos = [...tracosDoPique(peca, pique), ...(tracosNaLinhaDeCorte(peca, pique) ?? [])];
+  // O pique com formato começa por um traço sem comprimento no ponto dele: é por ele que a importação do PDF acha onde o pique está.
+  const comAPosicao = pique.formato ? [[pique.posicao, pique.posicao], ...tracos] : tracos;
+  for (const traco of comAPosicao) {
+    traco.forEach((q, k) => {
+      const [x, y] = [mmParaPontos(q.x - origem.x), mmParaPontos(q.y - origem.y)];
+      if (k === 0) doc.moveTo(x, y);
+      else doc.lineTo(x, y);
+    });
+  }
+  doc.stroke();
   // O código de relacionamento, escrito do lado de dentro da peça, em frente ao pique.
   if (pique.codigo) {
     doc.save();
@@ -204,6 +201,20 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
   doc.save();
   doc.fillColor('#00838f');
   for (const marca of peca.marcas) {
+    // A marca com formato é um pique interno: sai traçada pelo formato, na cor das marcas.
+    const doFormato = tracosDaMarca(marca);
+    if (doFormato) {
+      doc.strokeColor('#00838f');
+      for (const traco of doFormato) {
+        traco.forEach((q, k) => {
+          const [x, y] = [mmParaPontos(q.x - origem.x), mmParaPontos(q.y - origem.y)];
+          if (k === 0) doc.moveTo(x, y);
+          else doc.lineTo(x, y);
+        });
+      }
+      doc.stroke();
+      continue;
+    }
     const p = { x: mmParaPontos(marca.posicao.x - origem.x), y: mmParaPontos(marca.posicao.y - origem.y) };
     doc.circle(p.x, p.y, mmParaPontos(1.2)).fill();
   }

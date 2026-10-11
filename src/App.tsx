@@ -171,6 +171,22 @@ import {
   type OpcoesDeDobrar,
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
+import {
+  aplicarAlteracaoDoPique,
+  aplicarRemoverTodos,
+  aplicarSubstituir,
+  cliqueDeMarcacao,
+  dialogoDaMarcacao,
+  dialogoDeAlterarPique,
+  ehModoDeMarcacao,
+  instrucaoDaMarcacao,
+  lerDialogoDaMarcacao,
+  OPCOES_INICIAIS_DE_MARCACAO,
+  previaDaMarcacao,
+  removerAgeNaHora,
+  type FerramentaDeMarcacao,
+  type OpcoesDeMarcacao,
+} from './ui/ferramentasDeMarcacao';
 import { comFiguraRegistrada, figuraDaEspiral, figuraDoCirculo } from './domain/figuras';
 import type { FiguraDaPeca, PregaDaPeca } from './domain/molde';
 import { aplicarDialogoDaFigura, avisoDasFiguras, centrosDasFiguras, dialogoDaFigura, figuraSobOClique } from './ui/ferramentasDeFigura';
@@ -258,8 +274,6 @@ import {
 import {
   criarMolde,
   transladarMolde,
-  adicionarPique,
-  adicionarMarca,
   rotacionarMolde,
   rotacaoEhPermitida,
   rotacoesPermitidas,
@@ -487,6 +501,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'escala-da-imagem' }
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
+  | { readonly tipo: 'marcacao'; readonly ferramenta: FerramentaDeMarcacao }
+  | { readonly tipo: 'alterar-pique'; readonly id: string; readonly interno: boolean }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
   | { readonly tipo: 'tabela-do-pique'; readonly id: string }
   | { readonly tipo: 'nome-da-regra'; readonly indice: number }
@@ -605,6 +621,7 @@ export default function App(): React.JSX.Element {
   // Graduação: as opções dos diálogos, o cadastro de regras deste computador, a
   // regra escolhida em "Regras" e a regra guardada pelo "Copiar" da tabela.
   const [opcoesDaGraduacao, setOpcoesDaGraduacao] = useState<OpcoesDaGraduacao>(OPCOES_INICIAIS_DA_GRADUACAO);
+  const [opcoesDeMarcacao, setOpcoesDeMarcacao] = useState<OpcoesDeMarcacao>(OPCOES_INICIAIS_DE_MARCACAO);
   const [regrasDoUsuario, setRegrasDoUsuario] = useState<readonly RegraCadastrada[]>(() =>
     lerRegrasCadastradas(window.localStorage),
   );
@@ -1313,15 +1330,6 @@ export default function App(): React.JSX.Element {
     setPontosEmEdicao([]);
   }, [selecionadoId]);
 
-  const entrarModoPique = useCallback(() => {
-    if (!selecionadoId) return;
-    setModo('pique');
-  }, [selecionadoId]);
-
-  const entrarModoMarca = useCallback(() => {
-    if (!selecionadoId) return;
-    setModo('marca');
-  }, [selecionadoId]);
 
   const entrarModoMoverPonto = useCallback(() => {
     if (!selecionadoId) return;
@@ -1570,6 +1578,16 @@ export default function App(): React.JSX.Element {
       else if (ehModoDeGraduacao(ferramenta)) entrarModoDeConstrucao(ferramenta);
     },
     [pecas, selecionadoId, opcoesDaGraduacao, entrarModoDeConstrucao],
+  );
+
+  /** As ferramentas da aba Marcações: as que perguntam antes abrem a janela; as outras ligam direto. */
+  const usarFerramentaDeMarcacao = useCallback(
+    (ferramenta: FerramentaDeMarcacao) => {
+      if (!pecas.some((p) => p.id === selecionadoId)) return;
+      if (dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas)) setDialogoDeFerramenta({ tipo: 'marcacao', ferramenta });
+      else if (ehModoDeMarcacao(ferramenta)) entrarModoDeConstrucao(ferramenta);
+    },
+    [pecas, selecionadoId, opcoesDeMarcacao, entrarModoDeConstrucao],
   );
 
   const excluirRegraCadastrada = useCallback(
@@ -2520,6 +2538,26 @@ export default function App(): React.JSX.Element {
         if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
         return;
       }
+      if (ehModoDeMarcacao(modo)) {
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        if (!peca) return;
+        const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+        const noContorno = posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm);
+        const resultado = cliqueDeMarcacao(
+          modo,
+          opcoesDeMarcacao,
+          pecas,
+          peca,
+          trecho,
+          { noContorno, livre: semCaptura },
+          { raioMm, novoId: proximoId, linhaInterna: noContorno ? null : (linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null) },
+        );
+        setTrecho(resultado.estado);
+        setRecadoDaFerramenta(resultado.recado);
+        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
+        if (resultado.abrir) setDialogoDeFerramenta({ tipo: 'alterar-pique', ...resultado.abrir });
+        return;
+      }
       if (ehModoDeGraduacao(modo)) {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
@@ -2730,18 +2768,10 @@ export default function App(): React.JSX.Element {
         setModo('definir-fio');
         return;
       }
-      if (modo === 'pique' && selecionadoId) {
-        aplicarMudanca(
-          pecas.map((p) => (p.id === selecionadoId ? adicionarPique(p, mundo, proximoId()) : p)),
-        );
-        return;
-      }
-      if (modo === 'marca' && selecionadoId) {
-        aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? adicionarMarca(p, mundo, proximoId()) : p)));
-      }
     },
     [
       modo,
+      opcoesDeMarcacao,
       opcoesDeCorte,
       corteManual,
       opcoesDeRemover,
@@ -3157,6 +3187,14 @@ export default function App(): React.JSX.Element {
           : {};
       return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
     }
+    if (pecaSelecionada && ehModoDeMarcacao(modo)) {
+      const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
+      const noContorno = cursorMundo ? posicaoNoContornoPerto(cursorMundo, pecaSelecionada.contorno, raioMm) : null;
+      return previaDaMarcacao(modo, opcoesDeMarcacao, pecaSelecionada, trecho, cursorMundo ? { noContorno, livre: cursorMundo } : null, {
+        raioMm,
+        linhaInterna: cursorMundo && !noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null,
+      });
+    }
     if (pecaSelecionada && ehModoDeGraduacao(modo)) {
       return previaDaGraduacao(modo, opcoesDaGraduacao, pecaSelecionada, trecho, cursorMundo, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
     }
@@ -3242,6 +3280,7 @@ export default function App(): React.JSX.Element {
     return null;
   }, [
     modo,
+    opcoesDeMarcacao,
     corteManual,
     opcoesDeCorte,
     opcoesDeRemover.unir,
@@ -3276,6 +3315,7 @@ export default function App(): React.JSX.Element {
         pecaSelecionada ? pregasDaPeca(pecaSelecionada).length > 0 : false,
       );
     }
+    if (ehModoDeMarcacao(modo)) return instrucaoDaMarcacao(modo, opcoesDeMarcacao, trecho);
     if (ehModoDeGraduacao(modo)) return instrucaoDaGraduacao(modo, opcoesDaGraduacao, trecho, regraEmUso, vezDoConjunto);
     if (ehModoDeElemento(modo)) return instrucaoDoElemento(modo, opcoesDeElemento, trecho);
     if (modo === 'conferir') return textoDaConferencia(opcoesDaConferencia, conferencia, cursorMundo);
@@ -3546,8 +3586,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoSelecionar={cancelarModo}
         onEntrarModoNovoMolde={entrarModoNovoMolde}
         onEntrarModoNovoFuro={entrarModoNovoFuro}
-        onEntrarModoPique={entrarModoPique}
-        onEntrarModoMarca={entrarModoMarca}
+        onUsarFerramentaDeMarcacao={usarFerramentaDeMarcacao}
         onImportarDxf={importarDxfHandler}
         onImportarPdf={importarPdfHandler}
         onAbrirTecido={() => setPainelAberto('tecido')}
@@ -4426,6 +4465,79 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta(null)}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'marcacao' &&
+        pecaSelecionada &&
+        (() => {
+          const ferramenta = dialogoDeFerramenta.ferramenta;
+          const dialogo = dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={ferramenta}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', pecaSelecionada.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao={dialogo.rotuloDoBotao}
+              onAplicar={(valores) => {
+                try {
+                  const novas = lerDialogoDaMarcacao(ferramenta, opcoesDeMarcacao, valores);
+                  // "Substituir" e o "Remover" com "todos" agem ao confirmar; as outras ligam a ferramenta.
+                  const alvos = novas.substituir.onde === 'todas' ? pecas.map((p) => p.id) : novas.substituir.onde === 'marcadas' ? [...idsSelecionadosEmLote] : [pecaSelecionada.id];
+                  const naHora =
+                    ferramenta === 'substituir-piques'
+                      ? aplicarSubstituir(novas, pecas, alvos, proximoId)
+                      : ferramenta === 'remover-pique' && removerAgeNaHora(novas)
+                        ? aplicarRemoverTodos(novas, pecas, pecaSelecionada)
+                        : null;
+                  setOpcoesDeMarcacao(novas);
+                  if (naHora) {
+                    const novasPecas = [...naHora.pecas];
+                    aplicarMudanca(novasPecas);
+                    cancelarModo();
+                    avisar(naHora.recado, novasPecas);
+                  } else if (ehModoDeMarcacao(ferramenta)) {
+                    entrarModoDeConstrucao(ferramenta);
+                  }
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
+      {dialogoDeFerramenta?.tipo === 'alterar-pique' &&
+        pecaSelecionada &&
+        (() => {
+          const { id, interno } = dialogoDeFerramenta;
+          const dialogo = dialogoDeAlterarPique(pecaSelecionada, id, interno);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={id}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', pecaSelecionada.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao={dialogo.rotuloDoBotao}
+              onAplicar={(valores) => {
+                try {
+                  const feito = aplicarAlteracaoDoPique(pecas, pecaSelecionada, id, interno, valores);
+                  aplicarMudanca([...feito.pecas]);
+                  setRecadoDaFerramenta(feito.recado);
+                  // Com a posição por indicar, o clique seguinte é o do lugar do pique.
+                  setTrecho(feito.mover ? { ...SEM_TRECHO, alvo: id } : SEM_TRECHO);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
       {dialogoDeFerramenta?.tipo === 'graduacao' && dialogoDeGraduacao && pecaSelecionada && (
         <DialogoDeCampos
           key={dialogoDeFerramenta.ferramenta}

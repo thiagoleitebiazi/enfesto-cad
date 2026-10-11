@@ -114,6 +114,15 @@ export type NomeDoIcone =
   | 'criar-regra'
   | 'remover-graduacao'
   | 'separar-graduacao'
+  | 'pique-inserir'
+  | 'pique-remover'
+  | 'pique-texto'
+  | 'piques-multiplos'
+  | 'piques-alinhar'
+  | 'pique-cadastrar'
+  | 'piques-substituir'
+  | 'pique-alterar'
+  | 'linhas-auxiliares'
   | 'unir-graduacao'
   | 'agrupar-graduacao'
   | 'deduzir-graduacao'
@@ -783,6 +792,66 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M3 15.5V7l4-4" />
       <path d="M6.5 15.5V9l3-3" />
       <path d="M12 11.5l5 5M17 11.5l-5 5" />
+    </>
+  ),
+  'pique-inserir': (
+    <>
+      <path d="M3 15c4-7 10-7 14 0" />
+      <path d="M10 9.8V5.5" />
+      <path d="M14.5 3v4M12.5 5h4" />
+    </>
+  ),
+  'pique-remover': (
+    <>
+      <path d="M3 15c4-7 10-7 14 0" />
+      <path d="M10 9.8V5.5" />
+      <path d="m13 3.2 3.4 3.4M16.4 3.2 13 6.6" />
+    </>
+  ),
+  'pique-texto': (
+    <>
+      <path d="M3 16c4-5 10-5 14 0" />
+      <path d="M6.5 4.5h7M10 4.5v6" />
+    </>
+  ),
+  'piques-multiplos': (
+    <>
+      <path d="M2.5 15c4.5-7 10.5-7 15 0" />
+      <path d="M5.6 11.6 4.2 8M10 9.8V6M14.4 11.6 15.8 8" />
+    </>
+  ),
+  'piques-alinhar': (
+    <>
+      <path d="M3 4h14" strokeDasharray="2 2" />
+      <path d="M5 4v5M10 4v8M15 4v5" />
+      <path d="M3 16c4-3 10-3 14 0" />
+    </>
+  ),
+  'pique-cadastrar': (
+    <>
+      <path d="M4 3.5h9l3 3v10H4z" />
+      <path d="M7.5 13.5V9l2.5 3 2.5-3v4.5" />
+    </>
+  ),
+  'piques-substituir': (
+    <>
+      <path d="M5 4v6M3 10h4" />
+      <path d="m13 4 2 6 2-6" />
+      <path d="M4 15.5h11M12.5 13l2.5 2.5-2.5 2.5" />
+    </>
+  ),
+  'pique-alterar': (
+    <>
+      <path d="M3 16c4-6 10-6 14 0" />
+      <path d="M10 11.5V8" />
+      <path d="m12.5 6.5 3.2-3.2 1.5 1.5L14 8l-1.9.4z" />
+    </>
+  ),
+  'linhas-auxiliares': (
+    <>
+      <path d="M4 3.5h12v13H4z" />
+      <path d="M6.5 13 13.5 7" strokeDasharray="2.2 2" />
+      <path d="M14.5 12.5v4M12.5 14.5h4" />
     </>
   ),
   'separar-graduacao': (

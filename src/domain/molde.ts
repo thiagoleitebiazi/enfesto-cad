@@ -53,11 +53,39 @@ export interface LinhaDeFio {
   readonly fim: Ponto2D;
 }
 
-/** Pique (marcação de corte): um pequeno traço perpendicular ao contorno, na aresta indicada. */
+/**
+ * O formato de um pique: o tipo (um dos do programa, ou um cadastrado, que
+ * traz a forma e o nome dele) e as medidas. O que cada tipo desenha está em
+ * `piques.ts`.
+ */
+export interface FormatoDePique {
+  readonly tipo: string;
+  /** Ao longo da borda (mm). */
+  readonly larguraMm: number;
+  /** Para dentro da peça (mm). */
+  readonly alturaMm: number;
+  /** Graus: 0 = em esquadro com a borda (no pique interno, de pé na tela); positivo gira no sentido anti-horário da tela. */
+  readonly anguloGraus: number;
+  /** No pique cadastrado: os traços dele, no quadro de 1 × 1 (x de −0,5 a 0,5 ao longo da borda; y de 0 a 1 para dentro). */
+  readonly forma?: readonly (readonly Ponto2D[])[];
+  /** No pique cadastrado: o nome que ele tem no cadastro. */
+  readonly nome?: string;
+}
+
+/** O formato com o ângulo trocado de sinal: é como ele fica na peça espelhada. */
+function formatoEspelhado<T extends { readonly formato?: FormatoDePique }>(item: T): T {
+  return item.formato && item.formato.anguloGraus !== 0 ? { ...item, formato: { ...item.formato, anguloGraus: 0 - item.formato.anguloGraus } } : item;
+}
+
+/** Pique (marcação de corte) na aresta indicada do contorno. Sem formato, é um pequeno traço em esquadro com a borda. */
 export interface Pique {
   readonly id: string;
   readonly posicao: Ponto2D;
   readonly indiceAresta: number;
+  /** O desenho e as medidas do pique (aba Marcações). */
+  readonly formato?: FormatoDePique;
+  /** Como o pique vai para a linha de corte na peça com margem de costura: no ponto mais perto dela, ou seguindo o ângulo dele. */
+  readonly naCostura?: 'projetado' | 'estendido';
   /** Código de relacionamento: piques de peças diferentes com o mesmo código se encontram na costura. */
   readonly codigo?: string;
   /** A graduação do pique (a "tabela dos piques"); sem ela, ele fica na mesma proporção da aresta em cada tamanho. */
@@ -89,11 +117,13 @@ export interface TextoDaPeca {
   readonly alturaMm: number;
 }
 
-/** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). */
+/** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). Com formato, é um pique interno. */
 export interface Marca {
   readonly id: string;
   readonly posicao: Ponto2D;
   readonly rotulo?: string;
+  /** O desenho e as medidas do pique interno, centrado na posição (aba Marcações). */
+  readonly formato?: FormatoDePique;
 }
 
 /**
@@ -411,6 +441,12 @@ export function removerMarca(molde: Molde, marcaId: string): Molde {
 
 const ORIGEM: Ponto2D = { x: 0, y: 0 };
 
+/** O ângulo de um formato trazido para o intervalo de −180° a 180°. */
+function normalizarAnguloDoFormato(graus: number): number {
+  const voltas = ((graus % 360) + 360) % 360;
+  return voltas > 180 ? voltas - 360 : voltas;
+}
+
 /**
  * As cotas da peça levadas por uma transformação afim (`ponto` para posições,
  * `vetor` para direções). Devolve o campo `cotas` pronto para espalhar no
@@ -613,7 +649,12 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
     linhasInternas: molde.linhasInternas.map((l) => rotacionarContorno(l, pivo, anguloGraus)),
     furos: molde.furos.map((f) => rotacionarContorno(f, pivo, anguloGraus)),
     piques: molde.piques.map((p) => piqueLevado(p, (q) => rotacionar(q, pivo, anguloGraus))),
-    marcas: molde.marcas.map((m) => ({ ...m, posicao: rotacionar(m.posicao, pivo, anguloGraus) })),
+    // O pique interno gira junto: o ângulo dele é contado da tela. (O do contorno acompanha a borda sozinho.)
+    marcas: molde.marcas.map((m) => ({
+      ...m,
+      posicao: rotacionar(m.posicao, pivo, anguloGraus),
+      ...(m.formato ? { formato: { ...m.formato, anguloGraus: normalizarAnguloDoFormato(m.formato.anguloGraus + anguloGraus) } } : {}),
+    })),
     linhaDeFio: {
       inicio: rotacionar(molde.linhaDeFio.inicio, pivo, anguloGraus),
       fim: rotacionar(molde.linhaDeFio.fim, pivo, anguloGraus),
@@ -648,8 +689,8 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
     contorno: espelharContornoHorizontal(molde.contorno, centroX),
     linhasInternas: molde.linhasInternas.map((l) => espelharContornoHorizontal(l, centroX)),
     furos: molde.furos.map((f) => espelharContornoHorizontal(f, centroX)),
-    piques: molde.piques.map((p) => piqueLevado(p, (q) => espelharHorizontal(q, centroX))),
-    marcas: molde.marcas.map((m) => ({ ...m, posicao: espelharHorizontal(m.posicao, centroX) })),
+    piques: molde.piques.map((p) => formatoEspelhado(piqueLevado(p, (q) => espelharHorizontal(q, centroX)))),
+    marcas: molde.marcas.map((m) => formatoEspelhado({ ...m, posicao: espelharHorizontal(m.posicao, centroX) })),
     linhaDeFio: {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),

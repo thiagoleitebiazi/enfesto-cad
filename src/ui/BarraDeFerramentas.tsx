@@ -4,6 +4,7 @@ import { ajustarCompactacao } from './compactacaoDaFita';
 import type { FerramentaDeMolde } from './ferramentasDeMolde';
 import type { FerramentaDePence } from './ferramentasDePence';
 import type { FerramentaDeGraduacao } from './ferramentasDeGraduacao';
+import type { FerramentaDeMarcacao } from './ferramentasDeMarcacao';
 import type { FerramentaDeElemento } from './ferramentasDeElemento';
 
 /** Cor, textos, linha de simetria, código de pique, autor e conferência de costuras. */
@@ -65,8 +66,8 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoSelecionar: () => void;
   readonly onEntrarModoNovoMolde: () => void;
   readonly onEntrarModoNovoFuro: () => void;
-  readonly onEntrarModoPique: () => void;
-  readonly onEntrarModoMarca: () => void;
+  /** As ferramentas da aba Marcações, na peça selecionada. */
+  readonly onUsarFerramentaDeMarcacao: (ferramenta: FerramentaDeMarcacao) => void;
   readonly onImportarDxf: () => void;
   readonly onImportarPdf: () => void;
   readonly onAbrirTecido: () => void;
@@ -152,6 +153,8 @@ interface BarraDeFerramentasProps {
 
 const SEM_PECA = 'selecione uma peça primeiro';
 const SEM_PECAS = 'não há peças no projeto';
+/** Ferramenta da aba Marcações que entra na etapa seguinte deste mesmo trabalho. */
+const FALTA_NESTA_ETAPA = 'entra na etapa seguinte desta aba';
 const SEM_TAMANHOS = 'defina os tamanhos primeiro, em “Tabela”';
 
 /**
@@ -1080,38 +1083,111 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
           )}
 
           {abaAtiva === 'marcacoes' && (
-            <div className="grupo-de-ferramentas" role="group" aria-label="Marcações">
-              <button
-                aria-pressed={props.modo === 'pique'}
-                className={props.modo === 'pique' ? 'item-selecionado' : ''}
-                onClick={props.onEntrarModoPique}
-                disabled={!props.temSelecao}
-                title={props.temSelecao ? 'Adicionar pique: clique perto da borda da peça selecionada' : 'Selecione uma peça primeiro'}
-              >
-                <Icone nome="pique" />
-                <span>Pique</span>
-              </button>
-              <button
-                aria-pressed={props.modo === 'marca'}
-                className={props.modo === 'marca' ? 'item-selecionado' : ''}
-                onClick={props.onEntrarModoMarca}
-                disabled={!props.temSelecao}
-                title={props.temSelecao ? 'Adicionar marca de referência na peça selecionada' : 'Selecione uma peça primeiro'}
-              >
-                <Icone nome="marca" />
-                <span>Marca</span>
-              </button>
-              <button
-                aria-pressed={props.modo === 'novo-furo'}
-                className={props.modo === 'novo-furo' ? 'item-selecionado' : ''}
-                onClick={props.onEntrarModoNovoFuro}
-                disabled={!props.temSelecao}
-                title={props.temSelecao ? 'Novo furo na peça selecionada: clique os pontos, Enter para fechar' : 'Selecione uma peça primeiro'}
-              >
-                <Icone nome="furo" />
-                <span>Furo</span>
-              </button>
-            </div>
+            <>
+              <div className="grupo-de-ferramentas" role="group" aria-label="Piques">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Inserir"
+                  icone="pique-inserir"
+                  pressionado={props.modo === 'inserir-pique'}
+                  dica="Inserir pique: põe piques na peça selecionada — na borda ou internos —, com o tipo, a largura, a altura e o ângulo pedidos"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeMarcacao('inserir-pique')}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Remover', 'pique']}
+                  icone="pique-remover"
+                  pressionado={props.modo === 'remover-pique'}
+                  dica="Remover pique: tira os piques clicados — ou todos os do contorno, ou todos os internos, da peça selecionada"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
+                  onClick={() => props.onUsarFerramentaDeMarcacao('remover-pique')}
+                />
+                <div className="coluna-de-ferramenta">
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Pique texto"
+                    icone="pique-texto"
+                    pressionado={false}
+                    dica="Pique texto: escreve um texto dentro da peça, com a altura e o ângulo pedidos"
+                    falta={FALTA_NESTA_ETAPA}
+                    onClick={() => props.onUsarFerramentaDeMarcacao('pique-texto')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Múltiplos"
+                    icone="piques-multiplos"
+                    pressionado={props.modo === 'multiplos-piques'}
+                    dica="Múltiplos: põe vários piques de uma vez — pela quantidade ou pelo espaço entre eles — na borda, numa reta entre dois pontos ou ao longo de uma linha interna"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMarcacao('multiplos-piques')}
+                  />
+                </div>
+              </div>
+              <div className="grupo-de-ferramentas" role="group" aria-label="Editar piques">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Alinhar"
+                  icone="piques-alinhar"
+                  pressionado={false}
+                  dica="Alinhar: na peça graduada, leva o pique de cada tamanho para a mesma linha"
+                  falta={FALTA_NESTA_ETAPA}
+                  onClick={() => props.onUsarFerramentaDeMarcacao('alinhar-piques')}
+                />
+                <div className="coluna-de-ferramenta">
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Cadastrar pique"
+                    icone="pique-cadastrar"
+                    pressionado={false}
+                    dica="Cadastrar pique: guarda um formato de pique desenhado por você, para usar nas outras ferramentas"
+                    falta={FALTA_NESTA_ETAPA}
+                    onClick={() => props.onUsarFerramentaDeMarcacao('cadastrar-pique')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Substituir"
+                    icone="piques-substituir"
+                    pressionado={false}
+                    dica="Substituir: troca o formato de todos os piques de um tipo, troca-os por piques internos ou os remove — na peça selecionada, nas marcadas ou em todas"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMarcacao('substituir-piques')}
+                  />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Alterar"
+                    icone="pique-alterar"
+                    pressionado={props.modo === 'alterar-pique'}
+                    dica="Alterar: clique num pique da peça selecionada para mudar o formato, as medidas, o código e o lugar dele"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMarcacao('alterar-pique')}
+                  />
+                </div>
+              </div>
+              <div className="grupo-de-ferramentas" role="group" aria-label="Linhas auxiliares">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Inserir ou', 'remover']}
+                  icone="linhas-auxiliares"
+                  pressionado={false}
+                  dica="Inserir ou remover linhas auxiliares: diz quais linhas internas fazem parte do molde e quais são só de construção"
+                  falta={FALTA_NESTA_ETAPA}
+                  onClick={() => props.onUsarFerramentaDeMarcacao('linhas-auxiliares')}
+                />
+              </div>
+              {/* O furo não é da aba da referência: fica num grupo à parte, para continuar à mão. */}
+              <div className="grupo-de-ferramentas" role="group" aria-label="Furos">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Furo"
+                  icone="furo"
+                  pressionado={props.modo === 'novo-furo'}
+                  dica="Furo: um recorte dentro da peça selecionada — clique os pontos, Enter para fechar"
+                  falta={props.temSelecao ? null : SEM_PECA}
+                  onClick={props.onEntrarModoNovoFuro}
+                />
+              </div>
+            </>
           )}
 
           {abaAtiva === 'graduacao' && (

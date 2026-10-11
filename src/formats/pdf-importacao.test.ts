@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, area } from '../core/geometria';
 import { criarMolde, adicionarPique, adicionarMarca, type Molde } from '../domain/molde';
+import { inserirPique, inserirPiqueInterno } from '../domain/piques';
 import { gerarPdfDeMoldesIndividuais } from './pdf-exportacao';
 import { importarPdf } from './pdf-importacao';
 
@@ -98,6 +99,23 @@ describe('importarPdf — ciclo completo de ida e volta (exportar → importar)'
     expect(importada.marcas).toHaveLength(1);
     expect(importada.marcas[0]!.x).toBeCloseTo(45, 0);
     expect(importada.marcas[0]!.y).toBeCloseTo(45, 0);
+  });
+
+  it('o pique com formato e o pique interno voltam no lugar em que estavam (sem o formato, que o PDF não guarda)', async () => {
+    const base = criarMolde({ nome: 'Frente', referencia: 'R', tamanho: 'M', contorno: [ponto(0, 0), ponto(60, 0), ponto(60, 80), ponto(0, 80)], linhaDeFio: { inicio: ponto(30, 10), fim: ponto(30, 70) } }, 'f');
+    // Um V largo na borda — o primeiro traço dele não começa no meio da boca — e uma caixa interna.
+    const comV = inserirPique(base, { indiceAresta: 0, ponto: ponto(40, 0) }, { tipo: 'v', larguraMm: 10, alturaMm: 8, anguloGraus: 0 }, 'p1');
+    const original = inserirPiqueInterno(comV, ponto(20, 50), { tipo: 'caixa', larguraMm: 6, alturaMm: 10, anguloGraus: 0 }, 'm1');
+    const blob = await gerarPdfDeMoldesIndividuais([original], { formato: 'A4', orientacao: 'retrato', margemMm: 10 });
+    const importada = importarPdf(await paraTextoLatin1(blob)).pecas[0]!;
+
+    expect(importada.piques).toHaveLength(1);
+    expect(importada.piques[0]!.posicao.x).toBeCloseTo(40, 1);
+    expect(importada.piques[0]!.posicao.y).toBeCloseTo(0, 1);
+    expect(importada.piques[0]!.indiceAresta).toBe(0);
+    expect(importada.marcas).toHaveLength(1);
+    expect(importada.marcas[0]!.x).toBeCloseTo(20, 1);
+    expect(importada.marcas[0]!.y).toBeCloseTo(50, 1);
   });
 
   it('reconstrói a margem de costura por aproximação da diferença de envelope', async () => {
