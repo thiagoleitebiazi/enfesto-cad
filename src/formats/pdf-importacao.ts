@@ -1,7 +1,8 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
-import { ponto, retanguloEnvolvente, pontoMaisProximoNoContorno } from '../core/geometria';
-import type { LinhaDeFio } from '../domain/molde';
+import { distancia, ponto, retanguloEnvolvente, pontoMaisProximoNoContorno } from '../core/geometria';
+import { criarMolde, type FormatoDePique, type LinhaDeFio, type Molde } from '../domain/molde';
 import { PONTOS_POR_MM } from './pdf-exportacao';
+import { lerRegistroDaPagina, type TextoDoRegistro } from './pdf-registro';
 
 /**
  * Importação de PDF (pedido do usuário: "extrair peças vetoriais de um PDF
@@ -166,8 +167,14 @@ function lerRotuloDaPagina(streamDaPagina: string): RotuloDaPagina | null {
   const blocosDeTexto = [...streamDaPagina.matchAll(/BT([\s\S]*?)ET/g)].map((m) => decodificarTextoDoPdf(m[1]!));
   if (blocosDeTexto.length === 0) return null;
 
-  const primeiro = blocosDeTexto[0]!;
-  const m = primeiro.match(/^(.*) \((.*)\) ([^)]+)$/);
+  // O rótulo ("nome (referência) tamanho") é escrito depois dos textos da própria peça — os códigos dos piques e os
+  // textos postos nela — e é repetido no começo do rodapé da página. É, então, o bloco com esse formato com que um
+  // bloco mais adiante começa; sem um assim, vale o primeiro bloco, como sempre valeu. A peça sem tamanho sai só com
+  // "nome (referência)": o tamanho é a parte que pode faltar.
+  const FORMATO_DO_ROTULO = /^(.*) \((.*)\) ?([^)]*)$/;
+  const doRotulo = blocosDeTexto.findIndex((bloco, i) => FORMATO_DO_ROTULO.test(bloco) && blocosDeTexto.slice(i + 1).some((depois) => depois.startsWith(bloco)));
+  const primeiro = blocosDeTexto[doRotulo >= 0 ? doRotulo : 0]!;
+  const m = primeiro.match(FORMATO_DO_ROTULO);
   if (!m) return null;
 
   const nome = m[1]!;
@@ -198,10 +205,63 @@ export interface PecaImportadaPdf {
   readonly furos: Contorno[];
   readonly linhasInternas: Contorno[];
   readonly linhaDeFio: LinhaDeFio | null;
-  readonly piques: readonly { readonly posicao: Ponto2D; readonly indiceAresta: number }[];
+  /** Os piques do contorno. O formato, o "pique na costura" e o código vêm do registro da peça no PDF, quando ele existe. */
+  readonly piques: readonly {
+    readonly posicao: Ponto2D;
+    readonly indiceAresta: number;
+    readonly formato?: FormatoDePique;
+    readonly naCostura?: 'projetado' | 'estendido';
+    readonly codigo?: string;
+  }[];
   readonly marcas: readonly Ponto2D[];
+  /** O formato de cada marca (na ordem de `marcas`; `null` no ponto sem formato), quando o registro do PDF os traz. */
+  readonly formatosDasMarcas?: readonly (FormatoDePique | null)[];
+  /** Os textos da peça, pelo registro do PDF. */
+  readonly textos?: readonly TextoDoRegistro[];
+  /** As linhas só de construção, pelo registro do PDF: não são desenhadas na folha, e já estão em `linhasInternas`. */
+  readonly elementos?: readonly Contorno[];
   readonly margemDeCosturaMm: number;
   readonly quantidade: number;
+}
+
+/** A até isto (mm) da posição desenhada, o pique do registro é o mesmo pique. */
+const MESMO_PIQUE_MM = 0.05;
+
+/**
+ * A peça importada como um molde do projeto, com o que o registro do PDF
+ * trouxe: os formatos dos piques, os textos e as linhas de construção. Só
+ * para a peça que tem linha de fio.
+ */
+export function moldeDaPecaImportada(peca: PecaImportadaPdf, novoId: () => string): Molde {
+  if (!peca.linhaDeFio) throw new Error(`A peça "${peca.nome}" não tem linha de fio.`);
+  const molde = criarMolde(
+    {
+      nome: peca.nome,
+      referencia: peca.referencia,
+      tamanho: peca.tamanho,
+      contorno: peca.contorno,
+      furos: peca.furos,
+      linhasInternas: peca.linhasInternas,
+      linhaDeFio: peca.linhaDeFio,
+      margemDeCosturaMm: peca.margemDeCosturaMm,
+      quantidade: peca.quantidade,
+      piques: peca.piques.map((pique) => ({
+        id: novoId(),
+        posicao: pique.posicao,
+        indiceAresta: pique.indiceAresta,
+        ...(pique.formato ? { formato: pique.formato } : {}),
+        ...(pique.naCostura ? { naCostura: pique.naCostura } : {}),
+        ...(pique.codigo ? { codigo: pique.codigo } : {}),
+      })),
+      marcas: peca.marcas.map((posicao, i) => {
+        const formato = peca.formatosDasMarcas?.[i];
+        return { id: novoId(), posicao, ...(formato ? { formato } : {}) };
+      }),
+    },
+    novoId(),
+  );
+  const textos = (peca.textos ?? []).map((texto) => ({ id: novoId(), ...texto }));
+  return { ...molde, ...(textos.length > 0 ? { textos } : {}), ...(peca.elementos && peca.elementos.length > 0 ? { elementos: peca.elementos } : {}) };
 }
 
 export interface ResultadoImportacaoPdf {
@@ -283,16 +343,39 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
       );
     }
 
+    // O registro da peça diz o que o desenho não diz: os formatos, os textos e as linhas de construção.
+    const lido = lerRegistroDaPagina(stream);
+    if (lido === 'ilegivel') {
+      avisos.push(`Peça "${rotulo.nome}": o registro das marcações deste PDF não pôde ser lido — a peça volta só pelo desenho: os piques como traços, sem os textos nem as linhas de construção.`);
+    }
+    const registro = lido !== null && lido !== 'ilegivel' ? lido : null;
+    const piquesComOFormato = piques.map((pique) => {
+      const doRegistro = registro?.piques.find((r) => distancia(r.posicao, pique.posicao) <= MESMO_PIQUE_MM);
+      if (!doRegistro) return pique;
+      return {
+        ...pique,
+        ...(doRegistro.formato ? { formato: doRegistro.formato } : {}),
+        ...(doRegistro.naCostura ? { naCostura: doRegistro.naCostura } : {}),
+        ...(doRegistro.codigo ? { codigo: doRegistro.codigo } : {}),
+      };
+    });
+    // As marcas vêm do registro quando ele conta as mesmas que o desenho mostra: é ele que sabe onde o pique interno está de verdade.
+    const marcasDoRegistro = registro && registro.marcas.length > 0 && registro.marcas.length === marcas.length ? registro.marcas : null;
+    const deConstrucao = registro?.elementos ?? [];
+
     pecas.push({
       nome: rotulo.nome,
       referencia: rotulo.referencia,
       tamanho: rotulo.tamanho,
       contorno,
       furos,
-      linhasInternas,
+      linhasInternas: [...linhasInternas, ...deConstrucao],
       linhaDeFio,
-      piques,
-      marcas,
+      piques: piquesComOFormato,
+      marcas: marcasDoRegistro ? marcasDoRegistro.map((m) => m.posicao) : marcas,
+      ...(marcasDoRegistro ? { formatosDasMarcas: marcasDoRegistro.map((m) => m.formato ?? null) } : {}),
+      ...(registro && registro.textos.length > 0 ? { textos: registro.textos } : {}),
+      ...(deConstrucao.length > 0 ? { elementos: deConstrucao } : {}),
       margemDeCosturaMm,
       quantidade: rotulo.quantidade,
     });

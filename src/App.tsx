@@ -314,7 +314,7 @@ import {
   importarDxf,
   type ResultadoImportacaoDxf,
 } from './formats/dxf-importacao';
-import { importarPdf } from './formats/pdf-importacao';
+import { importarPdf, moldeDaPecaImportada } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import {
   contornoEmMundo,
@@ -2860,24 +2860,8 @@ export default function App(): React.JSX.Element {
       const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
       const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
 
-      const novosMoldes = prontas.map((p) =>
-        criarMolde(
-          {
-            nome: p.nome,
-            referencia: p.referencia,
-            tamanho: p.tamanho,
-            contorno: p.contorno,
-            furos: p.furos,
-            linhasInternas: p.linhasInternas,
-            linhaDeFio: p.linhaDeFio!,
-            margemDeCosturaMm: p.margemDeCosturaMm,
-            quantidade: p.quantidade,
-            piques: p.piques.map((piq) => ({ id: proximoId(), posicao: piq.posicao, indiceAresta: piq.indiceAresta })),
-            marcas: p.marcas.map((m) => ({ id: proximoId(), posicao: m })),
-          },
-          proximoId(),
-        ),
-      );
+      // Com o que o registro do PDF traz: os formatos dos piques, os textos e as linhas de construção.
+      const novosMoldes = prontas.map((p) => moldeDaPecaImportada(p, proximoId));
 
       if (novosMoldes.length > 0) {
         aplicarMudanca([...pecas, ...novosMoldes]);

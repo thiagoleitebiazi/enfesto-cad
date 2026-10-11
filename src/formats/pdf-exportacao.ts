@@ -9,6 +9,7 @@ import { contornoDeCorte } from '../domain/molde';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
+import { registroDaPeca } from './pdf-registro';
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 
@@ -246,6 +247,11 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
   doc.fillColor('#000000').fontSize(mmParaPontos(3));
   doc.text(`${peca.nome} (${peca.referencia || '—'}) ${peca.tamanho}`, centroTexto.x, centroTexto.y);
   doc.restore();
+
+  // O que o desenho não diz (os formatos dos piques, os textos, as linhas de construção) vai num comentário do PDF,
+  // que não aparece na folha: é por ele que a importação traz a peça de volta como era.
+  const registro = registroDaPeca(peca, origem);
+  if (registro) doc.addContent(registro);
 }
 
 /** Régua de referência: uma linha de 100mm com marcação, para conferir a escala após imprimir. */
