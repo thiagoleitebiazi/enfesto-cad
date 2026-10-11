@@ -285,7 +285,7 @@ export function dialogoDaMarcacao(
           { tipo: 'medida', id: 'dy', rotulo: 'Dy (mm, + para baixo)', inicial: paraCampo(o.dyMm) },
         ],
         nota:
-          'Depois de confirmar, cada clique põe um pique na peça selecionada: na borda (com “Pique sobre o contorno”) ou dentro dela. Com a distância da referência preenchida, o clique escolhe o ponto do contorno mais perto, e o pique fica a essa distância dele, para o lado do clique. Com Dx e Dy, o clique junto de um ponto do contorno parte dele. ' +
+          'Depois de confirmar, cada clique põe um pique na peça selecionada: na borda (com “Pique sobre o contorno”) ou dentro dela. O pique é uma marcação desenhada na peça: o contorno e o encaixe não mudam com ele. Com a distância da referência preenchida, o clique escolhe o ponto do contorno mais perto, e o pique fica a essa distância dele, para o lado do clique. Com Dx e Dy, o clique junto de um ponto do contorno parte dele. ' +
           NOTA_DO_FORMATO +
           ' O manual também não diz de onde partem o Dx e o Dy: aqui, do ponto clicado.',
         rotuloDoBotao: 'Indicar no desenho',
@@ -403,7 +403,7 @@ export function dialogoDaMarcacao(
             inicial: o.ancora,
           },
         ],
-        nota: 'Depois de confirmar, cada clique dentro da peça selecionada escreve o texto ali. Ele faz parte da peça: anda, gira e sai no PDF com ela. Para mudar ou apagar um texto, use “Alterar” e clique nele. O manual da referência tem o campo “Referência” e não diz que posições ele oferece: o meio, o começo e o fim são a nossa leitura.',
+        nota: 'Depois de confirmar, cada clique dentro da peça selecionada escreve o texto ali. Ele faz parte da peça: anda, gira e sai no PDF com ela. Fica dentro dela, no ponto clicado — é onde o manual da referência o põe —, e não preso a um pique do contorno. Para mudar ou apagar um texto, use “Alterar” e clique nele. O manual da referência tem o campo “Referência” e não diz que posições ele oferece: o meio, o começo e o fim são a nossa leitura.',
         rotuloDoBotao: 'Indicar no desenho',
       };
     }
@@ -493,7 +493,7 @@ export function dialogoDaMarcacao(
             inicial: opcoes.linhas.manual ? 'manual' : 'automatico',
           },
         ],
-        nota: 'A linha auxiliar faz parte do molde: sai no PDF com ele. O elemento é só de construção: continua na tela, clara e pontilhada, e serve às ferramentas que pedem um elemento (cortar, dobrar, alinhar, múltiplos piques), mas não sai no PDF. Aqui toda linha interna já nasce fazendo parte do molde — é o “Remover” que a deixa só de construção, e o “Adicionar” que a traz de volta. No programa de referência é o contrário: o elemento desenhado só passa a ser do molde com o “Adicionar”.',
+        nota: 'A linha auxiliar faz parte do molde: sai no PDF com ele. O elemento é só de construção: continua na tela, clara e pontilhada, e serve às ferramentas que pedem um elemento (cortar, dobrar, alinhar, múltiplos piques), mas não sai no PDF — o arquivo guarda o elemento sem desenhá-lo, e, importado de volta neste programa, ele continua na peça. A linha que faz parte do molde também serve a essas ferramentas: nenhuma delas pede que a linha seja só de construção. Aqui toda linha interna já nasce fazendo parte do molde — é o “Remover” que a deixa só de construção, e o “Adicionar” que a traz de volta. No programa de referência é o contrário: o elemento desenhado só passa a ser do molde com o “Adicionar”.',
         rotuloDoBotao: 'Indicar no desenho',
       };
     default:

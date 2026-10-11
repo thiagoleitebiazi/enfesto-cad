@@ -92,6 +92,8 @@ describe('as janelas', () => {
     // Onde o manual se cala, a janela diz o que é leitura nossa.
     expect(dialogo.nota).toMatch(/não descreve os tipos nem diz de onde o ângulo é contado: os formatos e o ângulo contado do esquadro com a borda \(positivo, no sentido anti-horário da tela\) são a nossa leitura\./);
     expect(dialogo.nota).toMatch(/O manual também não diz de onde partem o Dx e o Dy: aqui, do ponto clicado\.$/);
+    // O que é decisão, e não falta, fica dito na janela.
+    expect(dialogo.nota).toMatch(/O pique é uma marcação desenhada na peça: o contorno e o encaixe não mudam com ele\./);
   });
 
   it('lê as opções do Inserir, e recusa o formato e a distância que não servem', () => {
@@ -558,6 +560,7 @@ describe('Pique texto', () => {
     expect(dialogo.titulo).toBe('Inserir pique texto');
     expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([['texto', ''], ['altura', '10'], ['angulo', '0'], ['referencia', 'centro']]);
     expect(dialogo.nota).toMatch(/tem o campo “Referência” e não diz que posições ele oferece: o meio, o começo e o fim são a nossa leitura\.$/);
+    expect(dialogo.nota).toMatch(/Fica dentro dela, no ponto clicado — é onde o manual da referência o põe —, e não preso a um pique do contorno\./);
     expect(lerDialogoDaMarcacao('pique-texto', O, { texto: ' Bolso ', altura: 12, angulo: 30, referencia: 'fim' }).texto).toEqual({ texto: 'Bolso', alturaMm: 12, anguloGraus: 30, ancora: 'fim' });
     expect(lerDialogoDaMarcacao('pique-texto', O, { texto: 'Bolso', altura: 12, angulo: 0, referencia: 'x' }).texto.ancora).toBe('centro');
     expect(() => lerDialogoDaMarcacao('pique-texto', O, { texto: '  ', altura: 12, angulo: 0 })).toThrow('Escreva o texto.');
@@ -802,6 +805,7 @@ describe('Linhas auxiliares', () => {
     ]);
     expect(dialogo.rotuloDoBotao).toBe('Indicar no desenho');
     expect(dialogo.nota).toMatch(/O elemento é só de construção: continua na tela, clara e pontilhada/);
+    expect(dialogo.nota).toMatch(/o arquivo guarda o elemento sem desenhá-lo, e, importado de volta neste programa, ele continua na peça\. A linha que faz parte do molde também serve a essas ferramentas: nenhuma delas pede que a linha seja só de construção\./);
     expect(dialogo.nota).toMatch(/Aqui toda linha interna já nasce fazendo parte do molde .* No programa de referência é o contrário: o elemento desenhado só passa a ser do molde com o “Adicionar”\.$/);
     // A janela reabre com o que foi escolhido da última vez.
     const outra = dialogoDaMarcacao(MODO, linhas({ acao: 'adicionar', manual: true }), [comLinhas()])!;
