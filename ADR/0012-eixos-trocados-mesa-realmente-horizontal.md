@@ -69,7 +69,7 @@ O screenshot que motivou esta investigação mostrava o app recém-aberto
 (sem ter passado por "Novo projeto"), com "Enfesto: não configurado" —
 por isso nenhuma mesa aparecia, só as 2 peças de demonstração soltas num
 fundo cinza. Isso reforçava a impressão de "não parece nem um pouco com
-o Audaces" (que sempre mostra uma mesa/marcador ativo). Adicionado
+o [programa de referência]" (que sempre mostra uma mesa/marcador ativo). Adicionado
 `enfestoDeDemonstracao()`/`tecidoDeDemonstracao()` (mesmos parâmetros
 padrão do diálogo "Novo projeto": 1500×3000mm, tipo Ímpar, sem margens) e
 `transformParaEnquadrarMesa()` como estado inicial de `enfesto`/`tecido`/

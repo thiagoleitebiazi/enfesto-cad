@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Um quarto screenshot do Audaces (a mesma tela do ADR 0013, agora com o
+Um quarto screenshot do programa de referência (a mesma tela do ADR 0013, agora com o
 diálogo "Dimensionar" aberto e os grupos da aba Manipulação bem
 visíveis), com três pedidos diretos: "deixe exatamente como está na
 imagem", "remova os 2 exemplos de frente e costa", "deve estar
@@ -44,7 +44,7 @@ deslocado, mesmo cuidado já tomado em `dimensionarMolde`).
 ### 4. O que NÃO foi implementado — motivo genuíno, não preguiça
 
 Vários rótulos da imagem continuam sem equivalente real neste app, por
-eu não ter certeza do comportamento exato sem acesso prático ao Audaces
+eu não ter certeza do comportamento exato sem acesso prático ao programa de referência
 (a imagem sozinha não deixa claro o suficiente para implementar direito):
 
 - **"Manipular pontos"** e **"Manipulação rápida"** (ícone grande à
@@ -90,6 +90,6 @@ jeito que "Elemento paralelo" foi mapeado para `deslocarContornoParaFora`.
   app, nunca foram persistidas como "padrão" de um projeto salvo.
 - Réplica visual pixel-a-pixel (ícones grandes tipo dropdown, grade
   compacta de 2-3 linhas por grupo) deliberadamente não foi perseguida —
-  isso se aproximaria de copiar o DESENHO da interface do Audaces, não só
+  isso se aproximaria de copiar o DESENHO da interface da referência, não só
   a organização funcional; a linha traçada aqui é replicar nomes de
   grupo e funcionalidades reais, não o pixel exato do layout.

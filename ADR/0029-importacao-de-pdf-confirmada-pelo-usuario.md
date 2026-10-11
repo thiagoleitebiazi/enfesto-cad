@@ -48,7 +48,7 @@ usuário pediu que a importação ficasse fiel ao arquivo.
 - Testes do diálogo (4): botão desabilitado sem nome e fio, habilitado com
   os dois, desmarcar contorno, recusa de fator inválido.
 - Suíte completa: 271/271. Typecheck limpo. Lint sem erros.
-- Electron de produção com o PDF do Audaces: o diálogo lista os 4
+- Electron de produção com o PDF da referência: o diálogo lista os 4
   contornos (67, 69, 37 e 37 vértices); o botão começa desabilitado; ao
   preencher nomes e fio, habilita; ao importar, as 4 peças entram com os
   nomes escolhidos e as posições do PDF, e o diálogo fecha.

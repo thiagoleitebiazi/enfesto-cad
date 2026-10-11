@@ -2,11 +2,11 @@
 
 ## Contexto
 
-Depois do ADR 0015 ter deixado explícito quais ferramentas do Audaces
+Depois do ADR 0015 ter deixado explícito quais ferramentas do programa de referência
 Moldes Avançado não foram implementadas por falta de certeza sobre seu
 comportamento exato, o usuário pediu para pesquisar essas funcionalidades
 e implementá-las. Pesquisa feita via busca na web (documentação/manuais
-públicos do Audaces e de um concorrente, molde.me, que documenta
+públicos do programa de referência e de um concorrente, molde.me, que documenta
 conceitos equivalentes de forma mais acessível) — não acesso direto ao
 software.
 
@@ -17,12 +17,12 @@ software.
 - **"Mover cerca"**: move os elementos que caíram dentro da cerca
   (pontos de controle, piques internos, linhas auxiliares).
 - **"Manipulação rápida"** corresponde à aula "Mover pontos: como
-  alterar de forma rápida" do treinamento oficial Audaces — uma forma
+  alterar de forma rápida" do treinamento oficial da referência — uma forma
   mais rápida/abrangente de mover pontos do que um de cada vez.
 - **"Redefinir perímetro"**: redimensiona um segmento por suas
   extremidades, com um modo específico ("Manter extremos") que só existe
   para curvas — não se aplica a segmentos retos.
-- **"Converter em costura"**: no Audaces v14+, a margem de costura passa
+- **"Converter em costura"**: na referência, da versão 14 em diante, a margem de costura passa
   a ser uma "projeção" do molde base, vinculada à forma dele — ou seja,
   é conceitualmente a mesma coisa que este app já faz com
   `margemDeCosturaMm`/`contornoDeCorte()` (ADR 0005): a linha de corte é
@@ -35,10 +35,10 @@ software.
   em moldes e inserir linhas auxiliares" — não achei uma definição
   precisa o suficiente para implementar com confiança.
 
-Fontes: manual digital Audaces Moldes VS10 (idoc.pub/PDFCoffee), páginas
+Fontes: manual digital da referência, versão 10 (idoc.pub/PDFCoffee), páginas
 de ajuda do molde.me (`ajuda/redefinir-perimetro`,
 `ajuda/estudio/pontos-de-controle`), e resultados de busca sobre o
-currículo do Audaces Academy (aulas 23, 24 e 26 do curso Audaces Moldes).
+currículo do curso on-line da referência (aulas 23, 24 e 26).
 
 ## Decisões
 
@@ -55,7 +55,7 @@ capacidades distintas:
   arrastar (constrói um grupo).
 - **Clique e arrasto num espaço vazio**: desenha uma "cerca" retangular;
   ao soltar, todos os vértices dentro dela ficam selecionados — mesmo
-  comportamento do "Definir cerca" do Audaces, sem precisar de um passo
+  comportamento do "Definir cerca" da referência, sem precisar de um passo
   separado para "confirmar" a cerca antes de poder mover.
 - **Arrastar qualquer vértice já selecionado**: move TODOS os vértices
   selecionados juntos pelo mesmo deslocamento — "Mover cerca"/
@@ -82,7 +82,7 @@ para implementar sem antes ter curvas.
 Confirmado pela pesquisa: é o mesmo conceito de "Margem de costura (mm)"
 já presente no painel de Propriedades desde o ADR 0005 (a linha de corte
 tracejada já é recalculada ao vivo a partir do contorno + a margem).
-Nenhuma ferramenta nova precisa ser criada — o rótulo do Audaces é
+Nenhuma ferramenta nova precisa ser criada — o rótulo da referência é
 diferente, a funcionalidade por trás é a mesma.
 
 ### "Transformar elementos" e "Copiar ou trocar elemento" continuam fora
@@ -129,6 +129,6 @@ limpos.
   existindo e testada, só não está mais ligada a esta interação
   específica da UI.
 - A pesquisa ficou documentada com fontes específicas para que, se o
-  usuário tiver acesso direto ao Audaces e quiser confirmar/corrigir
+  usuário tiver acesso direto ao programa de referência e quiser confirmar/corrigir
   algum desses comportamentos, dê pra revisar a decisão com uma base
   concreta em vez de começar do zero.

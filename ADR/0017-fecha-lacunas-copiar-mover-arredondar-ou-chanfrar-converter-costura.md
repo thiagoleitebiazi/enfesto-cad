@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O usuário mandou uma versão mais nítida do mesmo screenshot do Audaces
+O usuário mandou uma versão mais nítida do mesmo screenshot do programa de referência
 Moldes Avançado e perguntou diretamente: "está igual a esta imagem? com
 as ordens, layout e funcionalidades?". Com os ícones e agrupamentos
 legíveis desta vez, ficou claro que ainda faltavam itens reais que as
@@ -19,9 +19,9 @@ precisar de mais pesquisa (diferente das duas que continuam em aberto):
    Desenho (arrastar a peça inteira). Adicionado como atalho aqui,
    reaproveitando o mesmo `onEntrarModoSelecionar`.
 2. **"Copiar"** (grupo Indicar) — mapeado para "Duplicar" (mesma ação já
-   existente na aba Edição, Ctrl+D), exposta aqui também por ser onde o
-   Audaces a mostra neste contexto.
-3. **"Arredondar ou chanfrar"** — o Audaces trata como UM botão só, não
+   existente na aba Edição, Ctrl+D), exposta aqui também por ser onde a
+   referência a mostra neste contexto.
+3. **"Arredondar ou chanfrar"** — a referência trata como UM botão só, não
    dois. As duas ferramentas já existiam separadas desde o ADR 0013
    (Chanfrar canto/Arredondar canto); unificadas num único modo que
    pergunta primeiro qual operação ("A" arredondar / "C" chanfrar) e

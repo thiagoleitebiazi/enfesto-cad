@@ -3,8 +3,8 @@
 ## Contexto
 
 Após o ADR 0020 (remoção do painel fixo de Propriedades), o usuário
-comparou a interface resultante com a mesma referência (Audaces Moldes
-Avançado) de novo e perguntou diretamente se interface e funcionalidades
+comparou a interface resultante com a mesma referência (a de sempre)
+de novo e perguntou diretamente se interface e funcionalidades
 estavam parecidas. Nessa comparação honesta, identifiquei lacunas ainda
 abertas e o usuário pediu "faça bater" para fechá-las. As lacunas
 endereçadas neste ADR (das que eu havia levantado) são as que tinham dado

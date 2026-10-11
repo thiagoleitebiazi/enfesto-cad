@@ -2,11 +2,11 @@
 
 ## Contexto
 
-O usuário enviou duas capturas de tela do Audaces (CAD industrial comercial
+O usuário enviou duas capturas de tela do programa de referência (CAD industrial comercial
 real) mostrando dois módulos bem diferentes: uma "Ficha Técnica"
 (custos/coleções) e um diálogo "Automatic marker — Advanced" (parâmetros
 avançados de encaixe automático), pedindo "layout e funcionalidades do
-Audaces". Dado o princípio já em vigor desde a especificação original
+[programa de referência]". Dado o princípio já em vigor desde a especificação original
 ("sem copiar a marca") e a separação deliberada de escopo com o projeto
 irmão `moda-cad` (que já cobre ficha técnica/custos/coleções), uma
 pergunta de esclarecimento (`AskUserQuestion`) reduziu o pedido a dois
@@ -56,7 +56,7 @@ configuração, nunca inicia o cálculo direto, para o usuário sempre ver
 
 ### 3. Espelhamento como extensão da mesma regra crítica da rotação
 
-O Audaces original mostrava opções de espelhamento dentro dos parâmetros
+O programa de referência mostrava opções de espelhamento dentro dos parâmetros
 avançados de encaixe. Em vez de um espelhamento "automático e implícito"
 (que violaria a regra crítica da seção 5: nunca inventar uma orientação
 não autorizada pela peça, mesmo que melhore o aproveitamento), o

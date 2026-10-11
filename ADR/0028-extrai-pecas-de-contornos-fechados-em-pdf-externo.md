@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Depois do ADR 0027, o app reconhecia que o PDF do Audaces era vetorial, mas
+Depois do ADR 0027, o app reconhecia que o PDF da referência era vetorial, mas
 não criava peças. O usuário pediu que as peças fossem reconhecidas.
 
 Análise do arquivo (ver ADR 0027):
@@ -56,7 +56,7 @@ Dimensionar.
   retângulos pequenos descartados, dois polígonos aceitos, medidas em mm e
   origem no canto inferior esquerdo. Suíte completa: 263/263.
 - Typecheck limpo. Lint sem erros (1 aviso antigo, não relacionado).
-- Electron de produção, PDF do Audaces (arquivo local, não versionado):
+- Electron de produção, PDF da referência (arquivo local, não versionado):
   4 peças na lista ("Peça 1" a "Peça 4"), "Peças: 4" na barra de status,
   mensagem com a escala assumida e 28 formas descartadas. Canvas com
   numeração dos vértices e cotas em mm.

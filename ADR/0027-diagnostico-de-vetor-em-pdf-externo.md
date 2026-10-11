@@ -3,7 +3,7 @@
 ## Contexto
 
 O usuário pediu que o app "reconheça que o PDF é um vetor". O PDF de
-exemplo (`REF.101-CAMISETA BAS-G.pdf`, de origem Audaces) não foi
+exemplo (`REF.101-CAMISETA BAS-G.pdf`, exportado do programa de referência) não foi
 exportado por este app, então o importador de peças (ADR 0019) não lê
 nada e mostra só "Nenhuma peça reconhecível".
 

@@ -3,8 +3,8 @@
 ## Contexto
 
 Pedido estruturado (template de "atualizar interface para corresponder a
-imagem de referência"), com a mesma screenshot do Audaces Moldes
-Avançado já usada nos ADRs 0013-0019 como "imagem 2". Diferença desta
+imagem de referência"), com a mesma screenshot do programa de
+referência já usada nos ADRs 0013-0019 como "imagem 2". Diferença desta
 vez: instrução explícita e detalhada para **remover o painel fixo de
 Propriedades da lateral direita** — ele existe na interface atual, mas
 não existe na imagem de referência (lá, edição de peça acontece via
@@ -77,7 +77,7 @@ de peças, igual à composição da imagem de referência.
   visibilidade constante; duplicar o mesmo controle em dois lugares
   arriscaria confundir com o "Girar" de ângulo livre que já existe na
   aba Manipulação.
-- **Cores/ícones específicos da marca Audaces**: mantida a decisão já
+- **Cores/ícones específicos da marca da referência**: mantida a decisão já
   registrada nos ADRs 0017/0018 — convenções de layout são replicadas,
   identidade visual de marca não.
 

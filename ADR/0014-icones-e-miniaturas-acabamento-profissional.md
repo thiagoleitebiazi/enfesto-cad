@@ -6,7 +6,7 @@ Depois do ADR 0013, o usuário perguntou diretamente "a aparência está
 muito parecida com a da imagem que eu enviei?". Resposta honesta: não —
 a estrutura (abas + grupos) era parecida, mas faltavam ícones nos botões
 e miniaturas das peças na lista, duas coisas visíveis de cara na imagem
-do Audaces. Pedido seguinte: "deixe profissional como está na imagem".
+do programa de referência. Pedido seguinte: "deixe profissional como está na imagem".
 
 ## Decisões
 
@@ -15,14 +15,14 @@ do Audaces. Pedido seguinte: "deixe profissional como está na imagem".
 Novo `src/ui/Icone.tsx`: ~39 ícones de linha simples (SVG, `viewBox`
 20×20, traço `currentColor`), um para cada botão de toda a barra de
 ferramentas (todas as 5 abas + o grupo Visualização), desenhados à mão
-para este projeto — não são o ícone específico do Audaces nem de nenhuma
+para este projeto — não são o ícone específico da referência nem de nenhuma
 biblioteca de terceiros, só o mesmo tipo de pictograma simples e genérico
 (disquete para salvar, tesoura para recortar, lixeira para excluir, etc.)
 que qualquer programa de desenho usa. Continua respeitando "sem copiar a
-marca": nenhuma cor, logo ou ícone específico do Audaces foi reproduzido.
+marca": nenhuma cor, logo ou ícone específico da referência foi reproduzido.
 
 Todos os botões da barra passaram de texto puro para ícone em cima +
-rótulo embaixo (padrão ribbon do Office/Audaces/qualquer CAD), via CSS
+rótulo embaixo (padrão ribbon do Office, da referência, de qualquer CAD), via CSS
 (`display:flex; flex-direction:column`) — mudança de estilo, não de
 comportamento: os mesmos `onClick`/`disabled`/`title`/`aria-pressed` de
 antes continuam exatamente iguais.
@@ -33,7 +33,7 @@ antes continuam exatamente iguais.
 o contorno externo da peça (sem furos/piques, para não poluir um ícone de
 34×34px), com `viewBox` ajustado ao retângulo envolvente da peça mais uma
 margem de 12%. Mesma ideia das miniaturas de TRASEIRO/DIANTEIRO/CÓS na
-imagem do Audaces — reconhecer a peça pela forma na lista, não só pelo
+imagem da referência — reconhecer a peça pela forma na lista, não só pelo
 nome.
 
 ## Verificação

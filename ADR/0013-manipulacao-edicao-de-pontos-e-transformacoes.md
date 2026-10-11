@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O usuário mandou um terceiro screenshot do Audaces, desta vez do módulo
+O usuário mandou um terceiro screenshot do programa de referência, desta vez do módulo
 "Moldes Avançado" — edição de molde ponto a ponto (mover/inserir/excluir
 vértice, "Dimensionar" com fator X/Y, espelhar, girar, arredondar/chanfrar
 cantos, alinhar, além de graduação de tamanhos e curvas Bézier), pedindo
@@ -144,4 +144,4 @@ erro):
   nunca ignoram).
 - Fora de escopo, permanece deliberadamente do moda-cad: graduação de
   tamanhos, curvas Bézier reais, marcações/conferência/modelo (as outras
-  abas do Audaces Moldes Avançado que não foram pedidas).
+  abas do programa de referência que não foram pedidas).

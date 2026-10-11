@@ -16,7 +16,7 @@ não implementadas nesta rodada).
 ### Réguas em centímetros, não milímetros
 
 As réguas horizontal/vertical mostravam o valor bruto em mm
-(`Math.round(mm)`). A imagem do Audaces mostra números em cm (`0, 10,
+(`Math.round(mm)`). A imagem da referência mostra números em cm (`0, 10,
 20...140`) com um rótulo "cm" no canto superior esquerdo das réguas.
 Trocado para `Math.round(mm / 10)` nas duas réguas, e adicionado o texto
 "cm" no `.regua-canto` (célula do canto, antes vazia). O algoritmo de
@@ -29,7 +29,7 @@ como ele já escolhe passos em 1/2/5 × potência de 10 em mm, dividir por
 Nova fileira fina de ícones (sem rótulo, só tooltip) entre o topo da
 janela e as abas Arquivo/Edição/Desenho/Manipulação/Encaixe — Novo,
 Abrir, Salvar, Exportar PDF, Desfazer, Refazer, Recortar, Copiar, Colar,
-Excluir. Mesma ideia da barra de acesso rápido do Audaces (que fica
+Excluir. Mesma ideia da barra de acesso rápido da referência (que fica
 acima das abas ARQUIVO/INÍCIO/CONSTRUÇÃO...). Todos os botões reusam os
 mesmos handlers que já existem nas abas correspondentes — é só mais um
 lugar de acesso às mesmas ações reais, não lógica nova.
@@ -37,8 +37,8 @@ lugar de acesso às mesmas ações reais, não lógica nova.
 ### Grade densa na aba Manipulação
 
 A aba Manipulação tinha todos os botões em uma única fileira (ícone
-grande em cima, rótulo embaixo, todos do mesmo tamanho). A imagem do
-Audaces usa uma grade mais densa: alguns botões "grandes" (ação
+grande em cima, rótulo embaixo, todos do mesmo tamanho). A imagem da
+referência usa uma grade mais densa: alguns botões "grandes" (ação
 principal de uma coluna, ocupam a altura toda do grupo) ao lado de pares
 de botões "pequenos" (ícone+rótulo lado a lado, empilhados dois por
 coluna). Implementado com duas classes CSS novas (`.botao-grande`,
@@ -53,8 +53,8 @@ pedido nem comparado diretamente contra a imagem.
 
 ### O que continua não sendo replicado, e por quê
 
-A cor de destaque vermelha do Audaces (tema da marca) e o logo
-"Audaces" no topo não foram copiados — a linha que sigo é replicar
+A cor de destaque vermelha da referência (tema da marca) e o logo
+dela no topo não foram copiados — a linha que sigo é replicar
 PADRÕES de interface (ribbon com abas, barra de acesso rápido, réguas em
 cm, densidade de grade) que são convenções comuns de CAD profissional,
 não elementos de identidade visual específicos de uma marca. Cores e
