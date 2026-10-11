@@ -115,6 +115,15 @@ export interface TextoDaPeca {
   readonly posicao: Ponto2D;
   readonly texto: string;
   readonly alturaMm: number;
+  /** O "Pique texto": graus em que o texto está inclinado na tela (0 = na horizontal; positivo, no sentido anti-horário). Sem ele, o texto fica sempre na horizontal. */
+  readonly anguloGraus?: number;
+  /** O "Pique texto": o que fica em `posicao` — o começo ou o fim do texto. Sem ela, o meio. */
+  readonly ancora?: 'inicio' | 'fim';
+}
+
+/** O texto com o ângulo dele mudado por `f` (o texto sem ângulo — sempre na horizontal — fica como está). */
+function textoComAngulo(texto: TextoDaPeca, f: (graus: number) => number): TextoDaPeca {
+  return texto.anguloGraus === undefined ? texto : { ...texto, anguloGraus: f(texto.anguloGraus) };
 }
 
 /** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). Com formato, é um pique interno. */
@@ -671,6 +680,10 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
       (v) => rotacionar(v, ORIGEM, anguloGraus),
     ),
     ...anotacoesTransformadas(molde, (p) => rotacionar(p, pivo, anguloGraus)),
+    // O texto com ângulo (o "Pique texto") gira com a peça.
+    ...(molde.textos
+      ? { textos: molde.textos.map((t) => textoComAngulo({ ...t, posicao: rotacionar(t.posicao, pivo, anguloGraus) }, (graus) => normalizarAnguloDoFormato(graus + anguloGraus))) }
+      : {}),
   };
 }
 
@@ -706,6 +719,10 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
       (v) => ({ x: -v.x, y: v.y }),
     ),
     ...anotacoesTransformadas(molde, (p) => espelharHorizontal(p, centroX)),
+    // Na peça espelhada, o ângulo do texto troca de sinal (as letras não são espelhadas).
+    ...(molde.textos
+      ? { textos: molde.textos.map((t) => textoComAngulo({ ...t, posicao: espelharHorizontal(t.posicao, centroX) }, (graus) => (graus === 0 ? 0 : 0 - graus))) }
+      : {}),
   };
 }
 

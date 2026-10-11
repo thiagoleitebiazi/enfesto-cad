@@ -1108,9 +1108,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Pique texto"
                     icone="pique-texto"
-                    pressionado={false}
-                    dica="Pique texto: escreve um texto dentro da peça, com a altura e o ângulo pedidos"
-                    falta={FALTA_NESTA_ETAPA}
+                    pressionado={props.modo === 'pique-texto'}
+                    dica="Pique texto: escreve um texto dentro da peça selecionada, com a altura e o ângulo pedidos — ele faz parte da peça"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMarcacao('pique-texto')}
                   />
                   <Ferramenta
@@ -1129,9 +1129,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo="Alinhar"
                   icone="piques-alinhar"
-                  pressionado={false}
-                  dica="Alinhar: na peça graduada, leva o pique de cada tamanho para a mesma linha"
-                  falta={FALTA_NESTA_ETAPA}
+                  pressionado={props.modo === 'alinhar-piques'}
+                  dica="Alinhar: na peça graduada, leva o pique de cada tamanho para a mesma linha — horizontal, vertical, de um elemento ou de um ponto do contorno"
+                  falta={faltaParaGraduar}
                   onClick={() => props.onUsarFerramentaDeMarcacao('alinhar-piques')}
                 />
                 <div className="coluna-de-ferramenta">
@@ -1139,9 +1139,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     tamanho="pequeno"
                     rotulo="Cadastrar pique"
                     icone="pique-cadastrar"
-                    pressionado={false}
-                    dica="Cadastrar pique: guarda um formato de pique desenhado por você, para usar nas outras ferramentas"
-                    falta={FALTA_NESTA_ETAPA}
+                    pressionado={props.modo === 'cadastrar-pique'}
+                    dica="Cadastrar pique: guarda um formato de pique desenhado por você com linhas internas, para usar nas outras ferramentas; também troca o nome ou exclui um cadastrado"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMarcacao('cadastrar-pique')}
                   />
                   <Ferramenta

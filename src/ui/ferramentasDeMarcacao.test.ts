@@ -1,16 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type FormatoDePique, type Molde, type Pique } from '../domain/molde';
+import { definirRegra } from '../domain/graduacao';
 import { PIQUE_PADRAO } from '../domain/piques';
 import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
 import {
   aplicarAlteracaoDoPique,
+  aplicarAlteracaoDoTexto,
+  aplicarCadastro,
   aplicarRemoverTodos,
   aplicarSubstituir,
+  cadastroAgeNaHora,
   caminhoHorario,
   cliqueDeMarcacao,
+  confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
   dialogoDeAlterarPique,
+  dialogoDeAlterarTexto,
   ehModoDeMarcacao,
   instrucaoDaMarcacao,
   lerDialogoDaMarcacao,
@@ -23,6 +29,7 @@ import {
   type CliqueDeMarcacao,
   type ModoDeMarcacao,
   type OpcoesDeMarcacao,
+  type PiqueCadastrado,
 } from './ferramentasDeMarcacao';
 import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
 
@@ -51,8 +58,8 @@ const pique = (id: string, x: number, f?: FormatoDePique, extra: Partial<Pique> 
 const VALORES_DO_FORMATO = { tipo: 'v', largura: 8, altura: 10, angulo: 0 };
 
 describe('quais ferramentas ficam ligadas à espera de cliques', () => {
-  it('Inserir, Remover, Múltiplos e Alterar esperam cliques; Substituir age pela janela', () => {
-    for (const modo of ['inserir-pique', 'remover-pique', 'multiplos-piques', 'alterar-pique']) expect(ehModoDeMarcacao(modo)).toBe(true);
+  it('sete ferramentas esperam cliques; Substituir age pela janela', () => {
+    for (const modo of ['inserir-pique', 'remover-pique', 'pique-texto', 'multiplos-piques', 'alinhar-piques', 'cadastrar-pique', 'alterar-pique']) expect(ehModoDeMarcacao(modo)).toBe(true);
     for (const outro of ['substituir-piques', 'selecionar', 'pique']) expect(ehModoDeMarcacao(outro)).toBe(false);
   });
 });
@@ -114,7 +121,7 @@ describe('as janelas', () => {
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.nota).toMatch(/não a conta: os espaços iguais do começo ao fim e a contagem a partir do começo são a nossa leitura\./);
     expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'tipo', 'largura', 'altura', 'angulo', 'distancia']);
     expect(dialogoDaMarcacao('alterar-pique', O, [molde()])).toBeNull();
-    expect(dialogoDaMarcacao('pique-texto', O, [molde()])).toBeNull();
+    expect(dialogoDaMarcacao('linhas-auxiliares', O, [molde()])).toBeNull();
     expect(lerDialogoDaMarcacao('alterar-pique', O, {})).toBe(O);
   });
 
@@ -272,7 +279,7 @@ describe('Alterar', () => {
     expect(clicar('alterar-pique', O, comPiques(), solto(101, 149)).abrir).toEqual({ id: 'm', interno: true });
     const nada = clicar('alterar-pique', O, comPiques(), solto(100, 80));
     expect(nada.abrir).toBeUndefined();
-    expect(nada.recado).toMatch(/^Clique em cima de um pique da peça selecionada/);
+    expect(nada.recado).toBe('Clique em cima de um pique da peça selecionada — do contorno, interno ou de texto — para mudar o formato e o lugar dele.');
   });
 
   it('a janela do pique do contorno traz o formato, o ponto de referência com a distância dele, o código e a costura', () => {
@@ -537,5 +544,237 @@ describe('o formato padrão', () => {
     expect(O.inserir.formato).toBe(PIQUE_PADRAO);
     expect(O.multiplos.formato).toBe(PIQUE_PADRAO);
     expect(O.substituir.formato.tipo).toBe('v');
+  });
+});
+
+describe('Pique texto', () => {
+  const texto = (parte: Partial<OpcoesDeMarcacao['texto']>): OpcoesDeMarcacao => ({ ...O, texto: { ...O.texto, texto: 'Bolso', ...parte } });
+
+  it('a janela pergunta o texto, a altura, o ângulo e a referência, e diz o que é leitura nossa', () => {
+    const dialogo = dialogoDaMarcacao('pique-texto', O, [molde()])!;
+
+    expect(dialogo.titulo).toBe('Inserir pique texto');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([['texto', ''], ['altura', '10'], ['angulo', '0'], ['referencia', 'centro']]);
+    expect(dialogo.nota).toMatch(/tem o campo “Referência” e não diz que posições ele oferece: o meio, o começo e o fim são a nossa leitura\.$/);
+    expect(lerDialogoDaMarcacao('pique-texto', O, { texto: ' Bolso ', altura: 12, angulo: 30, referencia: 'fim' }).texto).toEqual({ texto: 'Bolso', alturaMm: 12, anguloGraus: 30, ancora: 'fim' });
+    expect(lerDialogoDaMarcacao('pique-texto', O, { texto: 'Bolso', altura: 12, angulo: 0, referencia: 'x' }).texto.ancora).toBe('centro');
+    expect(() => lerDialogoDaMarcacao('pique-texto', O, { texto: '  ', altura: 12, angulo: 0 })).toThrow('Escreva o texto.');
+    expect(() => lerDialogoDaMarcacao('pique-texto', O, { altura: 12, angulo: 0 })).toThrow('Escreva o texto.');
+    expect(() => lerDialogoDaMarcacao('pique-texto', O, { texto: 'Bolso', altura: 0.5, angulo: 0 })).toThrow('A altura do texto precisa ficar entre 1 e 500 mm.');
+    expect(() => lerDialogoDaMarcacao('pique-texto', O, { texto: 'Bolso', altura: 12, angulo: 400 })).toThrow('O ângulo do texto precisa ficar entre −360° e 360°.');
+  });
+
+  it('cada clique dentro da peça escreve o texto ali, com a altura, o ângulo e a âncora', () => {
+    const feito = clicar('pique-texto', texto({ alturaMm: 12, anguloGraus: 30, ancora: 'inicio' }), molde(), solto(100, 150));
+
+    expect(feito.pecas![0]!.textos).toEqual([{ id: 'n1', posicao: ponto(100, 150), texto: 'Bolso', alturaMm: 12, anguloGraus: 30, ancora: 'inicio' }]);
+    expect(feito.recado).toBe('Texto “Bolso” posto em “Frente”, com 12,0 mm de altura, a 30°.');
+    expect(clicar('pique-texto', texto({}), molde(), solto(100, 150)).recado).toBe('Texto “Bolso” posto em “Frente”, com 10,0 mm de altura.');
+    const fora = clicar('pique-texto', texto({}), molde(), solto(300, 150));
+    expect(fora.pecas).toBeUndefined();
+    expect(fora.recado).toBe('Clique dentro da peça selecionada: o texto fica dentro dela.');
+  });
+
+  it('a prévia mostra por onde o texto se estende — pela direção do ângulo e pela âncora', () => {
+    const contexto = { raioMm: RAIO, linhaInterna: null };
+    // "Bolso" com 10 mm de altura: uns 27,5 mm. Na horizontal da tela (o y do mundo), centrado no ponto.
+    const noMeio = previaDaMarcacao('pique-texto', texto({}), molde(), SEM_TRECHO, solto(100, 150), contexto);
+    expect(noMeio.marcas).toEqual([ponto(100, 150)]);
+    expect(noMeio.novo![0]!.y).toBeCloseTo(150 - 13.75, 9);
+    expect(noMeio.novo![1]!.y).toBeCloseTo(150 + 13.75, 9);
+    expect(noMeio.novo![0]!.x).toBeCloseTo(100, 9);
+    // Do começo: o texto sai do ponto. A 90°, sobe na tela — o −x do mundo.
+    const doComeco = previaDaMarcacao('pique-texto', texto({ ancora: 'inicio', anguloGraus: 90 }), molde(), SEM_TRECHO, solto(100, 150), contexto);
+    expect(doComeco.novo![0]!.x).toBeCloseTo(100, 9);
+    expect(doComeco.novo![1]!.x).toBeCloseTo(100 - 27.5, 9);
+    expect(doComeco.novo![1]!.y).toBeCloseTo(150, 9);
+    // Do fim: o texto acaba no ponto.
+    expect(previaDaMarcacao('pique-texto', texto({ ancora: 'fim' }), molde(), SEM_TRECHO, solto(100, 150), contexto).novo![1]!.y).toBeCloseTo(150, 9);
+    expect(previaDaMarcacao('pique-texto', texto({}), molde(), SEM_TRECHO, solto(300, 150), contexto)).toEqual({});
+    expect(instrucaoDaMarcacao('pique-texto', texto({}), SEM_TRECHO)).toBe('Pique texto: clique dentro da peça selecionada, onde “Bolso” deve ficar — o traço mostra por onde o texto se estende. Esc sai.');
+  });
+
+  it('o “Alterar” pega o texto: a janela dele muda o que está escrito, a altura, o ângulo e a âncora — e em branco apaga', () => {
+    const comTexto = molde({ textos: [{ id: 't1', posicao: ponto(100, 150), texto: 'Bolso', alturaMm: 12, anguloGraus: 30, ancora: 'inicio' }] });
+
+    expect(clicar('alterar-pique', O, comTexto, solto(102, 151)).abrir).toEqual({ id: 't1', interno: false, texto: true });
+    const dialogo = dialogoDeAlterarTexto(comTexto, 't1')!;
+    expect(dialogo.titulo).toBe('Alterar pique texto');
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([['texto', 'Bolso'], ['altura', '12'], ['angulo', '30'], ['referencia', 'inicio']]);
+    expect(dialogoDeAlterarTexto(comTexto, 'x')).toBeNull();
+    const mudado = aplicarAlteracaoDoTexto([comTexto], comTexto, 't1', { texto: 'Estampa', altura: 8, angulo: 0, referencia: 'centro' });
+    expect(mudado.pecas[0]!.textos).toEqual([{ id: 't1', posicao: ponto(100, 150), texto: 'Estampa', alturaMm: 8, anguloGraus: 0 }]);
+    expect(mudado.recado).toBe('Texto de “Frente” alterado: “Estampa”, com 8,0 mm de altura.');
+    expect(aplicarAlteracaoDoTexto([comTexto], comTexto, 't1', { texto: 'Estampa', altura: 8, angulo: 45, referencia: 'fim' }).recado).toBe('Texto de “Frente” alterado: “Estampa”, com 8,0 mm de altura, a 45°.');
+    const apagado = aplicarAlteracaoDoTexto([comTexto], comTexto, 't1', { altura: 8, angulo: 0, referencia: 'centro' });
+    expect(apagado.pecas[0]!.textos).toEqual([]);
+    expect(apagado.recado).toBe('Texto apagado de “Frente”.');
+    // O texto de sempre (sem ângulo) abre com zero e o meio.
+    const antigo = molde({ textos: [{ id: 't1', posicao: ponto(100, 150), texto: 'Bolso', alturaMm: 12 }] });
+    expect(dialogoDeAlterarTexto(antigo, 't1')!.campos.slice(2).map((c) => c.inicial)).toEqual(['0', 'centro']);
+  });
+});
+
+describe('Alinhar', () => {
+  // P, M (base) e G; o canto (200, 300) anda (10, 20) no G e (−10, −20) no P. O pique está em (200, 150).
+  const graduada = (extra: Partial<Molde> = {}): Molde => {
+    const peca = definirTamanhosDoMolde(molde(extra), ['P', 'M', 'G'], 'M');
+    return { ...peca, graduacao: definirRegra(peca.graduacao!, RETANGULO, 2, [ponto(-10, -20), ponto(0, 0), ponto(10, 20)]), piques: [{ id: 'p', posicao: ponto(200, 150), indiceAresta: 1 }] };
+  };
+  const alinhar = (modo: OpcoesDeMarcacao['alinhar']['modo']): OpcoesDeMarcacao => ({ ...O, alinhar: { modo } });
+
+  it('a janela oferece os cinco modos, e diz o que é leitura nossa', () => {
+    const dialogo = dialogoDaMarcacao('alinhar-piques', O, [graduada()])!;
+    const modo = dialogo.campos[0]!;
+
+    expect(dialogo.titulo).toBe('Alinhar piques');
+    expect(modo.tipo === 'escolha' && modo.opcoes.map((o) => o.valor)).toEqual(['horizontal', 'vertical', 'elemento', 'ponto-horizontal', 'ponto-vertical']);
+    expect(dialogo.nota).toMatch(/dá os modos e os cliques, mas não a conta: essa é a nossa leitura\. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes\.$/);
+    expect(lerDialogoDaMarcacao('alinhar-piques', O, { modo: 'elemento' }).alinhar).toEqual({ modo: 'elemento' });
+    expect(lerDialogoDaMarcacao('alinhar-piques', O, { modo: 'outro' }).alinhar).toEqual({ modo: 'vertical' });
+  });
+
+  it('horizontal e vertical: o clique no pique já alinha, e a mensagem diz quanto ele anda em cada tamanho', () => {
+    const feito = clicar('alinhar-piques', alinhar('vertical'), graduada(), solto(201, 151));
+
+    expect(feito.pecas![0]!.piques[0]!.graduacao!.perimetros[1]).toBe(0);
+    expect(feito.pecas![0]!.piques[0]!.graduacao!.perimetros[2]).toBeGreaterThan(0);
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.recado).toBe('Pique de “Frente” alinhado na vertical. Em relação ao tamanho M, a distância dele ao ponto de referência muda: P 0,1 mm; G 0,07 mm.');
+    const fora = clicar('alinhar-piques', alinhar('vertical'), graduada(), solto(100, 150));
+    expect(fora.pecas).toBeUndefined();
+    expect(fora.recado).toBe('Clique em cima de um pique do contorno da peça selecionada.');
+    // Na peça sem tamanhos, a ferramenta explica.
+    const semTamanhos = molde({ piques: [{ id: 'p', posicao: ponto(200, 150), indiceAresta: 1 }] });
+    expect(clicar('alinhar-piques', alinhar('vertical'), semTamanhos, solto(201, 151)).recado).toBe('Esta peça não tem tamanhos: o alinhamento é entre os tamanhos da graduação.');
+  });
+
+  it('elemento: o clique no pique o deixa à espera; o clique na linha interna alinha', () => {
+    const comLinha = graduada({ linhasInternas: [[ponto(-50, 100), ponto(250, 130)]] });
+    const primeiro = clicar('alinhar-piques', alinhar('elemento'), comLinha, solto(201, 151));
+
+    expect(primeiro.pecas).toBeUndefined();
+    expect(primeiro.estado).toEqual({ ...SEM_TRECHO, alvo: 'p' });
+    expect(clicar('alinhar-piques', alinhar('elemento'), comLinha, solto(100, 200), primeiro.estado, null).recado).toBe('Clique em cima da linha interna que cruza o contorno de todos os tamanhos.');
+    const feito = clicar('alinhar-piques', alinhar('elemento'), comLinha, solto(100, 115), primeiro.estado, 0);
+    expect(feito.pecas![0]!.piques[0]!.posicao.y).toBeCloseTo(125, 9);
+    expect(feito.recado).toMatch(/^Pique de “Frente” alinhado pelo elemento\. Em relação ao tamanho M/);
+    expect(feito.estado).toBe(SEM_TRECHO);
+  });
+
+  it('pelo ponto: depois do pique, o clique num ponto do contorno; a linha que não cruza algum tamanho é recusada', () => {
+    const esperando: TrechoEmEdicao = { ...SEM_TRECHO, alvo: 'p' };
+
+    expect(clicar('alinhar-piques', alinhar('ponto-vertical'), graduada(), solto(100, 150), esperando).recado).toBe('Clique em cima de um ponto do contorno: é ele que dá a linha de cada tamanho.');
+    // O ponto 4, em (0, 300): no P, a vertical dele não cruza a aresta do outro lado.
+    const recusado = clicar('alinhar-piques', alinhar('ponto-vertical'), graduada(), naBorda(3, 0, 300), esperando);
+    expect(recusado.pecas).toBeUndefined();
+    expect(recusado.estado).toBe(esperando);
+    expect(recusado.recado).toBe('No tamanho P, a linha de alinhamento não cruza o contorno.');
+    // O ponto 1, em (0, 0): a vertical dele (y = 0) leva o pique para o canto (200, 0) em todos os tamanhos.
+    const feito = clicar('alinhar-piques', alinhar('ponto-vertical'), graduada(), naBorda(0, 0, 0), esperando);
+    expect(feito.pecas![0]!.piques[0]!.posicao).toEqual(ponto(200, 0));
+    expect(feito.recado).toMatch(/^Pique de “Frente” alinhado pela vertical do ponto 1\. /);
+  });
+
+  it('a prévia marca o pique e o que o clique seguinte pega; a instrução acompanha', () => {
+    const comLinha = graduada({ linhasInternas: [[ponto(-50, 100), ponto(250, 130)]] });
+    const esperando: TrechoEmEdicao = { ...SEM_TRECHO, alvo: 'p' };
+
+    expect(previaDaMarcacao('alinhar-piques', alinhar('vertical'), comLinha, SEM_TRECHO, solto(201, 151), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(200, 150)] });
+    expect(previaDaMarcacao('alinhar-piques', alinhar('vertical'), comLinha, SEM_TRECHO, solto(100, 150), { raioMm: RAIO, linhaInterna: null })).toEqual({});
+    expect(previaDaMarcacao('alinhar-piques', alinhar('elemento'), comLinha, esperando, solto(100, 115), { raioMm: RAIO, linhaInterna: 0 })).toEqual({ substituido: comLinha.linhasInternas[0], marcas: [ponto(200, 150)] });
+    expect(previaDaMarcacao('alinhar-piques', alinhar('ponto-vertical'), comLinha, esperando, naBorda(0, 0, 0), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(200, 150), ponto(0, 0)] });
+    expect(previaDaMarcacao('alinhar-piques', alinhar('ponto-vertical'), comLinha, esperando, solto(100, 150), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(200, 150)] });
+    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('vertical'), SEM_TRECHO)).toBe('Alinhar piques: clique em cima de um pique do contorno da peça selecionada. Esc sai.');
+    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('elemento'), esperando)).toMatch(/agora clique na linha interna/);
+    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('ponto-horizontal'), esperando)).toMatch(/agora clique no ponto do contorno/);
+  });
+});
+
+describe('Cadastrar pique', () => {
+  const SETA: PiqueCadastrado = { id: 'c1', nome: 'Seta', descricao: 'ponta fina', forma: [[ponto(-0.5, 0), ponto(0, 1), ponto(0.5, 0)]] };
+  const criar = (nome = 'Meu V', descricao = ''): OpcoesDeMarcacao => ({ ...O, cadastrar: { acao: 'criar', qual: '', nome, descricao } });
+  // Um V desenhado de pé na tela: a boca de (100, 40) a (100, 60), a ponta em (70, 50) — em duas linhas.
+  const comDesenho = (): Molde => molde({ linhasInternas: [[ponto(100, 40), ponto(70, 50)], [ponto(70, 50), ponto(100, 60)], [ponto(20, 200), ponto(180, 200)]] });
+
+  it('a janela: sem cadastrados, só dá para criar; com eles, também alterar e excluir', () => {
+    const semNada = dialogoDaMarcacao('cadastrar-pique', O, [molde()])!;
+    expect(semNada.campos.map((c) => c.id)).toEqual(['acao', 'nome', 'descricao']);
+    expect(semNada.campos[0]!.tipo === 'escolha' && semNada.campos[0]!.opcoes.map((o) => o.valor)).toEqual(['criar']);
+    const comUm = dialogoDaMarcacao('cadastrar-pique', O, [molde()], [SETA])!;
+    expect(comUm.campos.map((c) => c.id)).toEqual(['acao', 'qual', 'nome', 'descricao']);
+    expect(comUm.campos[0]!.tipo === 'escolha' && comUm.campos[0]!.opcoes.map((o) => o.valor)).toEqual(['criar', 'alterar', 'excluir']);
+    expect(comUm.campos[1]!.tipo === 'escolha' && comUm.campos[1]!.opcoes).toEqual([{ valor: 'c1', rotulo: 'Seta: ponta fina' }]);
+    expect(comUm.nota).toMatch(/Só os formatos cadastrados aqui podem ser alterados ou excluídos: os do programa são fixos\. No manual da referência o nome é pedido no fim; aqui, antes\.$/);
+  });
+
+  it('lê a janela, e recusa o que falta: o nome, o cadastrado, o nome repetido', () => {
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: ' Meu V ', descricao: ' largo ' }).cadastrar).toEqual({ acao: 'criar', qual: '', nome: 'Meu V', descricao: 'largo' });
+    expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar' })).toThrow('Dê um nome ao formato do pique.');
+    expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: 'seta' }, [SETA])).toThrow('Já há um formato cadastrado com o nome “seta”.');
+    expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'x', nome: 'Outro' }, [SETA])).toThrow('Escolha um dos formatos cadastrados.');
+    // Alterar o próprio pode manter o nome; excluir não pede nome.
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra' }, [SETA]).cadastrar).toEqual({ acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra' });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'excluir', qual: 'c1' }, [SETA]).cadastrar).toMatchObject({ acao: 'excluir', qual: 'c1' });
+    expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'excluir', qual: 'x' }, [SETA])).toThrow('Escolha um dos formatos cadastrados.');
+  });
+
+  it('alterar e excluir agem ao confirmar a janela, sem mexer em peça nenhuma', () => {
+    const alterar: OpcoesDeMarcacao = { ...O, cadastrar: { acao: 'alterar', qual: 'c1', nome: 'Flecha', descricao: 'nova' } };
+    const excluir: OpcoesDeMarcacao = { ...O, cadastrar: { acao: 'excluir', qual: 'c1', nome: '', descricao: '' } };
+
+    expect(cadastroAgeNaHora(criar())).toBe(false);
+    expect(cadastroAgeNaHora(alterar)).toBe(true);
+    expect(cadastroAgeNaHora(excluir)).toBe(true);
+    expect(aplicarCadastro(alterar, [SETA])).toEqual({ cadastrados: [{ ...SETA, nome: 'Flecha', descricao: 'nova' }], recado: 'Formato de pique “Seta” alterado: agora é “Flecha” (nova).' });
+    expect(aplicarCadastro({ ...alterar, cadastrar: { ...alterar.cadastrar, descricao: '' } }, [SETA]).recado).toBe('Formato de pique “Seta” alterado: agora é “Flecha”.');
+    expect(aplicarCadastro(excluir, [SETA])).toEqual({ cadastrados: [], recado: 'Formato de pique “Seta” excluído do cadastro. Os piques já postos com ele continuam como estão.' });
+    expect(() => aplicarCadastro({ ...excluir, cadastrar: { ...excluir.cadastrar, qual: 'x' } }, [SETA])).toThrow('Escolha um dos formatos cadastrados.');
+    // Com mais de um no cadastro, só o escolhido muda — ou sai.
+    const BARRA: PiqueCadastrado = { id: 'c2', nome: 'Barra', descricao: '', forma: [[ponto(-0.5, 0), ponto(0.5, 0)]] };
+    expect(aplicarCadastro(alterar, [SETA, BARRA]).cadastrados).toEqual([{ ...SETA, nome: 'Flecha', descricao: 'nova' }, BARRA]);
+    expect(aplicarCadastro(excluir, [SETA, BARRA]).cadastrados).toEqual([BARRA]);
+    // Trocar o nome para o de outro cadastrado é recusado; para o próprio nome, não.
+    expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c2', nome: 'seta' }, [SETA, BARRA])).toThrow('Já há um formato cadastrado com o nome “seta”.');
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c2', nome: 'BARRA' }, [SETA, BARRA]).cadastrar.nome).toBe('BARRA');
+  });
+
+  it('criar: clique nas linhas do desenho, Enter, e o clique no ponto de referência entrega o formato para o cadastro', () => {
+    const peca = comDesenho();
+    const uma = clicar('cadastrar-pique', criar(), peca, solto(85, 45), SEM_TRECHO, 0);
+    const duas = clicar('cadastrar-pique', criar(), peca, solto(85, 55), uma.estado, 1);
+
+    expect(duas.estado.livres).toHaveLength(2);
+    expect(duas.cadastrar).toBeUndefined();
+    // O clique numa linha já indicada tira ela; fora das linhas, diz o que fazer.
+    expect(clicar('cadastrar-pique', criar(), peca, solto(85, 45), duas.estado, 0).estado.livres).toHaveLength(1);
+    expect(clicar('cadastrar-pique', criar(), peca, solto(150, 150), duas.estado, null).recado).toBe('Clique em cima das linhas internas que desenham o pique; depois, Enter.');
+    const confirmado = confirmarLinhasDoCadastro(peca, duas.estado)!;
+    expect(confirmado.estado).toEqual({ ...SEM_TRECHO, grupos: [duas.estado.livres] });
+    expect(confirmarLinhasDoCadastro(peca, SEM_TRECHO)).toBeNull();
+    // O clique perto do meio da boca: não há ponta de linha no raio, então vale o ponto clicado.
+    const feito = clicar('cadastrar-pique', criar('Meu V', 'largo'), peca, solto(100, 50), confirmado.estado);
+    expect(feito.cadastrar).toEqual({ id: 'n1', nome: 'Meu V', descricao: 'largo', forma: [[ponto(-0.5, 0), ponto(0, 1)], [ponto(0, 1), ponto(0.5, 0)]] });
+    expect(feito.pecas).toBeUndefined();
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.recado).toBe('Formato de pique “Meu V” cadastrado: está na lista de tipos das janelas de pique.');
+    // O clique perto de uma ponta de linha é preso nela: a referência passa a ser a ponta da boca.
+    const naPonta = clicar('cadastrar-pique', criar(), peca, solto(101, 41), confirmado.estado);
+    expect(naPonta.cadastrar!.forma[0]![0]).toEqual(ponto(0, 0));
+  });
+
+  it('a prévia mostra as linhas do desenho, e a instrução acompanha cada passo', () => {
+    const peca = comDesenho();
+    const uma = clicar('cadastrar-pique', criar(), peca, solto(85, 45), SEM_TRECHO, 0).estado;
+
+    expect(previaDaMarcacao('cadastrar-pique', criar(), peca, uma, solto(85, 55), { raioMm: RAIO, linhaInterna: 1 }).linhas).toEqual([peca.linhasInternas[0], peca.linhasInternas[1]]);
+    expect(previaDaMarcacao('cadastrar-pique', criar(), peca, uma, solto(150, 150), { raioMm: RAIO, linhaInterna: null }).linhas).toEqual([peca.linhasInternas[0]]);
+    expect(previaDaMarcacao('cadastrar-pique', criar(), peca, SEM_TRECHO, solto(150, 150), { raioMm: RAIO, linhaInterna: null })).toEqual({});
+    const confirmado = confirmarLinhasDoCadastro(peca, uma)!.estado;
+    expect(previaDaMarcacao('cadastrar-pique', criar(), peca, confirmado, solto(100, 50), { raioMm: RAIO, linhaInterna: null })).toEqual({ linhas: [peca.linhasInternas[0]], marcas: [ponto(100, 50)] });
+    expect(instrucaoDaMarcacao('cadastrar-pique', criar(), SEM_TRECHO)).toBe('Cadastrar pique “Meu V”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter. Esc sai.');
+    expect(instrucaoDaMarcacao('cadastrar-pique', criar(), uma)).toMatch(/^Cadastrar pique: 1 linha indicada — clique nas outras, ou aperte Enter/);
+    expect(instrucaoDaMarcacao('cadastrar-pique', criar(), confirmado)).toMatch(/^Cadastrar pique: desenho confirmado\. Clique no ponto de referência/);
   });
 });

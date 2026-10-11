@@ -173,11 +173,16 @@ import {
 import { linhaInternaPerto } from './domain/elementos';
 import {
   aplicarAlteracaoDoPique,
+  aplicarAlteracaoDoTexto,
+  aplicarCadastro,
   aplicarRemoverTodos,
   aplicarSubstituir,
+  cadastroAgeNaHora,
   cliqueDeMarcacao,
+  confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
   dialogoDeAlterarPique,
+  dialogoDeAlterarTexto,
   ehModoDeMarcacao,
   instrucaoDaMarcacao,
   lerDialogoDaMarcacao,
@@ -186,7 +191,9 @@ import {
   removerAgeNaHora,
   type FerramentaDeMarcacao,
   type OpcoesDeMarcacao,
+  type PiqueCadastrado,
 } from './ui/ferramentasDeMarcacao';
+import { gravarPiquesCadastrados, lerPiquesCadastrados } from './ui/piquesCadastrados';
 import { comFiguraRegistrada, figuraDaEspiral, figuraDoCirculo } from './domain/figuras';
 import type { FiguraDaPeca, PregaDaPeca } from './domain/molde';
 import { aplicarDialogoDaFigura, avisoDasFiguras, centrosDasFiguras, dialogoDaFigura, figuraSobOClique } from './ui/ferramentasDeFigura';
@@ -502,7 +509,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'tamanhos' }
   | { readonly tipo: 'graduacao'; readonly ferramenta: FerramentaDeGraduacao }
   | { readonly tipo: 'marcacao'; readonly ferramenta: FerramentaDeMarcacao }
-  | { readonly tipo: 'alterar-pique'; readonly id: string; readonly interno: boolean }
+  | { readonly tipo: 'alterar-pique'; readonly id: string; readonly interno: boolean; readonly texto?: true }
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
   | { readonly tipo: 'tabela-do-pique'; readonly id: string }
   | { readonly tipo: 'nome-da-regra'; readonly indice: number }
@@ -625,6 +632,8 @@ export default function App(): React.JSX.Element {
   const [regrasDoUsuario, setRegrasDoUsuario] = useState<readonly RegraCadastrada[]>(() =>
     lerRegrasCadastradas(window.localStorage),
   );
+  /** Os formatos de pique cadastrados neste computador ("Cadastrar pique"). */
+  const [piquesCadastrados, setPiquesCadastrados] = useState<readonly PiqueCadastrado[]>(() => lerPiquesCadastrados(window.localStorage));
   const [regraEscolhida, setRegraEscolhida] = useState<RegraCadastrada | null>(null);
   const [conjuntosDeRegras, setConjuntosDeRegras] = useState<readonly ConjuntoDeRegras[]>(() => lerConjuntosDeRegras(window.localStorage));
   // O conjunto de regras em uso e qual regra dele é a da vez (cada clique que aplica passa para a seguinte).
@@ -1584,10 +1593,10 @@ export default function App(): React.JSX.Element {
   const usarFerramentaDeMarcacao = useCallback(
     (ferramenta: FerramentaDeMarcacao) => {
       if (!pecas.some((p) => p.id === selecionadoId)) return;
-      if (dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas)) setDialogoDeFerramenta({ tipo: 'marcacao', ferramenta });
+      if (dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas, piquesCadastrados)) setDialogoDeFerramenta({ tipo: 'marcacao', ferramenta });
       else if (ehModoDeMarcacao(ferramenta)) entrarModoDeConstrucao(ferramenta);
     },
-    [pecas, selecionadoId, opcoesDeMarcacao, entrarModoDeConstrucao],
+    [pecas, selecionadoId, opcoesDeMarcacao, piquesCadastrados, entrarModoDeConstrucao],
   );
 
   const excluirRegraCadastrada = useCallback(
@@ -2556,6 +2565,11 @@ export default function App(): React.JSX.Element {
         setRecadoDaFerramenta(resultado.recado);
         if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
         if (resultado.abrir) setDialogoDeFerramenta({ tipo: 'alterar-pique', ...resultado.abrir });
+        if (resultado.cadastrar) {
+          const novos = [...piquesCadastrados, resultado.cadastrar];
+          if (gravarPiquesCadastrados(window.localStorage, novos)) setPiquesCadastrados(novos);
+          else setRecadoDaFerramenta('Não foi possível guardar o formato neste computador.');
+        }
         return;
       }
       if (ehModoDeGraduacao(modo)) {
@@ -2772,6 +2786,7 @@ export default function App(): React.JSX.Element {
     [
       modo,
       opcoesDeMarcacao,
+      piquesCadastrados,
       opcoesDeCorte,
       corteManual,
       opcoesDeRemover,
@@ -3017,6 +3032,15 @@ export default function App(): React.JSX.Element {
         if (confirmado) {
           setTrecho(confirmado.estado);
           if (confirmado.pecas) aplicarMudanca([...confirmado.pecas]);
+          setRecadoDaFerramenta(confirmado.recado);
+        }
+      } else if (e.key === 'Enter' && modo === 'cadastrar-pique' && trecho.livres.length > 0) {
+        // "Cadastrar pique": o Enter confirma as linhas do desenho; o clique seguinte é o do ponto de referência.
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const confirmado = peca && confirmarLinhasDoCadastro(peca, trecho);
+        if (confirmado) {
+          setTrecho(confirmado.estado);
           setRecadoDaFerramenta(confirmado.recado);
         }
       } else if (e.key === 'Enter' && modo === 'cortar' && !trecho.inicio && trecho.livres.length > 0) {
@@ -4469,7 +4493,7 @@ export default function App(): React.JSX.Element {
         pecaSelecionada &&
         (() => {
           const ferramenta = dialogoDeFerramenta.ferramenta;
-          const dialogo = dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas);
+          const dialogo = dialogoDaMarcacao(ferramenta, opcoesDeMarcacao, pecas, piquesCadastrados);
           if (!dialogo) return null;
           return (
             <DialogoDeCampos
@@ -4481,7 +4505,17 @@ export default function App(): React.JSX.Element {
               rotuloDoBotao={dialogo.rotuloDoBotao}
               onAplicar={(valores) => {
                 try {
-                  const novas = lerDialogoDaMarcacao(ferramenta, opcoesDeMarcacao, valores);
+                  const novas = lerDialogoDaMarcacao(ferramenta, opcoesDeMarcacao, valores, piquesCadastrados);
+                  // "Cadastrar pique", alterar ou excluir: o cadastro muda ao confirmar, sem mexer em peça nenhuma.
+                  if (ferramenta === 'cadastrar-pique' && cadastroAgeNaHora(novas)) {
+                    const feito = aplicarCadastro(novas, piquesCadastrados);
+                    if (!gravarPiquesCadastrados(window.localStorage, feito.cadastrados)) return 'Não foi possível guardar o cadastro neste computador.';
+                    setPiquesCadastrados(feito.cadastrados);
+                    setOpcoesDeMarcacao({ ...novas, cadastrar: { ...novas.cadastrar, acao: 'criar', nome: '', descricao: '' } });
+                    cancelarModo();
+                    avisar(feito.recado, pecas);
+                    return null;
+                  }
                   // "Substituir" e o "Remover" com "todos" agem ao confirmar; as outras ligam a ferramenta.
                   const alvos = novas.substituir.onde === 'todas' ? pecas.map((p) => p.id) : novas.substituir.onde === 'marcadas' ? [...idsSelecionadosEmLote] : [pecaSelecionada.id];
                   const naHora =
@@ -4512,7 +4546,8 @@ export default function App(): React.JSX.Element {
         pecaSelecionada &&
         (() => {
           const { id, interno } = dialogoDeFerramenta;
-          const dialogo = dialogoDeAlterarPique(pecaSelecionada, id, interno);
+          const doTexto = dialogoDeFerramenta.texto === true;
+          const dialogo = doTexto ? dialogoDeAlterarTexto(pecaSelecionada, id) : dialogoDeAlterarPique(pecaSelecionada, id, interno, piquesCadastrados);
           if (!dialogo) return null;
           return (
             <DialogoDeCampos
@@ -4524,7 +4559,13 @@ export default function App(): React.JSX.Element {
               rotuloDoBotao={dialogo.rotuloDoBotao}
               onAplicar={(valores) => {
                 try {
-                  const feito = aplicarAlteracaoDoPique(pecas, pecaSelecionada, id, interno, valores);
+                  if (doTexto) {
+                    const doTextoFeito = aplicarAlteracaoDoTexto(pecas, pecaSelecionada, id, valores);
+                    aplicarMudanca([...doTextoFeito.pecas]);
+                    setRecadoDaFerramenta(doTextoFeito.recado);
+                    return null;
+                  }
+                  const feito = aplicarAlteracaoDoPique(pecas, pecaSelecionada, id, interno, valores, piquesCadastrados);
                   aplicarMudanca([...feito.pecas]);
                   setRecadoDaFerramenta(feito.recado);
                   // Com a posição por indicar, o clique seguinte é o do lugar do pique.

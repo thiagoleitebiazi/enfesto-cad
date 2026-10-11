@@ -249,6 +249,25 @@ export function proximoCodigo(pecas: readonly Molde[]): string {
   return String(Math.max(0, ...usados) + 1);
 }
 
+/**
+ * A forma de um pique cadastrado, tirada de linhas desenhadas: os traços no
+ * quadro de 1 × 1, com o ponto de referência (onde o pique encosta na borda)
+ * na origem. O pique é desenhado de pé na tela: a largura é a horizontal dela
+ * (o y do mundo), e a altura, a vertical para cima (o −x do mundo). As
+ * medidas do desenho viram a proporção; o tamanho é dado depois, em cada uso.
+ */
+export function formaDosElementos(linhas: readonly (readonly Ponto2D[])[], referencia: Ponto2D): Ponto2D[][] {
+  const pontos = linhas.flat();
+  if (linhas.length === 0 || linhas.some((linha) => linha.length < 2)) throw new Error('Indique as linhas que formam o pique.');
+  const naTela = (q: Ponto2D): Ponto2D => p(q.y - referencia.y, referencia.x - q.x);
+  const todos = pontos.map(naTela);
+  const largura = Math.max(...todos.map((q) => q.x)) - Math.min(...todos.map((q) => q.x));
+  const altura = Math.max(...todos.map((q) => q.y)) - Math.min(...todos.map((q) => q.y));
+  if (largura < MESMO_PONTO_MM && altura < MESMO_PONTO_MM) throw new Error('O desenho do pique precisa ter algum tamanho.');
+  // O desenho sem largura (um traço em pé) ou sem altura (um traço deitado) fica como está nessa direção.
+  return linhas.map((linha) => linha.map((q) => p(naTela(q).x / (largura < MESMO_PONTO_MM ? 1 : largura), naTela(q).y / (altura < MESMO_PONTO_MM ? 1 : altura))));
+}
+
 /** A marca (o pique interno) a até `raioMm` do ponto: a mais perto. */
 export function marcaPerto(molde: Molde, ponto: Ponto2D, raioMm: number): Marca | null {
   let melhor: { readonly marca: Marca; readonly d: number } | null = null;

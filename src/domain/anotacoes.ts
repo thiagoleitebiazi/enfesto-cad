@@ -35,19 +35,43 @@ function conferirTexto(texto: string, alturaMm: number): void {
   }
 }
 
-/** "Inserir texto": um texto preso à peça, centrado em `posicao`, com a altura dada em mm. */
-export function adicionarTexto(molde: Molde, posicao: Ponto2D, texto: string, alturaMm: number, id: string): Molde {
-  conferirTexto(texto, alturaMm);
-  return { ...molde, textos: [...(molde.textos ?? []), { id, posicao, texto: texto.trim(), alturaMm }] };
+/** O ângulo e a âncora de um "Pique texto": o que fica no ponto clicado é o meio, o começo ou o fim do texto. */
+export interface PoseDoTexto {
+  readonly anguloGraus: number;
+  readonly ancora: 'centro' | 'inicio' | 'fim';
 }
 
-/** "Editar texto": troca o que está escrito e a altura; com o texto vazio, apaga-o. */
-export function alterarTexto(molde: Molde, id: string, texto: string, alturaMm: number): Molde {
+/** Os campos do texto que a pose dá: o ângulo e, se não é o meio, a âncora. */
+function camposDaPose(pose: PoseDoTexto): Pick<TextoDaPeca, 'anguloGraus' | 'ancora'> {
+  if (!Number.isFinite(pose.anguloGraus) || Math.abs(pose.anguloGraus) > 360) throw new Error('O ângulo do texto precisa ficar entre −360° e 360°.');
+  return { anguloGraus: pose.anguloGraus, ...(pose.ancora === 'centro' ? {} : { ancora: pose.ancora }) };
+}
+
+/**
+ * "Inserir texto": um texto preso à peça, centrado em `posicao`, com a altura
+ * dada em mm. Com `pose` (o "Pique texto"), tem ângulo, e o que fica em
+ * `posicao` pode ser o começo ou o fim dele.
+ */
+export function adicionarTexto(molde: Molde, posicao: Ponto2D, texto: string, alturaMm: number, id: string, pose?: PoseDoTexto): Molde {
+  conferirTexto(texto, alturaMm);
+  return { ...molde, textos: [...(molde.textos ?? []), { id, posicao, texto: texto.trim(), alturaMm, ...(pose ? camposDaPose(pose) : {}) }] };
+}
+
+/** "Editar texto": troca o que está escrito e a altura; com o texto vazio, apaga-o. Com `pose`, troca também o ângulo e a âncora (sem ela, ficam como estavam). */
+export function alterarTexto(molde: Molde, id: string, texto: string, alturaMm: number, pose?: PoseDoTexto): Molde {
   const textos = molde.textos ?? [];
   if (!textos.some((t) => t.id === id)) throw new Error('Texto não encontrado na peça.');
   if (texto.trim() === '') return { ...molde, textos: textos.filter((t) => t.id !== id) };
   conferirTexto(texto, alturaMm);
-  return { ...molde, textos: textos.map((t) => (t.id === id ? { ...t, texto: texto.trim(), alturaMm } : t)) };
+  return {
+    ...molde,
+    textos: textos.map((t) => {
+      if (t.id !== id) return t;
+      if (!pose) return { ...t, texto: texto.trim(), alturaMm };
+      // A âncora de antes sai: vale a da pose.
+      return { id: t.id, posicao: t.posicao, texto: texto.trim(), alturaMm, ...camposDaPose(pose) };
+    }),
+  };
 }
 
 /** O texto da peça cujo centro está mais perto do ponto, a até `raioMm` (ou a meia altura do texto, se for maior). */

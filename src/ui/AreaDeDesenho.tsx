@@ -101,7 +101,10 @@ export type ModoDeDesenho =
   | 'definir-fio'
   | 'inserir-pique'
   | 'remover-pique'
+  | 'pique-texto'
   | 'multiplos-piques'
+  | 'alinhar-piques'
+  | 'cadastrar-pique'
   | 'alterar-pique'
   | 'mover-ponto'
   | 'modificar'
@@ -240,7 +243,10 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'graduar-curva',
   'inserir-pique',
   'remover-pique',
+  'pique-texto',
   'multiplos-piques',
+  'alinhar-piques',
+  'cadastrar-pique',
   'alterar-pique',
 ]);
 
@@ -1028,9 +1034,19 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         const altura = Math.max(ALTURA_MINIMA_DO_TEXTO_PX, texto.alturaMm * transform.escalaPxPorMm);
         ctx.font = `${altura}px sans-serif`;
         ctx.fillStyle = COR_CONTORNO;
-        ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(texto.texto, tela.x, tela.y);
+        // O "Pique texto" tem ângulo e âncora: o que fica no ponto é o começo, o meio ou o fim do texto.
+        ctx.textAlign = texto.ancora === 'inicio' ? 'left' : texto.ancora === 'fim' ? 'right' : 'center';
+        if (texto.anguloGraus) {
+          ctx.save();
+          ctx.translate(tela.x, tela.y);
+          // No canvas o giro positivo é horário; o ângulo do texto é anti-horário.
+          ctx.rotate((0 - texto.anguloGraus * Math.PI) / 180);
+          ctx.fillText(texto.texto, 0, 0);
+          ctx.restore();
+        } else {
+          ctx.fillText(texto.texto, tela.x, tela.y);
+        }
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
       }

@@ -10,10 +10,12 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { piquePerto } from '../domain/anotacoes';
+import { alinharPique, type ModoDeAlinhar } from '../domain/alinharPiques';
+import { adicionarTexto, alterarTexto, piquePerto, textoPerto, type PoseDoTexto } from '../domain/anotacoes';
 import type { FormatoDePique, Marca, Molde, Pique } from '../domain/molde';
 import {
   conferirFormato,
+  formaDosElementos,
   inserirPique,
   inserirPiqueInterno,
   marcaPerto,
@@ -52,9 +54,9 @@ export type FerramentaDeMarcacao =
   | 'linhas-auxiliares';
 
 /** As que ficam ligadas à espera de cliques no desenho ("Substituir" age pela janela). */
-export type ModoDeMarcacao = 'inserir-pique' | 'remover-pique' | 'multiplos-piques' | 'alterar-pique';
+export type ModoDeMarcacao = 'inserir-pique' | 'remover-pique' | 'pique-texto' | 'multiplos-piques' | 'alinhar-piques' | 'cadastrar-pique' | 'alterar-pique';
 
-const MODOS: ReadonlySet<string> = new Set<ModoDeMarcacao>(['inserir-pique', 'remover-pique', 'multiplos-piques', 'alterar-pique']);
+const MODOS: ReadonlySet<string> = new Set<ModoDeMarcacao>(['inserir-pique', 'remover-pique', 'pique-texto', 'multiplos-piques', 'alinhar-piques', 'cadastrar-pique', 'alterar-pique']);
 
 export function ehModoDeMarcacao(modo: string): modo is ModoDeMarcacao {
   return MODOS.has(modo);
@@ -99,6 +101,11 @@ export interface OpcoesDeMarcacao {
     readonly formato: FormatoDePique;
     readonly distanciaMm: number;
   };
+  /** O "Pique texto": o que escrever, a altura das letras, o ângulo e o que fica no ponto clicado. */
+  readonly texto: { readonly texto: string; readonly alturaMm: number } & PoseDoTexto;
+  readonly alinhar: { readonly modo: ModoDeAlinhar };
+  /** O "Cadastrar pique": criar um formato pelo desenho, ou mudar o nome ou excluir um dos cadastrados (`qual`, pelo id). */
+  readonly cadastrar: { readonly acao: 'criar' | 'alterar' | 'excluir'; readonly qual: string; readonly nome: string; readonly descricao: string };
 }
 
 export const TODOS_OS_TIPOS = 'todos-os-tipos';
@@ -121,6 +128,9 @@ export const OPCOES_INICIAIS_DE_MARCACAO: OpcoesDeMarcacao = {
   remover: { doContorno: false, internos: false },
   multiplos: { modo: 'contorno', por: 'numero', quantidade: 3, espacoMm: 50, formato: PIQUE_PADRAO },
   substituir: { de: TODOS_OS_TIPOS, onde: 'selecionada', acao: 'trocar', formato: { ...PIQUE_PADRAO, tipo: 'v' }, distanciaMm: 10 },
+  texto: { texto: '', alturaMm: 10, anguloGraus: 0, ancora: 'centro' },
+  alinhar: { modo: 'vertical' },
+  cadastrar: { acao: 'criar', qual: '', nome: '', descricao: '' },
 };
 
 const MESMO_PONTO_MM = 1e-6;
@@ -345,6 +355,85 @@ export function dialogoDaMarcacao(
         rotuloDoBotao: 'Aplicar',
       };
     }
+    case 'pique-texto': {
+      const o = opcoes.texto;
+      return {
+        titulo: 'Inserir pique texto',
+        campos: [
+          { tipo: 'texto', id: 'texto', rotulo: 'Texto', inicial: o.texto },
+          { tipo: 'medida', id: 'altura', rotulo: 'Altura das letras (mm)', inicial: paraCampo(o.alturaMm) },
+          { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo (graus; 0 = na horizontal da tela, positivo no sentido anti-horário)', inicial: paraCampo(o.anguloGraus) },
+          {
+            tipo: 'escolha',
+            id: 'referencia',
+            rotulo: 'Referência: o que fica no ponto clicado',
+            opcoes: [
+              { valor: 'centro', rotulo: 'O meio do texto' },
+              { valor: 'inicio', rotulo: 'O começo do texto' },
+              { valor: 'fim', rotulo: 'O fim do texto' },
+            ],
+            inicial: o.ancora,
+          },
+        ],
+        nota: 'Depois de confirmar, cada clique dentro da peça selecionada escreve o texto ali. Ele faz parte da peça: anda, gira e sai no PDF com ela. Para mudar ou apagar um texto, use “Alterar” e clique nele. O manual da referência tem o campo “Referência” e não diz que posições ele oferece: o meio, o começo e o fim são a nossa leitura.',
+        rotuloDoBotao: 'Indicar no desenho',
+      };
+    }
+    case 'alinhar-piques':
+      return {
+        titulo: 'Alinhar piques',
+        campos: [
+          {
+            tipo: 'escolha',
+            id: 'modo',
+            rotulo: 'Modo',
+            opcoes: [
+              { valor: 'horizontal', rotulo: 'Horizontal: a linha horizontal que passa pelo pique no tamanho base' },
+              { valor: 'vertical', rotulo: 'Vertical: a linha vertical que passa pelo pique no tamanho base' },
+              { valor: 'elemento', rotulo: 'Elemento: uma linha interna que cruza o contorno de todos os tamanhos' },
+              { valor: 'ponto-horizontal', rotulo: 'Ponto horizontal: a linha horizontal de um ponto do contorno, em cada tamanho' },
+              { valor: 'ponto-vertical', rotulo: 'Ponto vertical: a linha vertical de um ponto do contorno, em cada tamanho' },
+            ],
+            inicial: opcoes.alinhar.modo,
+          },
+        ],
+        nota: 'Vale na peça graduada: em cada tamanho, o pique vai para onde a linha cruza o contorno desse tamanho — o cruzamento mais perto de onde ele estava. Depois de confirmar, clique no pique; no modo Elemento, clique em seguida na linha interna; nos modos de ponto, no ponto do contorno. O manual da referência dá os modos e os cliques, mas não a conta: essa é a nossa leitura. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes.',
+        rotuloDoBotao: 'Indicar no desenho',
+      };
+    case 'cadastrar-pique': {
+      const o = opcoes.cadastrar;
+      const haCadastrados = cadastrados.length > 0;
+      return {
+        titulo: 'Cadastrar pique',
+        campos: [
+          {
+            tipo: 'escolha',
+            id: 'acao',
+            rotulo: 'O que fazer',
+            opcoes: [
+              { valor: 'criar', rotulo: 'Criar: um formato novo, pelas linhas que eu indicar no desenho' },
+              ...(haCadastrados ? [{ valor: 'alterar', rotulo: 'Alterar: trocar o nome e a descrição de um cadastrado' }, { valor: 'excluir', rotulo: 'Excluir um cadastrado' }] : []),
+            ],
+            inicial: haCadastrados ? o.acao : 'criar',
+          },
+          ...(haCadastrados
+            ? [
+                {
+                  tipo: 'escolha' as const,
+                  id: 'qual',
+                  rotulo: 'Qual cadastrado (para alterar ou excluir)',
+                  opcoes: cadastrados.map((c) => ({ valor: c.id, rotulo: `${c.nome}${c.descricao ? `: ${c.descricao}` : ''}` })),
+                  inicial: cadastrados.some((c) => c.id === o.qual) ? o.qual : cadastrados[0]!.id,
+                },
+              ]
+            : []),
+          { tipo: 'texto', id: 'nome', rotulo: 'Pique: o nome do formato', inicial: o.nome, opcional: true },
+          { tipo: 'texto', id: 'descricao', rotulo: 'Descrição (opcional)', inicial: o.descricao, opcional: true },
+        ],
+        nota: 'Para criar: desenhe o formato com linhas internas na peça selecionada, de pé na tela — a boca do pique embaixo, a ponta para cima. Depois de confirmar, clique em cada linha do desenho, aperte Enter e clique no ponto de referência: é o ponto do desenho que fica na borda da peça. O formato vai para a lista de tipos das outras janelas, neste computador; a largura e a altura são dadas em cada uso. Só os formatos cadastrados aqui podem ser alterados ou excluídos: os do programa são fixos. No manual da referência o nome é pedido no fim; aqui, antes.',
+        rotuloDoBotao: 'Confirmar',
+      };
+    }
     default:
       return null;
   }
@@ -411,6 +500,29 @@ export function lerDialogoDaMarcacao(
         },
       };
     }
+    case 'pique-texto': {
+      const texto = String(valores.texto ?? '').trim();
+      if (texto === '') throw new Error('Escreva o texto.');
+      const alturaMm = Number(valores.altura);
+      if (!(alturaMm >= 1 && alturaMm <= 500)) throw new Error('A altura do texto precisa ficar entre 1 e 500 mm.');
+      const anguloGraus = Number(valores.angulo);
+      if (!Number.isFinite(anguloGraus) || Math.abs(anguloGraus) > 360) throw new Error('O ângulo do texto precisa ficar entre −360° e 360°.');
+      return { ...opcoes, texto: { texto, alturaMm, anguloGraus, ancora: valores.referencia === 'inicio' || valores.referencia === 'fim' ? valores.referencia : 'centro' } };
+    }
+    case 'alinhar-piques': {
+      const modos: readonly ModoDeAlinhar[] = ['horizontal', 'vertical', 'elemento', 'ponto-horizontal', 'ponto-vertical'];
+      return { ...opcoes, alinhar: { modo: modos.find((m) => m === valores.modo) ?? 'vertical' } };
+    }
+    case 'cadastrar-pique': {
+      const acao = valores.acao === 'alterar' || valores.acao === 'excluir' ? valores.acao : 'criar';
+      const nome = valores.nome === undefined ? '' : String(valores.nome).trim();
+      if (acao !== 'excluir' && nome === '') throw new Error('Dê um nome ao formato do pique.');
+      if (acao !== 'criar' && !cadastrados.some((c) => c.id === valores.qual)) throw new Error('Escolha um dos formatos cadastrados.');
+      if (acao !== 'excluir' && cadastrados.some((c) => c.nome.toLocaleUpperCase('pt-BR') === nome.toLocaleUpperCase('pt-BR') && (acao === 'criar' || c.id !== valores.qual))) {
+        throw new Error(`Já há um formato cadastrado com o nome “${nome}”.`);
+      }
+      return { ...opcoes, cadastrar: { acao, qual: valores.qual === undefined ? '' : String(valores.qual), nome, descricao: valores.descricao === undefined ? '' : String(valores.descricao).trim() } };
+    }
     default:
       return opcoes;
   }
@@ -432,6 +544,28 @@ export function aplicarRemoverTodos(opcoes: OpcoesDeMarcacao, pecas: readonly Mo
   if (doC + int === 0) throw new Error(`“${peca.nome}” não tem ${doContorno && internos ? 'piques' : doContorno ? 'piques no contorno' : 'piques internos'} para remover.`);
   const partes = [...(doContorno ? [plural(doC, 'pique do contorno', 'piques do contorno')] : []), ...(internos ? [plural(int, 'pique interno', 'piques internos')] : [])];
   return { pecas: trocar(pecas, peca.id, semOsPiques(peca, opcoes.remover)), recado: `Removidos de “${peca.nome}”: ${partes.join(' e ')}.` };
+}
+
+/** O "Cadastrar pique" age ao confirmar a janela: alterar o nome ou excluir um cadastrado. ("Criar" espera os cliques no desenho.) */
+export function cadastroAgeNaHora(opcoes: OpcoesDeMarcacao): boolean {
+  return opcoes.cadastrar.acao !== 'criar';
+}
+
+/** "Cadastrar pique", alterar ou excluir: o cadastro novo e o que dizer. */
+export function aplicarCadastro(opcoes: OpcoesDeMarcacao, cadastrados: readonly PiqueCadastrado[]): { readonly cadastrados: PiqueCadastrado[]; readonly recado: string } {
+  const { acao, qual, nome, descricao } = opcoes.cadastrar;
+  const alvo = cadastrados.find((c) => c.id === qual);
+  if (!alvo) throw new Error('Escolha um dos formatos cadastrados.');
+  if (acao === 'excluir') {
+    return {
+      cadastrados: cadastrados.filter((c) => c.id !== qual),
+      recado: `Formato de pique “${alvo.nome}” excluído do cadastro. Os piques já postos com ele continuam como estão.`,
+    };
+  }
+  return {
+    cadastrados: cadastrados.map((c) => (c.id === qual ? { ...c, nome, descricao } : c)),
+    recado: `Formato de pique “${alvo.nome}” alterado: agora é “${nome}”${descricao ? ` (${descricao})` : ''}.`,
+  };
 }
 
 /** O ponto a `distanciaMm` do pique, para dentro da peça, em esquadro com a borda; `null` se esse ponto cai fora dela. */
@@ -598,6 +732,44 @@ export function dialogoDeAlterarPique(peca: Molde, id: string, interno: boolean,
   };
 }
 
+/** A janela do "Alterar" para um texto da peça (o "Pique texto"); `null` se ele não está mais na peça. */
+export function dialogoDeAlterarTexto(peca: Molde, id: string): DialogoDeMarcacao | null {
+  const texto = (peca.textos ?? []).find((t) => t.id === id);
+  if (!texto) return null;
+  return {
+    titulo: 'Alterar pique texto',
+    campos: [
+      { tipo: 'texto', id: 'texto', rotulo: 'Texto (em branco, apaga)', inicial: texto.texto, opcional: true },
+      { tipo: 'medida', id: 'altura', rotulo: 'Altura das letras (mm)', inicial: paraCampo(texto.alturaMm) },
+      { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo (graus; 0 = na horizontal da tela, positivo no sentido anti-horário)', inicial: paraCampo(texto.anguloGraus ?? 0) },
+      {
+        tipo: 'escolha',
+        id: 'referencia',
+        rotulo: 'Referência: o que fica no ponto do texto',
+        opcoes: [
+          { valor: 'centro', rotulo: 'O meio do texto' },
+          { valor: 'inicio', rotulo: 'O começo do texto' },
+          { valor: 'fim', rotulo: 'O fim do texto' },
+        ],
+        inicial: texto.ancora ?? 'centro',
+      },
+    ],
+    nota: 'O texto é refeito no mesmo ponto, com o que foi mudado. Deixando o texto em branco, ele é apagado.',
+    rotuloDoBotao: 'Aplicar',
+  };
+}
+
+/** Aplica a janela do "Alterar" no texto de id dado. Lança erro quando os valores não servem. */
+export function aplicarAlteracaoDoTexto(pecas: readonly Molde[], peca: Molde, id: string, valores: ValoresDoDialogo): ResultadoDeFerramentaDeMolde {
+  const escrito = valores.texto === undefined ? '' : String(valores.texto);
+  const pose: PoseDoTexto = { anguloGraus: Number(valores.angulo), ancora: valores.referencia === 'inicio' || valores.referencia === 'fim' ? valores.referencia : 'centro' };
+  const nova = alterarTexto(peca, id, escrito, Number(valores.altura), pose);
+  return {
+    pecas: trocar(pecas, peca.id, nova),
+    recado: escrito.trim() === '' ? `Texto apagado de “${peca.nome}”.` : `Texto de “${peca.nome}” alterado: “${escrito.trim()}”, com ${formatarMm(Number(valores.altura))} de altura${pose.anguloGraus === 0 ? '' : `, a ${paraCampo(pose.anguloGraus)}°`}.`,
+  };
+}
+
 /** O que o "Alterar" devolve: as peças e a mensagem — e, se a posição é para indicar com o mouse, que o clique seguinte é o dela. */
 export interface AlteracaoDoPique extends ResultadoDeFerramentaDeMolde {
   readonly mover: boolean;
@@ -658,8 +830,10 @@ export interface CliqueDeMarcacao {
   readonly estado: TrechoEmEdicao;
   readonly pecas?: readonly Molde[];
   readonly recado: string | null;
-  /** O clique pede a janela do "Alterar" para este pique. */
-  readonly abrir?: { readonly id: string; readonly interno: boolean };
+  /** O clique pede a janela do "Alterar" para este pique — ou, com `texto`, para este texto. */
+  readonly abrir?: { readonly id: string; readonly interno: boolean; readonly texto?: true };
+  /** O clique terminou um formato novo ("Cadastrar pique"): vai para o cadastro deste computador. */
+  readonly cadastrar?: PiqueCadastrado;
 }
 
 export interface ContextoDaMarcacao {
@@ -668,6 +842,55 @@ export interface ContextoDaMarcacao {
   readonly novoId: () => string;
   /** A linha interna sob o clique (pelo número), se há. */
   readonly linhaInterna: number | null;
+}
+
+/** O ponto que guarda, no estado da ferramenta, uma linha interna indicada: o meio do primeiro trecho dela. */
+function marcaDaLinha(linha: readonly Ponto2D[]): Ponto2D {
+  return ponto((linha[0]!.x + linha[1]!.x) / 2, (linha[0]!.y + linha[1]!.y) / 2);
+}
+
+/** As linhas internas (pelo número) que as marcas dadas indicam. */
+function linhasDasMarcas(peca: Molde, marcas: readonly Ponto2D[]): number[] {
+  return marcas.map((marca) => peca.linhasInternas.findIndex((linha) => linha.length >= 2 && distancia(marcaDaLinha(linha), marca) <= MESMO_PONTO_MM)).filter((i) => i >= 0);
+}
+
+/**
+ * O Enter do "Cadastrar pique": confirma as linhas indicadas como o desenho do
+ * formato; o clique seguinte é o do ponto de referência. `null` se não há
+ * linha indicada.
+ */
+export function confirmarLinhasDoCadastro(peca: Molde, estado: TrechoEmEdicao): { readonly estado: TrechoEmEdicao; readonly recado: string | null } | null {
+  if (linhasDasMarcas(peca, estado.livres).length === 0) return null;
+  return { estado: { ...SEM_TRECHO, grupos: [estado.livres] }, recado: null };
+}
+
+/** Por onde o texto do "Pique texto" se estende, mais ou menos: do começo ao fim dele, em mm, para a prévia. */
+function extensaoDoTexto(posicao: Ponto2D, o: OpcoesDeMarcacao['texto']): Ponto2D[] {
+  // Cada letra ocupa, em média, pouco mais de metade da altura.
+  const comprimento = Math.max(1, o.texto.length) * o.alturaMm * 0.55;
+  const rad = (o.anguloGraus * Math.PI) / 180;
+  // Na tela, a direção do texto a `anguloGraus`: para a direita é o y do mundo; para cima, o −x.
+  const direcao = ponto(0 - Math.sin(rad), Math.cos(rad));
+  const antes = o.ancora === 'inicio' ? 0 : o.ancora === 'fim' ? comprimento : comprimento / 2;
+  return [ponto(posicao.x - direcao.x * antes, posicao.y - direcao.y * antes), ponto(posicao.x + direcao.x * (comprimento - antes), posicao.y + direcao.y * (comprimento - antes))];
+}
+
+/** O ponto do contorno (pelo número) sob o clique, a até `raioMm`; `null` se o clique não está num ponto. */
+function pontoDoContornoSob(peca: Molde, clique: CliqueDeTrecho, raioMm: number): number | null {
+  const onde = clique.noContorno?.ponto ?? clique.livre;
+  let melhor: { readonly i: number; readonly d: number } | null = null;
+  peca.contorno.forEach((v, i) => {
+    const d = distancia(v, onde);
+    if (d <= raioMm && (!melhor || d < melhor.d)) melhor = { i, d };
+  });
+  return melhor ? (melhor as { readonly i: number }).i : null;
+}
+
+/** O que a mensagem do "Alinhar" diz: quanto o pique anda, sobre o contorno, em cada tamanho que não é o base. */
+function ditoDoAlinhamento(peca: Molde, perimetros: readonly number[]): string {
+  const graduacao = peca.graduacao!;
+  const partes = graduacao.tamanhos.map((nome, t) => (t === graduacao.base ? null : `${nome} ${paraCampo(perimetros[t] ?? 0)} mm`)).filter((parte): parte is string => parte !== null);
+  return `Em relação ao tamanho ${graduacao.tamanhos[graduacao.base]}, a distância dele ao ponto de referência muda: ${partes.join('; ')}.`;
 }
 
 /** O ponto a `s` mm do começo da linha, andando sobre ela. */
@@ -778,7 +1001,9 @@ export function cliqueDeMarcacao(
         if (pique) return { estado, recado: null, abrir: { id: pique.id, interno: false } };
         const marca = marcaPerto(peca, clique.livre, contexto.raioMm);
         if (marca) return { estado, recado: null, abrir: { id: marca.id, interno: true } };
-        return { estado, recado: 'Clique em cima de um pique da peça selecionada — do contorno ou interno — para mudar o formato e o lugar dele.' };
+        const texto = textoPerto(peca, clique.livre, contexto.raioMm);
+        if (texto) return { estado, recado: null, abrir: { id: texto.id, interno: false, texto: true } };
+        return { estado, recado: 'Clique em cima de um pique da peça selecionada — do contorno, interno ou de texto — para mudar o formato e o lugar dele.' };
       }
       case 'multiplos-piques': {
         const o = opcoes.multiplos;
@@ -805,6 +1030,52 @@ export function cliqueDeMarcacao(
         if (!estado.inicio) return { estado: { ...SEM_TRECHO, inicio: clique.noContorno }, recado: null };
         const posicoes = posicoesAoLongo(caminhoHorario(peca, estado.inicio, clique.noContorno), o);
         return feito(comVariosPiques(peca, posicoes, o.formato, false, contexto.novoId), posicoes.length, 'na borda, no sentido horário');
+      }
+      case 'pique-texto': {
+        const o = opcoes.texto;
+        if (!pontoDentroDoContorno(clique.livre, peca.contorno)) return { estado, recado: 'Clique dentro da peça selecionada: o texto fica dentro dela.' };
+        const nova = adicionarTexto(peca, clique.livre, o.texto, o.alturaMm, contexto.novoId(), { anguloGraus: o.anguloGraus, ancora: o.ancora });
+        return com(nova, `Texto “${o.texto}” posto em “${peca.nome}”, com ${formatarMm(o.alturaMm)} de altura${o.anguloGraus === 0 ? '' : `, a ${paraCampo(o.anguloGraus)}°`}.`);
+      }
+      case 'alinhar-piques': {
+        const modo = opcoes.alinhar.modo;
+        const NOME: Record<ModoDeAlinhar, string> = { horizontal: 'na horizontal', vertical: 'na vertical', elemento: 'pelo elemento', 'ponto-horizontal': 'pela horizontal do ponto', 'ponto-vertical': 'pela vertical do ponto' };
+        const alinhado = (id: string, alvo: { readonly linhaInterna?: number; readonly ponto?: number } = {}): CliqueDeMarcacao => {
+          const feito = alinharPique(peca, id, modo, alvo);
+          return com(feito.molde, `Pique de “${peca.nome}” alinhado ${NOME[modo]}${alvo.ponto === undefined ? '' : ` ${alvo.ponto + 1}`}. ${ditoDoAlinhamento(peca, feito.perimetros)}`);
+        };
+        if (estado.alvo === undefined) {
+          if (!peca.graduacao) return { estado, recado: 'Esta peça não tem tamanhos: o alinhamento é entre os tamanhos da graduação.' };
+          const pique = piquePerto(peca, clique.livre, contexto.raioMm);
+          if (!pique) return { estado, recado: 'Clique em cima de um pique do contorno da peça selecionada.' };
+          if (modo === 'horizontal' || modo === 'vertical') return alinhado(pique.id);
+          return { estado: { ...SEM_TRECHO, alvo: pique.id }, recado: null };
+        }
+        if (modo === 'elemento') {
+          if (contexto.linhaInterna === null) return { estado, recado: 'Clique em cima da linha interna que cruza o contorno de todos os tamanhos.' };
+          return alinhado(estado.alvo, { linhaInterna: contexto.linhaInterna });
+        }
+        const doContorno = pontoDoContornoSob(peca, clique, contexto.raioMm);
+        if (doContorno === null) return { estado, recado: 'Clique em cima de um ponto do contorno: é ele que dá a linha de cada tamanho.' };
+        return alinhado(estado.alvo, { ponto: doContorno });
+      }
+      case 'cadastrar-pique': {
+        const confirmadas = linhasDasMarcas(peca, estado.grupos?.[0] ?? []);
+        if (confirmadas.length > 0) {
+          // O desenho está confirmado: o clique é o do ponto de referência — preso à ponta de linha mais perto, se há uma no raio.
+          const linhas = confirmadas.map((i) => peca.linhasInternas[i]!);
+          const pontas = linhas.flat().filter((q) => distancia(q, clique.livre) <= contexto.raioMm);
+          const referencia = pontas.length > 0 ? pontas.reduce((a, b) => (distancia(a, clique.livre) <= distancia(b, clique.livre) ? a : b)) : clique.livre;
+          const { nome, descricao } = opcoes.cadastrar;
+          const cadastrar: PiqueCadastrado = { id: contexto.novoId(), nome, descricao, forma: formaDosElementos(linhas, referencia) };
+          return { estado: SEM_TRECHO, recado: `Formato de pique “${nome}” cadastrado: está na lista de tipos das janelas de pique.`, cadastrar };
+        }
+        const linha = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
+        if (!linha || linha.length < 2) return { estado, recado: 'Clique em cima das linhas internas que desenham o pique; depois, Enter.' };
+        const marca = marcaDaLinha(linha);
+        const jaIndicada = estado.livres.some((q) => distancia(q, marca) <= MESMO_PONTO_MM);
+        const livres = jaIndicada ? estado.livres.filter((q) => distancia(q, marca) > MESMO_PONTO_MM) : [...estado.livres, marca];
+        return { estado: { ...SEM_TRECHO, livres }, recado: null };
       }
     }
   } catch (e) {
@@ -865,6 +1136,28 @@ export function previaDaMarcacao(
         const caminho = caminhoHorario(peca, estado.inicio, mouse.noContorno);
         return { substituido: caminho, marcas: posicoesAoLongo(caminho, o) };
       }
+      case 'pique-texto':
+        return pontoDentroDoContorno(mouse.livre, peca.contorno) ? { novo: extensaoDoTexto(mouse.livre, opcoes.texto), marcas: [mouse.livre] } : {};
+      case 'alinhar-piques': {
+        const doAlvo = peca.piques.find((q) => q.id === estado.alvo);
+        if (!doAlvo) {
+          const sob = piquePerto(peca, mouse.livre, contexto.raioMm);
+          return sob ? { marcas: [sob.posicao] } : {};
+        }
+        if (opcoes.alinhar.modo === 'elemento') {
+          const linha = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
+          return linha && linha.length >= 2 ? { substituido: linha, marcas: [doAlvo.posicao] } : { marcas: [doAlvo.posicao] };
+        }
+        const doContorno = pontoDoContornoSob(peca, mouse, contexto.raioMm);
+        return { marcas: doContorno === null ? [doAlvo.posicao] : [doAlvo.posicao, peca.contorno[doContorno]!] };
+      }
+      case 'cadastrar-pique': {
+        const confirmadas = linhasDasMarcas(peca, estado.grupos?.[0] ?? []);
+        if (confirmadas.length > 0) return { linhas: confirmadas.map((i) => peca.linhasInternas[i]!), marcas: [mouse.livre] };
+        const indicadas = linhasDasMarcas(peca, estado.livres);
+        const emJogo = contexto.linhaInterna !== null && !indicadas.includes(contexto.linhaInterna) ? [...indicadas, contexto.linhaInterna] : indicadas;
+        return emJogo.length > 0 ? { linhas: emJogo.map((i) => peca.linhasInternas[i]!).filter((linha) => linha.length >= 2) } : {};
+      }
     }
   } catch {
     return estado.inicio ? { marcas: [estado.inicio.ponto] } : {};
@@ -901,6 +1194,22 @@ export function instrucaoDaMarcacao(modo: ModoDeMarcacao, opcoes: OpcoesDeMarcac
         (estado.inicio
           ? 'Múltiplos piques: clique na borda, onde os piques terminam — eles vão do primeiro ponto até ali no sentido horário (o trecho em destaque).'
           : `Múltiplos piques (${quantos}): clique na borda da peça selecionada, onde os piques começam.`) + ESC
+      );
+    }
+    case 'pique-texto':
+      return `Pique texto: clique dentro da peça selecionada, onde “${opcoes.texto.texto}” deve ficar — o traço mostra por onde o texto se estende.` + ESC;
+    case 'alinhar-piques': {
+      const modo = opcoes.alinhar.modo;
+      if (estado.alvo === undefined) return 'Alinhar piques: clique em cima de um pique do contorno da peça selecionada.' + ESC;
+      return (modo === 'elemento' ? 'Alinhar piques: agora clique na linha interna que cruza o contorno de todos os tamanhos.' : 'Alinhar piques: agora clique no ponto do contorno que dá a linha de cada tamanho.') + ESC;
+    }
+    case 'cadastrar-pique': {
+      if ((estado.grupos?.length ?? 0) > 0) return 'Cadastrar pique: desenho confirmado. Clique no ponto de referência — o ponto do desenho que fica na borda da peça.' + ESC;
+      const n = estado.livres.length;
+      return (
+        (n === 0
+          ? `Cadastrar pique “${opcoes.cadastrar.nome}”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter.`
+          : `Cadastrar pique: ${plural(n, 'linha indicada', 'linhas indicadas')} — clique nas outras, ou aperte Enter para confirmar o desenho.`) + ESC
       );
     }
   }

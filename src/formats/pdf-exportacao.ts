@@ -224,7 +224,17 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
   for (const texto of peca.textos ?? []) {
     doc.save();
     doc.fillColor('#000000').fontSize(mmParaPontos(texto.alturaMm));
-    escreverCentrado(doc, texto.texto, texto.posicao, origem);
+    if (texto.anguloGraus === undefined) {
+      escreverCentrado(doc, texto.texto, texto.posicao, origem);
+    } else {
+      // O "Pique texto" acompanha a peça: na folha os eixos da tela vêm trocados, e a linha do texto, que na tela
+      // está a `anguloGraus`, fica a 90° + esse ângulo (as letras não são espelhadas).
+      const [x, y] = [mmParaPontos(texto.posicao.x - origem.x), mmParaPontos(texto.posicao.y - origem.y)];
+      const largura = doc.widthOfString(texto.texto);
+      const antes = texto.ancora === 'inicio' ? 0 : texto.ancora === 'fim' ? largura : largura / 2;
+      doc.rotate(90 + texto.anguloGraus, { origin: [x, y] });
+      doc.text(texto.texto, x - antes, y - doc.currentLineHeight() / 2, { lineBreak: false });
+    }
     doc.restore();
   }
 

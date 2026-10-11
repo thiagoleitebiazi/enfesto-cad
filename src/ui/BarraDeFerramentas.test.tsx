@@ -268,13 +268,30 @@ describe('BarraDeFerramentas: abas', () => {
   });
 
   it('cada ferramenta da aba Marcações pede a sua, e a que está em uso fica pressionada', () => {
-    const props = renderizar('Marcações', { modo: 'multiplos-piques' });
-    for (const nome of ['Inserir', 'Remover pique', 'Múltiplos', 'Substituir', 'Alterar']) fireEvent.click(botao(nome));
+    const props = renderizar('Marcações', { modo: 'multiplos-piques', temGraduacao: true });
+    for (const nome of ['Inserir', 'Remover pique', 'Pique texto', 'Múltiplos', 'Alinhar', 'Cadastrar pique', 'Substituir', 'Alterar']) fireEvent.click(botao(nome));
 
-    expect(vi.mocked(props.onUsarFerramentaDeMarcacao).mock.calls.map(([ferramenta]) => ferramenta)).toEqual(['inserir-pique', 'remover-pique', 'multiplos-piques', 'substituir-piques', 'alterar-pique']);
+    expect(vi.mocked(props.onUsarFerramentaDeMarcacao).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
+      'inserir-pique',
+      'remover-pique',
+      'pique-texto',
+      'multiplos-piques',
+      'alinhar-piques',
+      'cadastrar-pique',
+      'substituir-piques',
+      'alterar-pique',
+    ]);
     expect(botao('Múltiplos')).toHaveAttribute('aria-pressed', 'true');
     expect(botao('Inserir')).toHaveAttribute('aria-pressed', 'false');
     expect(botao('Inserir').title).toMatch(/^Inserir pique: põe piques na peça selecionada — na borda ou internos/);
+  });
+
+  it('o Alinhar só liga na peça graduada, e diz por quê', () => {
+    renderizar('Marcações', { temGraduacao: false });
+
+    expect(botao('Alinhar')).toBeDisabled();
+    expect(botao('Alinhar').title).toMatch(/^Alinhar — /);
+    expect(botao('Pique texto')).not.toBeDisabled();
   });
 });
 
@@ -306,14 +323,14 @@ describe('BarraDeFerramentas: ferramentas desligadas', () => {
   it('com peça selecionada e tudo à mão, nenhuma ferramenta fica desligada: não há mais ferramenta que o programa não tenha', () => {
     const desligadas: Record<string, string[]> = {};
     for (const aba of ABAS.filter((a) => a !== 'Graduação')) {
-      renderizar(aba, { podeAlinhar: true, podeVistaAnterior: true, podeProximaVista: true, temCerca: true });
+      renderizar(aba, { podeAlinhar: true, podeVistaAnterior: true, podeProximaVista: true, temCerca: true, temGraduacao: true });
       const nomes = botoesDesligados().map(nomeDo);
       if (nomes.length > 0) desligadas[aba] = nomes;
       cleanup();
     }
 
-    // Na aba Marcações, quatro ferramentas ainda entram nas etapas seguintes deste mesmo trabalho.
-    expect(desligadas).toEqual({ Marcações: ['Pique texto', 'Alinhar', 'Cadastrar pique', 'Inserir ou remover'] });
+    // Na aba Marcações, as Linhas auxiliares ainda entram na etapa seguinte deste mesmo trabalho.
+    expect(desligadas).toEqual({ Marcações: ['Inserir ou remover'] });
   });
 
   it('Digitalizar e Imagens abrem as imagens do modelo, cada um do seu jeito, mesmo sem peça nenhuma', () => {

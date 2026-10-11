@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
+import { adicionarTexto, alterarTexto } from './anotacoes';
 import { criarMolde, espelharMolde, rotacionarMolde, type FormatoDePique, type Molde, type Pique } from './molde';
 import {
   conferirFormato,
+  formaDosElementos,
   inserirPique,
   inserirPiqueInterno,
   marcaPerto,
@@ -251,5 +253,63 @@ describe('códigos, busca e remoção', () => {
     expect(semOsPiques(peca, { doContorno: false, internos: true })).toMatchObject({ piques: peca.piques, marcas: [] });
     expect(semOsPiques(peca, { doContorno: true, internos: true })).toMatchObject({ piques: [], marcas: [] });
     expect(semOsPiques(peca, { doContorno: false, internos: false })).toEqual(peca);
+  });
+});
+
+describe('a forma de um pique cadastrado, tirada do desenho', () => {
+  it('o desenho de pé na tela vira os traços no quadro de 1 × 1, com o ponto de referência na origem', () => {
+    // Um V desenhado com a ponta para cima na tela: para cima é o −x do mundo; para a direita, o y.
+    // A boca vai de (100, 40) a (100, 60), e a ponta está em (70, 50). A referência é o meio da boca.
+    const forma = formaDosElementos([[ponto(100, 40), ponto(70, 50), ponto(100, 60)]], ponto(100, 50));
+
+    expect(forma).toEqual([[ponto(-0.5, 0), ponto(0, 1), ponto(0.5, 0)]]);
+    // Usada como formato, desenha o mesmo V que o do programa.
+    const comAForma: FormatoDePique = { tipo: 'cadastrado:x', larguraMm: 4, alturaMm: 6, anguloGraus: 0, forma, nome: 'Meu V' };
+    pertoDe(tracosDoPique(molde(), pique(comAForma)), tracosDoPique(molde(), pique(formato('v'))));
+  });
+
+  it('a referência não precisa estar no meio, e várias linhas viram vários traços', () => {
+    // Um "L": a haste de 20 de altura e o pé de 10 para a direita; a referência é o pé da haste.
+    const forma = formaDosElementos([[ponto(100, 50), ponto(80, 50)], [ponto(80, 50), ponto(80, 60)]], ponto(100, 50));
+    expect(forma).toEqual([[ponto(0, 0), ponto(0, 1)], [ponto(0, 1), ponto(1, 1)]]);
+  });
+
+  it('o traço sem largura ou sem altura fica como está nessa direção; sem tamanho nenhum, ou sem linhas, é recusado', () => {
+    expect(formaDosElementos([[ponto(100, 50), ponto(70, 50)]], ponto(100, 50))).toEqual([[ponto(0, 0), ponto(0, 1)]]);
+    expect(formaDosElementos([[ponto(100, 40), ponto(100, 60)]], ponto(100, 50))).toEqual([[ponto(-0.5, 0), ponto(0.5, 0)]]);
+    expect(() => formaDosElementos([[ponto(100, 50), ponto(100, 50)]], ponto(100, 50))).toThrow('O desenho do pique precisa ter algum tamanho.');
+    expect(() => formaDosElementos([], ponto(100, 50))).toThrow('Indique as linhas que formam o pique.');
+    expect(() => formaDosElementos([[ponto(100, 50)]], ponto(100, 50))).toThrow('Indique as linhas que formam o pique.');
+  });
+});
+
+describe('o texto com ângulo e âncora (o “Pique texto”)', () => {
+  it('o texto posto com a pose guarda o ângulo e, se não é o meio, a âncora', () => {
+    const comTexto = adicionarTexto(molde(), ponto(100, 150), ' Bolso ', 12, 't1', { anguloGraus: 30, ancora: 'inicio' });
+    expect(comTexto.textos).toEqual([{ id: 't1', posicao: ponto(100, 150), texto: 'Bolso', alturaMm: 12, anguloGraus: 30, ancora: 'inicio' }]);
+    expect(adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1', { anguloGraus: 0, ancora: 'centro' }).textos![0]).toEqual({ id: 't1', posicao: ponto(100, 150), texto: 'Bolso', alturaMm: 12, anguloGraus: 0 });
+    // Sem pose, é o texto de sempre: sem ângulo nem âncora.
+    expect(Object.keys(adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1').textos![0]!).sort()).toEqual(['alturaMm', 'id', 'posicao', 'texto']);
+    expect(() => adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1', { anguloGraus: 400, ancora: 'centro' })).toThrow('O ângulo do texto precisa ficar entre −360° e 360°.');
+  });
+
+  it('alterar com a pose troca o ângulo e a âncora; sem ela, ficam como estavam', () => {
+    const comTexto = adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1', { anguloGraus: 30, ancora: 'fim' });
+
+    expect(alterarTexto(comTexto, 't1', 'Estampa', 8).textos![0]).toEqual({ id: 't1', posicao: ponto(100, 150), texto: 'Estampa', alturaMm: 8, anguloGraus: 30, ancora: 'fim' });
+    expect(alterarTexto(comTexto, 't1', 'Estampa', 8, { anguloGraus: 90, ancora: 'centro' }).textos![0]).toEqual({ id: 't1', posicao: ponto(100, 150), texto: 'Estampa', alturaMm: 8, anguloGraus: 90 });
+    expect(alterarTexto(comTexto, 't1', '  ', 8, { anguloGraus: 90, ancora: 'centro' }).textos).toEqual([]);
+  });
+
+  it('o texto com ângulo gira com a peça, e o ângulo troca de sinal na peça espelhada; o texto sem ângulo continua na horizontal', () => {
+    const comAngulo = adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1', { anguloGraus: 30, ancora: 'centro' });
+    const semAngulo = adicionarTexto(molde(), ponto(100, 150), 'Bolso', 12, 't1');
+
+    expect(rotacionarMolde(comAngulo, 90).textos![0]!.anguloGraus).toBe(120);
+    expect(espelharMolde(comAngulo, 'm2').textos![0]!.anguloGraus).toBe(-30);
+    expect('anguloGraus' in rotacionarMolde(semAngulo, 90).textos![0]!).toBe(false);
+    expect('anguloGraus' in espelharMolde(semAngulo, 'm2').textos![0]!).toBe(false);
+    // A posição vai com a peça nos dois casos.
+    expect(rotacionarMolde(comAngulo, 180).textos![0]!.posicao.x).toBeCloseTo(100, 9);
   });
 });
