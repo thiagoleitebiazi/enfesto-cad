@@ -23,8 +23,9 @@ import {
   type Graduacao,
 } from '../domain/graduacao';
 import { piquePerto } from '../domain/anotacoes';
+import { direcaoDoContornoNoPique, graduarPiqueNoContorno, referenciaDoPique } from '../domain/piquesGraduados';
 import { semGraduacao, type Molde } from '../domain/molde';
-import { definirTamanhosDoMolde, separarTamanhos, unirTamanhos } from '../domain/tamanhosGraduados';
+import { definirTamanhosDoMolde, separarTamanhos, separarTamanhosEm, unirTamanhos } from '../domain/tamanhosGraduados';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
 import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
@@ -56,8 +57,8 @@ export type FerramentaDeGraduacao =
   | 'ajustar-graduacao'
   | 'graduar-curva';
 
-/** As que ficam ligadas à espera de cliques no desenho; "Separar" e "Unir" agem na hora. */
-export type ModoDeGraduacao = Exclude<FerramentaDeGraduacao, 'separar-tamanhos' | 'unir-tamanhos'>;
+/** As que ficam ligadas à espera de cliques no desenho. "Unir" age na hora; "Separar" fica ligada quando a posição das peças novas é indicada com o mouse. */
+export type ModoDeGraduacao = Exclude<FerramentaDeGraduacao, 'unir-tamanhos'>;
 
 const MODOS_DE_GRADUACAO: ReadonlySet<string> = new Set([
   'graduar-tabela',
@@ -67,6 +68,7 @@ const MODOS_DE_GRADUACAO: ReadonlySet<string> = new Set([
   'graduar-regras',
   'criar-regra',
   'remover-graduacao',
+  'separar-tamanhos',
   'agrupar-graduacao',
   'deduzir-graduacao',
   'copiar-graduacao',
@@ -108,8 +110,8 @@ export interface OpcoesDaGraduacao {
     readonly inverterDy: boolean;
     readonly destino: 'cliques' | 'todos';
   };
-  /** O nome do tamanho a separar, ou "todos". */
-  readonly separar: { readonly tamanho: string };
+  /** O nome do tamanho a separar, ou "todos"; e se a posição das peças novas é indicada com o mouse (sem isso, vão para uma fila depois das que já estão na mesa). */
+  readonly separar: { readonly tamanho: string; readonly indicarPosicao: boolean };
 }
 
 export const TODOS_OS_TAMANHOS = 'todos';
@@ -123,7 +125,7 @@ export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
   tangente: { distanciaMm: 5, inverter: false, usarContornoBase: true, tamanho: TODOS_OS_TAMANHOS, incremental: true },
   remover: { onde: 'pontos', eixo: 'dx-dy' },
   copiar: { eixo: 'dx-dy', inverterDx: false, inverterDy: false, destino: 'cliques' },
-  separar: { tamanho: TODOS_OS_TAMANHOS },
+  separar: { tamanho: TODOS_OS_TAMANHOS, indicarPosicao: true },
 };
 
 /** Dois pontos a menos disso (mm) são o mesmo. */
@@ -235,7 +237,7 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
           { tipo: 'medida', id: 'dy', rotulo: 'Diferença de DY por tamanho (mm, + para baixo)', inicial: paraOCampo(opcoes.automatico.dyMm) },
           campoDoTamanho(peca, opcoes.automatico.tamanho),
         ],
-        nota: 'Depois de confirmar, clique nos pontos do contorno. Em “Todos”, cada um passa a andar essa diferença a mais em cada tamanho acima do base, e a menos em cada um abaixo, no lugar da regra que tinha. Num tamanho só, só ele muda: fica com essa diferença em relação ao tamanho vizinho, do lado do base. O manual da referência tem a opção, mas não diz a conta; essa é a nossa leitura.',
+        nota: 'Depois de confirmar, clique nos pontos do contorno. Em “Todos”, cada um passa a andar essa diferença a mais em cada tamanho acima do base, e a menos em cada um abaixo, no lugar da regra que tinha. Num tamanho só, só ele muda: fica com essa diferença em relação ao tamanho vizinho, do lado do base. O clique num pique gradua o pique: ele só anda sobre o contorno, então vale a parte de DX e DY na direção da borda onde ele está, e a distância dele é contada do ponto de referência (o que a tabela dele mostra: o ponto graduado mais perto). O manual da referência tem a opção e diz que ela gradua pontos e piques, mas não diz a conta; essa é a nossa leitura.',
         rotuloDoBotao: INDICAR,
       };
     case 'ajustar-graduacao':
@@ -300,7 +302,7 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
           campoDoTamanho(peca, opcoes.tangente.tamanho),
           { tipo: 'caixa', id: 'incremental', rotulo: 'Incremental: a distância conta de um tamanho ao vizinho (sem isso, a partir do base)', inicial: opcoes.tangente.incremental },
         ],
-        nota: 'Depois de confirmar, clique nos pontos do contorno. Cada um passa a andar essa distância na direção da aresta que sai dele (a que vai para o ponto de número seguinte) — ou, invertendo, na da aresta que chega. Sem “Usar contorno base”, cada tamanho sai do vizinho na direção que a aresta tem nele: a tangente acompanha a curva dos tamanhos. O manual da referência tem as opções, mas não diz as contas; essas são a nossa leitura.',
+        nota: 'Depois de confirmar, clique nos pontos do contorno. Cada um passa a andar essa distância na direção da aresta que sai dele (a que vai para o ponto de número seguinte) — ou, invertendo, na da aresta que chega. Sem “Usar contorno base”, cada tamanho sai do vizinho na direção que a aresta tem nele: a tangente acompanha a curva dos tamanhos. O clique num pique gradua o pique: ele anda essa distância sobre o contorno, no sentido do ponto de número seguinte (ou, invertendo, do anterior), contada do ponto de referência dele (o que a tabela dele mostra: o ponto graduado mais perto). O manual da referência tem as opções e diz que a ferramenta vale para pontos e piques, mas não diz as contas; essas são a nossa leitura.',
         rotuloDoBotao: INDICAR,
       };
     case 'remover-graduacao':
@@ -369,8 +371,9 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
             ],
             inicial: outros.includes(opcoes.separar.tamanho) ? opcoes.separar.tamanho : TODOS_OS_TAMANHOS,
           },
+          { tipo: 'caixa', id: 'indicarPosicao', rotulo: 'Indicar com o mouse onde as peças separadas ficam (sem isso, vão para uma fila depois das que já estão na mesa)', inicial: opcoes.separar.indicarPosicao },
         ],
-        nota: `As peças novas ficam em fila depois das que já estão na mesa, cada uma com o contorno e o nome do seu tamanho, sem graduação — prontas para o encaixe. Esta continua graduada, no tamanho ${graduacao.tamanhos[graduacao.base]}.`,
+        nota: `Cada peça nova sai com o contorno e o nome do seu tamanho, sem graduação — pronta para o encaixe. Indicando a posição, depois de confirmar o desenho mostra as peças presas ao mouse: o clique põe a primeira ali (pelo canto de cima à esquerda) e as outras em fila depois dela. Esta continua graduada, no tamanho ${graduacao.tamanhos[graduacao.base]}.`,
         rotuloDoBotao: 'Separar',
       };
     }
@@ -420,7 +423,7 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
         },
       };
     case 'separar-tamanhos':
-      return { ...opcoes, separar: { tamanho: String(valores.tamanho) } };
+      return { ...opcoes, separar: { tamanho: String(valores.tamanho), indicarPosicao: valores.indicarPosicao !== false } };
     default:
       return opcoes;
   }
@@ -430,8 +433,8 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
 // O que age na hora: Separar, Unir e Remover do molde inteiro
 // ---------------------------------------------------------------------------
 
-/** "Separar": as peças novas entram no projeto, ao lado da graduada. */
-export function aplicarSeparar(opcoes: OpcoesDaGraduacao, pecas: readonly Molde[], peca: Molde, novoId: () => string): ResultadoDeFerramentaDeMolde {
+/** Os tamanhos (pelo número) que o "Separar" tira da peça, pelo que a janela deixou escolhido. Lança erro se não há nenhum. */
+function tamanhosASeparar(opcoes: OpcoesDaGraduacao, peca: Molde): number[] {
   const graduacao = peca.graduacao;
   if (!graduacao) throw new Error(SEM_TAMANHOS);
   const pedido = opcoes.separar.tamanho;
@@ -440,16 +443,28 @@ export function aplicarSeparar(opcoes: OpcoesDaGraduacao, pecas: readonly Molde[
       ? graduacao.tamanhos.map((_, t) => t).filter((t) => t !== graduacao.base)
       : [indiceDoTamanho(graduacao.tamanhos, pedido)].filter((t) => t >= 0 && t !== graduacao.base);
   if (quais.length === 0) throw new Error('Escolha um tamanho diferente do base para separar.');
-  // A fila das peças novas começa depois de todas as que já estão na mesa, para não cair em cima de nenhuma.
+  return quais;
+}
+
+/**
+ * "Separar": as peças novas entram no projeto. Com `posicao` (indicada com o
+ * mouse), a primeira fica ali, pelo canto de cima à esquerda, e as outras em
+ * fila depois dela; sem ela, vão para depois das que já estão na mesa.
+ */
+export function aplicarSeparar(opcoes: OpcoesDaGraduacao, pecas: readonly Molde[], peca: Molde, novoId: () => string, posicao: Ponto2D | null = null): ResultadoDeFerramentaDeMolde {
+  const quais = tamanhosASeparar(opcoes, peca);
+  const graduacao = peca.graduacao!;
+  // Sem posição indicada, a fila das peças novas começa depois de todas as que já estão na mesa, para não cair em cima de nenhuma.
   const fimDasPecas = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
-  const novas = separarTamanhos(peca, quais, novoId, fimDasPecas);
+  const novas = posicao ? separarTamanhosEm(peca, quais, novoId, posicao) : separarTamanhos(peca, quais, novoId, fimDasPecas);
   const nomes = lista(quais.map((t) => graduacao.tamanhos[t]!));
+  const onde = posicao ? 'onde foi indicado' : 'depois das que já estavam na mesa';
   return {
     pecas: [...pecas, ...novas],
     recado:
       novas.length === 1
-        ? `Tamanho ${nomes} de “${peca.nome}” separado: é uma peça própria, posta depois das que já estavam na mesa, pronta para o encaixe.`
-        : `${novas.length} peças criadas a partir de “${peca.nome}”, nos tamanhos ${nomes}: estão em fila depois das que já estavam na mesa, prontas para o encaixe.`,
+        ? `Tamanho ${nomes} de “${peca.nome}” separado: é uma peça própria, posta ${onde}, pronta para o encaixe.`
+        : `${novas.length} peças criadas a partir de “${peca.nome}”, nos tamanhos ${nomes}: estão em fila ${onde}, prontas para o encaixe.`,
   };
 }
 
@@ -521,6 +536,8 @@ export interface ConjuntoEmUso {
 export interface ContextoDaGraduacao {
   readonly regra: RegraCadastrada | null;
   readonly raioMm?: number;
+  /** Quem dá os ids das peças novas (o "Separar" com a posição indicada). */
+  readonly novoId?: () => string;
 }
 
 /** Das outras peças, o ponto do contorno mais perto de `p`, a até `raioMm`. */
@@ -584,6 +601,17 @@ export function cliqueDeGraduacao(
     recado,
   });
 
+  // "Separar", com a posição indicada pelo mouse: o clique diz onde as peças novas ficam.
+  if (modo === 'separar-tamanhos') {
+    if (!contexto.novoId) return { estado, recado: null };
+    try {
+      const feito = aplicarSeparar(opcoes, pecas, peca, contexto.novoId, clique.livre);
+      return { estado: SEM_TRECHO, pecas: feito.pecas, recado: feito.recado };
+    } catch (e) {
+      return { estado, recado: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   // O segundo clique do "Mouse": onde o ponto indicado deve ficar.
   if (modo === 'graduar-mouse' && estado.inicio) {
     const i = estado.inicio.indiceAresta;
@@ -634,6 +662,53 @@ export function cliqueDeGraduacao(
   if (i === null && modo === 'graduar-tabela' && contexto.raioMm !== undefined) {
     const pique = piquePerto(peca, clique.livre, contexto.raioMm);
     if (pique) return { estado, recado: null, abrir: { tipo: 'tabela-do-pique', id: pique.id } };
+  }
+  // "Automático" e "Tangente" também graduam piques: o clique num pique, fora de um ponto do contorno, faz ele andar sobre o contorno.
+  if (i === null && (modo === 'graduar-automatico' || modo === 'graduar-tangente') && contexto.raioMm !== undefined) {
+    const pique = piquePerto(peca, clique.livre, contexto.raioMm);
+    if (pique) {
+      const doTamanho = modo === 'graduar-automatico' ? opcoes.automatico.tamanho : opcoes.tangente.tamanho;
+      const qual = doTamanho === TODOS_OS_TAMANHOS ? null : indiceDoTamanho(graduacao.tamanhos, doTamanho);
+      if (qual !== null && qual < 0) return { estado, recado: `A peça não tem o tamanho “${doTamanho}”: abra a ferramenta de novo e escolha outro.` };
+      const noTamanho = qual === null ? '' : `, no tamanho ${doTamanho}`;
+      /** De onde a distância do pique passa a ser contada: o ponto de referência que ele ficou tendo. */
+      const daReferencia = (nova: Molde): string => {
+        const graduado = nova.piques.find((q) => q.id === pique.id);
+        const referencia = graduado ? referenciaDoPique(nova, graduado) : null;
+        return referencia === null ? '' : ` A distância é contada do ponto ${referencia + 1}, a referência dele.`;
+      };
+      try {
+        if (modo === 'graduar-automatico') {
+          // O pique só anda sobre o contorno: de DX e DY, vale a parte na direção da borda onde ele está.
+          const passo = paraOMundo({ dx: opcoes.automatico.dxMm, dy: opcoes.automatico.dyMm });
+          const direcao = direcaoDoContornoNoPique(peca, pique);
+          const andado = passo.x * direcao.x + passo.y * direcao.y;
+          if (Math.abs(andado) < 0.005) {
+            return { estado, recado: `O pique só anda sobre o contorno, e DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} não têm parte na direção da borda onde ele está: nada mudou.` };
+          }
+          const graduada = graduarPiqueNoContorno(peca, pique.id, andado, qual);
+          return {
+            estado,
+            pecas: trocar(pecas, peca.id, graduada),
+            recado:
+              `Pique graduado${noTamanho}: anda ${mm(Math.abs(andado))} ${qual === null ? 'por tamanho' : 'em relação ao tamanho vizinho'} sobre o contorno, no sentido do ponto ${andado > 0 ? ((pique.indiceAresta + 1) % contorno.length) + 1 : pique.indiceAresta + 1} — a parte de DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} na direção da borda.` +
+              daReferencia(graduada),
+          };
+        }
+        const { distanciaMm, inverter, incremental } = opcoes.tangente;
+        const quanto = incremental ? (qual === null ? 'por tamanho' : 'a partir do tamanho vizinho') : 'a partir do base';
+        const graduada = graduarPiqueNoContorno(peca, pique.id, inverter ? 0 - distanciaMm : distanciaMm, qual, incremental);
+        return {
+          estado,
+          pecas: trocar(pecas, peca.id, graduada),
+          recado:
+            `Pique graduado na tangente${noTamanho}: anda ${mm(distanciaMm)} ${quanto} sobre o contorno, no sentido do ponto ${inverter ? pique.indiceAresta + 1 : ((pique.indiceAresta + 1) % contorno.length) + 1}.` +
+            daReferencia(graduada),
+        };
+      } catch (e) {
+        return { estado, recado: e instanceof Error ? e.message : String(e) };
+      }
+    }
   }
   if (i === null) return { estado, recado: NO_PONTO };
   const ponto = `Ponto ${i + 1}`;
@@ -783,6 +858,16 @@ export function previaDaGraduacao(
 ): PreviaDeFerramentaDeMolde {
   const graduacao = peca.graduacao;
   if (!graduacao) return {};
+  // "Separar": as peças novas presas ao mouse, como ficariam com o clique.
+  if (modo === 'separar-tamanhos') {
+    if (!mouse) return {};
+    try {
+      const novas = separarTamanhosEm(peca, tamanhosASeparar(opcoes, peca), () => 'previa', mouse);
+      return { linhas: novas.map((nova) => [...nova.contorno, nova.contorno[0]!]) };
+    } catch {
+      return {};
+    }
+  }
   const marcas = verticesGraduados(graduacao, peca.contorno).map((i) => peca.contorno[i]!);
   if (modo === 'ajustar-graduacao' && estado.inicio) {
     // A projeção: o tamanho da ponta como ficaria com os pontos já clicados ajustados (o último é o final).
@@ -829,11 +914,13 @@ export function instrucaoDaGraduacao(
 ): string {
   const numero = estado.inicio ? estado.inicio.indiceAresta + 1 : 0;
   switch (modo) {
+    case 'separar-tamanhos':
+      return `Separar: clique onde ${opcoes.separar.tamanho === TODOS_OS_TAMANHOS ? 'as peças separadas devem ficar (a primeira ali, pelo canto de cima à esquerda, e as outras em fila depois dela)' : `a peça do tamanho ${opcoes.separar.tamanho} deve ficar (pelo canto de cima à esquerda)`} — o tracejado mostra.` + ESC;
     case 'graduar-tabela':
       return 'Tabela: clique num ponto do contorno da peça selecionada para ver e mudar a graduação dele (os anéis marcam os pontos graduados) — ou num pique, para a tabela dele.' + ESC;
     case 'graduar-automatico':
       return (
-        `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} ${opcoes.automatico.tamanho === TODOS_OS_TAMANHOS ? 'por tamanho' : `no tamanho ${opcoes.automatico.tamanho}`}.` + ESC
+        `Automático: clique nos pontos que devem andar DX ${mm(opcoes.automatico.dxMm)} e DY ${mm(opcoes.automatico.dyMm)} ${opcoes.automatico.tamanho === TODOS_OS_TAMANHOS ? 'por tamanho' : `no tamanho ${opcoes.automatico.tamanho}`} — ou num pique, que anda sobre o contorno a parte disso na direção da borda.` + ESC
       );
     case 'ajustar-graduacao':
       if (!estado.inicio) return `Ajustar (${NOME_DO_EIXO[opcoes.ajustar.eixo]}): clique no ponto inicial.` + ESC;
@@ -854,7 +941,7 @@ export function instrucaoDaGraduacao(
       );
     case 'graduar-tangente':
       return (
-        `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} ${opcoes.tangente.tamanho === TODOS_OS_TAMANHOS ? (opcoes.tangente.incremental ? 'por tamanho' : 'a partir do base') : `no tamanho ${opcoes.tangente.tamanho}`}, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um.` + ESC
+        `Tangente: clique nos pontos que devem andar ${mm(opcoes.tangente.distanciaMm)} ${opcoes.tangente.tamanho === TODOS_OS_TAMANHOS ? (opcoes.tangente.incremental ? 'por tamanho' : 'a partir do base') : `no tamanho ${opcoes.tangente.tamanho}`}, na direção da aresta que ${opcoes.tangente.inverter ? 'chega a' : 'sai de'} cada um — ou num pique, que anda essa distância sobre o contorno.` + ESC
       );
     case 'graduar-regras':
       if (regra && conjunto) {

@@ -149,6 +149,7 @@ export type ModoDeDesenho =
   | 'graduar-regras'
   | 'criar-regra'
   | 'remover-graduacao'
+  | 'separar-tamanhos'
   | 'agrupar-graduacao'
   | 'deduzir-graduacao'
   | 'copiar-graduacao'
@@ -228,6 +229,7 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'graduar-regras',
   'criar-regra',
   'remover-graduacao',
+  'separar-tamanhos',
   'agrupar-graduacao',
   'deduzir-graduacao',
   'copiar-graduacao',

@@ -26,14 +26,34 @@ export interface DialogoDoPique {
 
 const campoDoTamanho = (t: number): string => `perimetro-${t}`;
 
-/** A janela da graduação de um pique; `null` se a peça não é graduada ou o pique não é dela. */
-export function dialogoDoPique(peca: Molde, piqueId: string): DialogoDoPique | null {
+/** A graduação de um pique guardada pelo "Copiar": o perímetro de cada tamanho, com os tamanhos a que se refere. */
+export interface GraduacaoDePiqueCopiada {
+  readonly tamanhos: readonly string[];
+  readonly base: number;
+  readonly perimetros: readonly number[];
+}
+
+/** Os perímetros copiados, se servem para a peça — os mesmos tamanhos, com o mesmo base; senão, `null`. */
+function copiadaQueServe(peca: Molde, copiada: GraduacaoDePiqueCopiada | null): readonly number[] | null {
+  const graduacao = peca.graduacao;
+  if (!graduacao || !copiada) return null;
+  const mesmos = copiada.base === graduacao.base && copiada.tamanhos.length === graduacao.tamanhos.length && copiada.tamanhos.every((nome, t) => nome === graduacao.tamanhos[t]);
+  return mesmos ? copiada.perimetros : null;
+}
+
+/**
+ * A janela da graduação de um pique; `null` se a peça não é graduada ou o
+ * pique não é dela. `copiada`: a graduação guardada pelo último "Copiar" — se
+ * serve para os tamanhos desta peça, a janela oferece "Colar".
+ */
+export function dialogoDoPique(peca: Molde, piqueId: string, copiada: GraduacaoDePiqueCopiada | null = null): DialogoDoPique | null {
   const graduacao = peca.graduacao;
   const pique = peca.piques.find((q) => q.id === piqueId);
   if (!graduacao || !pique) return null;
   const graduado = referenciaDoPique(peca, pique);
   const referencia = graduado ?? referenciaSugerida(peca, pique);
   const perimetros = perimetrosDoPique(peca, pique);
+  const colaveis = copiadaQueServe(peca, copiada);
   return {
     titulo: 'Graduação do pique',
     resumo: [
@@ -48,9 +68,20 @@ export function dialogoDoPique(peca: Molde, piqueId: string): DialogoDoPique | n
       { tipo: 'caixa', id: 'incremental', rotulo: 'Incremental: os valores são a diferença para o tamanho vizinho, do lado do base', inicial: false },
       { tipo: 'caixa', id: 'inverter', rotulo: 'Inverter sinal dos valores', inicial: false },
       { tipo: 'caixa', id: 'todos', rotulo: '= Perímetro: aplicar os mesmos valores a todos os piques desta peça', inicial: false },
+      { tipo: 'caixa', id: 'copiar', rotulo: 'Copiar: guardar a graduação aplicada neste pique, para colar em outro', inicial: false },
+      ...(colaveis
+        ? [
+            {
+              tipo: 'caixa' as const,
+              id: 'colar',
+              rotulo: `Colar: aplicar a graduação copiada (${graduacao.tamanhos.flatMap((nome, t) => (t === graduacao.base ? [] : [`${nome}: ${paraOCampo(colaveis[t] ?? 0)}`])).join('; ')}) no lugar dos valores acima`,
+              inicial: false,
+            },
+          ]
+        : []),
       { tipo: 'caixa', id: 'remover', rotulo: 'Tirar a graduação deste pique: ele volta a andar na proporção da aresta', inicial: false },
     ],
-    nota: 'O “perímetro” de cada tamanho é quanto a distância do pique ao ponto de referência, medida sobre o contorno, aumenta (ou, negativa, diminui) nesse tamanho; com zero, o pique fica à mesma distância da referência em todos. Sem graduação, ele fica na mesma proporção da aresta. Com “= Perímetro”, cada um dos outros piques leva os mesmos valores, contados do ponto graduado mais perto dele. O manual da referência dá os campos desta tabela, sem a conta; essa é a nossa leitura.',
+    nota: 'O “perímetro” de cada tamanho é quanto a distância do pique ao ponto de referência, medida sobre o contorno, aumenta (ou, negativa, diminui) nesse tamanho; com zero, o pique fica à mesma distância da referência em todos. Sem graduação, ele fica na mesma proporção da aresta. Com “= Perímetro”, cada um dos outros piques leva os mesmos valores, contados do ponto graduado mais perto dele. “Copiar” guarda a graduação aplicada neste pique; aberta a janela de outro pique (desta peça ou de outra com os mesmos tamanhos), “Colar” aplica nele os valores guardados, cada um contado da referência dele. O manual da referência dá os campos e os botões desta tabela, sem a conta; essa é a nossa leitura.',
   };
 }
 
@@ -58,17 +89,31 @@ function trocar(pecas: readonly Molde[], nova: Molde): Molde[] {
   return pecas.map((p) => (p.id === nova.id ? nova : p));
 }
 
-/** Aplica a janela no pique. Lança erro, sem mudar nada, quando os valores não servem. */
-export function aplicarDialogoDoPique(pecas: readonly Molde[], peca: Molde, piqueId: string, valores: ValoresDoDialogo): ResultadoDeFerramentaDeMolde {
+/**
+ * Aplica a janela no pique. Lança erro, sem mudar nada, quando os valores não
+ * servem. Com "Colar", valem os valores de `copiada` no lugar dos digitados;
+ * com "Copiar", o resultado traz a graduação aplicada, para ser guardada.
+ */
+export function aplicarDialogoDoPique(
+  pecas: readonly Molde[],
+  peca: Molde,
+  piqueId: string,
+  valores: ValoresDoDialogo,
+  copiada: GraduacaoDePiqueCopiada | null = null,
+): ResultadoDeFerramentaDeMolde & { readonly copiada?: GraduacaoDePiqueCopiada } {
   const graduacao = peca.graduacao;
   if (!graduacao) throw new Error(`A peça “${peca.nome}” não tem graduação: defina os tamanhos dela antes.`);
   if (valores.remover === true) {
     return { pecas: trocar(pecas, removerGraduacaoDoPique(peca, piqueId)), recado: `Graduação tirada do pique de “${peca.nome}”: ele volta a andar na proporção da aresta.` };
   }
   const referencia = Number(valores.referencia) - 1;
+  const colando = valores.colar === true;
+  const colaveis = copiadaQueServe(peca, copiada);
+  if (colando && !colaveis) throw new Error('Não há graduação de pique copiada que sirva para os tamanhos desta peça.');
   const digitados = graduacao.tamanhos.map((_, t) => (t === graduacao.base ? 0 : Number(valores[campoDoTamanho(t)])));
-  if (!digitados.every((valor) => Number.isFinite(valor))) throw new Error('Os valores de perímetro precisam ser números, em mm.');
-  const absolutos = valores.incremental === true ? paraAbsoluto(digitados, graduacao.base) : digitados;
+  if (!colando && !digitados.every((valor) => Number.isFinite(valor))) throw new Error('Os valores de perímetro precisam ser números, em mm.');
+  // Os valores colados já são os de cada tamanho (não a diferença para o vizinho).
+  const absolutos = colando ? [...colaveis!] : valores.incremental === true ? paraAbsoluto(digitados, graduacao.base) : digitados;
   const perimetros = absolutos.map((valor) => (valores.inverter === true && valor !== 0 ? 0 - valor : valor));
   let nova = definirGraduacaoDoPique(peca, piqueId, referencia, perimetros);
   let outros = 0;
@@ -83,7 +128,9 @@ export function aplicarDialogoDoPique(pecas: readonly Molde[], peca: Molde, piqu
   return {
     pecas: trocar(pecas, nova),
     recado:
-      `Pique de “${peca.nome}” graduado a partir do ponto ${referencia + 1}: no tamanho ${graduacao.tamanhos[ponta]}, o perímetro muda ${formatarMm(perimetros[ponta] ?? 0)}.` +
-      (outros > 0 ? ` ${outros === 1 ? 'O outro pique levou' : `Os outros ${outros} piques levaram`} os mesmos valores, cada um a partir do ponto graduado mais perto dele.` : ''),
+      `Pique de “${peca.nome}” graduado a partir do ponto ${referencia + 1}${colando ? ', com a graduação colada' : ''}: no tamanho ${graduacao.tamanhos[ponta]}, o perímetro muda ${formatarMm(perimetros[ponta] ?? 0)}.` +
+      (outros > 0 ? ` ${outros === 1 ? 'O outro pique levou' : `Os outros ${outros} piques levaram`} os mesmos valores, cada um a partir do ponto graduado mais perto dele.` : '') +
+      (valores.copiar === true ? ' A graduação dele foi copiada: abra a janela de outro pique e marque “Colar”.' : ''),
+    ...(valores.copiar === true ? { copiada: { tamanhos: graduacao.tamanhos, base: graduacao.base, perimetros } } : {}),
   };
 }

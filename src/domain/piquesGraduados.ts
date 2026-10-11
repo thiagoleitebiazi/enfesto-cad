@@ -97,6 +97,50 @@ export function definirGraduacaoDoPique(molde: Molde, piqueId: string, indiceDaR
   return { ...molde, piques: molde.piques.map((q) => (q.id === piqueId ? { ...q, graduacao: { referencia, perimetros: valores } } : q)) };
 }
 
+/** A direção do contorno onde o pique está, no sentido da numeração dos pontos (um vetor de comprimento 1). */
+export function direcaoDoContornoNoPique(molde: Molde, pique: Pique): Ponto2D {
+  const de = molde.contorno[pique.indiceAresta];
+  const ate = molde.contorno[(pique.indiceAresta + 1) % molde.contorno.length];
+  const comprimento = de && ate ? distancia(de, ate) : 0;
+  if (!de || !ate || comprimento <= NO_MESMO_LUGAR_MM) throw new Error('A aresta do pique não tem comprimento: não dá a direção em que ele anda.');
+  return { x: (ate.x - de.x) / comprimento, y: (ate.y - de.y) / comprimento };
+}
+
+/**
+ * Gradua o pique fazendo-o andar sobre o contorno: `passoMm` no sentido da
+ * numeração dos pontos (negativo, no contrário). É o que "Automático" e
+ * "Tangente" fazem com um pique. `tamanho` e `incremental` valem como na
+ * regra de um ponto: em todos os tamanhos (`tamanho` nulo) ou num só — os
+ * outros ficam como estavam; cada tamanho andando o passo a mais que o
+ * vizinho do lado do base (incremental), ou o passo a partir do base. Abaixo
+ * do base, anda ao contrário. A referência é a que o pique já tem ou, sem
+ * graduação, a sugerida (o ponto graduado mais perto).
+ */
+export function graduarPiqueNoContorno(molde: Molde, piqueId: string, passoMm: number, tamanho: number | null, incremental = true): Molde {
+  const graduacao = molde.graduacao;
+  if (!graduacao) throw new Error(`A peça “${molde.nome}” não tem graduação: defina os tamanhos dela antes.`);
+  const pique = molde.piques.find((q) => q.id === piqueId);
+  if (!pique) throw new Error('Pique não encontrado na peça.');
+  if (!Number.isFinite(passoMm)) throw new Error('A distância que o pique anda precisa ser um número.');
+  const referencia = referenciaDoPique(molde, pique) ?? referenciaSugerida(molde, pique);
+  // O "perímetro" conta para longe da referência: andando no sentido da numeração, aumenta se o pique está adiante dela e diminui se está atrás.
+  const sentido = distanciaDaReferencia(molde.contorno, referencia, pique) < 0 ? -1 : 1;
+  const base = graduacao.base;
+  const andados = perimetrosDoPique(molde, pique).map((valor) => valor * sentido);
+  if (tamanho === null) {
+    graduacao.tamanhos.forEach((_, t) => {
+      andados[t] = incremental ? passoMm * (t - base) : passoMm * Math.sign(t - base);
+    });
+  } else {
+    if (!Number.isInteger(tamanho) || tamanho < 0 || tamanho >= graduacao.tamanhos.length) throw new Error('Tamanho fora da graduação.');
+    if (tamanho === base) throw new Error('O tamanho base é o do contorno desenhado e não anda: escolha outro tamanho.');
+    const sinal = tamanho > base ? 1 : -1;
+    andados[tamanho] = incremental ? (andados[tamanho - sinal] ?? 0) + passoMm * sinal : passoMm * sinal;
+  }
+  // Zero vezes um número negativo dá "-0": fica zero.
+  return definirGraduacaoDoPique(molde, piqueId, referencia, andados.map((valor) => (valor * sentido === 0 ? 0 : valor * sentido)));
+}
+
 /** Tira a graduação do pique: ele volta a andar na proporção da aresta em que está. */
 export function removerGraduacaoDoPique(molde: Molde, piqueId: string): Molde {
   return { ...molde, piques: molde.piques.map((q) => (q.id === piqueId ? semGraduacao(q) : q)) };

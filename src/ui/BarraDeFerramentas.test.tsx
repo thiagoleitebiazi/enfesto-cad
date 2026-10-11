@@ -451,11 +451,18 @@ describe('BarraDeFerramentas: Graduação', () => {
     expect(within(painel()).getAllByRole('button', { pressed: true })).toHaveLength(1);
   });
 
-  it('Separar e Unir agem na hora: não têm estado de pressionado', () => {
+  it('Unir age na hora, sem estado de pressionado; Separar fica pressionada enquanto espera o clique da posição', () => {
     renderizar('Graduação', { temGraduacao: true, temOutrasMarcadas: true });
 
-    expect(botao('Separar')).not.toHaveAttribute('aria-pressed');
+    expect(botao('Separar')).toHaveAttribute('aria-pressed', 'false');
     expect(botao('Unir')).not.toHaveAttribute('aria-pressed');
+    expect(botao('Separar').title).toContain('onde for indicado com o mouse');
+  });
+
+  it('com o Separar à espera do clique, o botão dele fica pressionado', () => {
+    renderizar('Graduação', { temGraduacao: true, modo: 'separar-tamanhos' });
+
+    expect(botao('Separar')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('as ferramentas que o manual da referência não descreve dizem isso na dica', () => {

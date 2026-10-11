@@ -4,7 +4,9 @@ import { definirRegra, regraPorPasso } from './graduacao';
 import { adicionarPique, criarMolde, moverPontoDoMolde, transladarMolde, type Molde } from './molde';
 import {
   definirGraduacaoDoPique,
+  direcaoDoContornoNoPique,
   distanciaAteAReferencia,
+  graduarPiqueNoContorno,
   perimetrosDoPique,
   perimetrosNosTamanhosNovos,
   piquesNoTamanho,
@@ -121,6 +123,82 @@ describe('pique graduado', () => {
     expect(() => definirGraduacaoDoPique(peca(), 'pique', 0.5, [0, 0, 0])).toThrow('de 1 a 4');
     expect(() => definirGraduacaoDoPique(peca(), 'pique', 0, [0, 0])).toThrow('para cada tamanho');
     expect(() => definirGraduacaoDoPique(peca(), 'pique', 0, [Number.NaN, 0, 0])).toThrow('precisam ser números');
+  });
+});
+
+describe('o pique que anda sobre o contorno (“Automático” e “Tangente”)', () => {
+  // Cinco tamanhos, sem ponto graduado: a referência sugerida é o canto (0, 0), 50 mm atrás do pique.
+  const emCinco = (): Molde => {
+    const base = criarMolde({ nome: 'Frente', referencia: 'REF', tamanho: 'M', contorno: RETANGULO, linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) } }, 'm1');
+    return definirTamanhosDoMolde(adicionarPique(base, ponto(50, 0), 'pique'), ['PP', 'P', 'M', 'G', 'GG'], 'M');
+  };
+  const perimetros = (molde: Molde) => perimetrosDoPique(molde, oPique(molde));
+
+  it('a direção do contorno no pique é a da aresta em que ele está, no sentido da numeração', () => {
+    expect(direcaoDoContornoNoPique(peca(), oPique(peca()))).toEqual(ponto(1, 0));
+  });
+
+  it('em todos os tamanhos, cada um anda o passo a mais que o vizinho; negativo, anda para o outro lado', () => {
+    const nova = graduarPiqueNoContorno(emCinco(), 'pique', 10, null);
+
+    expect(referenciaDoPique(nova, oPique(nova))).toBe(0);
+    expect(perimetros(nova)).toEqual([-20, -10, 0, 10, 20]);
+    expect(oPique(moldeDoTamanho(nova, 4, 'solta')).posicao.x).toBeCloseTo(70, 6);
+    expect(oPique(moldeDoTamanho(nova, 0, 'solta')).posicao.x).toBeCloseTo(30, 6);
+    expect(perimetros(graduarPiqueNoContorno(emCinco(), 'pique', -10, null))).toEqual([20, 10, 0, -10, -20]);
+  });
+
+  it('a partir do base (sem o incremental), todos os tamanhos de cada lado andam o mesmo', () => {
+    expect(perimetros(graduarPiqueNoContorno(emCinco(), 'pique', 10, null, false))).toEqual([-10, -10, 0, 10, 10]);
+  });
+
+  it('num tamanho só, só ele muda: o passo a mais que o vizinho do lado do base, ou o passo a partir do base', () => {
+    const noGG = graduarPiqueNoContorno(emCinco(), 'pique', 10, 4);
+    expect(perimetros(noGG)).toEqual([0, 0, 0, 0, 10]);
+    // Com o G já andando 10, o GG incremental fica 10 depois dele.
+    const noG = graduarPiqueNoContorno(noGG, 'pique', 10, 3);
+    expect(perimetros(noG)).toEqual([0, 0, 0, 10, 10]);
+    expect(perimetros(graduarPiqueNoContorno(noG, 'pique', 10, 4))).toEqual([0, 0, 0, 10, 20]);
+    // Abaixo do base anda ao contrário; sem o incremental, conta do base.
+    expect(perimetros(graduarPiqueNoContorno(noG, 'pique', 10, 0))).toEqual([-10, 0, 0, 10, 10]);
+    expect(perimetros(graduarPiqueNoContorno(noG, 'pique', 4, 4, false))).toEqual([0, 0, 0, 10, 4]);
+  });
+
+  it('com a referência adiante do pique, andar no sentido da numeração diminui a distância até ela', () => {
+    // Um pique a 20 mm do canto (200, 0), que anda 20 mm por tamanho: a referência sugerida é esse canto, adiante dele.
+    const comOutro = adicionarPique(peca(), ponto(180, 0), 'perto-do-canto');
+    const nova = graduarPiqueNoContorno(comOutro, 'perto-do-canto', 10, null);
+    const oOutro = (molde: Molde) => molde.piques.find((q) => q.id === 'perto-do-canto')!;
+
+    expect(referenciaDoPique(nova, oOutro(nova))).toBe(1);
+    expect(perimetrosDoPique(nova, oOutro(nova))).toEqual([10, 0, -10]);
+    // No G o canto está em x = 220, e o pique, 10 mm antes dele; no P, em 180, e o pique 30 mm antes.
+    expect(oOutro(moldeDoTamanho(nova, 2, 'solta')).posicao.x).toBeCloseTo(210, 6);
+    expect(oOutro(moldeDoTamanho(nova, 0, 'solta')).posicao.x).toBeCloseTo(150, 6);
+    // O outro pique, perto do canto (0, 0), tem a referência atrás: andar para a frente aumenta a distância.
+    const doPrimeiro = graduarPiqueNoContorno(peca(), 'pique', 10, null);
+    expect(referenciaDoPique(doPrimeiro, oPique(doPrimeiro))).toBe(0);
+    expect(perimetros(doPrimeiro)).toEqual([-10, 0, 10]);
+    expect(noTamanho(doPrimeiro, 2)).toEqual(ponto(60, 0));
+  });
+
+  it('o pique que já tem graduação continua com a referência dele', () => {
+    // A referência dele é o canto (200, 0), que não é o ponto graduado mais perto: o pique está 150 mm antes dela.
+    const comTabela = definirGraduacaoDoPique(peca(), 'pique', 1, [-3, 0, 3]);
+    const nova = graduarPiqueNoContorno(comTabela, 'pique', 10, 2);
+
+    expect(referenciaDoPique(nova, oPique(nova))).toBe(1);
+    // Andar 10 mm para a frente, no G, diminui em 10 a distância até a referência; o P fica como estava.
+    expect(perimetros(nova)).toEqual([-3, 0, -10]);
+  });
+
+  it('recusa o que não serve', () => {
+    expect(() => graduarPiqueNoContorno(emCinco(), 'pique', 10, 2)).toThrow(/tamanho base/);
+    expect(() => graduarPiqueNoContorno(emCinco(), 'pique', 10, 9)).toThrow(/Tamanho fora da graduação/);
+    expect(() => graduarPiqueNoContorno(emCinco(), 'pique', Number.NaN, null)).toThrow(/precisa ser um número/);
+    expect(() => graduarPiqueNoContorno(emCinco(), 'outro', 10, null)).toThrow(/Pique não encontrado/);
+    const semTamanhos = criarMolde({ nome: 'Frente', referencia: 'REF', tamanho: 'M', contorno: RETANGULO, linhaDeFio: { inicio: ponto(50, 50), fim: ponto(50, 250) } }, 'm1');
+    expect(() => graduarPiqueNoContorno(adicionarPique(semTamanhos, ponto(50, 0), 'pique'), 'pique', 10, null)).toThrow(/não tem graduação/);
   });
 });
 

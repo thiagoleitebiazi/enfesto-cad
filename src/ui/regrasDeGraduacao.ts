@@ -1,5 +1,7 @@
 import type { Ponto2D } from '../core/geometria';
 import { indiceDoTamanho, type Graduacao } from '../domain/graduacao';
+import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
+import { paraAbsoluto, paraATela, paraOCampo, paraOMundo } from './tabelaDeGraduacao';
 
 /**
  * Regra de graduação guardada para reuso ("Criar regra" / "Regras"): o
@@ -95,6 +97,85 @@ export function regraDoPonto(id: string, nome: string, graduacao: Graduacao, des
     base: graduacao.tamanhos[graduacao.base]!,
     deslocamentos: deslocamentos.map((d) => ({ x: d.x, y: d.y })),
     ...(codigo.trim() !== '' ? { codigo: codigo.trim() } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A janela do "Criar regra": a tabela do ponto, que pode ser mudada antes de guardar
+// ---------------------------------------------------------------------------
+
+/** Os valores de uma coluna da tabela, num campo só: um por tamanho, separados por ponto e vírgula. */
+function emLista(valores: readonly number[]): string {
+  return valores.map(paraOCampo).join('; ');
+}
+
+/**
+ * O que a janela do "Criar regra" pergunta: o nome, o código e a tabela do
+ * ponto — os tamanhos, o base e o DX e o DY de cada tamanho (os da tela,
+ * contados do base) —, que pode ser mudada antes de guardar. Criar um
+ * tamanho é acrescentar o nome dele e um valor em cada coluna, na mesma
+ * posição; excluir é apagar os três; mudar o base é trocar o nome dele.
+ */
+export function dialogoDeCriarRegra(graduacao: Graduacao, regra: readonly Ponto2D[]): { readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
+  const naTela = graduacao.tamanhos.map((_, t) => paraATela(regra[t] ?? { x: 0, y: 0 }));
+  return {
+    campos: [
+      { tipo: 'texto', id: 'nome', rotulo: 'Nome da regra', inicial: '' },
+      { tipo: 'texto', id: 'codigo', rotulo: 'Código (opcional): um rótulo curto para achar a regra', inicial: '', opcional: true },
+      { tipo: 'texto', id: 'tamanhos', rotulo: 'Tamanhos da regra, do menor para o maior, separados por vírgula', inicial: graduacao.tamanhos.join(', ') },
+      { tipo: 'texto', id: 'base', rotulo: 'Tamanho base (um dos de cima)', inicial: graduacao.tamanhos[graduacao.base] ?? '' },
+      { tipo: 'texto', id: 'dx', rotulo: 'DX de cada tamanho (mm), na mesma ordem, separados por ponto e vírgula', inicial: emLista(naTela.map((d) => d.dx)) },
+      { tipo: 'texto', id: 'dy', rotulo: 'DY de cada tamanho (mm), na mesma ordem, separados por ponto e vírgula', inicial: emLista(naTela.map((d) => d.dy)) },
+      { tipo: 'caixa', id: 'incremental', rotulo: 'Incremental: os valores digitados são a diferença para o tamanho vizinho, do lado do base', inicial: false },
+    ],
+    nota:
+      'A regra guarda o que um ponto anda em cada tamanho. A tabela vem com o que este ponto anda, e pode ser mudada antes de guardar: para criar um tamanho, acrescente o nome dele em “Tamanhos” e um valor em DX e em DY, na mesma posição; para excluir, apague os três; para mudar o base, troque o nome em “Tamanho base” — os valores passam a ser contados dele. Para dar o mesmo passo a todos os tamanhos, marque “Incremental” e repita o valor. A regra fica no cadastro deste computador, em “Regras”, e vale para as peças que têm esses tamanhos. O código aparece na lista, ao lado do nome; não muda as contas.',
+  };
+}
+
+/** Os números de uma coluna da tabela, lidos do campo: aceita vírgula ou ponto nas casas, e exige um valor por tamanho. */
+function coluna(texto: unknown, nome: string, quantos: number): number[] {
+  const partes = String(texto ?? '')
+    .split(';')
+    .map((parte) => parte.trim())
+    .filter((parte) => parte !== '');
+  const valores = partes.map((parte) => Number(parte.replace(/\s/g, '').replace(',', '.')));
+  if (partes.length !== quantos || !valores.every((valor) => Number.isFinite(valor))) {
+    throw new Error(`${nome} precisa de um número para cada tamanho (${quantos}), separados por ponto e vírgula.`);
+  }
+  return valores;
+}
+
+/** A regra cadastrada com o que a janela do "Criar regra" entregou. Lança erro, sem guardar nada, quando a tabela não serve. */
+export function regraDoDialogo(id: string, valores: ValoresDoDialogo): RegraCadastrada {
+  const nome = String(valores.nome ?? '').trim();
+  if (nome === '') throw new Error('Dê um nome à regra.');
+  const tamanhos = String(valores.tamanhos ?? '')
+    .split(/[,;]/)
+    .map((parte) => parte.trim())
+    .filter((parte) => parte !== '');
+  if (tamanhos.length < 2) throw new Error('A regra precisa de pelo menos dois tamanhos: o base e mais um.');
+  if (new Set(tamanhos).size !== tamanhos.length) throw new Error('Os tamanhos da regra precisam ter nomes diferentes.');
+  const base = String(valores.base ?? '').trim();
+  const doBase = tamanhos.indexOf(base);
+  if (doBase < 0) throw new Error(`O tamanho base “${base}” não está entre os tamanhos da regra (${tamanhos.join(', ')}).`);
+  const [dx, dy] = [coluna(valores.dx, 'DX', tamanhos.length), coluna(valores.dy, 'DY', tamanhos.length)];
+  // Incremental: a diferença para o vizinho do lado do base. Senão, cada valor é contado do base: o que foi digitado no base sai de todos.
+  const doIncremental = valores.incremental === true;
+  const contados = (digitados: number[]): number[] => (doIncremental ? paraAbsoluto(digitados, doBase) : digitados.map((valor) => valor - digitados[doBase]!));
+  const [absolutoDx, absolutoDy] = [contados(dx), contados(dy)];
+  const codigo = valores.codigo === undefined ? '' : String(valores.codigo).trim();
+  return {
+    id,
+    nome,
+    tamanhos,
+    base,
+    deslocamentos: tamanhos.map((_, t) => {
+      const doMundo = paraOMundo({ dx: absolutoDx[t]!, dy: absolutoDy[t]! });
+      // Zero negativo não vai para o cadastro.
+      return { x: doMundo.x === 0 ? 0 : doMundo.x, y: doMundo.y === 0 ? 0 : doMundo.y };
+    }),
+    ...(codigo !== '' ? { codigo } : {}),
   };
 }
 

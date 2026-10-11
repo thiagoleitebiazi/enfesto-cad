@@ -101,17 +101,19 @@ import {
 import {
   criarConjuntoDeRegras,
   gravarConjuntosDeRegras,
+  dialogoDeCriarRegra,
   gravarRegrasCadastradas,
   lerConjuntosDeRegras,
   lerRegrasCadastradas,
   regraDaVez,
+  regraDoDialogo,
   regraDoPonto,
   regraParaAGraduacao,
   type ConjuntoDeRegras,
   type RegraCadastrada,
 } from './ui/regrasDeGraduacao';
 import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
-import { aplicarDialogoDoPique, dialogoDoPique } from './ui/graduacaoDePiques';
+import { aplicarDialogoDoPique, dialogoDoPique, type GraduacaoDePiqueCopiada } from './ui/graduacaoDePiques';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
 import { expandirTamanhos } from './domain/tamanhosGraduados';
@@ -614,6 +616,8 @@ export default function App(): React.JSX.Element {
   /** A regra que o próximo clique do "Regras" aplica: a da vez do conjunto em uso, ou a regra escolhida. */
   const regraEmUso = vezDoConjunto?.regra ?? regraEscolhida;
   const [regraCopiada, setRegraCopiada] = useState<RegraCadastrada | null>(null);
+  // A graduação de pique guardada pelo "Copiar" da tabela dos piques, para o "Colar" em outro.
+  const [piqueCopiado, setPiqueCopiado] = useState<GraduacaoDePiqueCopiada | null>(null);
   // Confirmação de uma ação que não muda nada visível no desenho (guardar um
   // ponto de restauração, por exemplo). Vale enquanto as peças e a seleção
   // forem as mesmas de quando foi dada.
@@ -2513,8 +2517,16 @@ export default function App(): React.JSX.Element {
           peca,
           trecho,
           { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
-          { regra: regraEmUso, raioMm },
+          { regra: regraEmUso, raioMm, novoId: proximoId },
         );
+        // "Separar" com a posição indicada: postas as peças, a ferramenta desliga (outro clique poria outra cópia).
+        if (modo === 'separar-tamanhos' && resultado.pecas) {
+          const novasPecas = [...resultado.pecas];
+          aplicarMudanca(novasPecas);
+          cancelarModo();
+          avisar(resultado.recado ?? '', novasPecas);
+          return;
+        }
         setTrecho(resultado.estado);
         setRecadoDaFerramenta(resultado.recado);
         if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
@@ -2746,6 +2758,7 @@ export default function App(): React.JSX.Element {
       transform.escalaPxPorMm,
       aplicarMudanca,
       cancelarModo,
+      avisar,
       finalizarContornoEmEdicao,
     ],
   );
@@ -4398,8 +4411,11 @@ export default function App(): React.JSX.Element {
               const novas = lerDialogoDaGraduacao(ferramenta, opcoesDaGraduacao, valores);
               // "Separar", "Unir" e "Remover do molde inteiro" agem na hora; as outras ligam a ferramenta.
               const naHora =
+                // "Separar" só age na hora quando a posição não é para ser indicada com o mouse.
                 ferramenta === 'separar-tamanhos'
-                  ? aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
+                  ? novas.separar.indicarPosicao
+                    ? null
+                    : aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
                   : ferramenta === 'unir-tamanhos'
                     ? aplicarUnir(pecas, pecaSelecionada, idsSelecionadosEmLote, novas.unir.ajustarCurvas)
                     : ferramenta === 'remover-graduacao' && novas.remover.onde === 'molde'
@@ -4486,7 +4502,7 @@ export default function App(): React.JSX.Element {
       {dialogoDeFerramenta?.tipo === 'tabela-do-pique' &&
         pecaSelecionada &&
         (() => {
-          const dialogo = dialogoDoPique(pecaSelecionada, dialogoDeFerramenta.id);
+          const dialogo = dialogoDoPique(pecaSelecionada, dialogoDeFerramenta.id, piqueCopiado);
           if (!dialogo) return null;
           return (
             <DialogoDeCampos
@@ -4498,7 +4514,8 @@ export default function App(): React.JSX.Element {
               rotuloDoBotao="Aplicar"
               onAplicar={(valores) => {
                 try {
-                  const resultado = aplicarDialogoDoPique(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores);
+                  const resultado = aplicarDialogoDoPique(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, piqueCopiado);
+                  if (resultado.copiada) setPiqueCopiado(resultado.copiada);
                   aplicarMudanca([...resultado.pecas]);
                   setRecadoDaFerramenta(resultado.recado);
                   return null;
@@ -4518,21 +4535,12 @@ export default function App(): React.JSX.Element {
             ['Ponto', String(pontoDaGraduacao.indice + 1)],
             ['Tamanhos', pontoDaGraduacao.graduacao.tamanhos.join(', ')],
           ]}
-          campos={[
-            { tipo: 'texto', id: 'nome', rotulo: 'Nome da regra', inicial: '' },
-            { tipo: 'texto', id: 'codigo', rotulo: 'Código (opcional): um rótulo curto para achar a regra', inicial: '', opcional: true },
-          ]}
-          nota="A regra guarda o que este ponto anda em cada tamanho. Fica no cadastro deste computador, em “Regras”, e vale para as peças que têm esses tamanhos. O código aparece na lista, ao lado do nome; não muda as contas."
+          campos={dialogoDeCriarRegra(pontoDaGraduacao.graduacao, pontoDaGraduacao.regra).campos}
+          nota={dialogoDeCriarRegra(pontoDaGraduacao.graduacao, pontoDaGraduacao.regra).nota}
           rotuloDoBotao="Criar regra"
           onAplicar={(valores) => {
             try {
-              const regra = regraDoPonto(
-                proximoId(),
-                String(valores.nome),
-                pontoDaGraduacao.graduacao,
-                pontoDaGraduacao.regra,
-                valores.codigo === undefined ? '' : String(valores.codigo),
-              );
+              const regra = regraDoDialogo(proximoId(), valores);
               const novas = [...regrasDoUsuario, regra];
               if (!gravarRegrasCadastradas(window.localStorage, novas)) return 'Não foi possível guardar a regra neste computador.';
               setRegrasDoUsuario(novas);

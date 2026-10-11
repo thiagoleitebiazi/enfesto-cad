@@ -194,6 +194,24 @@ export function separarTamanhos(
 }
 
 /**
+ * "Separar" com a posição indicada: as peças novas ficam em fila a partir de
+ * `canto` — o canto de menor X e menor Y da caixa da primeira (na tela, o de
+ * cima à esquerda) —, uma depois da outra no sentido do comprimento da mesa.
+ */
+export function separarTamanhosEm(molde: Molde, quais: readonly number[], novoId: () => string, canto: Ponto2D, afastamentoMm = 20): Molde[] {
+  if (quais.length === 0) throw new Error('Escolha pelo menos um tamanho para separar.');
+  let borda = canto.y;
+  return quais.map((tamanho) => {
+    const id = novoId();
+    const solta = moldeDoTamanho(molde, tamanho, id);
+    const caixa = retanguloEnvolvente(solta.contorno);
+    const noLugar = transladarMolde(solta, { x: canto.x - caixa.minX, y: borda - caixa.minY }, id);
+    borda += caixa.maxY - caixa.minY + afastamentoMm;
+    return noLugar;
+  });
+}
+
+/**
  * "Unir": a peça `base` passa a ser graduada, e cada uma das `outras` vira um
  * tamanho dela. As peças têm de ter o mesmo número de pontos no contorno, na
  * mesma ordem, e um tamanho diferente cada uma (o das propriedades). São

@@ -16,7 +16,7 @@ import {
   type Molde,
 } from './molde';
 import { criarPregas } from './pregas';
-import { definirTamanhosDoMolde, expandirTamanhos, moldeDoTamanho, separarTamanhos, unirTamanhos } from './tamanhosGraduados';
+import { definirTamanhosDoMolde, expandirTamanhos, moldeDoTamanho, separarTamanhos, separarTamanhosEm, unirTamanhos } from './tamanhosGraduados';
 
 // Retângulo de 200 × 300 mm. Tamanhos P, M e G, com o M de base.
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -208,6 +208,29 @@ describe('separarTamanhos: depois das outras peças', () => {
     // Um ponto aquém da peça graduada não conta: a fila começa depois dela.
     const [aoLado] = separarTamanhos(graduada(), [2], ids(), 100);
     expect(retanguloEnvolvente(aoLado!.contorno).minY).toBeCloseTo(320, 6);
+  });
+});
+
+describe('separarTamanhosEm: a posição indicada', () => {
+  it('a primeira peça fica com o canto de menor X e menor Y no ponto; as outras, em fila, 20 mm depois da anterior', () => {
+    const soltas = separarTamanhosEm(graduada(), [0, 2], ids(), ponto(700, -50));
+    const caixas = soltas.map((m) => ({
+      minX: Math.min(...m.contorno.map((p) => p.x)),
+      minY: Math.min(...m.contorno.map((p) => p.y)),
+      maxY: Math.max(...m.contorno.map((p) => p.y)),
+    }));
+
+    expect(soltas).toHaveLength(2);
+    expect(caixas[0]!.minX).toBeCloseTo(700, 9);
+    expect(caixas[0]!.minY).toBeCloseTo(-50, 9);
+    expect(caixas[1]!.minX).toBeCloseTo(700, 9);
+    expect(caixas[1]!.minY).toBeCloseTo(caixas[0]!.maxY + 20, 9);
+    // Cada uma é a peça do seu tamanho, sem graduação.
+    expect(soltas.every((m) => m.graduacao === undefined)).toBe(true);
+    // Com outro afastamento.
+    const juntas = separarTamanhosEm(graduada(), [0, 2], ids(), ponto(700, -50), 5);
+    expect(Math.min(...juntas[1]!.contorno.map((p) => p.y))).toBeCloseTo(caixas[0]!.maxY + 5, 9);
+    expect(() => separarTamanhosEm(graduada(), [], ids(), ponto(0, 0))).toThrow(/pelo menos um tamanho/);
   });
 });
 
