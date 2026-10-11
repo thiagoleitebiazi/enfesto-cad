@@ -399,3 +399,47 @@ describe('"Perímetro" e "Comparar perímetros": o clique chega como foi dado', 
     expect(onCliqueNoCanvas).toHaveBeenCalledExactlyOnceWith(ponto(98, 4), ponto(98, 4));
   });
 });
+
+describe('espaço para arrastar a vista: a tecla não fica presa', () => {
+  const comEspaco = (alvo: EventTarget = window): void => {
+    alvo.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+  };
+
+  afterEach(() => {
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }));
+  });
+
+  it('com o espaço apertado, o botão do mouse arrasta a vista: o clique não chega à ferramenta', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: false });
+
+    comEspaco();
+    clicar(ponto(98, 4));
+    expect(onCliqueNoCanvas).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }));
+    clicar(ponto(98, 4));
+    expect(onCliqueNoCanvas).toHaveBeenCalledTimes(1);
+  });
+
+  it('se a janela perde o foco com o espaço apertado, o "soltar" não chega — e mesmo assim o clique volta a valer', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: false });
+
+    comEspaco();
+    window.dispatchEvent(new Event('blur'));
+    clicar(ponto(98, 4));
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledTimes(1);
+  });
+
+  it('o espaço digitado num campo de texto é texto: não arma o arrasto da vista', () => {
+    const { onCliqueNoCanvas, clicar } = renderizarFerramentaDeClique('medir-distancia', { imaAtivo: false, mostrarGrade: false });
+    const campo = document.createElement('input');
+    document.body.appendChild(campo);
+
+    comEspaco(campo);
+    clicar(ponto(98, 4));
+    campo.remove();
+
+    expect(onCliqueNoCanvas).toHaveBeenCalledTimes(1);
+  });
+});

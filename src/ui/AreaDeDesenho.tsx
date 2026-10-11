@@ -541,16 +541,28 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
   useEffect(() => {
     function aoPressionarTecla(e: KeyboardEvent): void {
-      if (e.code === 'Space') espacoPressionadoRef.current = true;
+      // O espaço digitado num campo de texto é texto, e não o pedido de arrastar a vista.
+      const digitando = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (e.code === 'Space' && !digitando) espacoPressionadoRef.current = true;
     }
     function aoSoltarTecla(e: KeyboardEvent): void {
       if (e.code === 'Space') espacoPressionadoRef.current = false;
     }
+    // Se a janela perde o foco com o espaço apertado (Alt+Tab, outra janela na frente), o "soltar" vai para outro
+    // programa e nunca chega aqui: sem isto, o espaço ficava dado como apertado, e todo clique no desenho virava
+    // arrasto da vista, até a tecla ser apertada de novo.
+    function aoPerderOFoco(): void {
+      espacoPressionadoRef.current = false;
+      panRef.current.ativo = false;
+      setPanAtivo(false);
+    }
     window.addEventListener('keydown', aoPressionarTecla);
     window.addEventListener('keyup', aoSoltarTecla);
+    window.addEventListener('blur', aoPerderOFoco);
     return () => {
       window.removeEventListener('keydown', aoPressionarTecla);
       window.removeEventListener('keyup', aoSoltarTecla);
+      window.removeEventListener('blur', aoPerderOFoco);
     };
   }, []);
 
