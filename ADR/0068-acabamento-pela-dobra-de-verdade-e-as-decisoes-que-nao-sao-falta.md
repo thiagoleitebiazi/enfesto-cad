@@ -62,8 +62,8 @@ ninguém pedir.
   ser "aberta por pivô" (o pivô saiu da peça): a aberta por pivô não tem o
   campo, porque o vértice dela fica sempre em esquadro.
 - **Ninguém da modelagem olhou.** A conta é a do traçado em papel (dobrar a
-  pence fechada e passar a borda por cima dela); o caso entra na folha de
-  revisão.
+  pence fechada e passar a borda por cima dela); o caso está na folha de
+  comparação (ADR 0070).
 - **Nada foi comparado com o programa de referência em uso.**
 
 ## Verificação
