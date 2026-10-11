@@ -9,9 +9,9 @@ interface PainelDeDimensionarProps {
 }
 
 /**
- * "Dimensionar" (inspirado no Audaces Moldes Avançado): escala a peça por
+ * "Dimensionar" (inspirado no programa de referência): escala a peça por
  * fatores X/Y independentes, com prévia em mm do tamanho resultante — mesma
- * ideia dos campos "Fator X"/"Fator Y"/"DX"/"DY" do Audaces, adaptada para
+ * ideia dos campos "Fator X"/"Fator Y"/"DX"/"DY" da referência, adaptada para
  * mm (unidade interna deste app em todos os outros lugares) em vez de cm.
  */
 export function PainelDeDimensionar(props: PainelDeDimensionarProps): React.JSX.Element {

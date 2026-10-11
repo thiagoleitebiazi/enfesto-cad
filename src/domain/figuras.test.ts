@@ -76,9 +76,39 @@ describe('o registro acompanha a peça inteira', () => {
     }
   });
 
-  it('dimensionada, ou com um ponto mexido à mão, a peça deixa de ser a figura — sem erro', () => {
+  it('o círculo dimensionado por igual nos dois sentidos continua sendo um círculo, com o raio novo e os lados que tinha', () => {
+    const peca = pecaCirculo();
+    const maior = dimensionarMolde(peca, 2, 2);
+    const figura = figuraDaPeca(maior)!;
+
+    expect(figura).toMatchObject({ tipo: 'circulo', raioMm: 100, lados: peca.contorno.length });
+    // O dimensionar cresce a partir do canto da caixa da peça: o centro foi junto.
+    for (const r of raios(maior, figura.centro)) expect(r).toBeCloseTo(100, 9);
+    expect(maior.contorno).toHaveLength(peca.contorno.length);
+    // Um círculo de raio 100 feito agora teria mais lados: o dimensionado ficou com os dele.
+    expect(circulo(CENTRO, ponto(CENTRO.x + 100, CENTRO.y)).length).toBeGreaterThan(peca.contorno.length);
+    // Encolhido, também; e dimensionado duas vezes.
+    expect(figuraDaPeca(dimensionarMolde(peca, 0.5, 0.5))).toMatchObject({ tipo: 'circulo', raioMm: 25 });
+    expect(figuraDaPeca(dimensionarMolde(maior, 1.5, 1.5))).toMatchObject({ tipo: 'circulo', raioMm: 150, lados: peca.contorno.length });
+    // Depois de dimensionado, continua acompanhando a peça movida, girada e espelhada.
+    expect(figuraDaPeca(espelharMolde(rotacionarMolde(transladarMolde(maior, ponto(10, 20), 'c1'), 50), 'c1'))).toMatchObject({ tipo: 'circulo', raioMm: 100 });
+  });
+
+  it('mudado o raio do círculo dimensionado, ele é refeito com os lados que o raio novo pede', () => {
+    const maior = dimensionarMolde(pecaCirculo(), 2, 2);
+    const centro = figuraDaPeca(maior)!.centro;
+    const refeito = alterarCirculo(maior, 80);
+    const figura = figuraDaPeca(refeito)!;
+
+    expect(figura).toMatchObject({ tipo: 'circulo', raioMm: 80, centro });
+    expect('lados' in figura).toBe(false);
+    expect(refeito.contorno).toHaveLength(circulo(centro, ponto(centro.x + 80, centro.y)).length);
+    for (const r of raios(refeito, centro)) expect(r).toBeCloseTo(80, 9);
+  });
+
+  it('dimensionada com fatores diferentes (ou a espiral, mesmo por igual), ou com um ponto mexido à mão, a peça deixa de ser a figura — sem erro', () => {
+    expect(figuraDaPeca(dimensionarMolde(pecaEspiral(), 2, 2))).toBeNull();
     for (const peca of [pecaCirculo(), pecaEspiral()]) {
-      expect(figuraDaPeca(dimensionarMolde(peca, 2, 2))).toBeNull();
       expect(figuraDaPeca(dimensionarMolde(peca, 1, 1.5))).toBeNull();
       const p0 = peca.contorno[0]!;
       const mexida = moverPontoDoMolde(peca, 0, ponto(p0.x + 3, p0.y));

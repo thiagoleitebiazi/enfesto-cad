@@ -91,7 +91,9 @@ describe('o diálogo das medidas', () => {
 
   it('a peça que já não é a figura não tem diálogo, e as medidas que não servem são recusadas', () => {
     expect(dialogoDaFigura(quadrado())).toBeNull();
-    expect(dialogoDaFigura(dimensionarMolde(tampa(), 2, 2))).toBeNull();
+    expect(dialogoDaFigura(dimensionarMolde(tampa(), 2, 1))).toBeNull();
+    // O círculo dimensionado por igual continua tendo a janela, com o raio novo.
+    expect(dialogoDaFigura(dimensionarMolde(tampa(), 2, 2))!.campos.map((c) => [c.id, c.inicial])).toEqual([['raio', '100']]);
     expect(() => aplicarDialogoDaFigura([quadrado()], quadrado(), { raio: 50 })).toThrow(/já não pode ser mudada pelas medidas/);
     expect(() => aplicarDialogoDaFigura([tampa()], tampa(), { raio: 0 })).toThrow(/raio precisa ser maior que zero/);
     expect(() => aplicarDialogoDaFigura([babado()], babado(), { largura: 0, perimetro: 600 })).toThrow(/largura da espiral/);

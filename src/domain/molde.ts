@@ -130,7 +130,15 @@ export type FiguraDaPeca = {
   readonly centro: Ponto2D;
   readonly eixoX: Ponto2D;
   readonly eixoY: Ponto2D;
-} & ({ readonly tipo: 'circulo'; readonly raioMm: number } | { readonly tipo: 'espiral'; readonly larguraMm: number; readonly perimetroMm: number });
+} & (
+  | {
+      readonly tipo: 'circulo';
+      readonly raioMm: number;
+      /** Quantos lados o contorno tem, quando não é o número que o raio daria: o círculo foi dimensionado por igual, e ficou com os lados que tinha. */
+      readonly lados?: number;
+    }
+  | { readonly tipo: 'espiral'; readonly larguraMm: number; readonly perimetroMm: number }
+);
 
 /** As alças de tangente de uma curva: a da ponta inicial e a da final, cada uma só se foi posta. */
 export interface TangentesDaCurva {
@@ -906,7 +914,7 @@ export function arcoRegistrado(id: string, pontos: readonly Ponto2D[]): CurvaDaP
 /**
  * Escala a peça por `fatorX`/`fatorY` (independentes), mantendo o canto
  * superior esquerdo do retângulo envolvente fixo — mesma referência visual
- * do "Dimensionar" do Audaces (DX/DY mostram o novo tamanho resultante).
+ * do "Dimensionar" da referência (DX/DY mostram o novo tamanho resultante).
  */
 export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): Molde {
   if (!Number.isFinite(fatorX) || fatorX <= 0 || !Number.isFinite(fatorY) || fatorY <= 0) {
@@ -936,7 +944,24 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
       (v) => ({ x: v.x * fatorX, y: v.y * fatorY }),
     ),
     ...anotacoesTransformadas(molde, (p) => escalarPonto(p, origem, fatorX, fatorY)),
+    ...circuloDimensionado(molde, origem, fatorX, fatorY),
   };
+}
+
+/**
+ * O registro do círculo depois do "Dimensionar" por igual nos dois sentidos:
+ * ele continua sendo um círculo, com o raio novo e os lados que o contorno
+ * tem. Com fatores diferentes vira uma elipse, e a espiral não é a mesma
+ * espiral com outras medidas (o vão entre as voltas é fixo): nesses casos
+ * nada sai daqui, e o registro deixa de valer.
+ */
+function circuloDimensionado(molde: Molde, origem: Ponto2D, fatorX: number, fatorY: number): { readonly figura?: FiguraDaPeca } {
+  const figura = molde.figura;
+  if (!figura || figura.tipo !== 'circulo' || Math.abs(fatorX - fatorY) > 1e-12) return {};
+  const centro = escalarPonto(figura.centro, origem, fatorX, fatorY);
+  // Os pontos dos eixos guardam só a direção: vão com o centro, sem esticar.
+  const comOCentro = (p: Ponto2D): Ponto2D => ({ x: centro.x + (p.x - figura.centro.x), y: centro.y + (p.y - figura.centro.y) });
+  return { figura: { tipo: 'circulo', raioMm: figura.raioMm * fatorX, lados: molde.contorno.length, centro, eixoX: comOCentro(figura.eixoX), eixoY: comOCentro(figura.eixoY) } };
 }
 
 /** Um pique a menos disso (mm) do contorno novo continua sendo um pique dele. */

@@ -11,7 +11,9 @@ import { dimensionarMolde, transladarMolde, type FiguraDaPeca, type Molde } from
  *
  * O registro só vale enquanto o contorno é o da figura: mexido um ponto à
  * mão, cortada, dobrada ou dimensionada a peça, ele deixa de valer (sem erro).
- * Mover, girar e espelhar a peça levam o registro junto.
+ * Mover, girar e espelhar a peça levam o registro junto; e o círculo
+ * dimensionado por igual nos dois sentidos continua sendo um círculo, com o
+ * raio novo.
  */
 
 /** A que distância do centro ficam os dois pontos que guardam os eixos da figura (mm). */
@@ -53,7 +55,7 @@ export function figuraDaEspiral(centro: Ponto2D, larguraMm: number, perimetroMm:
 /** O contorno da figura: a forma dela, feita na origem, posta no lugar pelos eixos guardados. */
 export function contornoDaFigura(figura: FiguraDaPeca): Ponto2D[] {
   const origem = { x: 0, y: 0 };
-  const naOrigem = figura.tipo === 'circulo' ? circulo(origem, { x: figura.raioMm, y: 0 }) : espiral(origem, figura.larguraMm, figura.perimetroMm);
+  const naOrigem = figura.tipo === 'circulo' ? circulo(origem, { x: figura.raioMm, y: 0 }, figura.lados) : espiral(origem, figura.larguraMm, figura.perimetroMm);
   const { centro } = figura;
   const ex = { x: (figura.eixoX.x - centro.x) / BRACO_DO_EIXO_MM, y: (figura.eixoX.y - centro.y) / BRACO_DO_EIXO_MM };
   const ey = { x: (figura.eixoY.x - centro.x) / BRACO_DO_EIXO_MM, y: (figura.eixoY.y - centro.y) / BRACO_DO_EIXO_MM };
@@ -129,7 +131,8 @@ export function alterarCirculo(molde: Molde, raioMm: number): Molde {
   // O dimensionar cresce a partir do canto: a peça volta para o centro de antes.
   const centroEscalado = escalada.figura?.centro ?? figura.centro;
   const noLugar = transladarMolde(escalada, { x: figura.centro.x - centroEscalado.x, y: figura.centro.y - centroEscalado.y }, molde.id);
-  const nova: FiguraDaPeca = { ...figura, raioMm };
+  // Refeito com o raio novo, o círculo volta a ter os lados que esse raio pede.
+  const nova: FiguraDaPeca = { tipo: 'circulo', raioMm, centro: figura.centro, eixoX: figura.eixoX, eixoY: figura.eixoY };
   const contorno = contornoDaFigura(nova);
   return { ...noLugar, contorno, piques: piquesNoContorno(noLugar, contorno), figura: nova };
 }

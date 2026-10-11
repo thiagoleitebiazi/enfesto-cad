@@ -56,7 +56,7 @@ export function dialogoDaFigura(peca: Molde): { readonly titulo: string; readonl
     return {
       titulo: 'Círculo: medidas',
       campos: [{ tipo: 'medida', id: 'raio', rotulo: 'Raio (mm)', inicial: paraCampo(figura.raioMm) }],
-      nota: 'O círculo é refeito com o raio novo, no mesmo centro. O que está na peça — a linha de fio, as linhas, as marcas e os piques — cresce ou encolhe junto, na mesma proporção. O registro do círculo vale enquanto o contorno não é mexido à mão, cortado nem dimensionado.',
+      nota: 'O círculo é refeito com o raio novo, no mesmo centro. O que está na peça — a linha de fio, as linhas, as marcas e os piques — cresce ou encolhe junto, na mesma proporção. O registro do círculo vale enquanto o contorno não é mexido à mão nem cortado; dimensionada a peça por igual nos dois sentidos, ele continua valendo, com o raio novo (com fatores diferentes, o círculo vira outra coisa, e o registro deixa de valer).',
     };
   }
   return {

@@ -140,12 +140,17 @@ export function arcoPorTresPontos(inicio: Ponto2D, meio: Ponto2D, fim: Ponto2D):
   return arco;
 }
 
-/** Círculo amostrado, como contorno fechado; o primeiro ponto é o da direção de `pontoNaBorda`. */
-export function circulo(centro: Ponto2D, pontoNaBorda: Ponto2D): Ponto2D[] {
+/**
+ * Círculo amostrado, como contorno fechado; o primeiro ponto é o da direção
+ * de `pontoNaBorda`. `quantosLados`: quando o círculo tem de sair com um
+ * número de lados que não é o que o raio pede (o que foi dimensionado, e
+ * guardou os lados que tinha).
+ */
+export function circulo(centro: Ponto2D, pontoNaBorda: Ponto2D, quantosLados?: number): Ponto2D[] {
   const raio = distancia(centro, pontoNaBorda);
   if (raio < MESMO_PONTO_MM) throw new Error('O círculo precisa de um raio maior que zero.');
   const a0 = Math.atan2(pontoNaBorda.y - centro.y, pontoNaBorda.x - centro.x);
-  const lados = Math.max(24, Math.min(144, Math.ceil((2 * Math.PI * raio) / PASSO_DA_CURVA_MM)));
+  const lados = quantosLados ?? Math.max(24, Math.min(144, Math.ceil((2 * Math.PI * raio) / PASSO_DA_CURVA_MM)));
   return Array.from({ length: lados }, (_, i) => {
     const t = a0 + (2 * Math.PI * i) / lados;
     return i === 0 ? pontoNaBorda : { x: centro.x + raio * Math.cos(t), y: centro.y + raio * Math.sin(t) };
