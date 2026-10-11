@@ -8,7 +8,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { ancoraDoRotulo, transformarCota } from './cota';
-import { curvaLevada, type Molde } from './molde';
+import { curvaLevada, penceLevada, type Molde } from './molde';
 
 /**
  * Pences e pregas abrem a peça: uma parte dela gira ou anda, e leva junto o
@@ -151,14 +151,8 @@ export function levarOQueEstaNasRegioes(
             const anda = pence.tipo === 'recortada' ? pence.pontos.every(naBordaQueAnda) : dentro(pence.pontos[0]!);
             // O pivô é um ponto do contorno: anda se estiver na borda que anda, esteja a pence onde estiver.
             const comPivo = pence.pivo && naBordaQueAnda(pence.pivo) ? { ...pence, pivo: movimento.ponto(pence.pivo) } : pence;
-            return anda
-              ? {
-                  ...comPivo,
-                  pontos: levar(pence.pontos),
-                  ...(pence.removidos ? { removidos: levar(pence.removidos) } : {}),
-                  ...(pence.bico ? { bico: movimento.ponto(pence.bico) } : {}),
-                }
-              : comPivo;
+            // A pence que anda leva todos os pontos dela; o pivô segue a regra de cima.
+            return anda ? { ...penceLevada(pence, movimento.ponto), ...(comPivo.pivo ? { pivo: comPivo.pivo } : {}) } : comPivo;
           }),
         }
       : {}),

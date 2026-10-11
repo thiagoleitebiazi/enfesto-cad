@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { pregasLevadas, semGraduacao, transladarMolde, type Molde, curvaLevada } from './molde';
+import { pregasLevadas, semGraduacao, transladarMolde, type Molde, curvaLevada, penceLevada } from './molde';
 import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
@@ -79,13 +79,7 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
       : {}),
     ...(molde.pences
       ? {
-          pences: molde.pences.map((pence) => ({
-            ...pence,
-            pontos: pence.pontos.map(levar),
-            ...(pence.removidos ? { removidos: pence.removidos.map(levar) } : {}),
-            ...(pence.pivo ? { pivo: levar(pence.pivo) } : {}),
-            ...(pence.bico ? { bico: levar(pence.bico) } : {}),
-          })),
+          pences: molde.pences.map((pence) => penceLevada(pence, levar)),
         }
       : {}),
     ...(molde.pregas ? { pregas: pregasLevadas(molde.pregas, levar) } : {}),

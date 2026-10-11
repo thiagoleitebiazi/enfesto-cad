@@ -184,6 +184,24 @@ export interface PenceDaPeca {
    * meio do das duas dobras possíveis.
    */
   readonly dobra?: 0 | 2;
+  /**
+   * Com acabamento dobrado para um lado, numa borda que não é reta: todos os
+   * pontos que o contorno ganhou entre as duas pontas, da primeira para a
+   * segunda (o bico é um deles). Sem o campo, o contorno passa só pelo bico.
+   */
+  readonly capa?: readonly Ponto2D[];
+}
+
+/** O registro da pence com todos os pontos dele levados pela função dada (a peça andou, girou, foi espelhada…). */
+export function penceLevada(pence: PenceDaPeca, levar: (p: Ponto2D) => Ponto2D): PenceDaPeca {
+  return {
+    ...pence,
+    pontos: pence.pontos.map(levar),
+    ...(pence.removidos ? { removidos: pence.removidos.map(levar) } : {}),
+    ...(pence.pivo ? { pivo: levar(pence.pivo) } : {}),
+    ...(pence.bico ? { bico: levar(pence.bico) } : {}),
+    ...(pence.capa ? { capa: pence.capa.map(levar) } : {}),
+  };
 }
 
 /**
@@ -458,13 +476,7 @@ function anotacoesTransformadas(
       : {}),
     ...(molde.pences
       ? {
-          pences: molde.pences.map((pence) => ({
-            ...pence,
-            pontos: pence.pontos.map(ponto),
-            ...(pence.removidos ? { removidos: pence.removidos.map(ponto) } : {}),
-            ...(pence.pivo ? { pivo: ponto(pence.pivo) } : {}),
-            ...(pence.bico ? { bico: ponto(pence.bico) } : {}),
-          })),
+          pences: molde.pences.map((pence) => penceLevada(pence, ponto)),
         }
       : {}),
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),

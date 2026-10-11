@@ -13,6 +13,7 @@ import {
   criarMultiplasPences,
   criarPence,
   criarPenceInterna,
+  dobraDaPence,
   ehVerticeDePence,
   fecharPence,
   MAXIMO_DE_PENCES,
@@ -597,6 +598,32 @@ export function aplicarEdicaoDaPrega(pecas: readonly Molde[], peca: Molde, id: s
   };
 }
 
+/** O campo do lado para onde a pence com acabamento é dobrada, o mesmo ao abrir a pence e ao mudar as medidas dela. */
+function campoDaDobra(id: string, inicial: DobraDaPence): CampoDoDialogo {
+  return {
+    tipo: 'escolha',
+    id,
+    rotulo: 'No acabamento, a pence é dobrada (de quem olha da borda para o vértice)',
+    opcoes: [
+      { valor: 'meio', rotulo: 'Sem lado: o bico fica no meio' },
+      { valor: 'esquerda', rotulo: 'Para a esquerda' },
+      { valor: 'direita', rotulo: 'Para a direita' },
+    ],
+    inicial,
+  };
+}
+
+/** O lado da dobra lido do campo; o que não é um lado vale "sem lado". */
+function dobraLida(valor: unknown): DobraDaPence {
+  return valor === 'esquerda' || valor === 'direita' ? valor : 'meio';
+}
+
+const NOME_DA_DOBRA: Record<DobraDaPence, string> = { meio: 'sem lado de dobra, com o bico no meio', esquerda: 'dobrado para a esquerda', direita: 'dobrado para a direita' };
+
+/** O que a explicação das medidas diz a mais quando a pence tem acabamento. */
+const NOTA_DO_ACABAMENTO =
+  ' O acabamento é refeito para as medidas novas e para o lado da dobra escolhido: dobrada para um lado, a borda desse lado, espelhada na perna, até a linha do meio — numa borda curva, o acabamento acompanha a curva; sem lado, o bico fica no meio dos dois.';
+
 /** O que a explicação do diálogo diz antes, quando a pence não tinha registro. */
 const NOTA_DA_RECONHECIDA =
   'Esta pence não tinha registro (veio de um projeto antigo, de uma peça importada ou foi desenhada à mão): foi reconhecida pelo desenho, e as medidas abaixo foram lidas dele. Aplicando, ela passa a ter registro; fechando sem aplicar, nada muda. ';
@@ -629,6 +656,8 @@ function dialogoDasMedidas(peca: Molde, id: string): DialogoDePence | null {
     };
   }
   const { aberturaMm, profundidadeMm, desvioMm } = medidasDaPence(pence);
+  const dobra = pence.bico ? [campoDaDobra('dobra', dobraDaPence(pence))] : [];
+  const doAcabamento = pence.bico ? NOTA_DO_ACABAMENTO : '';
   if (pivoDaPence(peca, pence)) {
     // Aberta por pivô: o vértice fica sempre na linha do meio das pontas ao pivô, então não há desvio a pedir.
     return {
@@ -636,9 +665,12 @@ function dialogoDasMedidas(peca: Molde, id: string): DialogoDePence | null {
       campos: [
         { tipo: 'medida', id: 'abertura', rotulo: 'Abertura: de uma ponta à outra (mm)', inicial: paraCampo(arredondar(aberturaMm)) },
         { tipo: 'medida', id: 'profundidade', rotulo: 'Profundidade: do meio das pontas ao vértice (mm)', inicial: paraCampo(arredondar(profundidadeMm)) },
+        ...dobra,
         { ...apagar, rotulo: 'Fechar esta pence (a peça volta a ser a de antes de abrir)' },
       ],
-      nota: 'A pence foi aberta girando um lado da peça em torno do pivô. Mudando as medidas, a peça fecha em torno do mesmo pivô e abre de novo com a abertura nova — o tecido que a abertura acrescenta muda junto. Fechando, o lado que girou volta ao lugar.',
+      nota:
+        'A pence foi aberta girando um lado da peça em torno do pivô. Mudando as medidas, a peça fecha em torno do mesmo pivô e abre de novo com a abertura nova — o tecido que a abertura acrescenta muda junto. Fechando, o lado que girou volta ao lugar.' +
+        doAcabamento,
     };
   }
   return {
@@ -652,12 +684,13 @@ function dialogoDasMedidas(peca: Molde, id: string): DialogoDePence | null {
         rotulo: 'Desvio do vértice para o lado (mm; 0 = em esquadro)',
         inicial: paraCampo(arredondar(desvioMm)),
       },
+      ...dobra,
       apagar,
     ],
     nota:
       pence.tipo === 'recortada'
         ? 'A pence é refeita no mesmo lugar, com as medidas novas: o contorno volta a ser o de antes do recorte e é recortado de novo. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, o contorno fica como era antes da pence.'
-        : 'A pence é refeita no mesmo lugar, com as medidas novas. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, a linha, os piques e a marca dela saem da peça.',
+        : 'A pence é refeita no mesmo lugar, com as medidas novas. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, a linha, os piques e a marca dela saem da peça.' + doAcabamento,
   };
 }
 
@@ -683,6 +716,9 @@ export function aplicarEdicaoDaPence(
   if (!pence) throw new Error('Essa pence foi mexida à mão e já não pode ser mudada pelas medidas.');
   const numero = (campo: string): number => Number(valores[campo]);
   const porPivo = pivoDaPence(peca, pence) !== null;
+  // Só a pence com acabamento tem lado de dobra a mudar; sem o campo, ela continua dobrada para onde estava.
+  const dobra = pence.bico && valores.dobra !== undefined ? dobraLida(valores.dobra) : undefined;
+  const doAcabamento = dobra ? ` O acabamento ficou ${NOME_DA_DOBRA[dobra]}.` : '';
   if (valores.apagar === true) {
     const sem = removerPence(peca, id);
     const mudanca = `A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(sem.contorno))}.`;
@@ -697,10 +733,10 @@ export function aplicarEdicaoDaPence(
   }
   if (porPivo) {
     const medidas = { aberturaMm: numero('abertura'), profundidadeMm: numero('profundidade'), desvioMm: 0 };
-    const nova = alterarPence(peca, id, medidas, novoId);
+    const nova = alterarPence(peca, id, medidas, novoId, dobra);
     return {
       pecas: trocar(pecas, peca.id, nova),
-      recado: `Pence de “${peca.nome}” aberta de novo em torno do pivô: abertura de ${formatarMm(medidas.aberturaMm)}, profundidade de ${formatarMm(medidas.profundidadeMm)}. A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.`,
+      recado: `Pence de “${peca.nome}” aberta de novo em torno do pivô: abertura de ${formatarMm(medidas.aberturaMm)}, profundidade de ${formatarMm(medidas.profundidadeMm)}. A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.${doAcabamento}`,
     };
   }
   if (pence.tipo === 'interna') {
@@ -711,13 +747,14 @@ export function aplicarEdicaoDaPence(
     };
   }
   const medidas = { aberturaMm: numero('abertura'), profundidadeMm: numero('profundidade'), desvioMm: numero('desvio') };
-  const nova = alterarPence(peca, id, medidas, novoId);
+  const nova = alterarPence(peca, id, medidas, novoId, dobra);
   const desvio = medidas.desvioMm === 0 ? '' : `, desvio de ${formatarMm(medidas.desvioMm)}`;
   return {
     pecas: trocar(pecas, peca.id, nova),
     recado:
       `Pence de “${peca.nome}” refeita: abertura de ${formatarMm(medidas.aberturaMm)}, profundidade de ${formatarMm(medidas.profundidadeMm)}${desvio}.` +
-      (pence.tipo === 'recortada' ? ` A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.` : ''),
+      (pence.tipo === 'recortada' ? ` A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.` : '') +
+      doAcabamento,
   };
 }
 
@@ -773,17 +810,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             rotulo: 'Criar acabamento (só no Abrir): a pence fica desenhada, sem recortar, e o contorno ganha o bico dela',
             inicial: opcoes.pence.acabamento,
           },
-          {
-            tipo: 'escolha',
-            id: 'dobraDoAcabamento',
-            rotulo: 'No acabamento, a pence é dobrada (de quem olha da borda para o vértice)',
-            opcoes: [
-              { valor: 'meio', rotulo: 'Sem lado: o bico fica no meio' },
-              { valor: 'esquerda', rotulo: 'Para a esquerda' },
-              { valor: 'direita', rotulo: 'Para a direita' },
-            ],
-            inicial: opcoes.pence.dobraDoAcabamento,
-          },
+          campoDaDobra('dobraDoAcabamento', opcoes.pence.dobraDoAcabamento),
           {
             tipo: 'caixa',
             id: 'cortarIntersecoes',
@@ -791,7 +818,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             inicial: opcoes.pence.cortarIntersecoes,
           },
         ],
-        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois. Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura.',
+        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois. Dobrada para um lado numa borda curva, o acabamento acompanha a curva. Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura.',
       };
     case 'pence-interna':
       return {
@@ -916,7 +943,7 @@ export function lerDialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesD
         marcaNoVertice: caixa('marcaNoVertice'),
         acabamento: caixa('acabamento'),
         cortarIntersecoes: caixa('cortarIntersecoes'),
-        dobraDoAcabamento: (valores.dobraDoAcabamento === 'esquerda' || valores.dobraDoAcabamento === 'direita' ? valores.dobraDoAcabamento : 'meio') as DobraDaPence,
+        dobraDoAcabamento: dobraLida(valores.dobraDoAcabamento),
       };
       conferirMedidasDaPence(pence.aberturaMm, pence.profundidadeMm);
       return { ...opcoes, pence };

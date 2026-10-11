@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { area, distancia, ponto, rotacionar, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, semCampo, type Molde } from '../domain/molde';
-import { abrirPence, comPenceReconhecida, criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
+import { abrirPence, comAcabamento, comPenceReconhecida, criarPence, criarPenceInterna, dobraDaPence, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
 import { criarPregas, medidasDaPrega, pregasDaPeca } from '../domain/pregas';
 import {
   aplicarEdicaoDaPence,
@@ -999,7 +999,7 @@ describe('“Criar acabamento” no Abrir', () => {
 
   it('o diálogo tem a opção, e ela é lida', () => {
     expect(dialogoDaPence('pence-no-contorno', O)!.campos.map((c) => c.id)).toContain('acabamento');
-    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois\./);
+    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois\. Dobrada para um lado numa borda curva, o acabamento acompanha a curva\./);
     expect(dialogoDaPence('pence-no-contorno', O)!.campos.find((c) => c.id === 'dobraDoAcabamento')).toMatchObject({ tipo: 'escolha', inicial: 'meio' });
     expect(lerDialogoDaPence('pence-no-contorno', O, { modo: 'abrir', abertura: 40, profundidade: 100, perpendicular: true, piquesLaterais: false, marcaNoVertice: false }).pence.acabamento).toBe(false);
   });
@@ -1035,6 +1035,66 @@ describe('“Criar acabamento” no Abrir', () => {
     expect(dialogoDeEditarPence(aberta, pence.id)!.titulo).toBe('Pence aberta por pivô: medidas');
     const mudada = aplicarEdicaoDaPence([aberta], aberta, pence.id, { abertura: 60, profundidade: 100, apagar: false }, ids()).pecas[0]!;
     expect(pencesDaPeca(mudada)[0]!.bico).toBeDefined();
+  });
+
+  it('nas medidas da pence com acabamento, o lado da dobra aparece e pode ser trocado; a mensagem diz', () => {
+    // A borda de cima é reta à direita da pence e desce à esquerda dela: o bico muda com o lado.
+    const torta = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(100, 300), ponto(0, 280)]);
+    const naTorta = clicar('pence-no-contorno', com({ pence: { ...ABRIR, acabamento: true } }), torta, [noContorno(na(3, 100, 300)), noContorno(na(0, 100, 0))]);
+    const aberta = aplicarPence('pence-no-contorno', com({ pence: { ...ABRIR, acabamento: true, dobraDoAcabamento: 'esquerda' } }), [torta], torta, naTorta, ids()).pecas[0]!;
+    const pence = pencesDaPeca(aberta)[0]!;
+    const dialogo = dialogoDeEditarPence(aberta, pence.id)!;
+
+    expect(dialogo.campos.find((c) => c.id === 'dobra')).toMatchObject({ tipo: 'escolha', inicial: 'esquerda' });
+    expect(dialogo.nota).toMatch(/ O acabamento é refeito para as medidas novas e para o lado da dobra escolhido: .* numa borda curva, o acabamento acompanha a curva; sem lado, o bico fica no meio dos dois\.$/);
+
+    // As mesmas medidas, dobrada para o outro lado.
+    const trocada = aplicarEdicaoDaPence([aberta], aberta, pence.id, { abertura: 40, profundidade: 100, dobra: 'direita', apagar: false }, ids());
+    const nova = pencesDaPeca(trocada.pecas[0]!)[0]!;
+    expect(dobraDaPence(nova)).toBe('direita');
+    expect(distancia(nova.bico!, pence.bico!)).toBeGreaterThan(0.5);
+    expect(trocada.recado).toMatch(/ cm²\. O acabamento ficou dobrado para a direita\.$/);
+
+    // Sem lado.
+    const semLado = aplicarEdicaoDaPence([aberta], aberta, pence.id, { abertura: 40, profundidade: 100, dobra: 'meio', apagar: false }, ids());
+    expect(dobraDaPence(pencesDaPeca(semLado.pecas[0]!)[0]!)).toBe('meio');
+    expect(semLado.recado).toMatch(/ O acabamento ficou sem lado de dobra, com o bico no meio\.$/);
+
+    // Sem o campo, a pence continua dobrada para onde estava, e a mensagem não fala do acabamento.
+    const semCampo = aplicarEdicaoDaPence([aberta], aberta, pence.id, { abertura: 50, profundidade: 100, apagar: false }, ids());
+    expect(dobraDaPence(pencesDaPeca(semCampo.pecas[0]!)[0]!)).toBe('esquerda');
+    expect(semCampo.recado).not.toMatch(/acabamento/);
+  });
+
+  it('a pence com acabamento que não foi aberta por pivô também pede o lado da dobra, junto com o desvio', () => {
+    // A borda de cima é reta à direita da pence e, 20 mm depois da ponta esquerda dela, vira para baixo; a pence é a recortada, e ganha o acabamento.
+    const torta = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(60, 300), ponto(0, 240)]);
+    const recortada = criarPence(torta, na(2, 100, 300), { aberturaMm: 40, profundidadeMm: 100, modo: 'recortar', piquesLaterais: false, marcaNoVertice: false }, ids());
+    const peca = comAcabamento(recortada, pencesDaPeca(recortada)[0]!.id, 'esquerda');
+    const pence = pencesDaPeca(peca)[0]!;
+    const dialogo = dialogoDeEditarPence(peca, pence.id)!;
+
+    expect(dialogo.titulo).toBe('Pence marcada: medidas');
+    expect(dialogo.campos.map((c) => c.id)).toEqual(['abertura', 'profundidade', 'desvio', 'dobra', 'apagar']);
+    expect(dialogo.campos.find((c) => c.id === 'dobra')).toMatchObject({ inicial: 'esquerda' });
+    expect(dialogo.nota).toMatch(/O acabamento é refeito para as medidas novas/);
+
+    const trocada = aplicarEdicaoDaPence([peca], peca, pence.id, { abertura: 40, profundidade: 100, desvio: 0, dobra: 'direita', apagar: false }, ids());
+    const nova = pencesDaPeca(trocada.pecas[0]!)[0]!;
+    expect(dobraDaPence(nova)).toBe('direita');
+    expect(distancia(nova.bico!, pence.bico!)).toBeGreaterThan(0.5);
+    expect(trocada.recado).toMatch(/^Pence de “Frente” refeita: abertura de 40,0 mm, profundidade de 100,0 mm. O acabamento ficou dobrado para a direita.$/);
+  });
+
+  it('a pence sem acabamento não tem lado de dobra a pedir', () => {
+    const semBico = aplicarPence('pence-no-contorno', com({ pence: ABRIR }), [molde()], molde(), estado, ids()).pecas[0]!;
+    const dialogo = dialogoDeEditarPence(semBico, pencesDaPeca(semBico)[0]!.id)!;
+
+    expect(dialogo.campos.map((c) => c.id)).not.toContain('dobra');
+    expect(dialogo.nota).not.toMatch(/acabamento/);
+    const mudada = aplicarEdicaoDaPence([semBico], semBico, pencesDaPeca(semBico)[0]!.id, { abertura: 50, profundidade: 100, dobra: 'direita', apagar: false }, ids());
+    expect(pencesDaPeca(mudada.pecas[0]!)[0]!.bico).toBeUndefined();
+    expect(mudada.recado).not.toMatch(/acabamento/);
   });
 
   it('sem a opção, ou fora do Abrir, nada de bico', () => {
