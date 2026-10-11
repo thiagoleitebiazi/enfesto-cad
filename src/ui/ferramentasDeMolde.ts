@@ -25,7 +25,7 @@ import {
   type OpcoesDeDobra,
   type OpcoesDeUniao,
 } from '../domain/corteEUniao';
-import { cortarMoldePelosElementos, linhaDeCortePelosElementos } from '../domain/cortePorElementos';
+import { cortarMoldePelosElementos, linhaDeCortePelosElementos, separarRegiaoPelosElementos } from '../domain/cortePorElementos';
 import { rotacaoEhPermitida, type Molde } from '../domain/molde';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import { caminhoDoTrecho, SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
@@ -294,6 +294,81 @@ export function previaDoCortePelosElementos(peca: Molde, estado: TrechoEmEdicao,
   }
 }
 
+/** "Remover região" pelos elementos indicados (linhas internas, pelo número) e pelo lado clicado. Lança erro, sem mudar nada, quando não dá. */
+export function aplicarRemoverPelosElementos(
+  pecas: readonly Molde[],
+  peca: Molde,
+  elementos: readonly number[],
+  lado: Ponto2D,
+  novoId: () => string,
+  remover: OpcoesDeRemoverRegiao = REMOVER_REGIAO_SIMPLES,
+): ResultadoDeFerramentaDeMolde {
+  const { peca: sem, regiao } = separarRegiaoPelosElementos(peca, elementos, lado, novoId());
+  const como = elementos.length === 1 ? 'pelo elemento indicado' : `pelos ${elementos.length} elementos indicados`;
+  if (remover.manter) {
+    const guardada = { ...regiao, nome: nomeDaParteNova(peca.nome, pecas) };
+    return {
+      pecas: trocar(pecas, peca.id, [sem, guardada]),
+      recado: `Região de ${cm2(area(guardada.contorno))} removida de “${peca.nome}”, ${como}; ela virou a peça “${guardada.nome}”.`,
+    };
+  }
+  return { pecas: trocar(pecas, peca.id, [sem]), recado: `Região de ${cm2(area(regiao.contorno))} removida de “${peca.nome}”, ${como}.` };
+}
+
+/**
+ * O clique do "Remover região" (sem "Unir moldes") que tem a ver com
+ * elementos, antes de qualquer ponto do contorno. Numa linha interna da peça
+ * (reta, curva, arco ou linha quebrada), ela entra na lista dos elementos que
+ * formam a linha — ou sai, se já estava. Fora delas, com elementos já
+ * indicados, o clique escolhe o lado, e a região sai. `null` quando o clique
+ * não é isso: a reta por dois pontos do contorno segue como sempre.
+ */
+export function cliqueNoElementoDeRemover(
+  pecas: readonly Molde[],
+  peca: Molde,
+  estado: TrechoEmEdicao,
+  linhaInterna: number | null,
+  livre: Ponto2D,
+  novoId: () => string,
+  remover: OpcoesDeRemoverRegiao = REMOVER_REGIAO_SIMPLES,
+): CliqueNoElementoDoCorte | null {
+  if (estado.inicio) return null;
+  const indicados = elementosDoCorte(peca, estado);
+  const linha = linhaInterna === null ? undefined : peca.linhasInternas[linhaInterna];
+  if (linhaInterna !== null && linha && linha.length >= 2) {
+    const marca = marcaDoElemento(linha);
+    const livres = indicados.includes(linhaInterna) ? estado.livres.filter((p) => distancia(p, marca) > MESMO_PONTO_MM) : [...estado.livres, marca];
+    // O que falta fazer é a instrução da ferramenta que diz: aqui não há recado a dar.
+    return { estado: { ...SEM_TRECHO, livres }, recado: null };
+  }
+  if (indicados.length === 0) return null;
+  try {
+    const feito = aplicarRemoverPelosElementos(pecas, peca, indicados, livre, novoId, remover);
+    return { estado: SEM_TRECHO, recado: feito.recado, pecas: feito.pecas };
+  } catch (e) {
+    // Os elementos continuam indicados: dá para clicar de novo, do lado certo, ou acertar a lista.
+    return { estado, recado: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * A prévia do "Remover região" pelos elementos: os elementos em jogo e a
+ * linha que eles dão e, com o mouse fora deles, a região que sairia, em
+ * destaque. `null` quando não há elemento nenhum em jogo.
+ */
+export function previaDoRemoverPelosElementos(peca: Molde, estado: TrechoEmEdicao, linhaSobOMouse: number | null, livre: Ponto2D | null): PreviaDeFerramentaDeMolde | null {
+  const base = previaDoCortePelosElementos(peca, estado, linhaSobOMouse, true);
+  if (!base) return null;
+  const indicados = elementosDoCorte(peca, estado);
+  if (linhaSobOMouse !== null || !livre || indicados.length === 0) return base;
+  try {
+    const queSai = separarRegiaoPelosElementos(peca, indicados, livre, 'previa').regiao.contorno;
+    return { ...base, substituido: [...queSai, queSai[0]!] };
+  } catch {
+    return base;
+  }
+}
+
 /** Um nome que nenhuma peça usa: "Nome (2)", "Nome (3)"… */
 export function nomeDaParteNova(nome: string, pecas: readonly Molde[]): string {
   const usados = new Set(pecas.map((p) => p.nome));
@@ -479,7 +554,7 @@ export function dialogoDeRemoverRegiao(opcoes: OpcoesDeRemoverRegiao): { readonl
       { tipo: 'caixa', id: 'manter', rotulo: 'Manter região do molde: a região tirada vira uma peça nova', inicial: opcoes.manter },
       { tipo: 'caixa', id: 'unir', rotulo: 'Unir moldes: com duas retas, sai a faixa entre elas e as duas partes que sobram são unidas', inicial: opcoes.unir },
     ],
-    nota: 'Depois de confirmar, indique a reta que separa a região: dois pontos do contorno, ou uma linha interna reta (o elemento). Sem “Unir moldes”, clique em seguida dentro da região que deve sair. Com “Unir moldes”, indique a segunda reta do mesmo jeito: a faixa entre as duas sai, e a parte que não tem a linha de fio gira e anda até encostar na outra, borda com borda.',
+    nota: 'Depois de confirmar, indique a linha que separa a região: dois pontos do contorno, ou uma linha interna da peça (o elemento: reta, curva, arco ou linha quebrada — ou várias emendadas, clicando uma a uma). Sem “Unir moldes”, clique em seguida dentro da região que deve sair. Com “Unir moldes”, as duas linhas têm de ser retas: indique a segunda do mesmo jeito; a faixa entre as duas sai, e a parte que não tem a linha de fio gira e anda até encostar na outra, borda com borda.',
   };
 }
 
@@ -506,6 +581,12 @@ export function instrucaoDaReta(
     return n === 0
       ? 'Cortar (contorno manual): clique nas linhas internas que formam a linha do corte, uma a uma, e aperte Enter. Ou clique no contorno, onde um corte reto começa.' + ESC_DA_RETA
       : `Cortar (contorno manual): ${n} ${n === 1 ? 'elemento indicado' : 'elementos indicados'} — clique nos outros, ou aperte Enter para cortar.` + ESC_DA_RETA;
+  }
+  if (!estado.inicio && !remover.unir) {
+    const n = estado.livres.length;
+    return n === 0
+      ? 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região. Ou clique numa linha interna da peça (reta ou curva): ela vira a linha que separa a região, de borda a borda.' + ESC_DA_RETA
+      : `Remover região: ${n} ${n === 1 ? 'elemento indicado' : 'elementos indicados'} — clique dentro da peça, na região que deve sair (ela fica em destaque). O clique em outra linha interna junta ela à linha; num elemento já indicado, tira ele.` + ESC_DA_RETA;
   }
   if (!estado.inicio) return 'Remover região: clique no contorno da peça selecionada, numa ponta da reta que separa a região.' + ouElemento + ESC_DA_RETA;
   if (!estado.fim) return 'Remover região: clique no contorno, na outra ponta da reta.' + ESC_DA_RETA;

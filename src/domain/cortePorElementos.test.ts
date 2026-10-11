@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { area, ponto, type Ponto2D } from '../core/geometria';
 import { definirRegra, regraDoVertice } from './graduacao';
 import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
-import { cortarMoldeComOpcoes, exigirCorteValido, type OpcoesDeCorte } from './corteEUniao';
-import { cortarMoldePelosElementos, linhaDeCortePelosElementos } from './cortePorElementos';
+import { cortarMoldeComOpcoes, exigirCorteValido, separarRegiaoDoMolde, type OpcoesDeCorte } from './corteEUniao';
+import { cortarMoldePelosElementos, linhaDeCortePelosElementos, separarRegiaoPelosElementos } from './cortePorElementos';
 import { criarMolde, type DadosDeNovoMolde, type Molde } from './molde';
 
 // Retângulo de 200 × 300 mm, no sentido anti-horário: arestas 0 (y = 0), 1 (x = 200), 2 (y = 300) e 3 (x = 0).
@@ -238,6 +238,61 @@ describe('cortarMoldePelosElementos', () => {
     const furo = [ponto(90, 110), ponto(110, 110), ponto(110, 140), ponto(90, 140)];
     const peca = molde({ furos: [furo], linhasInternas: [[ponto(0, 100), ponto(100, 130), ponto(200, 100)]] });
     expect(() => cortarMoldePelosElementos(peca, [0], ids())).toThrow(/A linha de corte passa por um furo/);
+  });
+});
+
+describe('separarRegiaoPelosElementos', () => {
+  // Abaixo da linha quebrada ficam 200 × 100 mais o triângulo de 200 × 50: 250 cm². Acima, os outros 350.
+  const comALinha = (): Molde => molde({ linhasInternas: [QUEBRADA, [ponto(20, 20), ponto(60, 20)]] });
+
+  it('pela linha quebrada: sai a região do lado clicado, e a que fica fecha pela linha', () => {
+    const { peca, regiao } = separarRegiaoPelosElementos(comALinha(), [0], ponto(100, 250), 'r1');
+
+    expect(area(peca.contorno)).toBeCloseTo(25000, 6);
+    expect(area(regiao.contorno)).toBeCloseTo(35000, 6);
+    expect(contem(peca.contorno, 100, 150)).toBe(true);
+    expect(contem(regiao.contorno, 100, 150)).toBe(true);
+    expect([peca.id, peca.nome, regiao.id, regiao.nome]).toEqual(['m1', 'Frente', 'r1', 'Frente (2)']);
+    // O elemento virou a borda das duas: saiu. A outra linha interna ficou na parte em que está.
+    expect(peca.linhasInternas).toEqual([[ponto(20, 20), ponto(60, 20)]]);
+    expect(regiao.linhasInternas).toEqual([]);
+  });
+
+  it('clicando do outro lado da linha, sai a outra região', () => {
+    const { peca, regiao } = separarRegiaoPelosElementos(comALinha(), [0], ponto(100, 50), 'r1');
+
+    expect(area(peca.contorno)).toBeCloseTo(35000, 6);
+    expect(area(regiao.contorno)).toBeCloseTo(25000, 6);
+    expect(regiao.linhasInternas).toEqual([[ponto(20, 20), ponto(60, 20)]]);
+  });
+
+  it('por vários elementos emendados, e pelo elemento reto', () => {
+    const emDois = molde({ linhasInternas: [[ponto(100, 150), ponto(200, 100)], [ponto(0, 100), ponto(100, 150)]] });
+    const porDois = separarRegiaoPelosElementos(emDois, [0, 1], ponto(100, 250), 'r1');
+    expect(area(porDois.peca.contorno)).toBeCloseTo(25000, 6);
+    expect(porDois.peca.linhasInternas).toEqual([]);
+
+    const reta = molde({ linhasInternas: [[ponto(0, 150), ponto(200, 150)]] });
+    const pelaReta = separarRegiaoPelosElementos(reta, [0], ponto(100, 250), 'r1');
+    expect(area(pelaReta.peca.contorno)).toBeCloseTo(30000, 6);
+    expect(pelaReta.peca.contorno).toHaveLength(4);
+    expect(pelaReta.peca.linhasInternas).toEqual([]);
+    expect(pelaReta.regiao.linhasInternas).toEqual([]);
+  });
+
+  it('pela reta de dois pontos do contorno, a linha interna que estava em cima da reta sai: virou a borda', () => {
+    const peca = molde({ linhasInternas: [[ponto(0, 150), ponto(200, 150)], [ponto(20, 20), ponto(60, 20)]] });
+    const { peca: fica, regiao } = separarRegiaoDoMolde(peca, { indiceAresta: 3, ponto: ponto(0, 150) }, { indiceAresta: 1, ponto: ponto(200, 150) }, ponto(100, 250), 'r1');
+
+    expect(fica.linhasInternas).toEqual([[ponto(20, 20), ponto(60, 20)]]);
+    expect(regiao.linhasInternas).toEqual([]);
+  });
+
+  it('recusa o clique fora da peça e os elementos que não dão uma linha de borda a borda', () => {
+    expect(() => separarRegiaoPelosElementos(comALinha(), [0], ponto(500, 500), 'r1')).toThrow(/Clique dentro da peça, do lado que deve sair/);
+    expect(() => separarRegiaoPelosElementos(comALinha(), [], ponto(100, 250), 'r1')).toThrow(/Indique ao menos um elemento/);
+    const soltos = molde({ linhasInternas: [[ponto(0, 100), ponto(60, 120)], [ponto(140, 120), ponto(200, 100)]] });
+    expect(() => separarRegiaoPelosElementos(soltos, [0, 1], ponto(100, 250), 'r1')).toThrow(/não se emendam/);
   });
 });
 

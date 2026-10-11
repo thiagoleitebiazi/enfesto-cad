@@ -39,9 +39,11 @@ import {
   lerContornoDoCorte,
   lerDialogoDeCortar,
   lerDialogoDeRemoverRegiao,
+  cliqueNoElementoDeRemover,
   cliqueNoElementoDoCorte,
   confirmarCortePelosElementos,
   previaDoCortePelosElementos,
+  previaDoRemoverPelosElementos,
   REMOVER_REGIAO_SIMPLES,
   retaPeloElemento,
   type OpcoesDeRemoverRegiao,
@@ -1782,7 +1784,7 @@ export default function App(): React.JSX.Element {
     [pecas, selecionadoId, aplicarMudanca],
   );
 
-  /** "Arredondar ou chanfrar" (um único botão, como no Audaces): pergunta qual das duas operações, depois o valor em mm. */
+  /** "Arredondar ou chanfrar" (um único botão, como na referência): pergunta qual das duas operações, depois o valor em mm. */
   const arredondarOuChanfrarVerticeDaSelecionada = useCallback(
     (indice: number) => {
       if (!selecionadoId) return;
@@ -2435,9 +2437,27 @@ export default function App(): React.JSX.Element {
             return;
           }
         }
-        // O clique numa linha interna reta, fora do contorno, é a reta inteira dela (o elemento).
+        // No "Remover região" sem "Unir moldes", o clique numa linha interna (reta ou curva) indica o elemento; com elementos indicados, o clique fora deles escolhe o lado.
+        if (modo === 'remover-regiao' && !segundaReta) {
+          const noElemento = cliqueNoElementoDeRemover(
+            pecas,
+            peca,
+            trecho,
+            noContorno ? null : (linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null),
+            semCaptura,
+            proximoId,
+            opcoesDeRemover,
+          );
+          if (noElemento) {
+            setTrecho(noElemento.estado);
+            if (noElemento.pecas) aplicarMudanca([...noElemento.pecas]);
+            setRecadoDaFerramenta(noElemento.recado);
+            return;
+          }
+        }
+        // Com "Unir moldes", o clique numa linha interna reta, fora do contorno, é a reta inteira dela (o elemento).
         const peloElemento =
-          modo === 'remover-regiao' && !noContorno
+          modo === 'remover-regiao' && segundaReta && !noContorno
             ? retaPeloElemento(modo, peca, trecho, linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null, segundaReta)
             : null;
         if (peloElemento?.recado) {
@@ -3156,6 +3176,11 @@ export default function App(): React.JSX.Element {
         // O elemento sob o mouse (fora do contorno) e os já indicados: a linha do corte que eles dão.
         const sobOMouse = cursorMundo && !mouse?.noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null;
         const pelosElementos = previaDoCortePelosElementos(pecaSelecionada, trecho, sobOMouse, corteManual);
+        if (pelosElementos) return pelosElementos;
+      }
+      if (modo === 'remover-regiao' && !opcoesDeRemover.unir) {
+        const sobOMouse = cursorMundo && !mouse?.noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null;
+        const pelosElementos = previaDoRemoverPelosElementos(pecaSelecionada, trecho, sobOMouse, cursorMundo);
         if (pelosElementos) return pelosElementos;
       }
       return modo === 'bainha'

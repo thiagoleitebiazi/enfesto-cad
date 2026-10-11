@@ -189,7 +189,7 @@ export function cortarMolde(molde: Molde, a: PosicaoNoContorno, b: PosicaoNoCont
  * A parte da peça que fica de um lado da reta de corte: a que contém o ponto
  * clicado (`ladoClicado` = 'fica') ou a outra ('sai'). Serve a "Dobrar" (fica
  * o lado clicado) e a "Remover região" (sai o lado clicado). A peça continua
- * sendo ela mesma.
+ * sendo ela mesma. Com `miolo`, a linha não é reta: passa por esses pontos.
  */
 export function metadeDoMolde(
   molde: Molde,
@@ -197,8 +197,9 @@ export function metadeDoMolde(
   b: PosicaoNoContorno,
   pontoDoLado: Ponto2D,
   ladoClicado: 'fica' | 'sai',
+  miolo: readonly Ponto2D[] = [],
 ): Molde {
-  const partes = partesDoCorte(molde, a, b);
+  const partes = partesDoCorte(molde, a, b, miolo);
   const clicada = partes.findIndex((p) => pontoDentroDoContorno(pontoDoLado, p.contorno));
   if (clicada < 0) {
     throw new Error(
@@ -827,7 +828,10 @@ export function cortarMoldeComOpcoes(
 
 /**
  * "Remover região" com as duas partes: a peça sem a região do lado clicado, e
- * a região tirada como peça própria (para o "Manter região do molde").
+ * a região tirada como peça própria (para o "Manter região do molde"). Com
+ * `miolo`, a linha que separa a região passa por esses pontos (uma curva,
+ * vários elementos): quem chama já tirou da peça os elementos que viraram a
+ * borda.
  */
 export function separarRegiaoDoMolde(
   molde: Molde,
@@ -835,10 +839,11 @@ export function separarRegiaoDoMolde(
   b: PosicaoNoContorno,
   pontoDoLado: Ponto2D,
   novoId: string,
+  miolo: readonly Ponto2D[] = [],
 ): { readonly peca: Molde; readonly regiao: Molde } {
-  const semLinhas = semAsLinhasDaReta(molde, a.ponto, b.ponto);
-  const peca = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'sai');
-  const regiao = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'fica');
+  const semLinhas = miolo.length > 0 ? molde : semAsLinhasDaReta(molde, a.ponto, b.ponto);
+  const peca = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'sai', miolo);
+  const regiao = metadeDoMolde(semLinhas, a, b, pontoDoLado, 'fica', miolo);
   return { peca, regiao: { ...regiao, id: novoId, nome: `${molde.nome} (2)` } };
 }
 

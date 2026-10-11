@@ -6,7 +6,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { cortarMoldeComOpcoes, CORTE_SEM_COSTURA, type OpcoesDeCorte } from './corteEUniao';
+import { cortarMoldeComOpcoes, CORTE_SEM_COSTURA, separarRegiaoDoMolde, type OpcoesDeCorte } from './corteEUniao';
 import type { Molde } from './molde';
 
 /**
@@ -172,4 +172,20 @@ export function cortarMoldePelosElementos(
   const { a, b, miolo } = linhaDeCortePelosElementos(molde, indices);
   const semOsElementos: Molde = { ...molde, linhasInternas: molde.linhasInternas.filter((_, i) => !indices.includes(i)) };
   return cortarMoldeComOpcoes(semOsElementos, a, b, novoId, opcoes, miolo);
+}
+
+/**
+ * "Remover região" pela linha dos elementos indicados — um só (reto, curvo ou
+ * quebrado) ou vários emendados: a peça sem a região do lado clicado, e a
+ * região tirada como peça própria. Os elementos saem da peça: viraram a borda.
+ */
+export function separarRegiaoPelosElementos(
+  molde: Molde,
+  indices: readonly number[],
+  pontoDoLado: Ponto2D,
+  novoId: string,
+): { readonly peca: Molde; readonly regiao: Molde } {
+  const { a, b, miolo } = linhaDeCortePelosElementos(molde, indices);
+  const semOsElementos: Molde = { ...molde, linhasInternas: molde.linhasInternas.filter((_, i) => !indices.includes(i)) };
+  return separarRegiaoDoMolde(semOsElementos, a, b, pontoDoLado, novoId, miolo);
 }
