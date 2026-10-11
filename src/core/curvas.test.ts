@@ -6,6 +6,7 @@ import {
   circulo,
   circuloPorTresPontos,
   curvaPorPontos,
+  direcaoServeDeTangente,
   espiral,
   FOLGA_ENTRE_VOLTAS_DA_ESPIRAL_MM,
   normalizarCurva,
@@ -190,5 +191,60 @@ describe('normalizarCurva e ajustarCurvaAosExtremos', () => {
   it('recusa curva cujas pontas coincidem', () => {
     expect(() => normalizarCurva([ponto(5, 5), ponto(20, 30), ponto(5, 5)])).toThrow('não tem direção');
     expect(() => normalizarCurva([ponto(5, 5)])).toThrow('pelo menos dois pontos');
+  });
+});
+
+describe('curvaPorPontos com a direção pedida nas pontas', () => {
+  const PONTOS = [ponto(0, 0), ponto(40, 150), ponto(0, 300)];
+  const graus = (de: { x: number; y: number }, ate: { x: number; y: number }): number => (Math.atan2(ate.y - de.y, ate.x - de.x) * 180) / Math.PI;
+  type P = { x: number; y: number };
+  /** A direção (graus) em que a linha sai do primeiro ponto: a tangente estimada pelos três primeiros pontos da amostra. */
+  const saida = (linha: readonly P[]): number => {
+    const [a, b, c] = [linha[0]!, linha[1]!, linha[2]!];
+    return (Math.atan2(-3 * a.y + 4 * b.y - c.y, -3 * a.x + 4 * b.x - c.x) * 180) / Math.PI;
+  };
+  /** A direção em que a linha chega ao último ponto. */
+  const chegada = (linha: readonly P[]): number => {
+    const [a, b, c] = [linha.at(-1)!, linha.at(-2)!, linha.at(-3)!];
+    return (Math.atan2(3 * a.y - 4 * b.y + c.y, 3 * a.x - 4 * b.x + c.x) * 180) / Math.PI;
+  };
+  const DA_CORDA = graus(ponto(0, 0), ponto(40, 150));
+
+  it('sem direção, a curva sai de cada ponta na direção do ponto vizinho', () => {
+    const curva = curvaPorPontos(PONTOS);
+    expect(Math.abs(saida(curva) - DA_CORDA)).toBeLessThan(0.3);
+  });
+
+  it('com a direção, a curva sai da primeira ponta nela — e continua passando por todos os pontos', () => {
+    // A reta até o vizinho sobe a 75°; a direção pedida, a 30°.
+    const curva = curvaPorPontos(PONTOS, { inicio: ponto(Math.cos(Math.PI / 6), Math.sin(Math.PI / 6)) });
+
+    expect(Math.abs(saida(curva) - 30)).toBeLessThan(0.3);
+    expect(curva[0]).toEqual(PONTOS[0]);
+    expect(curva.at(-1)).toEqual(PONTOS[2]);
+    expect(curva.some((p) => Math.hypot(p.x - 40, p.y - 150) < 1e-9)).toBe(true);
+    // O comprimento do vetor não conta: só a direção.
+    expect(curvaPorPontos(PONTOS, { inicio: ponto(500 * Math.cos(Math.PI / 6), 500 * Math.sin(Math.PI / 6)) })).toEqual(curva);
+  });
+
+  it('na ponta final, a direção aponta de volta para a curva: ela chega vindo de lá', () => {
+    // A direção pedida aponta para a direita e para baixo (-30°): a curva chega à ponta final vindo desse lado, a 150°.
+    const curva = curvaPorPontos(PONTOS, { fim: ponto(Math.cos(-Math.PI / 6), Math.sin(-Math.PI / 6)) });
+
+    expect(Math.abs(chegada(curva) - 150)).toBeLessThan(0.3);
+    // A outra ponta não mudou.
+    expect(Math.abs(saida(curva) - DA_CORDA)).toBeLessThan(0.3);
+  });
+
+  it('a direção a mais de 85° da reta até o vizinho não serve, e a curva fica como sem ela', () => {
+    const paraTras = ponto(0, -1);
+    expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, paraTras)).toBe(false);
+    expect(curvaPorPontos(PONTOS, { inicio: paraTras })).toEqual(curvaPorPontos(PONTOS));
+    // O limite é 85° para cada lado da reta até o vizinho.
+    const a = (desvio: number): { x: number; y: number } => ponto(Math.cos(((DA_CORDA + desvio) * Math.PI) / 180), Math.sin(((DA_CORDA + desvio) * Math.PI) / 180));
+    for (const desvio of [84, -84, 0]) expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, a(desvio))).toBe(true);
+    for (const desvio of [86, -86, 180]) expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, a(desvio))).toBe(false);
+    expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, ponto(0, 0))).toBe(false);
+    expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[0]!, ponto(1, 0))).toBe(false);
   });
 });

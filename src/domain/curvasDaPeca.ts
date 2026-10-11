@@ -9,8 +9,8 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { comAFilaTrocada, filaNoContorno, gerarCurva } from './filaDeCurva';
-import { arcoRegistrado, piquesQueFicamNoContorno, semCampo, substituirTrechoDoMolde, type CurvaDaPeca, type Molde } from './molde';
+import { comAFilaTrocada, comTangentes, filaNoContorno, gerarCurva, tangentesQueValem } from './filaDeCurva';
+import { arcoRegistrado, piquesQueFicamNoContorno, semCampo, substituirTrechoDoMolde, type CurvaDaPeca, type Molde, type TangentesDaCurva } from './molde';
 import { distanciaAteALinha } from './regioes';
 
 export { gerarCurva } from './filaDeCurva';
@@ -105,10 +105,12 @@ function curvaRegistrada(molde: Molde, curvaId: string): CurvaDaPeca {
  * antiga. As pontas não saem do lugar. Sem nenhum ponto de passagem, o trecho
  * vira a reta entre as pontas, e o registro sai.
  */
-function comACurvaRefeita(molde: Molde, curva: CurvaDaPeca, controles: readonly Ponto2D[]): Molde {
+function comACurvaRefeita(molde: Molde, curva: CurvaDaPeca, controles: readonly Ponto2D[], tangentesPedidas: TangentesDaCurva | undefined = curva.tangentes): Molde {
   const fila = filaNoContorno(molde.contorno, curva.pontos)!;
   const reta = curva.tipo !== 'forma' && controles.length < 3;
-  const linha = reta ? [controles[0]!, controles.at(-1)!] : gerarCurva(curva.tipo, controles, curva.forma);
+  // A alça de tangente que deixou de servir com os pontos de passagem de agora sai do registro.
+  const tangentes = tangentesQueValem(controles, tangentesPedidas);
+  const linha = reta ? [controles[0]!, controles.at(-1)!] : gerarCurva(curva.tipo, controles, curva.forma, tangentes);
   const novo = comAFilaTrocada(molde.contorno, fila, curva.pontos.length, linha);
   if (novo.length < 3 || !(area(novo) > AREA_MINIMA_MM2)) throw new Error('A peça ficaria sem área com a curva passando por aí.');
   return comCurvasValidas({
@@ -117,7 +119,7 @@ function comACurvaRefeita(molde: Molde, curva: CurvaDaPeca, controles: readonly 
     piques: piquesQueFicamNoContorno(molde.piques, novo),
     curvas: reta
       ? (molde.curvas ?? []).filter((c) => c.id !== curva.id)
-      : (molde.curvas ?? []).map((c) => (c.id === curva.id ? { ...c, controles, pontos: linha } : c)),
+      : (molde.curvas ?? []).map((c) => (c.id === curva.id ? comTangentes({ ...c, controles, pontos: linha }, tangentes) : c)),
   });
 }
 
@@ -136,6 +138,62 @@ export function moverControle(molde: Molde, curvaId: string, indice: number, nov
     curva,
     curva.controles.map((c, i) => (i === indice ? novaPosicao : c)),
   );
+}
+
+/** Uma das duas pontas de uma curva. */
+export type PontaDaCurva = 'inicio' | 'fim';
+
+/**
+ * Onde está a alça de tangente de cada ponta da curva: a que foi posta ou,
+ * sem ela, a de saída natural — a um terço do caminho até o ponto de passagem
+ * vizinho. Só a curva por pontos de passagem tem alças; `null` nas outras.
+ */
+export function alcasDeTangente(curva: CurvaDaPeca): { readonly inicio: Ponto2D; readonly fim: Ponto2D } | null {
+  if (curva.tipo !== 'curva' || curva.controles.length < 3) return null;
+  const natural = (ponta: Ponto2D, vizinho: Ponto2D): Ponto2D => ({ x: ponta.x + (vizinho.x - ponta.x) / 3, y: ponta.y + (vizinho.y - ponta.y) / 3 });
+  return {
+    inicio: curva.tangentes?.inicio ?? natural(curva.controles[0]!, curva.controles[1]!),
+    fim: curva.tangentes?.fim ?? natural(curva.controles.at(-1)!, curva.controles.at(-2)!),
+  };
+}
+
+/** A alça de tangente mais perto do ponto dado, a até `raioMm`: a curva e a ponta dela. */
+export function tangentePerto(molde: Molde, p: Ponto2D, raioMm: number): { readonly curva: CurvaDaPeca; readonly ponta: PontaDaCurva } | null {
+  let melhor: { curva: CurvaDaPeca; ponta: PontaDaCurva; distancia: number } | null = null;
+  for (const curva of curvasDaPeca(molde)) {
+    const alcas = alcasDeTangente(curva);
+    if (!alcas) continue;
+    for (const ponta of ['inicio', 'fim'] as const) {
+      const d = distancia(p, alcas[ponta]);
+      if (d <= raioMm && (!melhor || d < melhor.distancia)) melhor = { curva, ponta, distancia: d };
+    }
+  }
+  return melhor ? { curva: melhor.curva, ponta: melhor.ponta } : null;
+}
+
+/**
+ * Põe a alça de tangente de uma ponta no lugar dado: a curva passa a sair
+ * dessa ponta na direção da alça (o comprimento não conta) e é refeita. A
+ * alça precisa apontar para o lado da curva: no máximo 85° da reta que vai
+ * da ponta ao ponto de passagem vizinho.
+ */
+export function definirTangente(molde: Molde, curvaId: string, ponta: PontaDaCurva, posicao: Ponto2D): Molde {
+  const curva = curvaRegistrada(molde, curvaId);
+  if (curva.tipo !== 'curva') throw new Error('Só a curva por pontos de passagem tem alças de tangente: o arco e a curva pré-definida têm a forma deles.');
+  const pedidas = { ...curva.tangentes, [ponta]: posicao };
+  const valem = tangentesQueValem(curva.controles, pedidas);
+  if (!valem?.[ponta]) {
+    throw new Error('A alça de tangente precisa apontar para o lado da curva: no máximo 85° da reta que vai da ponta ao ponto de passagem vizinho.');
+  }
+  return comACurvaRefeita(molde, curva, curva.controles, pedidas);
+}
+
+/** Tira a alça de tangente de uma ponta: a curva volta a sair dela na direção do ponto de passagem vizinho. */
+export function removerTangente(molde: Molde, curvaId: string, ponta: PontaDaCurva): Molde {
+  const curva = curvaRegistrada(molde, curvaId);
+  const fica = ponta === 'inicio' ? 'fim' : 'inicio';
+  const aQueFica = curva.tangentes?.[fica];
+  return comACurvaRefeita(molde, curva, curva.controles, aQueFica ? { [fica]: aQueFica } : {});
 }
 
 /** A que distância do começo da linha, medida sobre ela, fica o ponto dela mais perto de `p` — e que ponto é esse. */

@@ -31,20 +31,54 @@ function interpolar(a: Ponto2D, b: Ponto2D, ta: number, tb: number, t: number): 
 }
 
 /**
+ * A direção em que a curva sai de cada ponta: um vetor que aponta da ponta
+ * para o lado da curva (na ponta final, de volta para ela). Sem a direção, a
+ * curva sai da ponta na direção do ponto vizinho.
+ */
+export interface DirecoesNasPontas {
+  readonly inicio?: Ponto2D | undefined;
+  readonly fim?: Ponto2D | undefined;
+}
+
+/** O maior ângulo (graus) entre a direção pedida numa ponta e a reta que vai dela ao ponto vizinho. */
+export const ANGULO_MAXIMO_DA_TANGENTE_GRAUS = 85;
+
+/** Verdadeiro se a direção serve de tangente na ponta: tem comprimento e fica a até 85° da reta que vai da ponta ao vizinho. */
+export function direcaoServeDeTangente(ponta: Ponto2D, vizinho: Ponto2D, direcao: Ponto2D): boolean {
+  const comprimento = Math.hypot(direcao.x, direcao.y);
+  const corda = distancia(ponta, vizinho);
+  if (comprimento < MESMO_PONTO_MM || corda < MESMO_PONTO_MM) return false;
+  const cosseno = ((vizinho.x - ponta.x) * direcao.x + (vizinho.y - ponta.y) * direcao.y) / (corda * comprimento);
+  return cosseno >= Math.cos((ANGULO_MAXIMO_DA_TANGENTE_GRAUS * Math.PI) / 180) - 1e-12;
+}
+
+/**
+ * O ponto fantasma de uma ponta. Sem direção pedida (ou com uma que não
+ * serve), é o vizinho espelhado na ponta: a curva sai na direção dele. Com a
+ * direção, é o vizinho espelhado na reta que passa pela ponta em esquadro com
+ * ela — na spline centrípeta, a tangente na ponta fica no meio entre a
+ * direção do fantasma e a do vizinho, e assim cai exatamente na pedida.
+ */
+function fantasmaDaPonta(ponta: Ponto2D, vizinho: Ponto2D, direcao: Ponto2D | undefined): Ponto2D {
+  if (!direcao || !direcaoServeDeTangente(ponta, vizinho, direcao)) return { x: 2 * ponta.x - vizinho.x, y: 2 * ponta.y - vizinho.y };
+  const comprimento = Math.hypot(direcao.x, direcao.y);
+  const t = { x: direcao.x / comprimento, y: direcao.y / comprimento };
+  const aoLongo = (vizinho.x - ponta.x) * t.x + (vizinho.y - ponta.y) * t.y;
+  return { x: vizinho.x - 2 * aoLongo * t.x, y: vizinho.y - 2 * aoLongo * t.y };
+}
+
+/**
  * Curva suave que passa por todos os pontos dados, na ordem (spline de
  * Catmull-Rom centrípeta, que não faz laços nem exagera entre pontos mal
  * espaçados). Devolve a curva amostrada, do primeiro ao último ponto. Com
- * dois pontos é a reta entre eles.
+ * dois pontos é a reta entre eles. Com `direcoes`, a curva sai de cada ponta
+ * na direção pedida (as alças de tangente).
  */
-export function curvaPorPontos(pontos: readonly Ponto2D[]): Ponto2D[] {
+export function curvaPorPontos(pontos: readonly Ponto2D[], direcoes: DirecoesNasPontas = {}): Ponto2D[] {
   const p = semRepetidos(pontos);
   if (p.length < 3) return p;
-  // Pontos fantasmas nas pontas, espelhando o vizinho: a curva chega e sai sem dobra.
-  const ext = [
-    { x: 2 * p[0]!.x - p[1]!.x, y: 2 * p[0]!.y - p[1]!.y },
-    ...p,
-    { x: 2 * p.at(-1)!.x - p.at(-2)!.x, y: 2 * p.at(-1)!.y - p.at(-2)!.y },
-  ];
+  // Pontos fantasmas nas pontas: a curva chega e sai sem dobra, na direção do vizinho ou na pedida.
+  const ext = [fantasmaDaPonta(p[0]!, p[1]!, direcoes.inicio), ...p, fantasmaDaPonta(p.at(-1)!, p.at(-2)!, direcoes.fim)];
   const curva: Ponto2D[] = [p[0]!];
   for (let i = 1; i + 2 < ext.length; i++) {
     const [p0, p1, p2, p3] = [ext[i - 1]!, ext[i]!, ext[i + 1]!, ext[i + 2]!];

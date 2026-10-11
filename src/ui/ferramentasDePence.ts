@@ -1,6 +1,6 @@
 import { area, distancia, type Ponto2D } from '../core/geometria';
 import { dobraPelaLinhaInterna } from '../domain/corteEUniao';
-import type { Molde, PenceDaPeca } from '../domain/molde';
+import type { Molde, PenceDaPeca, PregaDaPeca } from '../domain/molde';
 import { cruzaOContornoMaisDeDuasVezes } from '../domain/penceComIntersecoes';
 import {
   abrirPence,
@@ -40,6 +40,7 @@ import {
   type ModoDePrega,
   type OpcoesDePregas,
 } from '../domain/pregas';
+import { pregaSemRegistroPerto } from '../domain/pregasSemRegistro';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
 import { SEM_TRECHO, type CliqueDeTrecho, type TrechoEmEdicao } from './ferramentasDeTrecho';
@@ -196,6 +197,8 @@ export interface CliqueDePence {
   readonly reconhecer?: PenceDaPeca;
   /** Com "Pregas": o clique caiu dentro de uma prega já feita, e abre as medidas dela (o id do registro). */
   readonly editarPrega?: string;
+  /** Com "Pregas": o clique caiu dentro de uma prega que não tem registro; as medidas abrem, e é aplicando que ela passa a ter (o registro que teria). */
+  readonly reconhecerPrega?: PregaDaPeca;
 }
 
 /** Um clique com a ferramenta de pence ligada: além do que todo clique traz, a pence que está sob ele (se há) — a registrada, ou a que não tem registro. */
@@ -204,12 +207,21 @@ export interface CliqueNaPence extends CliqueDeTrecho {
   readonly semRegistro?: PenceDaPeca | null;
   /** A prega registrada em cuja faixa o clique caiu (se há). */
   readonly prega?: string | null;
+  /** A prega sem registro em cuja faixa o clique caiu (se há), com o registro que teria. */
+  readonly pregaSemRegistro?: PregaDaPeca | null;
   /** A linha interna da peça que está sob o clique (o número dela), se há. */
   readonly linhaInterna?: number | null;
 }
 
 /** O id que a pence reconhecida leva enquanto é só uma candidata (no desenho, sob o mouse). */
 export const ID_DA_PENCE_RECONHECIDA = 'pence-reconhecida';
+/** O mesmo, para a prega reconhecida. */
+export const ID_DA_PREGA_RECONHECIDA = 'prega-reconhecida';
+
+/** A prega sem registro em cuja faixa o ponto está, com a ferramenta "Pregas" ligada; as outras ferramentas não reconhecem pregas. */
+export function pregaSemRegistroSobOClique(ferramenta: FerramentaDePence, peca: Molde, p: Ponto2D, id = ID_DA_PREGA_RECONHECIDA): PregaDaPeca | null {
+  return ferramenta === 'pregas' ? pregaSemRegistroPerto(peca, p, 0, id) : null;
+}
 
 /**
  * A pence sem registro que está sob o ponto, para a ferramenta ligada: a do
@@ -278,6 +290,10 @@ export function cliqueDePence(
   // Com "Pregas", o clique dentro de uma prega já feita — e fora do contorno, onde começaria outra — abre as medidas dela.
   if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.prega && pregasDaPeca(peca).some((q) => q.id === clique.prega)) {
     return { estado, recusa: null, editarPrega: clique.prega };
+  }
+  // O mesmo com a prega que não tem registro (de projeto antigo, ou desenhada como a ferramenta desenha).
+  if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.pregaSemRegistro) {
+    return { estado, recusa: null, reconhecerPrega: clique.pregaSemRegistro };
   }
   // Ainda com "Pregas": o clique numa linha interna reta (a reta auxiliar) faz dela a linha da prega, de borda a borda.
   if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.linhaInterna !== undefined && clique.linhaInterna !== null) {
@@ -433,9 +449,10 @@ export function previaDaPence(
   const indicadas = comPontasIndicadas(ferramenta, opcoes) ? estado.livres : [];
   const marcas = [...dasPences, ...dasPregas, ...indicadas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
   if (!mouse) return { marcas };
-  const pregaSobOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).editarPrega;
-  if (pregaSobOMouse) {
-    const faixa = faixaDaPrega(pregasDaPeca(peca).find((q) => q.id === pregaSobOMouse)!);
+  const { editarPrega: pregaSobOMouse, reconhecerPrega } = cliqueDePence(ferramenta, opcoes, peca, estado, mouse);
+  const pregaEmDestaque = pregaSobOMouse ? pregasDaPeca(peca).find((q) => q.id === pregaSobOMouse) : reconhecerPrega;
+  if (pregaEmDestaque) {
+    const faixa = faixaDaPrega(pregaEmDestaque);
     return { marcas, substituido: [...faixa, faixa[0]!] };
   }
   // Com o mouse em cima de uma pence já feita, o clique abre as medidas dela: a pence fica em destaque.
@@ -513,7 +530,10 @@ export function instrucaoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDa
       return 'Múltiplas pences: clique no contorno da peça selecionada, no meio do grupo de pences.' + ESC;
     case 'pregas':
       if (!estado.inicio) {
-        const ouMudarPrega = temPregas ? ' Ou clique dentro de uma prega já feita (as marcadas com um anel) para mudar as larguras dela ou tirá-la.' : '';
+        // A prega sem registro abre do mesmo jeito (fica em destaque sob o mouse); a instrução só fala disso quando a peça tem pregas.
+        const ouMudarPrega = temPregas
+          ? ' Ou clique dentro de uma prega já feita (as marcadas com um anel) para mudar as larguras dela ou tirá-la; a que não tem anel abre também, se está desenhada como a ferramenta desenha.'
+          : '';
         return (
           'Pregas: clique no contorno da peça selecionada, numa ponta da linha da prega — ou numa linha interna reta (a reta auxiliar), que vira a linha da prega, de borda a borda.' +
           ouMudarPrega +
@@ -532,8 +552,12 @@ const MODOS_DE_PREGA: ReadonlyArray<{ readonly valor: ModoDePrega; readonly rotu
   { valor: 'dupla', rotulo: 'Dupla: duas dobras que se encontram no meio' },
 ];
 
-/** O diálogo das medidas de uma prega já feita; `null` se ela não está mais na peça como foi posta. */
-export function dialogoDeEditarPrega(peca: Molde, id: string): DialogoDePence | null {
+/** O que a explicação do diálogo diz antes, quando a prega não tinha registro. */
+const NOTA_DA_PREGA_RECONHECIDA =
+  'Esta prega não tinha registro (veio de um projeto antigo ou foi desenhada à mão): foi reconhecida pelo desenho — as duas bordas da abertura e as linhas de dobra entre elas —, e as medidas abaixo foram lidas dele. O lado da linha de fio foi tomado como o que ficou parado; sem seta, a prega foi tomada como dobrada para a direita. Aplicando, ela passa a ter registro; fechando sem aplicar, nada muda. ';
+
+/** O diálogo das medidas de uma prega já feita; `null` se ela não está mais na peça como foi posta. `reconhecida`: a prega não tinha registro. */
+export function dialogoDeEditarPrega(peca: Molde, id: string, reconhecida = false): DialogoDePence | null {
   const prega = pregasDaPeca(peca).find((q) => q.id === id);
   if (!prega) return null;
   const { modo, larguraMm, largura2Mm } = medidasDaPrega(prega);
@@ -545,7 +569,7 @@ export function dialogoDeEditarPrega(peca: Molde, id: string): DialogoDePence | 
       { tipo: 'medida', id: 'largura2', rotulo: 'Largura na segunda ponta (mm)', inicial: paraCampo(arredondar(largura2Mm)) },
       { tipo: 'caixa', id: 'apagar', rotulo: 'Tirar esta prega (a peça fecha de volta)', inicial: false },
     ],
-    nota: 'A prega é tirada e aberta de novo na mesma linha, com o modo e as larguras novos: o lado da peça que andou volta e anda de novo, levando o que está nele. Tirando a prega, esse lado volta para junto do outro, e as linhas de dobra, as setas e os piques dela saem.',
+    nota: (reconhecida ? NOTA_DA_PREGA_RECONHECIDA : '') + 'A prega é tirada e aberta de novo na mesma linha, com o modo e as larguras novos: o lado da peça que andou volta e anda de novo, levando o que está nele. Tirando a prega, esse lado volta para junto do outro, e as linhas de dobra, as setas e os piques dela saem.',
   };
 }
 

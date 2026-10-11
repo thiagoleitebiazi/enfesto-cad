@@ -71,6 +71,7 @@ import {
   OPCOES_INICIAIS_DAS_PENCES,
   penceCompleta,
   penceSemRegistroSobOClique,
+  pregaSemRegistroSobOClique,
   previaDaPence,
   type FerramentaDePence,
   type OpcoesDasPences,
@@ -159,8 +160,12 @@ import {
   type OpcoesDeDobrar,
 } from './ui/ferramentasDeDobra';
 import { linhaInternaPerto } from './domain/elementos';
+import { comFiguraRegistrada, figuraDaEspiral, figuraDoCirculo } from './domain/figuras';
+import type { FiguraDaPeca, PregaDaPeca } from './domain/molde';
+import { aplicarDialogoDaFigura, avisoDasFiguras, centrosDasFiguras, dialogoDaFigura, figuraSobOClique } from './ui/ferramentasDeFigura';
 import { comPenceReconhecida, pencePerto, pencesDaPeca } from './domain/pences';
 import { pregaPerto, pregasDaPeca } from './domain/pregas';
+import { comPregaReconhecida } from './domain/pregasSemRegistro';
 import { comArcoRegistrado, comCurvaRegistrada } from './domain/curvasDaPeca';
 import {
   apagarAlca,
@@ -168,7 +173,7 @@ import {
   avisoDasAlcas,
   cliqueDeNovoPontoDePassagem,
   cliqueNaAlca,
-  INSTRUCAO_COM_ALCA,
+  instrucaoComAlca,
   previaDasAlcas,
   type AlcaEscolhida,
 } from './ui/ferramentasDeCurva';
@@ -450,6 +455,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'cadastrar-curva'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
   | { readonly tipo: 'escolher-curva' }
   | { readonly tipo: 'espiral' }
+  | { readonly tipo: 'figura'; readonly id: string }
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'cortar' }
@@ -457,7 +463,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'dobrar' }
   | { readonly tipo: 'conferir' }
   | { readonly tipo: 'editar-pence'; readonly id: string; readonly reconhecer?: PenceDaPeca }
-  | { readonly tipo: 'editar-prega'; readonly id: string }
+  | { readonly tipo: 'editar-prega'; readonly id: string; readonly reconhecer?: PregaDaPeca }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -623,6 +629,8 @@ export default function App(): React.JSX.Element {
   }
   const [pontosEmEdicao, setPontosEmEdicao] = useState<Ponto2D[]>([]);
   const [contornoPendente, setContornoPendente] = useState<Ponto2D[] | null>(null);
+  // O registro da figura (círculo, espiral) cujo contorno está pendente: entra na peça quando ela é criada, se o contorno ainda for o dela.
+  const [figuraPendente, setFiguraPendente] = useState<FiguraDaPeca | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
   const [importacaoPdfPendente, setImportacaoPdfPendente] = useState<ResultadoContornosPdf | null>(null);
   const [importacaoDxfPendente, setImportacaoDxfPendente] = useState<ResultadoImportacaoDxf | null>(null);
@@ -2167,7 +2175,10 @@ export default function App(): React.JSX.Element {
           },
           proximoId(),
         );
-        aplicarMudanca([...pecas, novoMolde]);
+        // O círculo e a espiral ficam registrados; o registro que não é deste contorno (sobrou de uma figura abandonada) não entra.
+        const comRegistro = figuraPendente ? comFiguraRegistrada(novoMolde, figuraPendente) : novoMolde;
+        setFiguraPendente(null);
+        aplicarMudanca([...pecas, comRegistro]);
         setSelecionadoId(novoMolde.id);
         cancelarModo();
         return;
@@ -2501,12 +2512,13 @@ export default function App(): React.JSX.Element {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const { estado, recusa, editar, reconhecer, editarPrega } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+        const { estado, recusa, editar, reconhecer, editarPrega, reconhecerPrega } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
           noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
           livre: semCaptura,
           pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
           semRegistro: penceSemRegistroSobOClique(modo, peca, semCaptura, raioMm),
           prega: pregaPerto(peca, semCaptura, 0)?.id ?? null,
+          pregaSemRegistro: pregaSemRegistroSobOClique(modo, peca, semCaptura),
           linhaInterna: linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null,
         });
         setRecadoDaFerramenta(recusa);
@@ -2514,6 +2526,12 @@ export default function App(): React.JSX.Element {
         // Com "Pregas", o clique dentro de uma prega já feita abre as medidas dela.
         if (editarPrega) {
           setDialogoDeFerramenta({ tipo: 'editar-prega', id: editarPrega });
+          return;
+        }
+        // Ou numa prega sem registro: as medidas abrem do mesmo jeito, e é aplicando que ela passa a ter registro.
+        if (reconhecerPrega) {
+          const id = proximoId();
+          setDialogoDeFerramenta({ tipo: 'editar-prega', id, reconhecer: { ...reconhecerPrega, id } });
           return;
         }
         // O clique caiu numa pence já feita: abrem-se as medidas dela.
@@ -2626,19 +2644,32 @@ export default function App(): React.JSX.Element {
       if (modo === 'circulo') {
         const centro = pontosEmEdicao[0];
         if (!centro) {
+          // O clique no centro de um círculo já feito abre as medidas dele, em vez de começar outro.
+          const feito = figuraSobOClique(pecas, semCaptura, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm, 'circulo');
+          if (feito) {
+            setDialogoDeFerramenta({ tipo: 'figura', id: feito.id });
+            return;
+          }
           setPontosEmEdicao([mundo]);
           return;
         }
         if (mesmoPonto(mundo, centro)) return;
         // Como no retângulo: o círculo vira molde depois da linha de fio.
         setContornoPendente(circulo(centro, mundo));
+        setFiguraPendente(figuraDoCirculo(centro, mundo));
         setPontosEmEdicao([]);
         setModo('definir-fio');
         return;
       }
       if (modo === 'espiral') {
         if (!espiralPendente) return;
+        const feita = figuraSobOClique(pecas, semCaptura, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm, 'espiral');
+        if (feita) {
+          setDialogoDeFerramenta({ tipo: 'figura', id: feita.id });
+          return;
+        }
         setContornoPendente(espiral(mundo, espiralPendente.larguraMm, espiralPendente.perimetroMm));
+        setFiguraPendente(figuraDaEspiral(mundo, espiralPendente.larguraMm, espiralPendente.perimetroMm));
         setPontosEmEdicao([]);
         setModo('definir-fio');
         return;
@@ -2660,6 +2691,7 @@ export default function App(): React.JSX.Element {
       opcoesDeRemover,
       pontosEmEdicao,
       contornoPendente,
+      figuraPendente,
       pecas,
       selecionadoId,
       donoDaCota,
@@ -3076,6 +3108,7 @@ export default function App(): React.JSX.Element {
             pence: pencePerto(pecaSelecionada, cursorMundo, raioMm)?.id ?? null,
             semRegistro: penceSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo, raioMm),
             prega: pregaPerto(pecaSelecionada, cursorMundo, 0)?.id ?? null,
+            pregaSemRegistro: pregaSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo),
             linhaInterna: linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null,
           }
         : null;
@@ -3121,8 +3154,13 @@ export default function App(): React.JSX.Element {
     if (modo === 'circulo' && pontosEmEdicao[0] && cursorMundo && !mesmoPonto(pontosEmEdicao[0], cursorMundo)) {
       return { novo: circulo(pontosEmEdicao[0], cursorMundo), novoFechado: true };
     }
+    // Antes do centro: um anel no centro de cada círculo já feito (o clique nele abre as medidas).
+    if (modo === 'circulo' && !pontosEmEdicao[0]) {
+      const centros = centrosDasFiguras(pecas, 'circulo');
+      if (centros.length > 0) return { marcas: centros };
+    }
     if (modo === 'espiral' && espiralPendente && cursorMundo) {
-      return { novo: espiral(cursorMundo, espiralPendente.larguraMm, espiralPendente.perimetroMm), novoFechado: true };
+      return { novo: espiral(cursorMundo, espiralPendente.larguraMm, espiralPendente.perimetroMm), novoFechado: true, marcas: centrosDasFiguras(pecas, 'espiral') };
     }
     return null;
   }, [
@@ -3205,7 +3243,7 @@ export default function App(): React.JSX.Element {
       case 'cota-raio':
         return 'Raio: clique sobre um arco do contorno de uma peça. Para apagar uma cota, clique no número dela.' + fim;
       case 'editar-pontos-de-curva':
-        if (alcaDeCurva) return INSTRUCAO_COM_ALCA + fim;
+        if (alcaDeCurva) return instrucaoComAlca(alcaDeCurva) + fim;
         return !trecho.inicio
           ? 'Editar pontos de curva: clique no contorno da peça selecionada, no começo do trecho.' + avisoDasAlcas(pecaSelecionada) + fim
           : 'Editar pontos de curva: clique no fim do trecho — os pontos entre os dois serão redistribuídos.' + fim;
@@ -3221,10 +3259,10 @@ export default function App(): React.JSX.Element {
       }
       case 'circulo':
         return pontosEmEdicao.length === 0
-          ? 'Por raio: clique no centro do círculo.' + fim
+          ? 'Por raio: clique no centro do círculo.' + avisoDasFiguras(pecas, 'circulo') + fim
           : 'Por raio: clique na borda do círculo — a distância até o centro é o raio, e a barra de status mostra a medida.' + fim;
       case 'espiral':
-        return 'Espiral: clique onde o centro da espiral deve ficar.' + fim;
+        return 'Espiral: clique onde o centro da espiral deve ficar.' + avisoDasFiguras(pecas, 'espiral') + fim;
       case 'cortar':
         return instrucaoDaReta('cortar', trecho, undefined, corteManual);
       case 'remover-regiao':
@@ -3709,6 +3747,33 @@ export default function App(): React.JSX.Element {
           }}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'figura' &&
+        (() => {
+          const daFigura = pecas.find((p) => p.id === dialogoDeFerramenta.id);
+          const dialogo = daFigura ? dialogoDaFigura(daFigura) : null;
+          if (!daFigura || !dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={dialogoDeFerramenta.id}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', daFigura.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao="Aplicar"
+              onAplicar={(valores) => {
+                try {
+                  const resultado = aplicarDialogoDaFigura(pecas, daFigura, valores);
+                  aplicarMudanca([...resultado.pecas]);
+                  setRecadoDaFerramenta(resultado.recado);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
       {dialogoDeFerramenta?.tipo === 'espiral' && (
         <DialogoDeCampos
           titulo="Espiral"
@@ -3981,7 +4046,10 @@ export default function App(): React.JSX.Element {
       {dialogoDeFerramenta?.tipo === 'editar-prega' &&
         pecaSelecionada &&
         (() => {
-          const dialogo = dialogoDeEditarPrega(pecaSelecionada, dialogoDeFerramenta.id);
+          // A prega sem registro entra no diálogo já com o registro que teria: a peça só muda ao aplicar.
+          const reconhecerPrega = dialogoDeFerramenta.reconhecer;
+          const pecaDaPrega = reconhecerPrega ? comPregaReconhecida(pecaSelecionada, reconhecerPrega) : pecaSelecionada;
+          const dialogo = dialogoDeEditarPrega(pecaDaPrega, dialogoDeFerramenta.id, reconhecerPrega !== undefined);
           if (!dialogo) return null;
           return (
             <DialogoDeCampos
@@ -3993,7 +4061,7 @@ export default function App(): React.JSX.Element {
               rotuloDoBotao="Aplicar"
               onAplicar={(valores) => {
                 try {
-                  const resultado = aplicarEdicaoDaPrega(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, proximoId);
+                  const resultado = aplicarEdicaoDaPrega(pecas, pecaDaPrega, dialogoDeFerramenta.id, valores, proximoId);
                   aplicarMudanca([...resultado.pecas]);
                   setRecadoDaFerramenta(resultado.recado);
                   return null;

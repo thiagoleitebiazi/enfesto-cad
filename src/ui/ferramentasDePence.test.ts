@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { area, distancia, ponto, rotacionar, type PosicaoNoContorno } from '../core/geometria';
-import { criarMolde, type Molde } from '../domain/molde';
+import { criarMolde, semCampo, type Molde } from '../domain/molde';
 import { abrirPence, comPenceReconhecida, criarPence, criarPenceInterna, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
 import { criarPregas, medidasDaPrega, pregasDaPeca } from '../domain/pregas';
 import {
@@ -18,7 +18,9 @@ import {
   penceCompleta,
   pontasIndicadas,
   penceSemRegistroSobOClique,
+  pregaSemRegistroSobOClique,
   ID_DA_PENCE_RECONHECIDA,
+  ID_DA_PREGA_RECONHECIDA,
   previaDaPence,
   type FerramentaDePence,
   type OpcoesDasPences,
@@ -802,6 +804,70 @@ describe('a pence aberta por pivô: medidas e fechar', () => {
   });
 });
 
+describe('a prega sem registro: reconhecida pelo desenho, com a ferramenta “Pregas”', () => {
+  const novoId = ids();
+  // A prega da ferramenta, sem o registro: como a de um projeto antigo.
+  const antiga = (): Molde =>
+    semCampo(criarPregas(molde(), na(0, 100, 0), NO_ALTO, { modo: 'simples-direita', quantidade: 1, distanciaMm: 0, larguraMm: 20, piques: false }, null, novoId), 'pregas');
+
+  it('só a ferramenta “Pregas” reconhece, e só dentro da faixa da prega', () => {
+    const peca = antiga();
+    expect(pregaSemRegistroSobOClique('pregas', peca, ponto(120, 150))).toMatchObject({ id: ID_DA_PREGA_RECONHECIDA, modo: 'simples-direita' });
+    expect(pregaSemRegistroSobOClique('pregas', peca, ponto(60, 150))).toBeNull();
+    expect(pregaSemRegistroSobOClique('pence-no-contorno', peca, ponto(120, 150))).toBeNull();
+    expect(pregaSemRegistroSobOClique('pregas', molde(), ponto(120, 150))).toBeNull();
+    expect(pregaSemRegistroSobOClique('pregas', peca, ponto(120, 150), 'p7')!.id).toBe('p7');
+  });
+
+  it('o clique dentro dela pede as medidas, com o registro que ela teria', () => {
+    const peca = antiga();
+    const pregaSemRegistro = pregaSemRegistroSobOClique('pregas', peca, ponto(120, 150));
+    const clique = { noContorno: null, livre: ponto(120, 150), prega: null, pregaSemRegistro };
+
+    expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, clique)).toEqual({ estado: SEM_TRECHO, recusa: null, reconhecerPrega: pregaSemRegistro });
+    // No contorno, ou com um ponto já clicado, o clique é da prega nova.
+    expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, { ...clique, noContorno: na(1, 120, 0) }).reconhecerPrega).toBeUndefined();
+    expect(cliqueDePence('pregas', O, peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, clique).reconhecerPrega).toBeUndefined();
+    expect(cliqueDePence('pence-interna', O, peca, SEM_TRECHO, clique).reconhecerPrega).toBeUndefined();
+  });
+
+  it('a prévia destaca a faixa da prega sob o mouse', () => {
+    const peca = antiga();
+    const clique = { noContorno: null, livre: ponto(120, 150), prega: null, pregaSemRegistro: pregaSemRegistroSobOClique('pregas', peca, ponto(120, 150)) };
+    const previa = previaDaPence('pregas', O, peca, SEM_TRECHO, clique);
+
+    expect(previa.substituido).toHaveLength(5);
+    for (const [x, y] of [[100, 0], [100, 300], [140, 300], [140, 0]] as const) expect(previa.substituido).toContainEqual(ponto(x, y));
+    // Sem registro, ela não tem o anel das registradas.
+    expect(previa.marcas).toEqual([]);
+  });
+
+  it('o diálogo diz que a prega foi reconhecida pelo desenho, e aplicar dá-lhe registro', () => {
+    const peca = antiga();
+    const reconhecida = pregaSemRegistroSobOClique('pregas', peca, ponto(120, 150), 'p7')!;
+    const comRegistro = { ...peca, pregas: [reconhecida] };
+    const dialogo = dialogoDeEditarPrega(comRegistro, 'p7', true)!;
+
+    expect(dialogo.nota).toMatch(/^Esta prega não tinha registro \(veio de um projeto antigo ou foi desenhada à mão\): foi reconhecida pelo desenho/);
+    expect(dialogo.nota).toMatch(/Aplicando, ela passa a ter registro; fechando sem aplicar, nada muda\. A prega é tirada e aberta de novo/);
+    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
+      ['modo', 'simples-direita'],
+      ['largura', '20'],
+      ['largura2', '20'],
+      ['apagar', false],
+    ]);
+    // A prega da ferramenta, com registro, não ganha esse começo.
+    expect(dialogoDeEditarPrega(comRegistro, 'p7')!.nota).toMatch(/^A prega é tirada e aberta de novo/);
+
+    const mudada = aplicarEdicaoDaPrega([peca], comRegistro, 'p7', { modo: 'simples-direita', largura: 30, largura2: 30, apagar: false }, novoId);
+    expect(pregasDaPeca(mudada.pecas[0]!)).toHaveLength(1);
+    expect(area(mudada.pecas[0]!.contorno)).toBeCloseTo(60000 + 60 * 300, 6);
+    const tirada = aplicarEdicaoDaPrega([peca], comRegistro, 'p7', { modo: 'simples-direita', largura: 20, largura2: 20, apagar: true }, novoId);
+    expect(tirada.pecas[0]!.contorno).toHaveLength(4);
+    expect(tirada.pecas[0]!.linhasInternas).toHaveLength(0);
+  });
+});
+
 describe('uma prega já feita: abrir as medidas, mudar e tirar', () => {
   const novoId = ids();
   // Uma prega simples de 20 mm na linha de (100, 0) a (100, 300): a faixa dela vai de x = 100 a x = 140.
@@ -874,7 +940,9 @@ describe('uma prega já feita: abrir as medidas, mudar e tirar', () => {
   });
 
   it('a instrução avisa do clique que abre as medidas, quando a peça tem pregas registradas', () => {
-    expect(instrucaoDaPence('pregas', O, SEM_TRECHO, false, true)).toMatch(/Ou clique dentro de uma prega já feita \(as marcadas com um anel\) para mudar as larguras dela ou tirá-la\. Esc sai\.$/);
+    expect(instrucaoDaPence('pregas', O, SEM_TRECHO, false, true)).toMatch(
+      /Ou clique dentro de uma prega já feita \(as marcadas com um anel\) para mudar as larguras dela ou tirá-la; a que não tem anel abre também, se está desenhada como a ferramenta desenha\. Esc sai\.$/,
+    );
     expect(instrucaoDaPence('pregas', O, SEM_TRECHO)).not.toMatch(/prega já feita/);
     expect(instrucaoDaPence('pregas', O, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, false, true)).not.toMatch(/prega já feita/);
   });

@@ -4,15 +4,19 @@ import { area, distancia, ponto, type Ponto2D, type PosicaoNoContorno } from '..
 import { moverDentroDaCerca } from './cerca';
 import {
   acrescentarControle,
+  alcasDeTangente,
   comArcoRegistrado,
   comCurvaRegistrada,
   comCurvasValidas,
   controlePerto,
   curvaPerto,
   curvasDaPeca,
+  definirTangente,
   gerarCurva,
   moverControle,
   removerControle,
+  removerTangente,
+  tangentePerto,
   tornarTrechoCurva,
 } from './curvasDaPeca';
 import { distanciaAteALinha } from './regioes';
@@ -407,5 +411,127 @@ describe('arcos tangentes e curva pré-definida registrados', () => {
   it('a forma sem os dados dela não fica registrada', () => {
     const linha = [DE.ponto, ponto(220, 150), ATE.ponto];
     expect('curvas' in comCurvaRegistrada(molde(), 'forma', [DE.ponto, ATE.ponto], linha, 'f1')).toBe(false);
+  });
+});
+
+describe('alças de tangente nas pontas da curva', () => {
+  const graus = (de: Ponto2D, ate: Ponto2D): number => (Math.atan2(ate.y - de.y, ate.x - de.x) * 180) / Math.PI;
+  // A curva vai de (200, 0) a (200, 300) passando por (240, 150): sem alça, sai da primeira ponta a 75°.
+  const ALCA = ponto(260, 30);
+  /** A direção em que a curva sai da primeira ponta: a tangente estimada pelos três primeiros pontos dela. */
+  const saida = (peca: Molde): number => {
+    const [a, b, c] = [aCurva(peca).pontos[0]!, aCurva(peca).pontos[1]!, aCurva(peca).pontos[2]!];
+    return (Math.atan2(-3 * a.y + 4 * b.y - c.y, -3 * a.x + 4 * b.x - c.x) * 180) / Math.PI;
+  };
+  /** A direção de que a curva chega à última ponta, vista da ponta para trás (a mesma em que a alça dela aponta). */
+  const chegada = (peca: Molde): number => {
+    const [a, b, c] = [aCurva(peca).pontos.at(-1)!, aCurva(peca).pontos.at(-2)!, aCurva(peca).pontos.at(-3)!];
+    return (Math.atan2(-3 * a.y + 4 * b.y - c.y, -3 * a.x + 4 * b.x - c.x) * 180) / Math.PI;
+  };
+  const NATURAL = graus(ponto(200, 0), ponto(240, 150));
+
+  it('sem alça posta, cada ponta mostra a de saída natural: a um terço do caminho até o ponto de passagem', () => {
+    const alcas = alcasDeTangente(aCurva(comCurva()))!;
+    expect(alcas.inicio.x).toBeCloseTo(200 + 40 / 3, 9);
+    expect(alcas.inicio.y).toBeCloseTo(50, 9);
+    expect(alcas.fim.x).toBeCloseTo(200 + 40 / 3, 9);
+    expect(alcas.fim.y).toBeCloseTo(250, 9);
+    // O arco não tem alças: a forma dele é a do círculo.
+    expect(alcasDeTangente(aCurva(comCurva([ponto(240, 150)], 'arco')))).toBeNull();
+  });
+
+  it('tangentePerto acha a alça de cada ponta, a natural e a posta', () => {
+    const peca = comCurva();
+    expect(tangentePerto(peca, ponto(214, 51), 5)).toMatchObject({ ponta: 'inicio' });
+    expect(tangentePerto(peca, ponto(214, 249), 5)).toMatchObject({ ponta: 'fim' });
+    expect(tangentePerto(peca, ponto(100, 100), 5)).toBeNull();
+    const comAlca = definirTangente(peca, 'c1', 'inicio', ALCA);
+    expect(tangentePerto(comAlca, ALCA, 5)).toMatchObject({ ponta: 'inicio' });
+    expect(tangentePerto(comAlca, ponto(214, 51), 5)).toBeNull();
+    expect(tangentePerto(comCurva([ponto(240, 150)], 'arco'), ponto(214, 51), 5)).toBeNull();
+  });
+
+  it('posta a alça, a curva sai da ponta na direção dela e continua passando pelos mesmos pontos', () => {
+    const antes = comCurva();
+    const peca = definirTangente(antes, 'c1', 'inicio', ALCA);
+
+    expect(Math.abs(saida(antes) - NATURAL)).toBeLessThan(0.3);
+    expect(Math.abs(saida(peca) - graus(DE.ponto, ALCA))).toBeLessThan(0.3);
+    expect(aCurva(peca).tangentes).toEqual({ inicio: ALCA });
+    expect(aCurva(peca).controles).toEqual(aCurva(antes).controles);
+    expect(peca.contorno.some((p) => distancia(p, ponto(240, 150)) < 1e-9)).toBe(true);
+    expect(aCurva(peca).pontos[0]).toEqual(DE.ponto);
+    expect(aCurva(peca).pontos.at(-1)).toEqual(ATE.ponto);
+    // A outra ponta não mudou de direção.
+    expect(Math.abs(chegada(peca) - chegada(antes))).toBeLessThan(0.3);
+  });
+
+  it('as duas pontas têm cada uma a sua; tirada uma, a outra fica', () => {
+    const alcaDoFim = ponto(260, 270);
+    const comAsDuas = definirTangente(definirTangente(comCurva(), 'c1', 'inicio', ALCA), 'c1', 'fim', alcaDoFim);
+    expect(aCurva(comAsDuas).tangentes).toEqual({ inicio: ALCA, fim: alcaDoFim });
+    expect(Math.abs(chegada(comAsDuas) - graus(ATE.ponto, alcaDoFim))).toBeLessThan(0.3);
+
+    const semAPrimeira = removerTangente(comAsDuas, 'c1', 'inicio');
+    expect(aCurva(semAPrimeira).tangentes).toEqual({ fim: alcaDoFim });
+    expect(Math.abs(saida(semAPrimeira) - NATURAL)).toBeLessThan(0.3);
+    const semNenhuma = removerTangente(semAPrimeira, 'c1', 'fim');
+    expect(aCurva(semNenhuma).tangentes).toBeUndefined();
+    expect(aCurva(semNenhuma).pontos).toEqual(aCurva(comCurva()).pontos);
+  });
+
+  it('recusa a alça que aponta para fora da curva, e a do arco', () => {
+    expect(() => definirTangente(comCurva(), 'c1', 'inicio', ponto(180, -40))).toThrow(/no máximo 85° da reta que vai da ponta ao ponto de passagem vizinho/);
+    expect(() => definirTangente(comCurva(), 'c1', 'inicio', DE.ponto)).toThrow(/no máximo 85°/);
+    expect(() => definirTangente(comCurva([ponto(240, 150)], 'arco'), 'c1', 'inicio', ALCA)).toThrow(/Só a curva por pontos de passagem tem alças de tangente/);
+    expect(() => definirTangente(comCurva(), 'outra', 'inicio', ALCA)).toThrow(/mexida à mão/);
+  });
+
+  it('mexido o ponto de passagem, a alça fica; se deixa de servir, sai do registro', () => {
+    const peca = definirTangente(comCurva(), 'c1', 'inicio', ALCA);
+    const movido = moverControle(peca, 'c1', 1, ponto(250, 120));
+    expect(aCurva(movido).tangentes).toEqual({ inicio: ALCA });
+    expect(Math.abs(saida(movido) - graus(DE.ponto, ALCA))).toBeLessThan(0.3);
+
+    // O ponto de passagem vai para o outro lado da ponta: a alça ficaria a mais de 85° da reta até ele.
+    const virado = moverControle(peca, 'c1', 1, ponto(120, 150));
+    expect(aCurva(virado).tangentes).toBeUndefined();
+  });
+
+  it('movida a ponta, a alça anda com ela: a curva continua saindo na mesma direção', () => {
+    const peca = definirTangente(comCurva(), 'c1', 'inicio', ALCA);
+    const indice = peca.contorno.findIndex((p) => distancia(p, DE.ponto) < 1e-9);
+    const movida = moverPontoDoMolde(peca, indice, ponto(190, -10));
+
+    expect(aCurva(movida).tangentes).toEqual({ inicio: ponto(250, 20) });
+    expect(Math.abs(saida(movida) - graus(DE.ponto, ALCA))).toBeLessThan(0.3);
+  });
+
+  it('a curva que anda inteira, pelos pontos dela, leva a alça junto', () => {
+    const peca = definirTangente(comCurva(), 'c1', 'inicio', ALCA);
+    const daCurva = aCurva(peca).pontos.map((p) => peca.contorno.findIndex((v) => distancia(v, p) < 1e-9));
+    const movida = moverVariosPontosDoMolde(peca, daCurva, ponto(30, 0));
+
+    expect(aCurva(movida).tangentes).toEqual({ inicio: ponto(290, 30) });
+    expect(Math.abs(saida(movida) - graus(DE.ponto, ALCA))).toBeLessThan(0.3);
+  });
+
+  it('a alça acompanha a peça movida, girada, espelhada e levada a outro tamanho — o registro continua batendo com o contorno', () => {
+    const peca = definirTangente(comCurva(), 'c1', 'inicio', ALCA);
+    const confere = (mexida: Molde): void => {
+      const curva = aCurva(mexida);
+      expect(curva.tangentes?.inicio).toBeDefined();
+      const refeita = gerarCurva('curva', curva.controles, undefined, curva.tangentes);
+      expect(refeita).toHaveLength(curva.pontos.length);
+      refeita.forEach((p, i) => expect(distancia(p, curva.pontos[i]!)).toBeLessThan(1e-6));
+    };
+    confere(transladarMolde(peca, ponto(30, -20), 'm1'));
+    confere(rotacionarMolde(peca, 37));
+    confere(espelharMolde(peca, 'm1'));
+    expect(aCurva(transladarMolde(peca, ponto(30, -20), 'm1')).tangentes).toEqual({ inicio: ponto(290, 10) });
+    // A curva que anda inteira com a cerca leva a alça.
+    const graduada = definirTamanhosDoMolde(peca, ['M', 'G'], 'M');
+    const noG = moldeDoTamanho({ ...graduada, graduacao: definirRegra(graduada.graduacao!, graduada.contorno, 0, [ponto(0, 0), ponto(0, 0)]) }, 1, 'g');
+    expect(aCurva(noG).tangentes).toEqual({ inicio: ALCA });
   });
 });

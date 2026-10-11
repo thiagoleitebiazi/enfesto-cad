@@ -111,6 +111,42 @@ export interface CurvaDaPeca {
   readonly forma?: { readonly pontos: readonly Ponto2D[]; readonly espelhar: boolean };
   /** Os pontos do contorno que a curva gerou, de uma ponta à outra. O registro vale enquanto forem pontos seguidos do contorno. */
   readonly pontos: readonly Ponto2D[];
+  /**
+   * Curva: as alças de tangente postas nas pontas (o ponto de cada uma). A
+   * curva sai da ponta na direção da alça; o comprimento dela não conta. Sem a
+   * alça, sai na direção do ponto de passagem vizinho.
+   */
+  readonly tangentes?: TangentesDaCurva;
+}
+
+/**
+ * A peça que é uma figura inteira feita por ferramenta (o círculo do "Por
+ * raio", a espiral): as medidas com que foi feita e onde está — o centro e
+ * os dois pontos a 100 mm dele que guardam os eixos em que foi desenhada, e
+ * que andam, giram e são espelhados com a peça. O registro só vale enquanto
+ * o contorno é o da figura.
+ */
+export type FiguraDaPeca = {
+  readonly centro: Ponto2D;
+  readonly eixoX: Ponto2D;
+  readonly eixoY: Ponto2D;
+} & ({ readonly tipo: 'circulo'; readonly raioMm: number } | { readonly tipo: 'espiral'; readonly larguraMm: number; readonly perimetroMm: number });
+
+/** As alças de tangente de uma curva: a da ponta inicial e a da final, cada uma só se foi posta. */
+export interface TangentesDaCurva {
+  readonly inicio?: Ponto2D;
+  readonly fim?: Ponto2D;
+}
+
+/** O registro da curva com todos os pontos dele levados pela função dada (a peça andou, girou, foi espelhada…). */
+export function curvaLevada(curva: CurvaDaPeca, levar: (p: Ponto2D) => Ponto2D): CurvaDaPeca {
+  const { inicio, fim } = curva.tangentes ?? {};
+  return {
+    ...curva,
+    controles: curva.controles.map(levar),
+    pontos: curva.pontos.map(levar),
+    ...(curva.tangentes ? { tangentes: { ...(inicio ? { inicio: levar(inicio) } : {}), ...(fim ? { fim: levar(fim) } : {}) } } : {}),
+  };
 }
 
 /**
@@ -225,6 +261,8 @@ export interface Molde {
   readonly curvas?: readonly CurvaDaPeca[];
   /** As pregas abertas por ferramenta, com as bordas e as linhas delas (para mudar as larguras e tirar depois). */
   readonly pregas?: readonly PregaDaPeca[];
+  /** A figura que a peça é, quando foi feita inteira por ferramenta (o círculo do "Por raio", a espiral): para mudar as medidas depois. */
+  readonly figura?: FiguraDaPeca;
 }
 
 export interface DadosDeNovoMolde {
@@ -402,12 +440,15 @@ function anotacoesTransformadas(
   readonly pences?: readonly PenceDaPeca[];
   readonly curvas?: readonly CurvaDaPeca[];
   readonly pregas?: readonly PregaDaPeca[];
+  readonly figura?: FiguraDaPeca;
 } {
   const guardada = molde.dobraMantida;
+  const figura = molde.figura;
   return {
+    ...(figura ? { figura: { ...figura, centro: ponto(figura.centro), eixoX: ponto(figura.eixoX), eixoY: ponto(figura.eixoY) } } : {}),
     ...(molde.pregas ? { pregas: pregasLevadas(molde.pregas, ponto) } : {}),
     ...(molde.curvas
-      ? { curvas: molde.curvas.map((curva) => ({ ...curva, controles: curva.controles.map(ponto), pontos: curva.pontos.map(ponto) })) }
+      ? { curvas: molde.curvas.map((curva) => curvaLevada(curva, ponto)) }
       : {}),
     ...(molde.pences
       ? {

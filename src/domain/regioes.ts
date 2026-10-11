@@ -8,7 +8,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { ancoraDoRotulo, transformarCota } from './cota';
-import type { Molde } from './molde';
+import { curvaLevada, type Molde } from './molde';
 
 /**
  * Pences e pregas abrem a peça: uma parte dela gira ou anda, e leva junto o
@@ -124,7 +124,7 @@ export function levarOQueEstaNasRegioes(
     ...(molde.curvas
       ? {
           curvas: molde.curvas.map((curva) =>
-            curva.pontos.every(naBordaQueAnda) ? { ...curva, controles: levar(curva.controles), pontos: levar(curva.pontos) } : curva,
+            curva.pontos.every(naBordaQueAnda) ? curvaLevada(curva, movimento.ponto) : curva,
           ),
         }
       : {}),
