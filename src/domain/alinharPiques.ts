@@ -166,6 +166,41 @@ function maisPertoNaLinha(q: Ponto2D, linha: readonly Ponto2D[]): Ponto2D {
 /** A até isto (mm) da borda, o pique interno ainda conta como dentro da peça. */
 const FOLGA_DA_BORDA_MM = 1e-6;
 
+/** Recusa as posições do pique interno que, em algum tamanho, caem fora do contorno desse tamanho. */
+function exigirDentroDeCadaTamanho(tamanhos: readonly string[], contornos: readonly Contorno[], posicoes: readonly Ponto2D[]): void {
+  contornos.forEach((contorno, t) => {
+    const a = posicoes[t]!;
+    if (!pontoDentroDoContorno(a, contorno) && distancia(a, pontoMaisProximoNoContorno(a, contorno).ponto) > FOLGA_DA_BORDA_MM) {
+      throw new Error(`No tamanho ${tamanhos[t]}, o pique interno cairia fora da peça.`);
+    }
+  });
+}
+
+/**
+ * A tabela do pique interno alinhado, dada à mão: quanto ele anda em cada
+ * tamanho, contado de onde está no base. O do base é sempre zero, venha o
+ * que vier. Lança erro, sem mudar nada, se a peça não é graduada, se não há
+ * um valor por tamanho, ou se em algum tamanho o pique cairia fora da peça.
+ */
+export function definirAlinhamentoDoPiqueInterno(molde: Molde, marcaId: string, deslocamentos: readonly Ponto2D[]): Molde {
+  const graduacao = molde.graduacao;
+  if (!graduacao) throw new Error(`A peça “${molde.nome}” não tem graduação: o alinhamento é entre os tamanhos dela.`);
+  const marca = molde.marcas.find((m) => m.id === marcaId);
+  if (!marca) throw new Error('Pique interno não encontrado na peça.');
+  if (deslocamentos.length !== graduacao.tamanhos.length || deslocamentos.some((d) => !Number.isFinite(d.x) || !Number.isFinite(d.y))) {
+    throw new Error('Dê um número para cada tamanho da peça.');
+  }
+  const comOBaseEmZero = deslocamentos.map((d, t) => (t === graduacao.base ? ponto(0, 0) : ponto(d.x, d.y)));
+  const contornos = contornosDosTamanhos(graduacao, molde.contorno);
+  exigirDentroDeCadaTamanho(
+    graduacao.tamanhos,
+    contornos,
+    comOBaseEmZero.map((d) => ponto(marca.posicao.x + d.x, marca.posicao.y + d.y)),
+  );
+  const alinhada: Marca = { ...marca, alinhamento: { deslocamentos: comOBaseEmZero } };
+  return { ...molde, marcas: molde.marcas.map((m) => (m.id === marcaId ? alinhada : m)) };
+}
+
 /**
  * Alinha o pique interno (a marca) de id dado. Em cada tamanho ele vai, de
  * onde estava, para o ponto mais perto da linha de alinhamento:
@@ -203,13 +238,8 @@ export function alinharPiqueInterno(molde: Molde, marcaId: string, modo: ModoDeA
     // Na tela os eixos são trocados: na linha horizontal o x do mundo é um só; na vertical, o y.
     return horizontal ? ponto(por.x, q.y) : ponto(q.x, por.y);
   };
-  const alvos = contornos.map((contorno, t) => {
-    const a = alvoNo(t);
-    if (!pontoDentroDoContorno(a, contorno) && distancia(a, pontoMaisProximoNoContorno(a, contorno).ponto) > FOLGA_DA_BORDA_MM) {
-      throw new Error(`No tamanho ${graduacao.tamanhos[t]}, o pique interno cairia fora da peça.`);
-    }
-    return a;
-  });
+  const alvos = contornos.map((_, t) => alvoNo(t));
+  exigirDentroDeCadaTamanho(graduacao.tamanhos, contornos, alvos);
   // No base, o pique vai para o alvo dele (nos modos horizontal e vertical, é onde já está); os outros são contados dali.
   const noBase = alvos[graduacao.base]!;
   const deslocamentos = alvos.map((a) => ponto(a.x - noBase.x, a.y - noBase.y));

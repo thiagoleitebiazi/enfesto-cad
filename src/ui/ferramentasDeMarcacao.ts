@@ -10,7 +10,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { alinharPique, alinharPiqueInterno, type ModoDeAlinhar } from '../domain/alinharPiques';
+import { alinharPique, alinharPiqueInterno, definirAlinhamentoDoPiqueInterno, type ModoDeAlinhar } from '../domain/alinharPiques';
 import { adicionarTexto, alterarTexto, piquePerto, textoPerto, type PoseDoTexto } from '../domain/anotacoes';
 import { ehElemento, tornarAuxiliares, tornarElementos } from '../domain/linhasAuxiliares';
 import type { FormatoDePique, Marca, Molde, Pique } from '../domain/molde';
@@ -824,6 +824,51 @@ function mantemDistancia(pique: Pique): boolean {
   return pique.graduacao !== undefined && pique.graduacao.perimetros.every((valor) => valor === 0);
 }
 
+/** O que o pique interno alinhado anda em cada tamanho da peça, se ele tem um valor por tamanho da graduação de agora; senão, `null`. */
+function tabelaDoInterno(peca: Molde, marca: Marca): readonly Ponto2D[] | null {
+  const deslocamentos = marca.alinhamento?.deslocamentos;
+  return deslocamentos && peca.graduacao && deslocamentos.length === peca.graduacao.tamanhos.length ? deslocamentos : null;
+}
+
+/** O campo da tabela do pique interno: `h` é a horizontal da tela (o y do mundo); `v`, a vertical (o x). */
+function campoDaTabela(eixo: 'h' | 'v', tamanho: number): string {
+  return `anda-${eixo}-${tamanho}`;
+}
+
+/** Os campos da tabela do pique interno alinhado: dois por tamanho que não é o base. Nenhum, no pique sem tabela. */
+function camposDaTabelaDoInterno(peca: Molde, marca: Marca): CampoDoDialogo[] {
+  const tabela = tabelaDoInterno(peca, marca);
+  const graduacao = peca.graduacao;
+  if (!tabela || !graduacao) return [];
+  return graduacao.tamanhos.flatMap((nome, t): CampoDoDialogo[] =>
+    t === graduacao.base
+      ? []
+      : [
+          { tipo: 'medida', id: campoDaTabela('h', t), rotulo: `Tamanho ${nome}: anda na horizontal (mm; positivo, para a direita)`, inicial: paraCampo(tabela[t]!.y) },
+          { tipo: 'medida', id: campoDaTabela('v', t), rotulo: `Tamanho ${nome}: anda na vertical (mm; positivo, para baixo)`, inicial: paraCampo(tabela[t]!.x) },
+        ],
+  );
+}
+
+/**
+ * A tabela do pique interno como a janela a devolveu, ou `null` se nenhum
+ * campo dela mudou. O campo que continua mostrando o que mostrava fica com o
+ * valor exato de antes (a janela arredonda a duas casas).
+ */
+function tabelaLidaDoInterno(peca: Molde, marca: Marca, valores: ValoresDoDialogo): Ponto2D[] | null {
+  const tabela = tabelaDoInterno(peca, marca);
+  if (!tabela) return null;
+  let mudou = false;
+  const lido = (atual: number, id: string): number => {
+    const valor = valores[id];
+    if (valor === undefined || paraCampo(Number(valor)) === paraCampo(atual)) return atual;
+    mudou = true;
+    return Number(valor);
+  };
+  const nova = tabela.map((d, t) => ponto(lido(d.x, campoDaTabela('v', t)), lido(d.y, campoDaTabela('h', t))));
+  return mudou ? nova : null;
+}
+
 /** A janela do "Alterar" para o pique (do contorno ou interno) de id dado; `null` se ele não está mais na peça. */
 export function dialogoDeAlterarPique(peca: Molde, id: string, interno: boolean, cadastrados: readonly PiqueCadastrado[] = []): DialogoDeMarcacao | null {
   const mover: CampoDoDialogo = { tipo: 'caixa', id: 'mover', rotulo: 'Indicar a posição com o mouse: depois de aplicar, o clique seguinte diz onde o pique fica', inicial: false };
@@ -839,10 +884,16 @@ export function dialogoDeAlterarPique(peca: Molde, id: string, interno: boolean,
         ...(marca.alinhamento
           ? [{ tipo: 'caixa' as const, id: 'alinhado', rotulo: 'Alinhado entre os tamanhos (desmarque para ele voltar a acompanhar a peça na proporção)', inicial: true }]
           : []),
+        // E a tabela dele: quanto anda em cada tamanho que não é o base.
+        ...camposDaTabelaDoInterno(peca, marca),
       ],
-      nota: marca.formato
-        ? 'O pique interno é refeito com o formato novo, centrado no mesmo ponto.'
-        : 'Esta marca ainda é só um ponto. Aplicando, ela passa a ser um pique interno com o formato escolhido, centrado no mesmo lugar.',
+      nota:
+        (marca.formato
+          ? 'O pique interno é refeito com o formato novo, centrado no mesmo ponto.'
+          : 'Esta marca ainda é só um ponto. Aplicando, ela passa a ser um pique interno com o formato escolhido, centrado no mesmo lugar.') +
+        (tabelaDoInterno(peca, marca)
+          ? ' Os campos de cada tamanho são a tabela do alinhamento: quanto o pique anda nesse tamanho, contado de onde está no tamanho base — na horizontal e na vertical da tela.'
+          : ''),
       rotuloDoBotao: 'Aplicar',
     };
   }
@@ -947,10 +998,16 @@ export function aplicarAlteracaoDoPique(
       delete copia.alinhamento;
       return copia;
     };
-    const nova = { ...peca, marcas: peca.marcas.map((m) => (m.id === id ? alterada(m) : m)) };
+    const comOFormato = { ...peca, marcas: peca.marcas.map((m) => (m.id === id ? alterada(m) : m)) };
+    // A tabela do alinhamento, se algum campo dela mudou (e o alinhamento não foi desfeito): recusa o que poria o pique fora da peça.
+    const tabela = solto ? null : tabelaLidaDoInterno(peca, marca, valores);
+    const nova = tabela ? definirAlinhamentoDoPiqueInterno(comOFormato, id, tabela) : comOFormato;
     return {
       pecas: trocar(pecas, peca.id, nova),
-      recado: `Pique interno de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.` + (solto ? ' Voltou a acompanhar a peça na proporção, de tamanho em tamanho.' : ''),
+      recado:
+        `Pique interno de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.` +
+        (solto ? ' Voltou a acompanhar a peça na proporção, de tamanho em tamanho.' : '') +
+        (tabela ? ` A tabela dele mudou. ${ditoDoAlinhamentoInterno(nova, nova.marcas.find((m) => m.id === id)!.alinhamento!.deslocamentos)}` : ''),
       mover,
     };
   }

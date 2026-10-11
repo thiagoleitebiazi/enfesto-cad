@@ -12,6 +12,7 @@ import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type Opc
 import { contornosDosTamanhos } from '../domain/graduacao';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { desenharLinhasInternas } from './desenhoDasLinhasInternas';
+import { desenharPiquesDosTamanhos } from './desenhoDosTamanhos';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import {
   perimetro,
@@ -906,6 +907,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           traçarContorno(ctx, contorno, transform);
           ctx.stroke();
         });
+        // E os piques de cada um deles: onde cada pique fica de tamanho em tamanho.
+        desenharPiquesDosTamanhos(ctx, peca, transform, COR_TAMANHO_GRADUADO);
       }
 
       for (const furo of peca.furos) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
-import { alinharPique, alinharPiqueInterno } from './alinharPiques';
+import { alinharPique, alinharPiqueInterno, definirAlinhamentoDoPiqueInterno } from './alinharPiques';
 import { contornosDosTamanhos, definirRegra } from './graduacao';
 import { desdobrarMolde } from './corteEUniao';
 import { criarMolde, dimensionarMolde, espelharMolde, rotacionarMolde, transladarMolde, type Molde } from './molde';
@@ -272,5 +272,42 @@ describe('alinhar o pique interno entre os tamanhos', () => {
     const inteira = desdobrarMolde(comRegistro, 0, () => 'n' + ++n);
     const copia = inteira.marcas.find((m) => Math.abs(m.posicao.y + 250) < 1e-9)!;
     perto(copia.alinhamento!.deslocamentos, [ponto(-10, 0), ZERO, ponto(10, -5)]);
+  });
+});
+
+describe('a tabela do pique interno alinhado, dada à mão', () => {
+  // A peça cresce 10% no x e 20% no y por tamanho; o pique interno está em (100, 150).
+  function proporcional(): Molde {
+    const peca = definirTamanhosDoMolde(base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150) }, { id: 'j', posicao: ponto(50, 50) }] }), ['P', 'M', 'G'], 'M');
+    let graduacao = peca.graduacao!;
+    RETANGULO.forEach((q, n) => {
+      graduacao = definirRegra(graduacao, RETANGULO, n, [ponto(0 - q.x * 0.1, 0 - q.y * 0.2), ZERO, ponto(q.x * 0.1, q.y * 0.2)]);
+    });
+    return { ...peca, graduacao };
+  }
+
+  it('o pique passa a andar, em cada tamanho, o que a tabela diz — e o do base é sempre zero', () => {
+    const peca = proporcional();
+    const feita = definirAlinhamentoDoPiqueInterno(peca, 'i', [ponto(-5, -10), ponto(99, 99), ponto(5, 10)]);
+
+    expect(feita.marcas[0]!.alinhamento).toEqual({ deslocamentos: [ponto(-5, -10), ZERO, ponto(5, 10)] });
+    expect(marcaNosTamanhos(feita, 'i')).toEqual([ponto(95, 140), ponto(100, 150), ponto(105, 160)]);
+    // A outra marca e o resto da peça ficam como estavam.
+    expect(feita.marcas[1]).toBe(peca.marcas[1]);
+    expect(feita.contorno).toBe(peca.contorno);
+  });
+
+  it('recusa, sem mudar nada, a tabela que não serve', () => {
+    const peca = proporcional();
+
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ZERO, ZERO])).toThrow('Dê um número para cada tamanho da peça.');
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ZERO, ZERO, ponto(Number.NaN, 0)])).toThrow('Dê um número para cada tamanho da peça.');
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ZERO, ZERO, ponto(0, Number.POSITIVE_INFINITY)])).toThrow('Dê um número para cada tamanho da peça.');
+    // No G a peça vai até x = 220: a 121 mm de onde está no base, o pique já saiu dela; a 120, está em cima da borda.
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ZERO, ZERO, ponto(121, 0)])).toThrow('No tamanho G, o pique interno cairia fora da peça.');
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ZERO, ZERO, ponto(120, 0)])).not.toThrow();
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'i', [ponto(-101, 0), ZERO, ZERO])).toThrow('No tamanho P, o pique interno cairia fora da peça.');
+    expect(() => definirAlinhamentoDoPiqueInterno(peca, 'x', [ZERO, ZERO, ZERO])).toThrow('Pique interno não encontrado na peça.');
+    expect(() => definirAlinhamentoDoPiqueInterno(base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150) }] }), 'i', [ZERO])).toThrow('A peça “Frente” não tem graduação: o alinhamento é entre os tamanhos dela.');
   });
 });

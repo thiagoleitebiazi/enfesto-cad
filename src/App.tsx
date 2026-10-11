@@ -195,6 +195,7 @@ import {
   type OpcoesDeMarcacao,
   type PiqueCadastrado,
 } from './ui/ferramentasDeMarcacao';
+import { cadastroAoDesfazer, cadastroAoRefazer, registrarMudancaDoCadastro } from './ui/historicoDoCadastro';
 import { gravarPiquesCadastrados, lerPiquesCadastrados } from './ui/piquesCadastrados';
 import { comFiguraRegistrada, figuraDaEspiral, figuraDoCirculo } from './domain/figuras';
 import type { FiguraDaPeca, PregaDaPeca } from './domain/molde';
@@ -766,28 +767,51 @@ export default function App(): React.JSX.Element {
     [pecas],
   );
 
+  /**
+   * Muda o cadastro de piques deste computador como um passo do Ctrl+Z: com as peças novas, se elas também
+   * mudaram, ou com as mesmas. Devolve `false`, sem mudar nada, se o cadastro não pôde ser gravado.
+   */
+  const mudarCadastroDePiques = useCallback(
+    (novos: readonly PiqueCadastrado[], novasPecas: Molde[] = [...pecas]): boolean => {
+      if (!gravarPiquesCadastrados(window.localStorage, novos)) return false;
+      registrarMudancaDoCadastro(novasPecas, piquesCadastrados, novos);
+      setPiquesCadastrados(novos);
+      aplicarMudanca(novasPecas);
+      return true;
+    },
+    [pecas, piquesCadastrados, aplicarMudanca],
+  );
+
+  /** Põe o cadastro de piques como estava do outro lado de um passo do histórico, se há o que pôr. */
+  const levarCadastroPara = useCallback((cadastro: readonly PiqueCadastrado[] | null) => {
+    if (cadastro && gravarPiquesCadastrados(window.localStorage, cadastro)) setPiquesCadastrados(cadastro);
+  }, []);
+
   // Desfazer/refazer um "Mover cerca" também devolve a cerca à posição
   // correspondente — mas só se ela ainda estiver onde o movimento a deixou
-  // (uma cerca redefinida ou removida depois disso fica como está).
+  // (uma cerca redefinida ou removida depois disso fica como está). O mesmo
+  // vale para o cadastro de piques, no passo que o mudou.
   const desfazer = useCallback(() => {
     const anterior = passado.at(-1);
     if (!anterior) return;
     const movimento = movimentosDeCercaRef.current.get(pecas);
     if (movimento && mesmaCerca(cerca, movimento.depois)) setCerca(movimento.antes);
+    levarCadastroPara(cadastroAoDesfazer(piquesCadastrados, pecas));
     setPassado((p) => p.slice(0, -1));
     setFuturo((f) => [...f, pecas]);
     setPecas(anterior);
-  }, [pecas, passado, cerca]);
+  }, [pecas, passado, cerca, piquesCadastrados, levarCadastroPara]);
 
   const refazer = useCallback(() => {
     const proximo = futuro.at(-1);
     if (!proximo) return;
     const movimento = movimentosDeCercaRef.current.get(proximo);
     if (movimento && mesmaCerca(cerca, movimento.antes)) setCerca(movimento.depois);
+    levarCadastroPara(cadastroAoRefazer(piquesCadastrados, proximo));
     setFuturo((f) => f.slice(0, -1));
     setPassado((p) => [...p, pecas]);
     setPecas(proximo);
-  }, [pecas, futuro, cerca]);
+  }, [pecas, futuro, cerca, piquesCadastrados, levarCadastroPara]);
 
   // Seleção única "de verdade" (limpa qualquer seleção em lote ativa) — usada
   // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
@@ -2565,14 +2589,15 @@ export default function App(): React.JSX.Element {
         );
         setTrecho(resultado.estado);
         setRecadoDaFerramenta(resultado.recado);
-        if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
-        if (resultado.abrir) setDialogoDeFerramenta({ tipo: 'alterar-pique', ...resultado.abrir });
         if (resultado.cadastrar) {
-          // Um formato novo entra no fim; o redesenhado fica no lugar do que era.
+          // Um formato novo entra no fim; o redesenhado fica no lugar do que era. O cadastro muda como um passo do
+          // Ctrl+Z, junto com as peças que a mudança alcançou (se alcançou alguma).
           const novos = comOCadastrado(piquesCadastrados, resultado.cadastrar);
-          if (gravarPiquesCadastrados(window.localStorage, novos)) setPiquesCadastrados(novos);
-          else setRecadoDaFerramenta('Não foi possível guardar o formato neste computador.');
+          if (!mudarCadastroDePiques(novos, resultado.pecas ? [...resultado.pecas] : undefined)) setRecadoDaFerramenta('Não foi possível guardar o formato neste computador.');
+        } else if (resultado.pecas) {
+          aplicarMudanca([...resultado.pecas]);
         }
+        if (resultado.abrir) setDialogoDeFerramenta({ tipo: 'alterar-pique', ...resultado.abrir });
         return;
       }
       if (ehModoDeGraduacao(modo)) {
@@ -2790,6 +2815,7 @@ export default function App(): React.JSX.Element {
       modo,
       opcoesDeMarcacao,
       piquesCadastrados,
+      mudarCadastroDePiques,
       opcoesDeCorte,
       corteManual,
       opcoesDeRemover,
@@ -4509,12 +4535,11 @@ export default function App(): React.JSX.Element {
                   // pedido levar a mudança aos piques já postos.
                   if (ferramenta === 'cadastrar-pique' && cadastroAgeNaHora(novas)) {
                     const feito = aplicarCadastro(novas, piquesCadastrados, pecas);
-                    if (!gravarPiquesCadastrados(window.localStorage, feito.cadastrados)) return 'Não foi possível guardar o cadastro neste computador.';
-                    setPiquesCadastrados(feito.cadastrados);
+                    // O cadastro muda como um passo do Ctrl+Z, com as peças novas, se algum pique delas foi alcançado.
+                    const comOsPiquesLevados = feito.pecas ? [...feito.pecas] : undefined;
+                    if (!mudarCadastroDePiques(feito.cadastrados, comOsPiquesLevados)) return 'Não foi possível guardar o cadastro neste computador.';
                     setOpcoesDeMarcacao({ ...novas, cadastrar: { ...novas.cadastrar, acao: 'criar', nome: '', descricao: '', redesenhar: false } });
                     cancelarModo();
-                    const comOsPiquesLevados = feito.pecas ? [...feito.pecas] : null;
-                    if (comOsPiquesLevados) aplicarMudanca(comOsPiquesLevados);
                     avisar(feito.recado, comOsPiquesLevados ?? pecas);
                     return null;
                   }

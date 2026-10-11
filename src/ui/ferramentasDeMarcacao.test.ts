@@ -1171,7 +1171,7 @@ describe('Alinhar, no pique interno', () => {
     const VALORES = { tipo: 'cruz', largura: 4, altura: 4, angulo: 0 };
 
     expect(dialogoDeAlterarPique(peca, 'i', true)!.campos.some((c) => c.id === 'alinhado')).toBe(false);
-    expect(dialogoDeAlterarPique(alinhada, 'i', true)!.campos.at(-1)).toMatchObject({ tipo: 'caixa', id: 'alinhado', inicial: true });
+    expect(dialogoDeAlterarPique(alinhada, 'i', true)!.campos.find((c) => c.id === 'alinhado')).toMatchObject({ tipo: 'caixa', inicial: true });
     // Mantida a caixa, o alinhamento fica; desmarcada, o pique volta a acompanhar a peça na proporção.
     const mantido = aplicarAlteracaoDoPique([alinhada], alinhada, 'i', true, { ...VALORES, alinhado: true });
     expect(ondeFica(mantido.pecas[0]!)).toEqual([ponto(100, 120), ponto(100, 150), ponto(100, 180)]);
@@ -1182,5 +1182,67 @@ describe('Alinhar, no pique interno', () => {
     expect(solto2.recado).toMatch(/^Pique interno de “Frente” alterado: .+\. Voltou a acompanhar a peça na proporção, de tamanho em tamanho\.$/);
     // No pique sem alinhamento, o valor da caixa não muda nada.
     expect(aplicarAlteracaoDoPique([peca], peca, 'i', true, { ...VALORES, alinhado: false }).recado).not.toMatch(/proporção/);
+  });
+});
+
+describe('Alterar, no pique interno alinhado: a tabela de quanto ele anda em cada tamanho', () => {
+  // A mesma peça do Alinhar: cresce na proporção; o pique interno em (100, 150), alinhado na horizontal, anda −30 no P e +30 no G.
+  const alinhada = (): Molde => {
+    const peca = definirTamanhosDoMolde(molde({ marcas: [{ id: 'i', posicao: ponto(100, 150), formato: formato('cruz') }] }), ['P', 'M', 'G'], 'M');
+    let graduacao = peca.graduacao!;
+    RETANGULO.forEach((q, n) => {
+      graduacao = definirRegra(graduacao, RETANGULO, n, [ponto(0 - q.x * 0.1, 0 - q.y * 0.2), ponto(0, 0), ponto(q.x * 0.1, q.y * 0.2)]);
+    });
+    const graduada = { ...peca, graduacao };
+    return clicar('alinhar-piques', { ...O, alinhar: { modo: 'horizontal' } }, graduada, solto(101, 151)).pecas![0]!;
+  };
+  const VALORES = { tipo: 'cruz', largura: 4, altura: 4, angulo: 0, alinhado: true, 'anda-h-0': -30, 'anda-v-0': 0, 'anda-h-2': 30, 'anda-v-2': 0 };
+  const daTabela = (peca: Molde) => peca.marcas[0]!.alinhamento!.deslocamentos;
+
+  it('a janela mostra dois campos por tamanho que não é o base, com o que o pique anda hoje', () => {
+    const dialogo = dialogoDeAlterarPique(alinhada(), 'i', true)!;
+    const daJanela = dialogo.campos.filter((c) => c.id.startsWith('anda-')).map((c) => [c.id, c.tipo, c.inicial, c.rotulo]);
+
+    expect(daJanela).toEqual([
+      ['anda-h-0', 'medida', '-30', 'Tamanho P: anda na horizontal (mm; positivo, para a direita)'],
+      ['anda-v-0', 'medida', '0', 'Tamanho P: anda na vertical (mm; positivo, para baixo)'],
+      ['anda-h-2', 'medida', '30', 'Tamanho G: anda na horizontal (mm; positivo, para a direita)'],
+      ['anda-v-2', 'medida', '0', 'Tamanho G: anda na vertical (mm; positivo, para baixo)'],
+    ]);
+    expect(dialogo.nota).toMatch(/Os campos de cada tamanho são a tabela do alinhamento: quanto o pique anda nesse tamanho, contado de onde está no tamanho base/);
+    // O pique que não foi alinhado não tem tabela, nem a frase dela.
+    const semAlinhar = dialogoDeAlterarPique(molde({ marcas: [{ id: 'i', posicao: ponto(100, 150), formato: formato('cruz') }] }), 'i', true)!;
+    expect(semAlinhar.campos.some((c) => c.id.startsWith('anda-'))).toBe(false);
+    expect(semAlinhar.nota).not.toMatch(/tabela/);
+    // Nem o que tem um registro que não é dos tamanhos de agora.
+    const deOutrosTamanhos: Molde = { ...alinhada(), marcas: [{ id: 'i', posicao: ponto(100, 150), formato: formato('cruz'), alinhamento: { deslocamentos: [ponto(0, 0), ponto(0, 0)] } }] };
+    expect(dialogoDeAlterarPique(deOutrosTamanhos, 'i', true)!.campos.some((c) => c.id.startsWith('anda-'))).toBe(false);
+  });
+
+  it('sem mexer nos campos, a tabela fica exatamente como estava', () => {
+    const peca = alinhada();
+    const feito = aplicarAlteracaoDoPique([peca], peca, 'i', true, VALORES);
+
+    expect(daTabela(feito.pecas[0]!)).toBe(daTabela(peca));
+    expect(feito.recado).not.toMatch(/tabela/);
+  });
+
+  it('mudado um campo, o pique passa a andar o que foi dado nesse tamanho; os outros ficam como estavam', () => {
+    const peca = alinhada();
+    // No G: 45 mm para a direita (o y do mundo) e 10 mm para baixo (o x).
+    const feito = aplicarAlteracaoDoPique([peca], peca, 'i', true, { ...VALORES, 'anda-h-2': 45, 'anda-v-2': 10 });
+
+    expect(daTabela(feito.pecas[0]!)).toEqual([daTabela(peca)[0], ponto(0, 0), ponto(10, 45)]);
+    expect(marcaNosTamanhos(feito.pecas[0]!, 'i')[2]).toEqual(ponto(110, 195));
+    expect(feito.recado).toMatch(/^Pique interno de “Frente” alterado: .+\. A tabela dele mudou\. Contado de onde fica no tamanho M: P a 30 mm; G a 46,1 mm\.$/);
+  });
+
+  it('a tabela que poria o pique fora da peça em algum tamanho é recusada, e o alinhamento desfeito não lê a tabela', () => {
+    const peca = alinhada();
+
+    expect(() => aplicarAlteracaoDoPique([peca], peca, 'i', true, { ...VALORES, 'anda-h-2': 500 })).toThrow('No tamanho G, o pique interno cairia fora da peça.');
+    const solto2 = aplicarAlteracaoDoPique([peca], peca, 'i', true, { ...VALORES, alinhado: false, 'anda-h-2': 500 });
+    expect('alinhamento' in solto2.pecas[0]!.marcas[0]!).toBe(false);
+    expect(solto2.recado).not.toMatch(/tabela/);
   });
 });

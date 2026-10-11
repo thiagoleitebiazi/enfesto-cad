@@ -1,4 +1,4 @@
-import { area, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
+import { area, retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 import { transformarCota } from './cota';
 import {
   cantosDoContorno,
@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, curvaLevada, penceLevada } from './molde';
+import { cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, type Pique, curvaLevada, penceLevada } from './molde';
 import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
@@ -32,18 +32,6 @@ function espelharNaReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
   return { x: 2 * (a.x + dx * t) - p.x, y: 2 * (a.y + dy * t) - p.y };
 }
 
-/**
- * A peça com a forma de um tamanho da graduação (o resto fica como está): o
- * contorno desse tamanho e, acompanhando-o na proporção, o que está dentro —
- * furos, linhas internas, marcas e cotas. Os piques ficam na mesma proporção
- * das arestas, e a linha de fio anda inteira, sem mudar de direção nem de
- * comprimento, o que anda o meio dela.
- *
- * A metade guardada pelo "Manter dobra" vai junto: cada ponto dela é trazido
- * para cima da metade desenhada (espelhado na dobra), anda como um ponto
- * dessa metade e volta para o outro lado da dobra do tamanho. A dobra dela
- * cai exatamente sobre a dobra do tamanho, e o "Desdobrar" a traz de volta.
- */
 /** Onde a marca fica no tamanho: pelo alinhamento dela, se ela tem um que vale para os tamanhos de agora; senão, na proporção da peça. */
 function posicaoDaMarcaNoTamanho(marca: Marca, graduacao: Graduacao, tamanho: number, levar: (p: Ponto2D) => Ponto2D): Ponto2D {
   const deslocamentos = marca.alinhamento?.deslocamentos;
@@ -62,6 +50,60 @@ export function marcaNosTamanhos(molde: Molde, marcaId: string): Ponto2D[] {
   });
 }
 
+/** Os piques e as marcas da peça num tamanho que não é o base, com o contorno desse tamanho. */
+export interface PiquesDoTamanho {
+  /** O número do tamanho na graduação. */
+  readonly tamanho: number;
+  readonly contorno: Contorno;
+  /** Os piques do contorno, já na posição que têm neste tamanho. */
+  readonly piques: readonly Pique[];
+  /** As marcas (os piques internos e os pontos), já na posição que têm neste tamanho. */
+  readonly marcas: readonly Marca[];
+}
+
+/**
+ * Os piques da peça graduada em cada tamanho que não é o base — os do
+ * contorno e os internos —, para a tela mostrar onde cada um fica de tamanho
+ * em tamanho. Nada, na peça sem graduação. Só o contorno, os piques e as
+ * marcas são levados para o tamanho: é o que isto precisa, e é bem menos
+ * conta do que levar a peça inteira.
+ */
+export function piquesNosOutrosTamanhos(molde: Molde): PiquesDoTamanho[] {
+  const graduacao = molde.graduacao;
+  if (!graduacao) return [];
+  const base = molde.contorno;
+  const regras = deslocamentosDoContorno(graduacao, base);
+  return graduacao.tamanhos.flatMap((_, tamanho): PiquesDoTamanho[] => {
+    if (tamanho === graduacao.base) return [];
+    const doTamanho = regras.map((regra) => regra[tamanho] ?? ZERO);
+    const levar = (p: Ponto2D): Ponto2D => {
+      const d = deslocamentoNoPonto(base, doTamanho, p);
+      return { x: p.x + d.x, y: p.y + d.y };
+    };
+    const contorno = base.map((p, i) => ({ x: p.x + doTamanho[i]!.x, y: p.y + doTamanho[i]!.y }));
+    return [
+      {
+        tamanho,
+        contorno,
+        piques: piquesNoTamanho(molde, contorno, tamanho),
+        marcas: molde.marcas.map((m) => ({ ...m, posicao: posicaoDaMarcaNoTamanho(m, graduacao, tamanho, levar) })),
+      },
+    ];
+  });
+}
+
+/**
+ * A peça com a forma de um tamanho da graduação (o resto fica como está): o
+ * contorno desse tamanho e, acompanhando-o na proporção, o que está dentro —
+ * furos, linhas internas, marcas e cotas. Os piques ficam na mesma proporção
+ * das arestas, e a linha de fio anda inteira, sem mudar de direção nem de
+ * comprimento, o que anda o meio dela.
+ *
+ * A metade guardada pelo "Manter dobra" vai junto: cada ponto dela é trazido
+ * para cima da metade desenhada (espelhado na dobra), anda como um ponto
+ * dessa metade e volta para o outro lado da dobra do tamanho. A dobra dela
+ * cai exatamente sobre a dobra do tamanho, e o "Desdobrar" a traz de volta.
+ */
 function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): Molde {
   if (tamanho === graduacao.base) return molde;
   const base = molde.contorno;
