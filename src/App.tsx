@@ -340,7 +340,7 @@ import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
-import { semLinhasQueSaem, semLinhasSoltas } from './domain/linhasSoltas';
+import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
 import type { ResultadoDeNesting } from './domain/nesting';
 import type { MensagemParaWorker } from './nesting.worker';
@@ -815,14 +815,14 @@ export default function App(): React.JSX.Element {
   }, [pecas, futuro, cerca, piquesCadastrados, levarCadastroPara]);
 
   /**
-   * Tira da peça, num passo do Ctrl+Z, as linhas internas que a validação apontou: as soltas (inteiras fora dela,
-   * longe do contorno) ou as que saem dela para bem longe (cada uma sai inteira).
+   * Tira da peça, num passo do Ctrl+Z, o que a validação apontou nas linhas internas: as soltas (inteiras fora
+   * dela), as que saem dela (cada uma sai inteira), ou só o que elas têm de fora (cortadas na borda da peça).
    */
   const tirarLinhasDeFora = useCallback(
-    (id: string | undefined, quais: 'soltas' | 'que-saem') => {
+    (id: string | undefined, oQue: 'soltas' | 'que-saem' | 'so-o-de-fora') => {
       const peca = pecas.find((p) => p.id === id);
       if (!peca) return;
-      const limpa = quais === 'soltas' ? semLinhasSoltas(peca) : semLinhasQueSaem(peca);
+      const limpa = oQue === 'soltas' ? semLinhasSoltas(peca) : oQue === 'que-saem' ? semLinhasQueSaem(peca) : semOQueSaiDasLinhas(peca);
       if (limpa === peca) return;
       aplicarMudanca(pecas.map((p) => (p.id === peca.id ? limpa : p)));
     },
@@ -4959,22 +4959,43 @@ export default function App(): React.JSX.Element {
                   onClick={() => p.pecasEnvolvidasIds[0] && setSelecionadoId(p.pecasEnvolvidasIds[0])}
                 >
                   [{p.severidade === 'erro' ? 'ERRO' : 'aviso'}] {p.mensagem}
-                  {(p.tipo === 'linha-solta' || p.tipo === 'linha-que-sai') && (
+                  {p.tipo === 'linha-solta' && (
                     <>
                       {' '}
                       <button
                         type="button"
-                        title={
-                          p.tipo === 'linha-solta'
-                            ? 'Tira da peça as linhas internas que estão soltas, fora dela. Ctrl+Z desfaz.'
-                            : 'Tira da peça, inteiras, as linhas internas que saem dela para longe. Ctrl+Z desfaz.'
-                        }
+                        title="Tira da peça as linhas internas que estão fora dela: as que não têm parte nenhuma dentro. Ctrl+Z desfaz."
                         onClick={(e) => {
                           e.stopPropagation();
-                          tirarLinhasDeFora(p.pecasEnvolvidasIds[0], p.tipo === 'linha-solta' ? 'soltas' : 'que-saem');
+                          tirarLinhasDeFora(p.pecasEnvolvidasIds[0], 'soltas');
                         }}
                       >
                         Tirar
+                      </button>
+                    </>
+                  )}
+                  {p.tipo === 'linha-que-sai' && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        title="Corta na borda da peça as linhas internas que saem dela e tira só o que está fora; o que está dentro fica. Ctrl+Z desfaz."
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          tirarLinhasDeFora(p.pecasEnvolvidasIds[0], 'so-o-de-fora');
+                        }}
+                      >
+                        Tirar só o de fora
+                      </button>{' '}
+                      <button
+                        type="button"
+                        title="Tira da peça, inteiras, as linhas internas que saem dela. Ctrl+Z desfaz."
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          tirarLinhasDeFora(p.pecasEnvolvidasIds[0], 'que-saem');
+                        }}
+                      >
+                        Tirar a linha
                       </button>
                     </>
                   )}

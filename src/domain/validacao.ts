@@ -1,7 +1,7 @@
 import type { Molde } from './molde';
 import { rotacaoEhPermitida } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
-import { linhasQueSaem, linhasSoltas } from './linhasSoltas';
+import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas } from './linhasSoltas';
 import {
   area,
   bboxesSeSobrepoem,
@@ -11,6 +11,7 @@ import {
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
   retanguloEnvolvente,
+  trechosLongeDaBorda,
   type Contorno,
   type Ponto2D,
 } from '../core/geometria';
@@ -51,12 +52,18 @@ export interface ToleranciasDeValidacao {
    * pregas) pode deixar um ponto a um bilionésimo de milímetro da borda.
    */
   readonly folgaNosLimitesMm: number;
+  /**
+   * Quanto uma linha interna pode passar da borda da peça sem contar como
+   * fora dela (mm): o que sobra de um traço que acaba na borda.
+   */
+  readonly folgaForaDaPecaMm: number;
 }
 
 export const TOLERANCIAS_PADRAO: ToleranciasDeValidacao = {
   dimensaoMinimaPlausivelMm: 5,
   dimensaoMaximaPlausivelMm: 10000,
   folgaNosLimitesMm: 1e-6,
+  folgaForaDaPecaMm: FOLGA_FORA_DA_PECA_MM,
 };
 
 function validarContornosIndividuais(pecas: readonly Molde[]): ProblemaDeValidacao[] {
@@ -98,20 +105,15 @@ function fundura(p: Ponto2D, contorno: Contorno): number {
   return pontoDentroDoContorno(p, contorno) ? distancia(p, pontoMaisProximoNoContorno(p, contorno).ponto) : 0;
 }
 
-/** Em que altura do segmento p–q (de 0 a 1) ele cruza o segmento a–b; `null` se não cruza, ou se os dois correm paralelos. */
-function ondeCruza(p: Ponto2D, q: Ponto2D, a: Ponto2D, b: Ponto2D): number | null {
-  const [rx, ry, sx, sy] = [q.x - p.x, q.y - p.y, b.x - a.x, b.y - a.y];
-  const denominador = rx * sy - ry * sx;
-  if (denominador === 0) return null;
-  const t = ((a.x - p.x) * sy - (a.y - p.y) * sx) / denominador;
-  const u = ((a.x - p.x) * ry - (a.y - p.y) * rx) / denominador;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : null;
-}
+/** Folga da conta (mm): o ponto a menos disto da borda conta como em cima dela, mesmo com a fundura 0. */
+const POEIRA_DE_CONTA_MM = 1e-9;
 
 /**
- * A borda de `a` entra em `b` mais fundo que `funduraMm`: algum ponto dela —
- * um canto, ou um ponto de um trecho de lado entre dois cruzamentos com a
- * borda de `b` — está dentro de `b`, a mais de `funduraMm` da borda dele.
+ * A borda de `a` entra em `b` mais fundo que `funduraMm`: algum trecho dela
+ * está dentro de `b`, a mais de `funduraMm` da borda dele. A conta é exata,
+ * e não por pontos de amostra: os trechos de cada lado de `a` que ficam a
+ * mais de `funduraMm` da borda de `b` estão, cada um, de um lado só dela —
+ * e basta ver de que lado.
  */
 function bordaEntra(a: Contorno, b: Contorno, funduraMm: number): boolean {
   const caixaDeB = retanguloEnvolvente(b);
@@ -119,18 +121,9 @@ function bordaEntra(a: Contorno, b: Contorno, funduraMm: number): boolean {
     const [p, q] = [a[i]!, a[(i + 1) % a.length]!];
     // O lado que não chega à caixa de `b` não entra nele: é o caso de quase todos, e sai aqui.
     if (!bboxesSeSobrepoem(retanguloEnvolvente([p, q]), caixaDeB)) continue;
-    const cortes = [0, 1];
-    for (let j = 0; j < b.length; j++) {
-      const t = ondeCruza(p, q, b[j]!, b[(j + 1) % b.length]!);
-      if (t !== null) cortes.push(t);
-    }
-    cortes.sort((m, n) => m - n);
-    for (let k = 1; k < cortes.length; k++) {
-      // O começo do trecho (no primeiro, o canto) e três pontos ao longo dele.
-      for (const fracao of [0, 0.25, 0.5, 0.75]) {
-        const t = cortes[k - 1]! + (cortes[k]! - cortes[k - 1]!) * fracao;
-        if (fundura({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }, b) > funduraMm) return true;
-      }
+    for (const [de, ate] of trechosLongeDaBorda(p, q, b, funduraMm + POEIRA_DE_CONTA_MM)) {
+      const meio = (de + ate) / 2;
+      if (pontoDentroDoContorno({ x: p.x + (q.x - p.x) * meio, y: p.y + (q.y - p.y) * meio }, b)) return true;
     }
   }
   return false;
@@ -165,10 +158,10 @@ function pontoDeDentro(contorno: Contorno): Ponto2D | null {
 /**
  * Os interiores dos dois contornos têm parte em comum — o que é diferente de
  * as bordas só se tocarem. Há parte em comum quando a borda de um entra no
- * outro mais fundo que `funduraMm`, ou quando um ponto bem de dentro de um
- * está dentro do outro a mais disso (a mesma peça duas vezes no mesmo lugar:
- * as bordas correm juntas, nenhuma entra na outra, e os interiores são o
- * mesmo).
+ * outro mais fundo que `funduraMm` (conta exata), ou quando um ponto bem de
+ * dentro de um está dentro do outro a mais disso (a mesma peça duas vezes no
+ * mesmo lugar: as bordas correm juntas, nenhuma entra na outra, e os
+ * interiores são o mesmo).
  */
 export function interioresSeSobrepoem(a: Contorno, b: Contorno, funduraMm = FUNDURA_MINIMA_DA_SOBREPOSICAO_MM): boolean {
   if (bordaEntra(a, b, funduraMm) || bordaEntra(b, a, funduraMm)) return true;
@@ -280,12 +273,22 @@ function validarEscala(pecas: readonly Molde[], tolerancias: ToleranciasDeValida
   return problemas;
 }
 
-/** As peças com linha interna solta (inteira do lado de fora, longe do contorno) ou que sai da peça para bem longe. É aviso, e a faixa da validação oferece tirá-las. */
-function validarLinhasSoltas(pecas: readonly Molde[]): ProblemaDeValidacao[] {
+/** A distância como a lista a diz: com uma casa abaixo de 10 mm, e em milímetros inteiros daí para cima. */
+function emMilimetros(mm: number): string {
+  return mm < 10 ? mm.toFixed(1) : mm.toFixed(0);
+}
+
+/**
+ * As peças com linha interna fora delas, para lá da folga: a que sai da peça
+ * (tem parte dentro) e a solta (não tem: está fora, ou corre pela borda e
+ * sai). É aviso, e a faixa da validação oferece tirá-las — ou, da que sai,
+ * tirar só o que está fora.
+ */
+function validarLinhasSoltas(pecas: readonly Molde[], folgaMm: number): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
   for (const peca of pecas) {
-    // A linha que tem parte na peça e vai para bem longe dela: uma moldura, o contorno de outra peça.
-    const saem = linhasQueSaem(peca);
+    // A linha que tem parte na peça e parte fora dela: uma moldura, o contorno de outra peça, um traço que passou da borda.
+    const saem = linhasQueSaem(peca, folgaMm);
     if (saem.length > 0) {
       const ateOnde = Math.max(...saem.map((linha) => linha.distanciaMm));
       problemas.push({
@@ -293,12 +296,12 @@ function validarLinhasSoltas(pecas: readonly Molde[]): ProblemaDeValidacao[] {
         severidade: 'aviso',
         mensagem:
           saem.length === 1
-            ? `Peça "${peca.nome}": uma linha interna sai da peça e vai até ${ateOnde.toFixed(0)} mm para fora do contorno — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).`
-            : `Peça "${peca.nome}": ${saem.length} linhas internas saem da peça (a que vai mais longe, até ${ateOnde.toFixed(0)} mm para fora do contorno) — podem ser sobra de desenho ou de importação.`,
+            ? `Peça "${peca.nome}": uma linha interna sai da peça e vai até ${emMilimetros(ateOnde)} mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).`
+            : `Peça "${peca.nome}": ${saem.length} linhas internas saem da peça (a que vai mais longe, até ${emMilimetros(ateOnde)} mm para fora da borda) — podem ser sobra de desenho ou de importação.`,
         pecasEnvolvidasIds: [peca.id],
       });
     }
-    const soltas = linhasSoltas(peca);
+    const soltas = linhasSoltas(peca, folgaMm);
     if (soltas.length === 0) continue;
     const maisLonge = Math.max(...soltas.map((solta) => solta.distanciaMm));
     problemas.push({
@@ -306,8 +309,8 @@ function validarLinhasSoltas(pecas: readonly Molde[]): ProblemaDeValidacao[] {
       severidade: 'aviso',
       mensagem:
         soltas.length === 1
-          ? `Peça "${peca.nome}": uma linha interna está solta, fora da peça, a ${maisLonge.toFixed(0)} mm do contorno — sobra de desenho ou de importação.`
-          : `Peça "${peca.nome}": ${soltas.length} linhas internas estão soltas, fora da peça (a mais afastada, a ${maisLonge.toFixed(0)} mm do contorno) — sobra de desenho ou de importação.`,
+          ? `Peça "${peca.nome}": uma linha interna está fora da peça, até ${emMilimetros(maisLonge)} mm da borda — sobra de desenho ou de importação.`
+          : `Peça "${peca.nome}": ${soltas.length} linhas internas estão fora da peça (a mais afastada, até ${emMilimetros(maisLonge)} mm da borda) — sobra de desenho ou de importação.`,
       pecasEnvolvidasIds: [peca.id],
     });
   }
@@ -324,7 +327,7 @@ export function validarProjeto(
     ...validarSobreposicaoEEspacamento(pecas, enfesto?.distanciaMinimaEntrePecasMm ?? 0),
     ...validarRotacoes(pecas),
     ...validarEscala(pecas, tolerancias),
-    ...validarLinhasSoltas(pecas),
+    ...validarLinhasSoltas(pecas, tolerancias.folgaForaDaPecaMm),
   ];
   if (enfesto) {
     problemas.push(...validarLimitesDoTecido(pecas, enfesto, tolerancias.folgaNosLimitesMm));

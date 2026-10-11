@@ -575,3 +575,86 @@ export function distanciaEntreContornos(a: Contorno, b: Contorno): number {
   }
   return menor;
 }
+
+/**
+ * Em que altura do segmento p–q (de 0 a 1) ele cruza o segmento a–b; `null`
+ * se não cruza, ou se os dois correm paralelos.
+ */
+export function ondeOSegmentoCruza(p: Ponto2D, q: Ponto2D, a: Ponto2D, b: Ponto2D): number | null {
+  const [rx, ry, sx, sy] = [q.x - p.x, q.y - p.y, b.x - a.x, b.y - a.y];
+  const denominador = rx * sy - ry * sx;
+  if (denominador === 0) return null;
+  const t = ((a.x - p.x) * sy - (a.y - p.y) * sx) / denominador;
+  const u = ((a.x - p.x) * ry - (a.y - p.y) * rx) / denominador;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : null;
+}
+
+/** Para que valores de t a conta `a + b·t` fica entre `minimo` e `maximo`; `null` se para nenhum. */
+function alturasEntre(a: number, b: number, minimo: number, maximo: number): [number, number] | null {
+  if (b === 0) return a >= minimo && a <= maximo ? [-Infinity, Infinity] : null;
+  const [t1, t2] = [(minimo - a) / b, (maximo - a) / b];
+  return t1 <= t2 ? [t1, t2] : [t2, t1];
+}
+
+/**
+ * De que altura a que altura a reta `p + t·v` passa a `raio` ou menos do
+ * segmento c–d; `null` se não passa. A faixa de `raio` em volta do segmento
+ * é um retângulo ao longo dele e um disco em cada ponta; como a faixa é
+ * convexa, a reta a atravessa num trecho só.
+ */
+function alturasPertoDoSegmento(p: Ponto2D, v: Ponto2D, c: Ponto2D, d: Ponto2D, raio: number): [number, number] | null {
+  const vv = v.x * v.x + v.y * v.y;
+  let [de, ate] = [Infinity, -Infinity];
+  for (const centro of [c, d]) {
+    const [wx, wy] = [p.x - centro.x, p.y - centro.y];
+    const vw = v.x * wx + v.y * wy;
+    const delta = vw * vw - vv * (wx * wx + wy * wy - raio * raio);
+    if (delta < 0) continue;
+    de = Math.min(de, (-vw - Math.sqrt(delta)) / vv);
+    ate = Math.max(ate, (-vw + Math.sqrt(delta)) / vv);
+  }
+  const [ex, ey] = [d.x - c.x, d.y - c.y];
+  const ee = ex * ex + ey * ey;
+  if (ee > 0) {
+    const [wx, wy] = [p.x - c.x, p.y - c.y];
+    // Ao longo do segmento, entre as pontas dele; de través, a `raio` ou menos da reta dele.
+    const aoLongo = alturasEntre(wx * ex + wy * ey, v.x * ex + v.y * ey, 0, ee);
+    const deTraves = alturasEntre(ex * wy - ey * wx, ex * v.y - ey * v.x, -raio * Math.sqrt(ee), raio * Math.sqrt(ee));
+    if (aoLongo && deTraves && Math.max(aoLongo[0], deTraves[0]) <= Math.min(aoLongo[1], deTraves[1])) {
+      de = Math.min(de, Math.max(aoLongo[0], deTraves[0]));
+      ate = Math.max(ate, Math.min(aoLongo[1], deTraves[1]));
+    }
+  }
+  return de <= ate ? [de, ate] : null;
+}
+
+/** Menor trecho (mm) que conta como vão entre duas faixas: abaixo disso é poeira de conta. */
+const MENOR_VAO_MM = 1e-9;
+
+/**
+ * Os trechos do segmento p–q (cada um de uma altura a outra, de 0 a 1) que
+ * ficam a mais de `raioMm` da borda do contorno. É a conta exata: são os vãos
+ * entre as faixas de `raioMm` em volta de cada lado do contorno. Cada trecho
+ * está inteiro de um lado só da borda — dentro ou fora —, porque não chega
+ * perto dela.
+ */
+export function trechosLongeDaBorda(p: Ponto2D, q: Ponto2D, contorno: Contorno, raioMm: number): [number, number][] {
+  const v = { x: q.x - p.x, y: q.y - p.y };
+  const comprimento = Math.hypot(v.x, v.y);
+  if (comprimento === 0) return [];
+  const faixas: [number, number][] = [];
+  for (let i = 0; i < contorno.length; i++) {
+    const faixa = alturasPertoDoSegmento(p, v, contorno[i]!, contorno[(i + 1) % contorno.length]!, raioMm);
+    if (faixa && faixa[1] >= 0 && faixa[0] <= 1) faixas.push(faixa);
+  }
+  faixas.sort((a, b) => a[0] - b[0]);
+  const menorVao = MENOR_VAO_MM / comprimento;
+  const vaos: [number, number][] = [];
+  let coberto = 0;
+  for (const [de, ate] of faixas) {
+    if (de - coberto > menorVao) vaos.push([coberto, de]);
+    if (ate > coberto) coberto = ate;
+  }
+  if (1 - coberto > menorVao) vaos.push([coberto, 1]);
+  return vaos;
+}

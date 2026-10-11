@@ -210,22 +210,34 @@ describe('validarProjeto — encostar não é sobrepor', () => {
   });
 });
 
-describe('validarProjeto — linha interna solta', () => {
+describe('validarProjeto — linha interna inteira fora da peça', () => {
+  // A peça vai de x 50 a 250 e de y 50 a 350.
   const comLinhas = (linhasInternas: Molde['linhasInternas']): Molde => ({ ...pecaRetangular('Frente', 50, 50, 200, 300), linhasInternas });
 
-  it('avisa da peça que tem linha interna inteira fora dela, longe do contorno, e diz a quanto', () => {
+  it('avisa da peça que tem linha interna inteira fora dela, e diz até onde ela vai', () => {
     const umaSolta = validarProjeto([comLinhas([[ponto(70, 100), ponto(230, 100)], [ponto(1250, 100), ponto(1250, 300)]])], enfestoBase());
     expect(umaSolta).toEqual([
-      { tipo: 'linha-solta', severidade: 'aviso', mensagem: 'Peça "Frente": uma linha interna está solta, fora da peça, a 1000 mm do contorno — sobra de desenho ou de importação.', pecasEnvolvidasIds: ['Frente'] },
+      { tipo: 'linha-solta', severidade: 'aviso', mensagem: 'Peça "Frente": uma linha interna está fora da peça, até 1000 mm da borda — sobra de desenho ou de importação.', pecasEnvolvidasIds: ['Frente'] },
     ]);
     expect(projetoTemErrosCriticos(umaSolta)).toBe(false);
 
     const duasSoltas = validarProjeto([comLinhas([[ponto(1250, 100), ponto(1250, 300)], [ponto(450, 100), ponto(450, 300)]])], enfestoBase());
-    expect(duasSoltas.map((p) => p.mensagem)).toEqual(['Peça "Frente": 2 linhas internas estão soltas, fora da peça (a mais afastada, a 1000 mm do contorno) — sobra de desenho ou de importação.']);
+    expect(duasSoltas.map((p) => p.mensagem)).toEqual(['Peça "Frente": 2 linhas internas estão fora da peça (a mais afastada, até 1000 mm da borda) — sobra de desenho ou de importação.']);
   });
 
-  it('a linha de dentro, a que atravessa a borda e a que passa perto dela não geram aviso', () => {
-    expect(validarProjeto([comLinhas([[ponto(70, 100), ponto(230, 100)], [ponto(0, 200), ponto(300, 200)], [ponto(255, 100), ponto(255, 300)]])], enfestoBase())).toEqual([]);
+  it('a que está perto da borda, do lado de fora, também é apontada — com a distância em décimos', () => {
+    const aTresEMeio = [comLinhas([[ponto(253.5, 100), ponto(253.5, 300)]])];
+    expect(validarProjeto(aTresEMeio, enfestoBase()).map((p) => p.mensagem)).toEqual(['Peça "Frente": uma linha interna está fora da peça, até 3.5 mm da borda — sobra de desenho ou de importação.']);
+    // De 10 mm para cima, em milímetros inteiros.
+    const aDuzentos = validarProjeto([comLinhas([[ponto(450, 100), ponto(450, 300)]])], enfestoBase());
+    expect(aDuzentos.map((p) => p.mensagem)).toEqual(['Peça "Frente": uma linha interna está fora da peça, até 200 mm da borda — sobra de desenho ou de importação.']);
+    // E a folga da validação vale para ela também.
+    expect(validarProjeto(aTresEMeio, enfestoBase(), { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm: 10 })).toEqual([]);
+  });
+
+  it('a linha de dentro, a que acaba na borda, a que corre nela e a que passa menos de 1 mm não geram aviso', () => {
+    const linhas = [[ponto(70, 100), ponto(230, 100)], [ponto(100, 200), ponto(250, 200)], [ponto(250, 100), ponto(250, 300)], [ponto(100, 250), ponto(250.8, 250)]];
+    expect(validarProjeto([comLinhas(linhas)], enfestoBase())).toEqual([]);
   });
 });
 
@@ -233,19 +245,29 @@ describe('validarProjeto — linha interna que sai da peça', () => {
   const comLinhas = (linhasInternas: Molde['linhasInternas']): Molde => ({ ...pecaRetangular('Frente', 50, 50, 200, 300), linhasInternas });
   const MOLDURA = [ponto(60, 60), ponto(1250, 60), ponto(1250, 1350), ponto(60, 1350), ponto(60, 60)];
 
-  it('avisa da linha que tem parte na peça e vai para bem longe dela, e diz até onde', () => {
+  it('avisa da linha que tem parte na peça e parte fora, e diz até onde ela vai', () => {
     const problemas = validarProjeto([comLinhas([[ponto(70, 100), ponto(230, 100)], MOLDURA])], enfestoBase());
 
     expect(problemas).toEqual([
       {
         tipo: 'linha-que-sai',
         severidade: 'aviso',
-        mensagem: 'Peça "Frente": uma linha interna sai da peça e vai até 1414 mm para fora do contorno — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
+        mensagem: 'Peça "Frente": uma linha interna sai da peça e vai até 1414 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
         pecasEnvolvidasIds: ['Frente'],
       },
     ]);
     const duas = validarProjeto([comLinhas([MOLDURA, [ponto(100, 100), ponto(100, 900)]])], enfestoBase());
-    expect(duas.map((p) => p.mensagem)).toEqual(['Peça "Frente": 2 linhas internas saem da peça (a que vai mais longe, até 1414 mm para fora do contorno) — podem ser sobra de desenho ou de importação.']);
+    expect(duas.map((p) => p.mensagem)).toEqual(['Peça "Frente": 2 linhas internas saem da peça (a que vai mais longe, até 1414 mm para fora da borda) — podem ser sobra de desenho ou de importação.']);
+  });
+
+  it('a que passa pouco da borda também é apontada; a folga é uma tolerância da validação', () => {
+    const passaCinco = [comLinhas([[ponto(100, 100), ponto(100, 355)]])];
+
+    expect(validarProjeto(passaCinco, enfestoBase()).map((p) => p.mensagem)).toEqual([
+      'Peça "Frente": uma linha interna sai da peça e vai até 5.0 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
+    ]);
+    expect(validarProjeto(passaCinco, enfestoBase(), { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm: 10 })).toEqual([]);
+    expect(TOLERANCIAS_PADRAO.folgaForaDaPecaMm).toBe(1);
   });
 
   it('a peça com uma linha que sai e outra solta ganha os dois avisos, cada um com o seu', () => {
@@ -368,5 +390,32 @@ describe('interioresSeSobrepoem — o que não conta e o que basta', () => {
 
     expect(interioresSeSobrepoem(ESQUERDA, agulha)).toBe(true);
     expect(interioresSeSobrepoem(agulha, ESQUERDA)).toBe(true);
+  });
+});
+
+describe('interioresSeSobrepoem — a conta é exata', () => {
+  // De x 50 a 150, de y 50 a 250.
+  const ESQUERDA = pecaRetangular('a', 50, 50, 100, 200).contorno;
+
+  it('a 0,049 mm é encostar e a 0,051 mm é sobrepor, seja qual for a forma do que entra', () => {
+    // Um lado inteiro.
+    expect(interioresSeSobrepoem(ESQUERDA, pecaRetangular('b', 149.951, 50, 100, 200).contorno)).toBe(false);
+    expect(interioresSeSobrepoem(ESQUERDA, pecaRetangular('b', 149.949, 50, 100, 200).contorno)).toBe(true);
+    // Um bico, num ponto qualquer do lado.
+    const bico = (entraMm: number): Molde['contorno'] => [ponto(150 - entraMm, 137.3), ponto(250, 120), ponto(250, 160)];
+    expect(interioresSeSobrepoem(ESQUERDA, bico(0.049))).toBe(false);
+    expect(interioresSeSobrepoem(ESQUERDA, bico(0.051))).toBe(true);
+    expect(interioresSeSobrepoem(bico(0.049), ESQUERDA)).toBe(false);
+    expect(interioresSeSobrepoem(bico(0.051), ESQUERDA)).toBe(true);
+  });
+
+  it('um canto cortado de viés: vale a que distância o canto fica da borda da outra', () => {
+    // A outra peça corta o canto (150, 50) por uma reta de (149, 50) a (150, 50 + b): o canto fica a b / raiz(1 + b²) dela.
+    const cortaOCanto = (b: number): Molde['contorno'] => [ponto(149, 50), ponto(149, 20), ponto(200, 20), ponto(200, 50 + b), ponto(150, 50 + b)];
+
+    expect(interioresSeSobrepoem(ESQUERDA, cortaOCanto(0.0499))).toBe(false);
+    expect(interioresSeSobrepoem(ESQUERDA, cortaOCanto(0.0502))).toBe(true);
+    expect(interioresSeSobrepoem(cortaOCanto(0.0499), ESQUERDA)).toBe(false);
+    expect(interioresSeSobrepoem(cortaOCanto(0.0502), ESQUERDA)).toBe(true);
   });
 });

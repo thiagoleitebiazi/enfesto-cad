@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ondeOSegmentoCruza,
+  trechosLongeDaBorda,
   ponto,
   somar,
   subtrair,
@@ -574,5 +576,77 @@ describe('substituirTrechoDoContorno', () => {
     expect(() => substituirTrechoDoContorno(retangulo, vertice(0), { indiceAresta: 9, ponto: ponto(0, 0) }, [])).toThrow(
       'Posição fora do contorno.',
     );
+  });
+});
+
+describe('ondeOSegmentoCruza', () => {
+  it('diz em que altura do primeiro segmento os dois se cruzam', () => {
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(4, -5), ponto(4, 5))).toBeCloseTo(0.4, 12);
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 10), ponto(0, 10), ponto(10, 0))).toBeCloseTo(0.5, 12);
+    // Nas pontas dele também. (Valor exato: comparado por aproximação, um `null` passaria por 0.)
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(0, -5), ponto(0, 5))).toBe(0);
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(10, 0), ponto(10, 5))).toBe(1);
+    // E nas pontas do outro: o que começa nele, e o que acaba nele.
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(4, 0), ponto(4, 5))).toBeCloseTo(0.4, 12);
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(4, -5), ponto(4, 0))).toBeCloseTo(0.4, 12);
+  });
+
+  it('não há cruzamento se correm paralelos, ou se um acaba antes de chegar ao outro', () => {
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(0, 1), ponto(10, 1))).toBeNull();
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(2, 0), ponto(8, 0))).toBeNull();
+    // O primeiro acaba antes (ou começa depois).
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(12, -5), ponto(12, 5))).toBeNull();
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(-2, -5), ponto(-2, 5))).toBeNull();
+    // O segundo acaba antes (ou começa depois).
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(4, 1), ponto(4, 5))).toBeNull();
+    expect(ondeOSegmentoCruza(ponto(0, 0), ponto(10, 0), ponto(4, -5), ponto(4, -1))).toBeNull();
+  });
+});
+
+describe('trechosLongeDaBorda', () => {
+  const QUADRADO = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+  const arredondados = (trechos: [number, number][]): number[][] => trechos.map(([de, ate]) => [Number(de.toFixed(6)), Number(ate.toFixed(6))]);
+
+  it('dá os trechos do segmento a mais do raio da borda, de um lado e do outro dela', () => {
+    // Atravessa o quadrado pelo meio, de x −10 a 20: está a 1 mm ou menos da borda de x −1 a 1 e de x 9 a 11.
+    expect(arredondados(trechosLongeDaBorda(ponto(-10, 5), ponto(20, 5), QUADRADO, 1))).toEqual([
+      [0, 0.3],
+      [0.366667, 0.633333],
+      [0.7, 1],
+    ]);
+  });
+
+  it('é exato onde a maior distância à borda não cai numa ponta nem no meio', () => {
+    // Uma corda que corta o canto (0, 0), de (1, 0) a (0, 0,06): a distância à borda é o menor de x e y.
+    expect(arredondados(trechosLongeDaBorda(ponto(1, 0), ponto(0, 0.06), QUADRADO, 0.05))).toEqual([[0.833333, 0.95]]);
+    expect(trechosLongeDaBorda(ponto(1, 0), ponto(0, 0.06), QUADRADO, 0.06)).toEqual([]);
+  });
+
+  it('perto de um canto, vale a distância ao canto', () => {
+    // Passa em diagonal por fora do canto (10, 10), a 1,414 mm dele no ponto mais perto.
+    expect(arredondados(trechosLongeDaBorda(ponto(8, 14), ponto(14, 8), QUADRADO, 1.5))).toEqual([
+      [0, 0.441074],
+      [0.558926, 1],
+    ]);
+    expect(arredondados(trechosLongeDaBorda(ponto(8, 14), ponto(14, 8), QUADRADO, 1.4))).toEqual([[0, 1]]);
+  });
+
+  it('o segmento que corre junto da borda não tem trecho longe dela; o de um ponto só, também não', () => {
+    expect(trechosLongeDaBorda(ponto(2, 0.5), ponto(8, 0.5), QUADRADO, 1)).toEqual([]);
+    expect(trechosLongeDaBorda(ponto(2, 3), ponto(2, 3), QUADRADO, 1)).toEqual([]);
+    // O que corre paralelo a um lado, mas longe dele, está longe por inteiro.
+    expect(trechosLongeDaBorda(ponto(2, 5), ponto(8, 5), QUADRADO, 1)).toEqual([[0, 1]]);
+    // Ao longo de um lado (de x 0 a 10), de x −10 a 30: longe da borda só antes de x −1 e depois de x 11.
+    expect(arredondados(trechosLongeDaBorda(ponto(-10, 0), ponto(30, 0), QUADRADO, 1))).toEqual([
+      [0, 0.225],
+      [0.525, 1],
+    ]);
+  });
+
+  it('com o raio 0, só os cruzamentos separam os trechos', () => {
+    expect(arredondados(trechosLongeDaBorda(ponto(5, -5), ponto(5, 5), QUADRADO, 0))).toEqual([
+      [0, 0.5],
+      [0.5, 1],
+    ]);
   });
 });
