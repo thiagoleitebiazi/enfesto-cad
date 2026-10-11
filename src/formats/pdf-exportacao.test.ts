@@ -199,6 +199,13 @@ describe('gerarPdfDeMoldesIndividuais — o que foi anotado na peça', () => {
     expect(await tracejadas(tornarElementos(comDuas, [1]))).toBe(1);
     expect(await tracejadas(tornarElementos(comDuas, [0, 1]))).toBe(0);
   });
+
+  it('o registro da peça vai na página dela, nos moldes individuais; o PDF do encaixe não o leva', async () => {
+    const peca = pecaRetangular('Frente', 80, 80);
+
+    expect(await paraTexto(await gerarPdfDeMoldesIndividuais([peca], OPCOES))).toMatch(/\n% enfesto-cad:peca:2 [A-Za-z0-9+/=]+\n/);
+    expect(await paraTexto(await gerarPdfDeEncaixe([peca], enfestoBase(), OPCOES))).not.toContain('enfesto-cad:peca');
+  });
 });
 
 describe('gerarPdfDeEncaixe — estrutura e escala', () => {

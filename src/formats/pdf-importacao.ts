@@ -1,8 +1,8 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { distancia, ponto, retanguloEnvolvente, pontoMaisProximoNoContorno } from '../core/geometria';
-import { criarMolde, type FormatoDePique, type LinhaDeFio, type Molde } from '../domain/molde';
+import { criarMolde, type LinhaDeFio, type Molde } from '../domain/molde';
 import { PONTOS_POR_MM } from './pdf-exportacao';
-import { lerRegistroDaPagina, type TextoDoRegistro } from './pdf-registro';
+import { lerRegistroDaPagina } from './pdf-registro';
 
 /**
  * Importação de PDF (pedido do usuário: "extrair peças vetoriais de um PDF
@@ -21,11 +21,13 @@ import { lerRegistroDaPagina, type TextoDoRegistro } from './pdf-registro';
  * ter essas cores/traços exatos e vai simplesmente não encontrar peças
  * (com aviso claro, nunca um resultado incorreto silencioso).
  *
- * Limitação conhecida, documentada em vez de escondida: peças maiores que
- * uma folha (exportadas ladrilhadas em várias páginas) não são
- * reconstruídas automaticamente — a peça inteira não está em nenhuma
- * página isolada, e tentar costurar os fragmentos de volta é um problema
- * bem mais difícil que decidimos não resolver nesta primeira versão.
+ * A peça maior que uma folha sai em várias páginas, e cada uma traz o
+ * desenho inteiro dela (a folha só mostra um pedaço, pelo recorte): a
+ * primeira página basta para trazê-la de volta.
+ *
+ * Além do desenho, a página da peça traz o registro dela (ver
+ * `pdf-registro.ts`): a peça inteira, com o que o desenho não diz. Quando
+ * ele confere com o desenho, é a peça do registro que volta.
  */
 
 const TOLERANCIA_COR = 0.01;
@@ -161,6 +163,8 @@ interface RotuloDaPagina {
   readonly quantidade: number;
   /** Total de páginas que esta peça ocupa (do rodapé "página N/Y") — Y > 1 significa peça ladrilhada (maior que uma folha). */
   readonly totalDePaginasDaPeca: number;
+  /** Qual das páginas da peça é esta (o N do rodapé "página N/Y"). */
+  readonly paginaDaPeca: number;
 }
 
 function lerRotuloDaPagina(streamDaPagina: string): RotuloDaPagina | null {
@@ -187,14 +191,18 @@ function lerRotuloDaPagina(streamDaPagina: string): RotuloDaPagina | null {
 
   let quantidade = 1;
   let totalDePaginasDaPeca = 1;
+  let paginaDaPeca = 1;
   for (const bloco of blocosDeTexto) {
     const mq = bloco.match(/quantidade:\s*(\d+)/);
     if (mq) quantidade = Number.parseInt(mq[1]!, 10);
-    const mp = bloco.match(/gina\s*\d+\/(\d+)/); // "página" decodificado com acento pode virar outro byte — casa só o sufixo estável "gina N/Y"
-    if (mp) totalDePaginasDaPeca = Number.parseInt(mp[1]!, 10);
+    const mp = bloco.match(/gina\s*(\d+)\/(\d+)/); // "página" decodificado com acento pode virar outro byte — casa só o sufixo estável "gina N/Y"
+    if (mp) {
+      paginaDaPeca = Number.parseInt(mp[1]!, 10);
+      totalDePaginasDaPeca = Number.parseInt(mp[2]!, 10);
+    }
   }
 
-  return { nome, referencia, tamanho, quantidade, totalDePaginasDaPeca };
+  return { nome, referencia, tamanho, quantidade, totalDePaginasDaPeca, paginaDaPeca };
 }
 
 export interface PecaImportadaPdf {
@@ -205,36 +213,67 @@ export interface PecaImportadaPdf {
   readonly furos: Contorno[];
   readonly linhasInternas: Contorno[];
   readonly linhaDeFio: LinhaDeFio | null;
-  /** Os piques do contorno. O formato, o "pique na costura" e o código vêm do registro da peça no PDF, quando ele existe. */
-  readonly piques: readonly {
-    readonly posicao: Ponto2D;
-    readonly indiceAresta: number;
-    readonly formato?: FormatoDePique;
-    readonly naCostura?: 'projetado' | 'estendido';
-    readonly codigo?: string;
-  }[];
+  readonly piques: readonly { readonly posicao: Ponto2D; readonly indiceAresta: number }[];
   readonly marcas: readonly Ponto2D[];
-  /** O formato de cada marca (na ordem de `marcas`; `null` no ponto sem formato), quando o registro do PDF os traz. */
-  readonly formatosDasMarcas?: readonly (FormatoDePique | null)[];
-  /** Os textos da peça, pelo registro do PDF. */
-  readonly textos?: readonly TextoDoRegistro[];
-  /** As linhas só de construção, pelo registro do PDF: não são desenhadas na folha, e já estão em `linhasInternas`. */
-  readonly elementos?: readonly Contorno[];
   readonly margemDeCosturaMm: number;
   readonly quantidade: number;
+  /**
+   * A peça inteira, pelo registro que este programa escreve na página dela — com o que o desenho não diz: os
+   * formatos dos piques, os textos, as linhas de construção, a graduação, a cor e os registros de pence, curva e
+   * prega. Só vem quando o registro foi lido e confere com o desenho; sem ela, a peça é a que o desenho mostra.
+   */
+  readonly molde?: Molde;
 }
 
-/** A até isto (mm) da posição desenhada, o pique do registro é o mesmo pique. */
-const MESMO_PIQUE_MM = 0.05;
+/** A até isto (mm) um do outro, o ponto do registro e o do desenho são o mesmo ponto. */
+const MESMO_PONTO_DO_DESENHO_MM = 0.05;
+
+/** O contorno do registro é o que o desenho mostra: os mesmos pontos, na mesma ordem. */
+function mesmoContorno(doRegistro: Contorno, doDesenho: Contorno): boolean {
+  return doRegistro.length === doDesenho.length && doRegistro.every((p, i) => distancia(p, doDesenho[i]!) <= MESMO_PONTO_DO_DESENHO_MM);
+}
 
 /**
- * A peça importada como um molde do projeto, com o que o registro do PDF
- * trouxe: os formatos dos piques, os textos e as linhas de construção. Só
- * para a peça que tem linha de fio.
+ * A peça com identificadores novos — o dela e os de tudo o que ela tem —,
+ * para não repetir os de outra peça do projeto. As listas que apontam para
+ * piques e marcas (nas pences, pregas e cunhas) acompanham a troca.
+ */
+function comIdsNovos(molde: Molde, novoId: () => string): Molde {
+  const novos = new Map<string, string>();
+  const de = (id: string): string => {
+    const jaTrocado = novos.get(id);
+    if (jaTrocado !== undefined) return jaTrocado;
+    const novo = novoId();
+    novos.set(id, novo);
+    return novo;
+  };
+  const comId = <T extends { readonly id: string }>(item: T): T => ({ ...item, id: de(item.id) });
+  const guardada = molde.dobraMantida;
+  return {
+    ...molde,
+    id: novoId(),
+    piques: molde.piques.map(comId),
+    marcas: molde.marcas.map(comId),
+    ...(molde.textos ? { textos: molde.textos.map(comId) } : {}),
+    ...(molde.cotas ? { cotas: molde.cotas.map(comId) } : {}),
+    ...(molde.curvas ? { curvas: molde.curvas.map(comId) } : {}),
+    ...(molde.pences ? { pences: molde.pences.map((p) => ({ ...comId(p), ...(p.piques ? { piques: p.piques.map(de) } : {}), ...(p.marcas ? { marcas: p.marcas.map(de) } : {}) })) } : {}),
+    ...(molde.pregas ? { pregas: molde.pregas.map((p) => ({ ...comId(p), ...(p.piques ? { piques: p.piques.map(de) } : {}) })) } : {}),
+    ...(molde.cunhas ? { cunhas: molde.cunhas.map((c) => ({ ...comId(c), ...(c.piques ? { piques: c.piques.map(de) } : {}) })) } : {}),
+    ...(guardada ? { dobraMantida: { ...guardada, piques: guardada.piques.map(comId), marcas: guardada.marcas.map(comId) } } : {}),
+  };
+}
+
+/**
+ * A peça importada como um molde do projeto: a do registro do PDF, inteira,
+ * quando ele veio; senão, a que o desenho mostra — o contorno, os furos, as
+ * linhas internas, a linha de fio, os piques como traços e as marcas como
+ * pontos. Só para a peça que tem linha de fio.
  */
 export function moldeDaPecaImportada(peca: PecaImportadaPdf, novoId: () => string): Molde {
+  if (peca.molde) return comIdsNovos(peca.molde, novoId);
   if (!peca.linhaDeFio) throw new Error(`A peça "${peca.nome}" não tem linha de fio.`);
-  const molde = criarMolde(
+  return criarMolde(
     {
       nome: peca.nome,
       referencia: peca.referencia,
@@ -245,23 +284,11 @@ export function moldeDaPecaImportada(peca: PecaImportadaPdf, novoId: () => strin
       linhaDeFio: peca.linhaDeFio,
       margemDeCosturaMm: peca.margemDeCosturaMm,
       quantidade: peca.quantidade,
-      piques: peca.piques.map((pique) => ({
-        id: novoId(),
-        posicao: pique.posicao,
-        indiceAresta: pique.indiceAresta,
-        ...(pique.formato ? { formato: pique.formato } : {}),
-        ...(pique.naCostura ? { naCostura: pique.naCostura } : {}),
-        ...(pique.codigo ? { codigo: pique.codigo } : {}),
-      })),
-      marcas: peca.marcas.map((posicao, i) => {
-        const formato = peca.formatosDasMarcas?.[i];
-        return { id: novoId(), posicao, ...(formato ? { formato } : {}) };
-      }),
+      piques: peca.piques.map((pique) => ({ id: novoId(), posicao: pique.posicao, indiceAresta: pique.indiceAresta })),
+      marcas: peca.marcas.map((posicao) => ({ id: novoId(), posicao })),
     },
     novoId(),
   );
-  const textos = (peca.textos ?? []).map((texto) => ({ id: novoId(), ...texto }));
-  return { ...molde, ...(textos.length > 0 ? { textos } : {}), ...(peca.elementos && peca.elementos.length > 0 ? { elementos: peca.elementos } : {}) };
 }
 
 export interface ResultadoImportacaoPdf {
@@ -273,26 +300,15 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
   const streamsDePagina = [...bytesComoLatin1.matchAll(/stream\r?\n([\s\S]*?)endstream/g)].map((m) => m[1]!);
   const avisos: string[] = [];
   const pecas: PecaImportadaPdf[] = [];
-  const pecasLadrilhadasJaAvisadas = new Set<string>();
 
   for (const stream of streamsDePagina) {
     const rotulo = lerRotuloDaPagina(stream);
     if (!rotulo) continue; // página sem rótulo reconhecível — não é uma página de peça (ex.: só a régua/mesa de um encaixe).
 
-    if (rotulo.totalDePaginasDaPeca > 1) {
-      if (pecasLadrilhadasJaAvisadas.has(rotulo.nome)) continue;
-      pecasLadrilhadasJaAvisadas.add(rotulo.nome);
-      // Peça maior que uma folha (ladrilhada em várias páginas) — sinal
-      // direto do próprio rodapé ("página N/Y", Y>1), não uma heurística de
-      // adjacência. Reconstrução automática não é suportada (ver docstring
-      // do módulo): cada página só tem um FRAGMENTO recortado da peça, e
-      // reconstituir o resto exigiria costurar geometria entre páginas —
-      // melhor avisar do que impor um contorno incompleto como se fosse a peça inteira.
-      avisos.push(
-        `Peça "${rotulo.nome}" foi exportada em ${rotulo.totalDePaginasDaPeca} páginas (maior que uma folha) — importação automática de peças ladrilhadas não é suportada. Desenhe-a manualmente com "Novo Molde".`,
-      );
-      continue;
-    }
+    // A peça maior que uma folha sai em várias páginas. Cada uma delas traz o desenho inteiro da peça — a folha só
+    // deixa aparecer o pedaço dela, pelo recorte —, deslocado para a posição da página. A primeira ("página 1/Y")
+    // basta: as outras são a mesma peça de novo.
+    if (rotulo.paginaDaPeca > 1) continue;
 
     const elementos = lerElementosDaPagina(stream);
     const blocoContorno = elementos.find((e) => e.tipo === 'contorno-e-furos');
@@ -343,25 +359,13 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
       );
     }
 
-    // O registro da peça diz o que o desenho não diz: os formatos, os textos e as linhas de construção.
+    // O registro traz a peça inteira, com o que o desenho não diz. Só vale se descreve a peça que o desenho
+    // mostra — o mesmo contorno, ponto a ponto; senão, a peça volta só pelo desenho, e o aviso diz.
     const lido = lerRegistroDaPagina(stream);
-    if (lido === 'ilegivel') {
-      avisos.push(`Peça "${rotulo.nome}": o registro das marcações deste PDF não pôde ser lido — a peça volta só pelo desenho: os piques como traços, sem os textos nem as linhas de construção.`);
-    }
-    const registro = lido !== null && lido !== 'ilegivel' ? lido : null;
-    const piquesComOFormato = piques.map((pique) => {
-      const doRegistro = registro?.piques.find((r) => distancia(r.posicao, pique.posicao) <= MESMO_PIQUE_MM);
-      if (!doRegistro) return pique;
-      return {
-        ...pique,
-        ...(doRegistro.formato ? { formato: doRegistro.formato } : {}),
-        ...(doRegistro.naCostura ? { naCostura: doRegistro.naCostura } : {}),
-        ...(doRegistro.codigo ? { codigo: doRegistro.codigo } : {}),
-      };
-    });
-    // As marcas vêm do registro quando ele conta as mesmas que o desenho mostra: é ele que sabe onde o pique interno está de verdade.
-    const marcasDoRegistro = registro && registro.marcas.length > 0 && registro.marcas.length === marcas.length ? registro.marcas : null;
-    const deConstrucao = registro?.elementos ?? [];
+    const doRegistro = lido !== null && lido !== 'ilegivel' && mesmoContorno(lido.contorno, contorno) ? lido : null;
+    const SO_PELO_DESENHO = 'ela volta só pelo desenho: os piques como traços, sem os textos, as linhas de construção, a graduação nem os outros registros.';
+    if (lido === 'ilegivel') avisos.push(`Peça "${rotulo.nome}": o registro da peça neste PDF não pôde ser lido — ${SO_PELO_DESENHO}`);
+    else if (lido !== null && !doRegistro) avisos.push(`Peça "${rotulo.nome}": o registro da peça neste PDF não confere com o desenho — ${SO_PELO_DESENHO}`);
 
     pecas.push({
       nome: rotulo.nome,
@@ -369,15 +373,13 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
       tamanho: rotulo.tamanho,
       contorno,
       furos,
-      linhasInternas: [...linhasInternas, ...deConstrucao],
+      linhasInternas,
       linhaDeFio,
-      piques: piquesComOFormato,
-      marcas: marcasDoRegistro ? marcasDoRegistro.map((m) => m.posicao) : marcas,
-      ...(marcasDoRegistro ? { formatosDasMarcas: marcasDoRegistro.map((m) => m.formato ?? null) } : {}),
-      ...(registro && registro.textos.length > 0 ? { textos: registro.textos } : {}),
-      ...(deConstrucao.length > 0 ? { elementos: deConstrucao } : {}),
+      piques,
+      marcas,
       margemDeCosturaMm,
       quantidade: rotulo.quantidade,
+      ...(doRegistro ? { molde: doRegistro } : {}),
     });
   }
 

@@ -138,7 +138,11 @@ function escreverCentrado(doc: PDFKit.PDFDocument, texto: string, centro: Ponto2
  * Desenha uma peça completa (contorno, furos, linhas internas, linha de corte,
  * linha de simetria, piques com o código, fio, textos, rótulo).
  */
-function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): void {
+/**
+ * Desenha a peça na página, com `origem` no canto dela. Com `comRegistro`, escreve também o registro da peça —
+ * ela inteira, num comentário do PDF, que não aparece na folha: é por ele que a importação a traz de volta como era.
+ */
+function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, comRegistro = false): void {
   doc.lineWidth(mmParaPontos(0.25));
 
   doc.save();
@@ -248,10 +252,7 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
   doc.text(`${peca.nome} (${peca.referencia || '—'}) ${peca.tamanho}`, centroTexto.x, centroTexto.y);
   doc.restore();
 
-  // O que o desenho não diz (os formatos dos piques, os textos, as linhas de construção) vai num comentário do PDF,
-  // que não aparece na folha: é por ele que a importação traz a peça de volta como era.
-  const registro = registroDaPeca(peca, origem);
-  if (registro) doc.addContent(registro);
+  if (comRegistro) doc.addContent(registroDaPeca(peca, origem));
 }
 
 /** Régua de referência: uma linha de 100mm com marcação, para conferir a escala após imprimir. */
@@ -367,7 +368,8 @@ export async function gerarPdfDeMoldesIndividuais(
         doc.rect(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm), mmParaPontos(larguraImprimivel), mmParaPontos(alturaImprimivel));
         doc.clip();
         doc.translate(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm));
-        desenharPeca(doc, peca, origem);
+        // O registro vai só na primeira página da peça: nas outras (a peça maior que uma folha) seria ela de novo.
+        desenharPeca(doc, peca, origem, indiceNaPeca === 1);
         doc.restore();
 
         doc.save();

@@ -1,4 +1,4 @@
-import type { Molde } from './molde';
+import { transladarMolde, type Molde } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import {
   contornosSeSobrepoem,
@@ -94,4 +94,38 @@ export function sugerirPosicaoSemSobreposicao(
     passoMm,
     maxTentativas,
   );
+}
+
+/**
+ * Põe as peças que chegam de fora (de uma importação) onde não fiquem em cima
+ * das que já estão no projeto, nem umas das outras: cada uma vai para o
+ * primeiro lugar livre da área do enfesto. A que não cabe nela — ou todas,
+ * sem enfesto configurado — vai para depois de tudo o que há, na direção do
+ * comprimento, a `afastamentoMm` de distância. A peça anda inteira (com os
+ * piques, as linhas e o resto); só a posição muda.
+ */
+export function posicionarAsQueChegam(
+  novas: readonly Molde[],
+  existentes: readonly Molde[],
+  enfesto: ConfiguracaoDeEnfesto | null,
+  afastamentoMm = 20,
+): Molde[] {
+  const postas: Molde[] = [];
+  for (const peca of novas) {
+    const outras = [...existentes, ...postas];
+    const noEnfesto = enfesto ? sugerirPosicaoSemSobreposicao(peca, outras, enfesto) : null;
+    if (noEnfesto) {
+      postas.push(transladarMolde(peca, noEnfesto, peca.id));
+      continue;
+    }
+    if (outras.length === 0) {
+      postas.push(peca);
+      continue;
+    }
+    // Depois de tudo: encostada no começo da largura, logo adiante da peça que vai mais longe no comprimento.
+    const dela = retanguloEnvolvente(peca.contorno);
+    const deTodas = retanguloEnvolvente(outras.flatMap((outra) => outra.contorno));
+    postas.push(transladarMolde(peca, { x: deTodas.minX - dela.minX, y: deTodas.maxY + afastamentoMm - dela.minY }, peca.id));
+  }
+  return postas;
 }

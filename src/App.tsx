@@ -339,7 +339,7 @@ import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
-import { sugerirPosicaoSemSobreposicao } from './domain/posicionamento';
+import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
 import type { ResultadoDeNesting } from './domain/nesting';
 import type { MensagemParaWorker } from './nesting.worker';
 import { PainelDeTecido } from './ui/PainelDeTecido';
@@ -2860,8 +2860,9 @@ export default function App(): React.JSX.Element {
       const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
       const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
 
-      // Com o que o registro do PDF traz: os formatos dos piques, os textos e as linhas de construção.
-      const novosMoldes = prontas.map((p) => moldeDaPecaImportada(p, proximoId));
+      // A peça inteira, quando o PDF traz o registro dela; senão, a que o desenho mostra. Cada uma vai para um
+      // lugar livre: as posições da página não dizem nada, e deixariam a peça em cima das que já estão no projeto.
+      const novosMoldes = posicionarAsQueChegam(prontas.map((p) => moldeDaPecaImportada(p, proximoId)), pecas, enfesto);
 
       if (novosMoldes.length > 0) {
         aplicarMudanca([...pecas, ...novosMoldes]);
@@ -2893,7 +2894,7 @@ export default function App(): React.JSX.Element {
       }
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
     });
-  }, [pecas, aplicarMudanca]);
+  }, [pecas, enfesto, aplicarMudanca]);
 
   const confirmarImportacaoDxf = useCallback(
     (itens: readonly ItemConfirmadoDeContorno[]) => {

@@ -1,224 +1,213 @@
-import type { Contorno, Ponto2D } from '../core/geometria';
-import { elementosDaPeca } from '../domain/linhasAuxiliares';
-import type { FormatoDePique, Molde } from '../domain/molde';
+import { area, type Ponto2D } from '../core/geometria';
+import { transladarMolde, type Molde } from '../domain/molde';
 
 /**
- * O registro da peça no PDF: o que o desenho dela não diz, e a importação
- * precisa para trazê-la de volta como era.
+ * O registro da peça no PDF: a peça inteira, como está no projeto, escrita
+ * na página dela.
  *
- * - O **formato** de cada pique: o desenho sai na folha, mas não o tipo, as
- *   medidas, o ângulo, o "pique na costura" nem o código.
- * - Os **piques internos**: onde cada um está de verdade (o desenho só mostra
- *   os traços) e o formato dele.
- * - Os **textos** da peça, com o ângulo e a âncora.
- * - As **linhas só de construção** (os elementos), que nem são desenhadas.
+ * O desenho da folha não diz tudo: não diz o formato dos piques, os textos
+ * com ângulo, as linhas só de construção (que nem são desenhadas), a
+ * graduação, a cor, a linha de simetria, as rotações permitidas, nem os
+ * registros de pence, curva, prega e cunha. Com o registro, a importação
+ * devolve a peça como era.
  *
- * Vai escrito na página da peça como um comentário do PDF: quem abre ou
- * imprime o arquivo não vê nada, e o desenho continua o mesmo. As posições
- * são as da página (em mm, contadas do mesmo canto que o desenho), para a
- * importação não ter conta a fazer.
+ * Vai como um comentário do PDF: quem abre ou imprime o arquivo não vê nada,
+ * e o desenho continua o mesmo. As posições são as da página (em mm, contadas
+ * do mesmo canto que o desenho), para a importação conferir uma coisa com a
+ * outra.
  *
- * Quem lê o registro trata-o como dado vindo de fora: cada campo é conferido,
- * e o que não serve é deixado de lado — a peça volta, então, só pelo desenho.
+ * Quem lê o registro trata-o como dado vindo de fora: cada campo é conferido
+ * contra o que uma peça pode ter, o que não é campo de peça fica de fora, e,
+ * se alguma coisa não serve, nada dele é aproveitado — a peça volta, então,
+ * só pelo desenho.
  */
-export interface PiqueDoRegistro {
-  readonly posicao: Ponto2D;
-  readonly formato?: FormatoDePique;
-  readonly naCostura?: 'projetado' | 'estendido';
-  readonly codigo?: string;
-}
-
-export interface MarcaDoRegistro {
-  readonly posicao: Ponto2D;
-  readonly formato?: FormatoDePique;
-}
-
-export interface TextoDoRegistro {
-  readonly posicao: Ponto2D;
-  readonly texto: string;
-  readonly alturaMm: number;
-  readonly anguloGraus?: number;
-  readonly ancora?: 'inicio' | 'fim';
-}
-
-export interface RegistroDaPeca {
-  /** Só os piques do contorno que têm o que dizer além do traço. */
-  readonly piques: readonly PiqueDoRegistro[];
-  /** Todas as marcas da peça, quando alguma é um pique interno; senão, nenhuma (o desenho basta). */
-  readonly marcas: readonly MarcaDoRegistro[];
-  readonly textos: readonly TextoDoRegistro[];
-  readonly elementos: readonly Contorno[];
-}
 
 /** O começo da linha do registro. O número é a versão do que vem depois dele, separado por um espaço. */
-const INICIO = '% enfesto-cad:peca:1';
+const INICIO = '% enfesto-cad:peca:2';
 /** O registro maior que isto (em caracteres) não é lido. */
-const TAMANHO_MAXIMO = 4_000_000;
-/** Quantos itens (piques, marcas, textos, linhas, pontos de uma linha) um registro pode ter de cada. */
+const TAMANHO_MAXIMO = 8_000_000;
+/** Quantos itens uma lista do registro pode ter. */
 const MAXIMO_DE_ITENS = 20_000;
+/** O texto mais comprido que um campo do registro pode ter. */
+const TEXTO_MAXIMO = 2_000;
 
-/** Décimos de milésimo de mm: o bastante para a peça voltar igual, sem números compridos. */
-function mm(valor: number): number {
-  return Math.round(valor * 1e4) / 1e4;
-}
-
-type PontoBruto = readonly [number, number];
-interface FormatoBruto {
-  readonly t: string;
-  readonly l: number;
-  readonly h: number;
-  readonly a: number;
-  readonly n?: string;
-  readonly f?: readonly (readonly PontoBruto[])[];
-  readonly e?: 1;
-}
-
-function formatoBruto(formato: FormatoDePique): FormatoBruto {
-  return {
-    t: formato.tipo,
-    l: formato.larguraMm,
-    h: formato.alturaMm,
-    a: formato.anguloGraus,
-    ...(formato.nome !== undefined ? { n: formato.nome } : {}),
-    // A forma do pique cadastrado é uma proporção (o quadro de 1 × 1): vai como está, sem arredondar para mm.
-    ...(formato.forma ? { f: formato.forma.map((traco) => traco.map((q): PontoBruto => [q.x, q.y])) } : {}),
-    ...(formato.espelhado ? { e: 1 as const } : {}),
-  };
-}
-
-/**
- * A linha do registro da peça, para escrever na página dela, ou `null`
- * quando o desenho já diz tudo (peça sem pique com formato, sem código, sem
- * texto e sem linha de construção).
- */
-export function registroDaPeca(peca: Molde, origem: Ponto2D): string | null {
-  const naPagina = (q: Ponto2D): PontoBruto => [mm(q.x - origem.x), mm(q.y - origem.y)];
-  const piques = peca.piques
-    .filter((pique) => pique.formato || pique.naCostura || pique.codigo)
-    .map((pique) => ({
-      p: naPagina(pique.posicao),
-      ...(pique.formato ? { f: formatoBruto(pique.formato) } : {}),
-      ...(pique.naCostura ? { c: pique.naCostura } : {}),
-      ...(pique.codigo ? { k: pique.codigo } : {}),
-    }));
-  const marcas = peca.marcas.some((marca) => marca.formato)
-    ? peca.marcas.map((marca) => ({ p: naPagina(marca.posicao), ...(marca.formato ? { f: formatoBruto(marca.formato) } : {}) }))
-    : [];
-  const textos = (peca.textos ?? []).map((texto) => ({
-    p: naPagina(texto.posicao),
-    s: texto.texto,
-    h: texto.alturaMm,
-    ...(texto.anguloGraus !== undefined ? { a: texto.anguloGraus } : {}),
-    ...(texto.ancora ? { n: texto.ancora } : {}),
-  }));
-  const elementos = elementosDaPeca(peca).map((i) => peca.linhasInternas[i]!.map(naPagina));
-  if (piques.length + marcas.length + textos.length + elementos.length === 0) return null;
-  // Só letras e números na linha: o texto do registro vai em hexadecimal, com o que não é ASCII escrito como \uXXXX.
-  const json = JSON.stringify({ p: piques, m: marcas, t: textos, e: elementos }).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
-  let hex = '';
-  for (let i = 0; i < json.length; i++) hex += json.charCodeAt(i).toString(16).padStart(2, '0');
-  return `${INICIO} ${hex}`;
+/** A linha do registro da peça, para escrever na página dela: a peça levada para as posições da página. */
+export function registroDaPeca(peca: Molde, origem: Ponto2D): string {
+  const naPagina = transladarMolde(peca, { x: 0 - origem.x, y: 0 - origem.y }, peca.id);
+  // Só letras e números na linha: o que não é ASCII vai como \uXXXX, e o texto todo em base64.
+  const json = JSON.stringify(naPagina).replace(/[\u007f-￿]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+  return `${INICIO} ${btoa(json)}`;
 }
 
 // ---------------------------------------------------------------------------
 // A leitura: tudo conferido, como dado vindo de fora
 // ---------------------------------------------------------------------------
 
-function ehNumero(valor: unknown): valor is number {
-  return typeof valor === 'number' && Number.isFinite(valor);
+/** Lê um valor do registro: devolve-o conferido (só com o que é esperado), ou `undefined` se não serve. */
+type Leitor = (valor: unknown) => unknown;
+
+const numero: Leitor = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const positivo: Leitor = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined);
+const naoNegativo: Leitor = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+const indice: Leitor = (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined);
+const logico: Leitor = (v) => (typeof v === 'boolean' ? v : undefined);
+const texto: Leitor = (v) => (typeof v === 'string' && v.length <= TEXTO_MAXIMO ? v : undefined);
+const textoPreenchido: Leitor = (v) => (typeof v === 'string' && v !== '' && v.length <= TEXTO_MAXIMO ? v : undefined);
+
+/** Um dos valores dados, e só eles. */
+function um(...valores: readonly (string | number | boolean)[]): Leitor {
+  return (v) => (valores.some((valor) => valor === v) ? v : undefined);
 }
 
-function ehLista(valor: unknown): valor is readonly unknown[] {
-  return Array.isArray(valor) && valor.length <= MAXIMO_DE_ITENS;
+/** Uma lista de itens lidos por `item`, com pelo menos `minimo` deles. */
+function lista(item: Leitor, minimo = 0): Leitor {
+  return (v) => {
+    if (!Array.isArray(v) || v.length < minimo || v.length > MAXIMO_DE_ITENS) return undefined;
+    const lidos = v.map(item);
+    return lidos.some((lido) => lido === undefined) ? undefined : lidos;
+  };
 }
 
-function ehObjeto(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+/** Exatamente dois itens. */
+function par(item: Leitor): Leitor {
+  const dois = lista(item, 2);
+  return (v) => (Array.isArray(v) && v.length === 2 ? dois(v) : undefined);
 }
 
-function pontoLido(valor: unknown): Ponto2D | null {
-  return ehLista(valor) && valor.length === 2 && ehNumero(valor[0]) && ehNumero(valor[1]) ? { x: valor[0], y: valor[1] } : null;
+/** Um objeto com os campos obrigatórios e, se vierem, os opcionais. O que não é campo dele fica de fora. */
+function objeto(obrigatorios: Readonly<Record<string, Leitor>>, opcionais: Readonly<Record<string, Leitor>> = {}): Leitor {
+  return (v) => {
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+    const bruto = v as Record<string, unknown>;
+    const lido: Record<string, unknown> = {};
+    for (const [campo, ler] of Object.entries(obrigatorios)) {
+      const valor = ler(bruto[campo]);
+      if (valor === undefined) return undefined;
+      lido[campo] = valor;
+    }
+    for (const [campo, ler] of Object.entries(opcionais)) {
+      if (bruto[campo] === undefined) continue;
+      const valor = ler(bruto[campo]);
+      if (valor === undefined) return undefined;
+      lido[campo] = valor;
+    }
+    return lido;
+  };
 }
 
-function linhaLida(valor: unknown): Ponto2D[] | null {
-  if (!ehLista(valor) || valor.length < 2) return null;
-  const pontos = valor.map(pontoLido);
-  return pontos.every((q): q is Ponto2D => q !== null) ? pontos : null;
+/** O primeiro dos leitores que aceita o valor. */
+function umDe(...leitores: readonly Leitor[]): Leitor {
+  return (v) => {
+    for (const ler of leitores) {
+      const lido = ler(v);
+      if (lido !== undefined) return lido;
+    }
+    return undefined;
+  };
 }
 
-function formatoLido(valor: unknown): FormatoDePique | null {
-  if (!ehObjeto(valor)) return null;
-  const { t, l, h, a, n, f, e } = valor;
-  if (typeof t !== 'string' || t === '' || !ehNumero(l) || !ehNumero(h) || !ehNumero(a) || !(l > 0) || !(h > 0)) return null;
-  if (n !== undefined && typeof n !== 'string') return null;
-  let forma: Ponto2D[][] | undefined;
-  if (f !== undefined) {
-    if (!ehLista(f) || f.length === 0) return null;
-    const tracos = f.map(linhaLida);
-    if (!tracos.every((traco): traco is Ponto2D[] => traco !== null)) return null;
-    forma = tracos;
-  }
-  return { tipo: t, larguraMm: l, alturaMm: h, anguloGraus: a, ...(n !== undefined ? { nome: n } : {}), ...(forma ? { forma } : {}), ...(e === 1 && forma ? { espelhado: true as const } : {}) };
-}
+const pt = objeto({ x: numero, y: numero });
+const linha = lista(pt, 1);
+const fechado = lista(pt, 3);
 
-/** Os itens lidos de uma lista, ou `null` se algum deles não serve. */
-function todos<T>(valor: unknown, ler: (item: unknown) => T | null): T[] | null {
-  if (!ehLista(valor)) return null;
-  const lidos = valor.map(ler);
-  return lidos.every((item): item is T => item !== null) ? lidos : null;
-}
+const formato = objeto(
+  { tipo: textoPreenchido, larguraMm: positivo, alturaMm: positivo, anguloGraus: numero },
+  { forma: lista(lista(pt, 2), 1), nome: texto, espelhado: um(true) },
+);
+const pique = objeto(
+  { id: textoPreenchido, posicao: pt, indiceAresta: indice },
+  { formato, naCostura: um('projetado', 'estendido'), codigo: texto, graduacao: objeto({ referencia: pt, perimetros: lista(numero) }) },
+);
+const marca = objeto({ id: textoPreenchido, posicao: pt }, { rotulo: texto, formato, alinhamento: objeto({ deslocamentos: lista(pt) }) });
+const textoDaPeca = objeto({ id: textoPreenchido, posicao: pt, texto: textoPreenchido, alturaMm: positivo }, { anguloGraus: numero, ancora: um('inicio', 'fim') });
+const cota = umDe(
+  objeto({ id: textoPreenchido, tipo: um('linear'), de: pt, ate: pt, direcao: pt, posicao: pt }),
+  objeto({ id: textoPreenchido, tipo: um('angulo'), de: pt, vertice: pt, ate: pt, raioMm: numero }),
+  objeto({ id: textoPreenchido, tipo: um('perimetro'), posicao: pt }),
+  objeto({ id: textoPreenchido, tipo: um('raio'), centro: pt, noArco: pt }),
+);
+const graduacao = objeto({ tamanhos: lista(texto, 1), base: indice, pontos: lista(objeto({ posicao: pt, deslocamentos: lista(pt) })) });
+const curva = objeto(
+  { id: textoPreenchido, tipo: um('curva', 'arco', 'forma'), controles: lista(pt), pontos: lista(pt) },
+  { forma: objeto({ pontos: lista(pt), espelhar: logico }), tangentes: objeto({}, { inicio: pt, fim: pt }) },
+);
+const figura = umDe(
+  objeto({ centro: pt, eixoX: pt, eixoY: pt, tipo: um('circulo'), raioMm: numero }, { lados: numero }),
+  objeto({ centro: pt, eixoX: pt, eixoY: pt, tipo: um('espiral'), larguraMm: numero, perimetroMm: numero }),
+);
+const pence = objeto(
+  { id: textoPreenchido, tipo: um('recortada', 'marcada', 'interna'), pontos: lista(pt) },
+  { removidos: lista(pt), pontasCriadas: par(logico), piques: lista(texto), marcas: lista(texto), comEixo: logico, pivo: pt, bico: pt, dobra: um(0, 2), capa: lista(pt) },
+);
+const prega = objeto(
+  { id: textoPreenchido, modo: um('simples-direita', 'simples-esquerda', 'dupla'), parada: par(pt), movida: par(pt), linhas: lista(linha), pontasCriadas: par(logico) },
+  { linhasTiradas: lista(linha), piques: lista(texto) },
+);
+const cunha = objeto(
+  { id: textoPreenchido, travessias: lista(objeto({ parada: pt, movida: pt, criada: logico })), posicao: numero, pivo: numero, linhas: lista(linha) },
+  { piques: lista(texto), comeco: pt },
+);
+const metadeGuardada = objeto({ de: pt, ate: pt, contorno: fechado, furos: lista(fechado), linhasInternas: lista(linha), marcas: lista(marca), piques: lista(pique) });
 
-function piqueLido(valor: unknown): PiqueDoRegistro | null {
-  if (!ehObjeto(valor)) return null;
-  const posicao = pontoLido(valor.p);
-  const formato = valor.f === undefined ? undefined : formatoLido(valor.f);
-  if (!posicao || formato === null) return null;
-  if (valor.c !== undefined && valor.c !== 'projetado' && valor.c !== 'estendido') return null;
-  if (valor.k !== undefined && typeof valor.k !== 'string') return null;
-  return { posicao, ...(formato ? { formato } : {}), ...(valor.c ? { naCostura: valor.c } : {}), ...(valor.k ? { codigo: valor.k } : {}) };
-}
+const molde = objeto(
+  {
+    id: textoPreenchido,
+    nome: texto,
+    referencia: texto,
+    tamanho: texto,
+    contorno: fechado,
+    linhasInternas: lista(linha),
+    furos: lista(fechado),
+    piques: lista(pique),
+    marcas: lista(marca),
+    margemDeCosturaMm: naoNegativo,
+    linhaDeFio: objeto({ inicio: pt, fim: pt }),
+    quantidade: (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : undefined),
+    restricaoDeRotacao: objeto({ permite180: logico, permite90e270: logico }, { permiteEspelhamento: logico }),
+    anguloDeRotacaoGraus: numero,
+  },
+  {
+    cotas: lista(cota),
+    graduacao,
+    textos: lista(textoDaPeca),
+    cor: texto,
+    linhaDeSimetria: objeto({ de: pt, ate: pt }),
+    dobraMantida: metadeGuardada,
+    pences: lista(pence),
+    curvas: lista(curva),
+    pregas: lista(prega),
+    cunhas: lista(cunha),
+    elementos: lista(linha),
+    figura,
+  },
+);
 
-function marcaLida(valor: unknown): MarcaDoRegistro | null {
-  if (!ehObjeto(valor)) return null;
-  const posicao = pontoLido(valor.p);
-  const formato = valor.f === undefined ? undefined : formatoLido(valor.f);
-  if (!posicao || formato === null) return null;
-  return { posicao, ...(formato ? { formato } : {}) };
-}
-
-function textoLido(valor: unknown): TextoDoRegistro | null {
-  if (!ehObjeto(valor)) return null;
-  const posicao = pontoLido(valor.p);
-  if (!posicao || typeof valor.s !== 'string' || valor.s === '' || !ehNumero(valor.h) || !(valor.h > 0)) return null;
-  if (valor.a !== undefined && !ehNumero(valor.a)) return null;
-  if (valor.n !== undefined && valor.n !== 'inicio' && valor.n !== 'fim') return null;
-  return { posicao, texto: valor.s, alturaMm: valor.h, ...(valor.a !== undefined ? { anguloGraus: valor.a } : {}), ...(valor.n ? { ancora: valor.n } : {}) };
+/** A peça lida do valor bruto, ou `null` se ele não é uma peça que sirva. */
+function pecaLida(bruto: unknown): Molde | null {
+  const lida = molde(bruto) as Molde | undefined;
+  if (!lida) return null;
+  // O que o formato dos campos não pega: o contorno sem área, e o tamanho base que não está na lista.
+  if (!(area(lida.contorno) > 0)) return null;
+  if (lida.graduacao && lida.graduacao.base >= lida.graduacao.tamanhos.length) return null;
+  return lida;
 }
 
 /**
- * O registro da peça escrito na página (a stream dela, como texto), `null` se
+ * A peça escrita no registro da página (a stream dela, como texto), `null` se
  * a página não tem registro, ou `'ilegivel'` se tem e ele não serve — está
  * cortado, não é o que este programa escreve, ou tem algum campo fora do
  * esperado. Nesse caso nada dele é aproveitado.
  */
-export function lerRegistroDaPagina(streamDaPagina: string): RegistroDaPeca | 'ilegivel' | null {
-  const linha = streamDaPagina.split('\n').find((l) => l.trim().startsWith(INICIO));
-  if (linha === undefined) return null;
-  const hex = linha.trim().slice(INICIO.length).trim();
-  if (hex.length > TAMANHO_MAXIMO || hex.length % 2 !== 0 || !/^[0-9a-f]*$/.test(hex)) return 'ilegivel';
-  let json = '';
-  for (let i = 0; i < hex.length; i += 2) json += String.fromCharCode(Number.parseInt(hex.slice(i, i + 2), 16));
+export function lerRegistroDaPagina(streamDaPagina: string): Molde | 'ilegivel' | null {
+  const doRegistro = streamDaPagina.split('\n').find((l) => l.trim().startsWith(INICIO));
+  if (doRegistro === undefined) return null;
+  const emBase64 = doRegistro.trim().slice(INICIO.length).trim();
+  if (emBase64.length > TAMANHO_MAXIMO) return 'ilegivel';
   let bruto: unknown;
   try {
-    bruto = JSON.parse(json);
+    bruto = JSON.parse(atob(emBase64));
   } catch {
     return 'ilegivel';
   }
-  if (!ehObjeto(bruto)) return 'ilegivel';
-  const piques = todos(bruto.p, piqueLido);
-  const marcas = todos(bruto.m, marcaLida);
-  const textos = todos(bruto.t, textoLido);
-  const elementos = todos(bruto.e, linhaLida);
-  if (!piques || !marcas || !textos || !elementos) return 'ilegivel';
-  return { piques, marcas, textos, elementos };
+  return pecaLida(bruto) ?? 'ilegivel';
 }
