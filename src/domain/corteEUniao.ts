@@ -15,6 +15,7 @@ import {
 import { ancoraDoRotulo, type Cota } from './cota';
 import { contornoDoTamanho, definirRegra, deslocamentosDoContorno, semPontosSoltos, type Graduacao } from './graduacao';
 import {
+  comOAlinhamentoLevado,
   marcaNoEspelho,
   piqueNoEspelho,
   piquesQueFicamNoContorno,
@@ -469,7 +470,16 @@ function desdobrada(molde: Molde, indiceAresta: number, novoId: () => string): M
     linhasInternas: [...molde.linhasInternas, ...molde.linhasInternas.map((l) => l.map(espelhar)), [pontaInicial, pontaFinal]],
     // O elemento (linha só de construção) ganha a cópia espelhada, que também é elemento.
     ...(molde.elementos ? { elementos: [...molde.elementos, ...molde.elementos.map((l) => l.map(espelhar))] } : {}),
-    marcas: [...molde.marcas, ...molde.marcas.map((m) => marcaNoEspelho({ ...m, id: novoId(), posicao: espelhar(m.posicao) }, direcaoDaDobraGraus))],
+    // A cópia do pique interno: o desenho no espelho da dobra e, se ele é alinhado, o que anda em cada tamanho também.
+    marcas: [
+      ...molde.marcas,
+      ...molde.marcas.map((m) =>
+        comOAlinhamentoLevado(marcaNoEspelho({ ...m, id: novoId(), posicao: espelhar(m.posicao) }, direcaoDaDobraGraus), (v) => {
+          const levado = espelhar(ponto(pontaInicial.x + v.x, pontaInicial.y + v.y));
+          return ponto(levado.x - pontaInicial.x, levado.y - pontaInicial.y);
+        }),
+      ),
+    ],
     piques: piquesQueFicamNoContorno([...molde.piques, ...piquesEspelhados], contorno),
     // Os pontos graduados da metade que existia ganham o par espelhado, com a regra espelhada.
     ...(molde.graduacao

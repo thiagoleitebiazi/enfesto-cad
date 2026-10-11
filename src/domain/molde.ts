@@ -160,6 +160,25 @@ export interface Marca {
   readonly rotulo?: string;
   /** O desenho e as medidas do pique interno, centrado na posição (aba Marcações). */
   readonly formato?: FormatoDePique;
+  /**
+   * O pique interno alinhado (aba Marcações > Alinhar): quanto ele anda em cada
+   * tamanho da graduação, contado de onde está no base (zero no base). Sem
+   * isso, acompanha a peça na proporção, como tudo o que está dentro dela. Só
+   * vale com um deslocamento por tamanho da graduação de agora.
+   */
+  readonly alinhamento?: { readonly deslocamentos: readonly Ponto2D[] };
+}
+
+/** A marca com os deslocamentos do alinhamento dela levados por `vetor` — uma direção: gira, espelha ou estica, sem andar. */
+export function comOAlinhamentoLevado<T extends Pick<Marca, 'alinhamento'>>(marca: T, vetor: (v: Ponto2D) => Ponto2D): T {
+  return marca.alinhamento ? { ...marca, alinhamento: { deslocamentos: marca.alinhamento.deslocamentos.map(vetor) } } : marca;
+}
+
+/** A marca sem o alinhamento entre tamanhos. */
+function semAlinhamento(marca: Marca): Marca {
+  const copia: { -readonly [K in keyof Marca]: Marca[K] } = { ...marca };
+  delete copia.alinhamento;
+  return copia;
 }
 
 /**
@@ -560,7 +579,9 @@ export function semCampo(
 
 /** A peça sem graduação: fica só o tamanho base, como uma peça comum. */
 export function semGraduacao(molde: Molde): Molde {
-  return semCampo(molde, 'graduacao');
+  const sem = semCampo(molde, 'graduacao');
+  // O alinhamento do pique interno é entre os tamanhos: sem graduação, sai junto.
+  return sem.marcas.some((m) => m.alinhamento) ? { ...sem, marcas: sem.marcas.map(semAlinhamento) } : sem;
 }
 
 /** As pregas registradas com os pontos delas levados por `ponto`. */
@@ -693,11 +714,16 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
     furos: molde.furos.map((f) => rotacionarContorno(f, pivo, anguloGraus)),
     piques: molde.piques.map((p) => piqueLevado(p, (q) => rotacionar(q, pivo, anguloGraus))),
     // O pique interno gira junto: o ângulo dele é contado da tela. (O do contorno acompanha a borda sozinho.)
-    marcas: molde.marcas.map((m) => ({
-      ...m,
-      posicao: rotacionar(m.posicao, pivo, anguloGraus),
-      ...(m.formato ? { formato: { ...m.formato, anguloGraus: normalizarAnguloDoFormato(m.formato.anguloGraus + anguloGraus) } } : {}),
-    })),
+    marcas: molde.marcas.map((m) =>
+      comOAlinhamentoLevado(
+        {
+          ...m,
+          posicao: rotacionar(m.posicao, pivo, anguloGraus),
+          ...(m.formato ? { formato: { ...m.formato, anguloGraus: normalizarAnguloDoFormato(m.formato.anguloGraus + anguloGraus) } } : {}),
+        },
+        (v) => rotacionar(v, { x: 0, y: 0 }, anguloGraus),
+      ),
+    ),
     linhaDeFio: {
       inicio: rotacionar(molde.linhaDeFio.inicio, pivo, anguloGraus),
       fim: rotacionar(molde.linhaDeFio.fim, pivo, anguloGraus),
@@ -738,7 +764,7 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
     furos: molde.furos.map((f) => espelharContornoHorizontal(f, centroX)),
     piques: molde.piques.map((p) => piqueNoEspelho(piqueLevado(p, (q) => espelharHorizontal(q, centroX)))),
     // O espelho troca o x de sinal: é uma reta em pé no mundo, a 90° do eixo x.
-    marcas: molde.marcas.map((m) => marcaNoEspelho({ ...m, posicao: espelharHorizontal(m.posicao, centroX) }, 90)),
+    marcas: molde.marcas.map((m) => comOAlinhamentoLevado(marcaNoEspelho({ ...m, posicao: espelharHorizontal(m.posicao, centroX) }, 90), (v) => ({ x: 0 - v.x, y: v.y }))),
     linhaDeFio: {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),
@@ -1021,7 +1047,7 @@ export function dimensionarMolde(molde: Molde, fatorX: number, fatorY: number): 
     linhasInternas: molde.linhasInternas.map((l) => escalarContorno(l, origem, fatorX, fatorY)),
     furos: molde.furos.map((f) => escalarContorno(f, origem, fatorX, fatorY)),
     piques: molde.piques.map((p) => piqueLevado(p, (q) => escalarPonto(q, origem, fatorX, fatorY))),
-    marcas: molde.marcas.map((m) => ({ ...m, posicao: escalarPonto(m.posicao, origem, fatorX, fatorY) })),
+    marcas: molde.marcas.map((m) => comOAlinhamentoLevado({ ...m, posicao: escalarPonto(m.posicao, origem, fatorX, fatorY) }, (v) => ({ x: v.x * fatorX, y: v.y * fatorY }))),
     linhaDeFio: {
       inicio: escalarPonto(molde.linhaDeFio.inicio, origem, fatorX, fatorY),
       fim: escalarPonto(molde.linhaDeFio.fim, origem, fatorX, fatorY),

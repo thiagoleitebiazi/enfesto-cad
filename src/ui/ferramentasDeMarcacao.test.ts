@@ -4,7 +4,7 @@ import { criarMolde, type FormatoDePique, type Molde, type Pique } from '../doma
 import { definirRegra } from '../domain/graduacao';
 import { elementosDaPeca, tornarElementos } from '../domain/linhasAuxiliares';
 import { PIQUE_PADRAO } from '../domain/piques';
-import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
+import { definirTamanhosDoMolde, marcaNosTamanhos } from '../domain/tamanhosGraduados';
 import {
   aplicarAlteracaoDoPique,
   aplicarAlteracaoDoTexto,
@@ -631,7 +631,8 @@ describe('Alinhar', () => {
 
     expect(dialogo.titulo).toBe('Alinhar piques');
     expect(modo.tipo === 'escolha' && modo.opcoes.map((o) => o.valor)).toEqual(['horizontal', 'vertical', 'elemento', 'ponto-horizontal', 'ponto-vertical']);
-    expect(dialogo.nota).toMatch(/dá os modos e os cliques, mas não a conta: essa é a nossa leitura\. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes\.$/);
+    expect(dialogo.nota).toMatch(/dá os modos e os cliques, mas não a conta: essa é a nossa leitura\. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes\./);
+    expect(dialogo.nota).toMatch(/O pique interno também se alinha: .* a janela do “Alterar” dele desfaz isso\. O manual não separa os internos: também é leitura nossa\.$/);
     expect(lerDialogoDaMarcacao('alinhar-piques', O, { modo: 'elemento' }).alinhar).toEqual({ modo: 'elemento' });
     expect(lerDialogoDaMarcacao('alinhar-piques', O, { modo: 'outro' }).alinhar).toEqual({ modo: 'vertical' });
   });
@@ -645,7 +646,7 @@ describe('Alinhar', () => {
     expect(feito.recado).toBe('Pique de “Frente” alinhado na vertical. Em relação ao tamanho M, a distância dele ao ponto de referência muda: P 0,1 mm; G 0,07 mm.');
     const fora = clicar('alinhar-piques', alinhar('vertical'), graduada(), solto(100, 150));
     expect(fora.pecas).toBeUndefined();
-    expect(fora.recado).toBe('Clique em cima de um pique do contorno da peça selecionada.');
+    expect(fora.recado).toBe('Clique em cima de um pique da peça selecionada: do contorno ou interno.');
     // Na peça sem tamanhos, a ferramenta explica.
     const semTamanhos = molde({ piques: [{ id: 'p', posicao: ponto(200, 150), indiceAresta: 1 }] });
     expect(clicar('alinhar-piques', alinhar('vertical'), semTamanhos, solto(201, 151)).recado).toBe('Esta peça não tem tamanhos: o alinhamento é entre os tamanhos da graduação.');
@@ -688,8 +689,8 @@ describe('Alinhar', () => {
     expect(previaDaMarcacao('alinhar-piques', alinhar('elemento'), comLinha, esperando, solto(100, 115), { raioMm: RAIO, linhaInterna: 0 })).toEqual({ substituido: comLinha.linhasInternas[0], marcas: [ponto(200, 150)] });
     expect(previaDaMarcacao('alinhar-piques', alinhar('ponto-vertical'), comLinha, esperando, naBorda(0, 0, 0), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(200, 150), ponto(0, 0)] });
     expect(previaDaMarcacao('alinhar-piques', alinhar('ponto-vertical'), comLinha, esperando, solto(100, 150), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(200, 150)] });
-    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('vertical'), SEM_TRECHO)).toBe('Alinhar piques: clique em cima de um pique do contorno da peça selecionada. Esc sai.');
-    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('elemento'), esperando)).toMatch(/agora clique na linha interna/);
+    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('vertical'), SEM_TRECHO)).toBe('Alinhar piques: clique em cima de um pique da peça selecionada — do contorno ou interno. Esc sai.');
+    expect(instrucaoDaMarcacao('alinhar-piques', alinhar('elemento'), esperando)).toBe('Alinhar piques: agora clique na linha interna de referência (para o pique do contorno, a que cruza o contorno de todos os tamanhos). Esc sai.');
     expect(instrucaoDaMarcacao('alinhar-piques', alinhar('ponto-horizontal'), esperando)).toMatch(/agora clique no ponto do contorno/);
   });
 });
@@ -1084,5 +1085,98 @@ describe('Cadastrar pique: alterar a forma e levar a mudança aos piques postos'
     expect(fim.pecas).toBeUndefined();
     expect(fim.cadastrar!.id).toBe('c1');
     expect(fim.recado).toBe('Formato de pique “Flecha” redesenhado. Nenhum pique deste projeto estava posto com ele.');
+  });
+});
+
+describe('Alinhar, no pique interno', () => {
+  // P, M (base) e G, com a peça crescendo na proporção (10% no x e 20% no y por tamanho). O pique interno está em (100, 150);
+  // o do contorno, em (200, 150); e há uma linha interna diagonal que passa pelo interno.
+  const graduada = (extra: Partial<Molde> = {}): Molde => {
+    const peca = definirTamanhosDoMolde(molde({ marcas: [{ id: 'i', posicao: ponto(100, 150), formato: formato('cruz') }], piques: [{ id: 'p', posicao: ponto(200, 150), indiceAresta: 1 }], linhasInternas: [[ponto(50, 100), ponto(150, 200)]], ...extra }), ['P', 'M', 'G'], 'M');
+    let graduacao = peca.graduacao!;
+    RETANGULO.forEach((q, n) => {
+      graduacao = definirRegra(graduacao, RETANGULO, n, [ponto(0 - q.x * 0.1, 0 - q.y * 0.2), ponto(0, 0), ponto(q.x * 0.1, q.y * 0.2)]);
+    });
+    return { ...peca, graduacao };
+  };
+  const alinhar = (modo: OpcoesDeMarcacao['alinhar']['modo']): OpcoesDeMarcacao => ({ ...O, alinhar: { modo } });
+  const ondeFica = (peca: Molde): Ponto2D[] => marcaNosTamanhos(peca, 'i').map((q) => ponto(Math.round(q.x * 1e6) / 1e6, Math.round(q.y * 1e6) / 1e6));
+
+  it('horizontal e vertical: o clique no pique interno já alinha, e a mensagem diz a quanto ele fica de onde está no base', () => {
+    const peca = graduada();
+    const horizontal = clicar('alinhar-piques', alinhar('horizontal'), peca, solto(101, 151));
+
+    expect(ondeFica(horizontal.pecas![0]!)).toEqual([ponto(100, 120), ponto(100, 150), ponto(100, 180)]);
+    expect(horizontal.pecas![0]!.piques).toBe(peca.piques);
+    expect(horizontal.estado).toBe(SEM_TRECHO);
+    expect(horizontal.recado).toBe('Pique interno de “Frente” alinhado na horizontal. Contado de onde fica no tamanho M: P a 30 mm; G a 30 mm.');
+    // Alinhado também na vertical, não sai mais do lugar.
+    const nasDuas = clicar('alinhar-piques', alinhar('vertical'), horizontal.pecas![0]!, solto(101, 151));
+    expect(ondeFica(nasDuas.pecas![0]!)).toEqual([ponto(100, 150), ponto(100, 150), ponto(100, 150)]);
+    expect(nasDuas.recado).toBe('Pique interno de “Frente” alinhado na vertical. Fica no mesmo lugar em todos os tamanhos.');
+  });
+
+  it('entre um pique do contorno e um interno ao alcance do clique, vale o mais perto', () => {
+    const peca = graduada({ marcas: [{ id: 'i', posicao: ponto(195, 150), formato: formato('cruz') }] });
+
+    expect(clicar('alinhar-piques', alinhar('vertical'), peca, solto(196, 150)).recado).toMatch(/^Pique interno de “Frente” alinhado na vertical\./);
+    expect(clicar('alinhar-piques', alinhar('vertical'), peca, solto(199, 150)).recado).toMatch(/^Pique de “Frente” alinhado na vertical\./);
+    // À mesma distância dos dois, vale o do contorno.
+    expect(clicar('alinhar-piques', alinhar('vertical'), peca, solto(197.5, 150)).recado).toMatch(/^Pique de “Frente” alinhado na vertical\./);
+  });
+
+  it('elemento e ponto: o primeiro clique guarda o pique interno; o segundo, a linha ou o ponto do contorno', () => {
+    const peca = graduada();
+    const esperando = clicar('alinhar-piques', alinhar('elemento'), peca, solto(101, 151)).estado;
+    expect(esperando).toEqual({ ...SEM_TRECHO, alvo: 'i' });
+
+    expect(clicar('alinhar-piques', alinhar('elemento'), peca, solto(20, 280), esperando, null)).toEqual({ estado: esperando, recado: 'Clique em cima da linha interna para onde o pique interno deve ir.' });
+    const naLinha = clicar('alinhar-piques', alinhar('elemento'), peca, solto(75, 125), esperando, 0);
+    expect(ondeFica(naLinha.pecas![0]!)).toEqual([ponto(80, 130), ponto(100, 150), ponto(120, 170)]);
+    expect(naLinha.recado).toMatch(/^Pique interno de “Frente” alinhado pelo elemento\. Contado de onde fica no tamanho M: P a 28,28\d* mm; G a 28,28\d* mm\.$/);
+    // O ponto 3 do contorno é o canto (200, 300).
+    const peloPonto = clicar('alinhar-piques', alinhar('ponto-vertical'), peca, naBorda(1, 200, 300), esperando);
+    expect(ondeFica(peloPonto.pecas![0]!)).toEqual([ponto(90, 240), ponto(100, 300), ponto(110, 360)]);
+    expect(peloPonto.recado).toMatch(/^Pique interno de “Frente” alinhado pela vertical do ponto 3\./);
+    // Com um pique do contorno guardado, a mensagem da linha continua a de antes.
+    const doContorno: TrechoEmEdicao = { ...SEM_TRECHO, alvo: 'p' };
+    expect(clicar('alinhar-piques', alinhar('elemento'), peca, solto(20, 280), doContorno, null).recado).toBe('Clique em cima da linha interna que cruza o contorno de todos os tamanhos.');
+  });
+
+  it('o que não dá vira mensagem, sem mudar a peça', () => {
+    const peca = graduada({ linhasInternas: [[ponto(250, 0), ponto(250, 300)]] });
+    const esperando: TrechoEmEdicao = { ...SEM_TRECHO, alvo: 'i' };
+    const fora = clicar('alinhar-piques', alinhar('elemento'), peca, solto(250, 150), esperando, 0);
+
+    expect(fora.pecas).toBeUndefined();
+    expect(fora.recado).toBe('No tamanho P, o pique interno cairia fora da peça.');
+  });
+
+  it('a prévia marca o pique interno sob o mouse, e o guardado enquanto espera o segundo clique', () => {
+    const peca = graduada();
+    const esperando: TrechoEmEdicao = { ...SEM_TRECHO, alvo: 'i' };
+
+    expect(previaDaMarcacao('alinhar-piques', alinhar('vertical'), peca, SEM_TRECHO, solto(101, 151), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(100, 150)] });
+    expect(previaDaMarcacao('alinhar-piques', alinhar('elemento'), peca, esperando, solto(75, 125), { raioMm: RAIO, linhaInterna: 0 })).toEqual({ substituido: peca.linhasInternas[0], marcas: [ponto(100, 150)] });
+    expect(previaDaMarcacao('alinhar-piques', alinhar('ponto-vertical'), peca, esperando, naBorda(0, 0, 0), { raioMm: RAIO, linhaInterna: null })).toEqual({ marcas: [ponto(100, 150), ponto(0, 0)] });
+  });
+
+  it('a janela do Alterar desfaz o alinhamento: a caixa só aparece no pique alinhado', () => {
+    const peca = graduada();
+    const alinhada = clicar('alinhar-piques', alinhar('horizontal'), peca, solto(101, 151)).pecas![0]!;
+    const VALORES = { tipo: 'cruz', largura: 4, altura: 4, angulo: 0 };
+
+    expect(dialogoDeAlterarPique(peca, 'i', true)!.campos.some((c) => c.id === 'alinhado')).toBe(false);
+    expect(dialogoDeAlterarPique(alinhada, 'i', true)!.campos.at(-1)).toMatchObject({ tipo: 'caixa', id: 'alinhado', inicial: true });
+    // Mantida a caixa, o alinhamento fica; desmarcada, o pique volta a acompanhar a peça na proporção.
+    const mantido = aplicarAlteracaoDoPique([alinhada], alinhada, 'i', true, { ...VALORES, alinhado: true });
+    expect(ondeFica(mantido.pecas[0]!)).toEqual([ponto(100, 120), ponto(100, 150), ponto(100, 180)]);
+    expect(mantido.recado).not.toMatch(/proporção/);
+    const solto2 = aplicarAlteracaoDoPique([alinhada], alinhada, 'i', true, { ...VALORES, alinhado: false });
+    expect('alinhamento' in solto2.pecas[0]!.marcas[0]!).toBe(false);
+    expect(ondeFica(solto2.pecas[0]!)).toEqual([ponto(90, 120), ponto(100, 150), ponto(110, 180)]);
+    expect(solto2.recado).toMatch(/^Pique interno de “Frente” alterado: .+\. Voltou a acompanhar a peça na proporção, de tamanho em tamanho\.$/);
+    // No pique sem alinhamento, o valor da caixa não muda nada.
+    expect(aplicarAlteracaoDoPique([peca], peca, 'i', true, { ...VALORES, alinhado: false }).recado).not.toMatch(/proporção/);
   });
 });

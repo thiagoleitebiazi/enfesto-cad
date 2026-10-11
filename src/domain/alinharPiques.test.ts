@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
-import { alinharPique } from './alinharPiques';
+import { alinharPique, alinharPiqueInterno } from './alinharPiques';
 import { contornosDosTamanhos, definirRegra } from './graduacao';
-import { criarMolde, type Molde } from './molde';
+import { desdobrarMolde } from './corteEUniao';
+import { criarMolde, dimensionarMolde, espelharMolde, rotacionarMolde, transladarMolde, type Molde } from './molde';
 import { definirGraduacaoDoPique, piquesNoTamanho } from './piquesGraduados';
-import { definirTamanhosDoMolde } from './tamanhosGraduados';
+import { giroEDeslocamento, levarOQueEstaNasRegioes } from './regioes';
+import { definirTamanhosDoMolde, marcaNosTamanhos, moldeDoTamanho } from './tamanhosGraduados';
 
 const ZERO = ponto(0, 0);
 const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
@@ -124,5 +126,151 @@ describe('alinhar piques entre os tamanhos', () => {
     expect(noG!.y).toBeCloseTo(150, 9);
     // Desse canto, que sobe no G e desce no P, a distância muda bastante: no G ele está em (210, 320).
     expect(alinhado.perimetros[2]).toBeCloseTo(Math.hypot(210 - (200 + (10 * 150) / 320), 320 - 150) - 150, 9);
+  });
+});
+
+describe('alinhar o pique interno entre os tamanhos', () => {
+  /**
+   * P, M (base) e G, com a peça inteira crescendo na proporção: no G cada ponto vai a (1,1·x; 1,2·y), e no P a
+   * (0,9·x; 0,8·y). O pique interno está em (100, 150): sem alinhar, fica em (90, 120) no P e em (110, 180) no G.
+   */
+  function proporcional(extra: Partial<Molde> = {}): Molde {
+    const peca = definirTamanhosDoMolde(base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150) }], ...extra }), ['P', 'M', 'G'], 'M');
+    let graduacao = peca.graduacao!;
+    RETANGULO.forEach((q, n) => {
+      graduacao = definirRegra(graduacao, RETANGULO, n, [ponto(0 - q.x * 0.1, 0 - q.y * 0.2), ZERO, ponto(q.x * 0.1, q.y * 0.2)]);
+    });
+    return { ...peca, graduacao };
+  }
+  const perto = (achados: readonly Ponto2D[], esperados: readonly Ponto2D[]): void => {
+    expect(achados).toHaveLength(esperados.length);
+    achados.forEach((q, i) => {
+      expect(q.x).toBeCloseTo(esperados[i]!.x, 6);
+      expect(q.y).toBeCloseTo(esperados[i]!.y, 6);
+    });
+  };
+
+  it('sem alinhar, acompanha a peça na proporção', () => {
+    perto(marcaNosTamanhos(proporcional(), 'i'), [ponto(90, 120), ponto(100, 150), ponto(110, 180)]);
+  });
+
+  it('horizontal: fica na linha horizontal da tela que passa por ele no base (o mesmo x do mundo), e só anda ao longo dela', () => {
+    const feito = alinharPiqueInterno(proporcional(), 'i', 'horizontal');
+
+    perto(marcaNosTamanhos(feito.molde, 'i'), [ponto(100, 120), ponto(100, 150), ponto(100, 180)]);
+    perto(feito.deslocamentos, [ponto(0, -30), ZERO, ponto(0, 30)]);
+    expect(feito.deslocamentos[1]).toEqual(ZERO);
+    expect(feito.molde.marcas[0]!.alinhamento).toEqual({ deslocamentos: feito.deslocamentos });
+  });
+
+  it('vertical: o mesmo y do mundo; e alinhado nas duas, fica no mesmo lugar em todos os tamanhos', () => {
+    const vertical = alinharPiqueInterno(proporcional(), 'i', 'vertical');
+    perto(marcaNosTamanhos(vertical.molde, 'i'), [ponto(90, 150), ponto(100, 150), ponto(110, 150)]);
+
+    // O segundo alinhamento parte de onde o pique está hoje em cada tamanho.
+    const nasDuas = alinharPiqueInterno(vertical.molde, 'i', 'horizontal');
+    perto(marcaNosTamanhos(nasDuas.molde, 'i'), [ponto(100, 150), ponto(100, 150), ponto(100, 150)]);
+    expect(nasDuas.deslocamentos).toEqual([ZERO, ZERO, ZERO]);
+  });
+
+  it('elemento: em cada tamanho vai para o ponto da linha mais perto de onde estava — o do base também', () => {
+    // A diagonal de (50, 100) a (150, 200) passa por (100, 150). Um pique fora dela, em (100, 130), vai no base para (90, 140).
+    const naLinha = alinharPiqueInterno(proporcional({ linhasInternas: [[ponto(50, 100), ponto(150, 200)]] }), 'i', 'elemento', { linhaInterna: 0 });
+    perto(marcaNosTamanhos(naLinha.molde, 'i'), [ponto(80, 130), ponto(100, 150), ponto(120, 170)]);
+
+    const fora = alinharPiqueInterno(proporcional({ linhasInternas: [[ponto(50, 100), ponto(150, 200)]], marcas: [{ id: 'i', posicao: ponto(100, 130) }] }), 'i', 'elemento', { linhaInterna: 0 });
+    expect(fora.molde.marcas[0]!.posicao.x).toBeCloseTo(90, 6);
+    expect(fora.molde.marcas[0]!.posicao.y).toBeCloseTo(140, 6);
+    // A linha de mais de um trecho: vale o trecho mais perto.
+    const emL = alinharPiqueInterno(proporcional({ linhasInternas: [[ponto(20, 20), ponto(20, 150), ponto(180, 150)]] }), 'i', 'elemento', { linhaInterna: 0 });
+    perto(marcaNosTamanhos(emL.molde, 'i'), [ponto(90, 150), ponto(100, 150), ponto(110, 150)]);
+    // Perto do primeiro trecho (o que sobe em x = 20), é para ele que o pique vai.
+    const noPrimeiro = alinharPiqueInterno(proporcional({ linhasInternas: [[ponto(20, 20), ponto(20, 150), ponto(180, 150)]], marcas: [{ id: 'i', posicao: ponto(30, 60) }] }), 'i', 'elemento', { linhaInterna: 0 });
+    perto([noPrimeiro.molde.marcas[0]!.posicao], [ponto(20, 60)]);
+  });
+
+  it('ponto horizontal e ponto vertical: a linha de cada tamanho passa pelo ponto de controle nesse tamanho', () => {
+    // O ponto 3 é o canto (200, 300): (180, 240) no P e (220, 360) no G.
+    const horizontal = alinharPiqueInterno(proporcional(), 'i', 'ponto-horizontal', { ponto: 2 });
+    perto(marcaNosTamanhos(horizontal.molde, 'i'), [ponto(180, 120), ponto(200, 150), ponto(220, 180)]);
+
+    const vertical = alinharPiqueInterno(proporcional(), 'i', 'ponto-vertical', { ponto: 2 });
+    perto(marcaNosTamanhos(vertical.molde, 'i'), [ponto(90, 240), ponto(100, 300), ponto(110, 360)]);
+    perto(vertical.deslocamentos, [ponto(-10, -60), ZERO, ponto(10, 60)]);
+  });
+
+  it('recusa, sem mudar nada, o que não dá: fora da peça, sem alvo, sem graduação, sem o pique', () => {
+    const peca = proporcional({ linhasInternas: [[ponto(250, 0), ponto(250, 300)], [ponto(10, 10)]] });
+
+    expect(() => alinharPiqueInterno(peca, 'i', 'elemento', { linhaInterna: 0 })).toThrow('No tamanho P, o pique interno cairia fora da peça.');
+    expect(() => alinharPiqueInterno(peca, 'i', 'elemento')).toThrow('Indique a linha interna que serve de referência.');
+    expect(() => alinharPiqueInterno(peca, 'i', 'elemento', { linhaInterna: 1 })).toThrow('Indique a linha interna que serve de referência.');
+    expect(() => alinharPiqueInterno(peca, 'i', 'ponto-vertical')).toThrow('Indique o ponto do contorno que serve de referência.');
+    expect(() => alinharPiqueInterno(peca, 'i', 'ponto-vertical', { ponto: 9 })).toThrow('Indique o ponto do contorno que serve de referência.');
+    expect(() => alinharPiqueInterno(peca, 'x', 'vertical')).toThrow('Pique interno não encontrado na peça.');
+    expect(() => alinharPiqueInterno(base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150) }] }), 'i', 'vertical')).toThrow('A peça “Frente” não tem graduação: o alinhamento é entre os tamanhos dela.');
+    // Em cima da borda ainda é dentro: a linha do ponto 3 passa pela borda de cada tamanho.
+    expect(() => alinharPiqueInterno(peca, 'i', 'ponto-horizontal', { ponto: 2 })).not.toThrow();
+  });
+
+  it('a peça de um tamanho, solta da graduação, leva o pique para onde o alinhamento manda e fica sem o registro', () => {
+    const alinhada = alinharPiqueInterno(proporcional(), 'i', 'horizontal').molde;
+    const noG = moldeDoTamanho(alinhada, 2, 'g');
+
+    perto([noG.marcas[0]!.posicao], [ponto(100, 180)]);
+    expect('alinhamento' in noG.marcas[0]!).toBe(false);
+    // A marca sem alinhamento continua igual ao soltar.
+    perto([moldeDoTamanho(proporcional(), 2, 'g').marcas[0]!.posicao], [ponto(110, 180)]);
+  });
+
+  it('o registro que não tem um deslocamento por tamanho não vale: o pique volta à proporção', () => {
+    const peca = proporcional({ marcas: [{ id: 'i', posicao: ponto(100, 150), alinhamento: { deslocamentos: [ZERO, ZERO] } }] });
+    perto(marcaNosTamanhos(peca, 'i'), [ponto(90, 120), ponto(100, 150), ponto(110, 180)]);
+    // E fica como está quando os tamanhos mudam.
+    expect(definirTamanhosDoMolde(peca, ['P', 'M', 'G'], 'G').marcas[0]!.alinhamento).toEqual({ deslocamentos: [ZERO, ZERO] });
+  });
+
+  it('mudando os tamanhos, o que o pique anda passa a ser contado do base novo, nos tamanhos novos', () => {
+    const alinhada = alinharPiqueInterno(proporcional(), 'i', 'horizontal').molde;
+
+    // O G passa a ser o base: o pique vai para onde ficava no G, e os outros são contados dali.
+    const comOG = definirTamanhosDoMolde(alinhada, ['P', 'M', 'G'], 'G');
+    perto([comOG.marcas[0]!.posicao], [ponto(100, 180)]);
+    perto(comOG.marcas[0]!.alinhamento!.deslocamentos, [ponto(0, -60), ponto(0, -30), ZERO]);
+    perto(marcaNosTamanhos(comOG, 'i'), [ponto(100, 120), ponto(100, 150), ponto(100, 180)]);
+    // Um tamanho novo entra igual ao base; um que sai leva o deslocamento dele.
+    const comGG = definirTamanhosDoMolde(alinhada, ['M', 'G', 'GG'], 'M');
+    perto(comGG.marcas[0]!.alinhamento!.deslocamentos, [ZERO, ponto(0, 30), ZERO]);
+    // Tamanho novo e base novo de uma vez: o novo fica igual ao base de agora.
+    const comOsDois = definirTamanhosDoMolde(alinhada, ['P', 'M', 'G', 'GG'], 'G');
+    perto(comOsDois.marcas[0]!.alinhamento!.deslocamentos, [ponto(0, -60), ponto(0, -30), ZERO, ZERO]);
+    // A marca sem alinhamento não ganha um.
+    expect('alinhamento' in definirTamanhosDoMolde(proporcional(), ['P', 'M', 'G'], 'G').marcas[0]!).toBe(false);
+  });
+
+  it('girar, espelhar e dimensionar a peça levam junto o que o pique anda em cada tamanho; mover não muda', () => {
+    const comRegistro = base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150), alinhamento: { deslocamentos: [ponto(-10, 0), ZERO, ponto(10, 5)] } }] });
+    const doRegistro = (peca: Molde): readonly Ponto2D[] => peca.marcas[0]!.alinhamento!.deslocamentos;
+
+    perto(doRegistro(rotacionarMolde(comRegistro, 90)), [ponto(0, -10), ZERO, ponto(-5, 10)]);
+    perto(doRegistro(espelharMolde(comRegistro, 'm2')), [ponto(10, 0), ZERO, ponto(-10, 5)]);
+    perto(doRegistro(dimensionarMolde(comRegistro, 2, 3)), [ponto(-20, 0), ZERO, ponto(20, 15)]);
+    expect(doRegistro(transladarMolde(comRegistro, ponto(30, 40), 'm3'))).toEqual(doRegistro(comRegistro));
+    // A marca sem alinhamento continua sem.
+    expect('alinhamento' in rotacionarMolde(base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 150) }] }), 90).marcas[0]!).toBe(false);
+  });
+
+  it('a parte da peça que gira (numa pence) e a cópia do desdobrar levam o registro girado e espelhado', () => {
+    const comRegistro = base(RETANGULO, { marcas: [{ id: 'i', posicao: ponto(100, 250), alinhamento: { deslocamentos: [ponto(-10, 0), ZERO, ponto(10, 5)] } }, { id: 'j', posicao: ponto(100, 50), alinhamento: { deslocamentos: [ponto(1, 2)] } }] });
+
+    // A metade de cima (y > 150) gira 90° em torno de (100, 150): a marca de cima vai junto; a de baixo fica.
+    const girada = levarOQueEstaNasRegioes(comRegistro, [[ponto(0, 150), ponto(200, 150), ponto(200, 300), ponto(0, 300)]], [[ponto(200, 300), ponto(0, 300)]], [[ponto(0, 0), ponto(200, 0)]], giroEDeslocamento(ponto(100, 150), 90));
+    perto(girada.marcas[0]!.alinhamento!.deslocamentos, [ponto(0, -10), ZERO, ponto(-5, 10)]);
+    expect(girada.marcas[1]).toBe(comRegistro.marcas[1]);
+    // Desdobrada pela aresta 0 (y = 0): a cópia tem o y do registro trocado de sinal.
+    let n = 0;
+    const inteira = desdobrarMolde(comRegistro, 0, () => 'n' + ++n);
+    const copia = inteira.marcas.find((m) => Math.abs(m.posicao.y + 250) < 1e-9)!;
+    perto(copia.alinhamento!.deslocamentos, [ponto(-10, 0), ZERO, ponto(10, -5)]);
   });
 });

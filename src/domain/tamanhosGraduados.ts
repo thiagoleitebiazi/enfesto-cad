@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Molde, curvaLevada, penceLevada } from './molde';
+import { cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, curvaLevada, penceLevada } from './molde';
 import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
@@ -44,6 +44,24 @@ function espelharNaReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D {
  * dessa metade e volta para o outro lado da dobra do tamanho. A dobra dela
  * cai exatamente sobre a dobra do tamanho, e o "Desdobrar" a traz de volta.
  */
+/** Onde a marca fica no tamanho: pelo alinhamento dela, se ela tem um que vale para os tamanhos de agora; senão, na proporção da peça. */
+function posicaoDaMarcaNoTamanho(marca: Marca, graduacao: Graduacao, tamanho: number, levar: (p: Ponto2D) => Ponto2D): Ponto2D {
+  const deslocamentos = marca.alinhamento?.deslocamentos;
+  const doAlinhamento = deslocamentos && deslocamentos.length === graduacao.tamanhos.length ? deslocamentos[tamanho] : undefined;
+  return doAlinhamento ? { x: marca.posicao.x + doAlinhamento.x, y: marca.posicao.y + doAlinhamento.y } : levar(marca.posicao);
+}
+
+/** Onde a marca de id dado fica em cada tamanho da graduação (no base, onde está). */
+export function marcaNosTamanhos(molde: Molde, marcaId: string): Ponto2D[] {
+  const graduacao = molde.graduacao;
+  if (!graduacao) throw new Error(`A peça “${molde.nome}” não tem graduação.`);
+  return graduacao.tamanhos.map((_, tamanho) => {
+    const marca = naFormaDoTamanho(molde, graduacao, tamanho).marcas.find((m) => m.id === marcaId);
+    if (!marca) throw new Error('Pique interno não encontrado na peça.');
+    return marca.posicao;
+  });
+}
+
 function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): Molde {
   if (tamanho === graduacao.base) return molde;
   const base = molde.contorno;
@@ -66,7 +84,8 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
     linhasInternas: molde.linhasInternas.map((linha) => linha.map(levar)),
     // Os elementos (linhas só de construção) acompanham as linhas internas, para continuarem sendo elementos no tamanho.
     ...(molde.elementos ? { elementos: molde.elementos.map((linha) => linha.map(levar)) } : {}),
-    marcas: molde.marcas.map((m) => ({ ...m, posicao: levar(m.posicao) })),
+    // O pique interno alinhado anda o que o alinhamento dele diz; as outras marcas acompanham a peça na proporção.
+    marcas: molde.marcas.map((m) => ({ ...m, posicao: posicaoDaMarcaNoTamanho(m, graduacao, tamanho, levar) })),
     // O pique graduado fica à distância certa do ponto de referência dele; os outros, na mesma proporção da aresta.
     piques: piquesNoTamanho(molde, contorno, tamanho),
     linhaDeFio: {
@@ -133,7 +152,18 @@ export function definirTamanhosDoMolde(molde: Molde, tamanhos: readonly string[]
   const piques = naForma.piques.map((q) =>
     q.graduacao ? { ...q, graduacao: { ...q.graduacao, perimetros: perimetrosNosTamanhosNovos(q.graduacao.perimetros, antigoDe, antigoDoBase) } } : q,
   );
-  return { ...naForma, piques, tamanho: tamanhos[base]!, graduacao: { tamanhos: [...tamanhos], base, pontos } };
+  // Os piques internos alinhados também: o que cada um anda passa a ser contado do base de agora, nos tamanhos de agora.
+  const marcas = naForma.marcas.map((m) => {
+    const antigos = m.alinhamento?.deslocamentos;
+    if (!antigos || antigos.length !== atual.tamanhos.length) return m;
+    const doBase = antigoDoBase >= 0 ? antigos[antigoDoBase]! : ZERO;
+    const deslocamentos = antigoDe.map((antigo) => {
+      const d = antigo >= 0 ? antigos[antigo]! : doBase;
+      return { x: d.x - doBase.x, y: d.y - doBase.y };
+    });
+    return { ...m, alinhamento: { deslocamentos } };
+  });
+  return { ...naForma, piques, marcas, tamanho: tamanhos[base]!, graduacao: { tamanhos: [...tamanhos], base, pontos } };
 }
 
 /**

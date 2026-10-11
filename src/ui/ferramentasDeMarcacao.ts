@@ -10,7 +10,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { alinharPique, type ModoDeAlinhar } from '../domain/alinharPiques';
+import { alinharPique, alinharPiqueInterno, type ModoDeAlinhar } from '../domain/alinharPiques';
 import { adicionarTexto, alterarTexto, piquePerto, textoPerto, type PoseDoTexto } from '../domain/anotacoes';
 import { ehElemento, tornarAuxiliares, tornarElementos } from '../domain/linhasAuxiliares';
 import type { FormatoDePique, Marca, Molde, Pique } from '../domain/molde';
@@ -425,7 +425,7 @@ export function dialogoDaMarcacao(
             inicial: opcoes.alinhar.modo,
           },
         ],
-        nota: 'Vale na peça graduada: em cada tamanho, o pique vai para onde a linha cruza o contorno desse tamanho — o cruzamento mais perto de onde ele estava. Depois de confirmar, clique no pique; no modo Elemento, clique em seguida na linha interna; nos modos de ponto, no ponto do contorno. O manual da referência dá os modos e os cliques, mas não a conta: essa é a nossa leitura. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes.',
+        nota: 'Vale na peça graduada: em cada tamanho, o pique vai para onde a linha cruza o contorno desse tamanho — o cruzamento mais perto de onde ele estava. Depois de confirmar, clique no pique; no modo Elemento, clique em seguida na linha interna; nos modos de ponto, no ponto do contorno. O manual da referência dá os modos e os cliques, mas não a conta: essa é a nossa leitura. Nos modos de ponto ele só fala em indicar o ponto; aqui o pique é indicado antes. O pique interno também se alinha: em cada tamanho ele vai para o ponto da linha mais perto de onde estava (na horizontal e na vertical, só anda ao longo da linha que passa por ele no tamanho base), e deixa de acompanhar a peça na proporção — a janela do “Alterar” dele desfaz isso. O manual não separa os internos: também é leitura nossa.',
         rotuloDoBotao: 'Indicar no desenho',
       };
     case 'cadastrar-pique': {
@@ -832,7 +832,14 @@ export function dialogoDeAlterarPique(peca: Molde, id: string, interno: boolean,
     if (!marca) return null;
     return {
       titulo: 'Alterar pique interno',
-      campos: [...camposDoFormato(marca.formato ?? { ...PIQUE_PADRAO, tipo: 'cruz', alturaMm: PIQUE_PADRAO.larguraMm }, cadastrados), mover],
+      campos: [
+        ...camposDoFormato(marca.formato ?? { ...PIQUE_PADRAO, tipo: 'cruz', alturaMm: PIQUE_PADRAO.larguraMm }, cadastrados),
+        mover,
+        // Só no pique que o "Alinhar" alinhou: desmarcada, a caixa desfaz o alinhamento.
+        ...(marca.alinhamento
+          ? [{ tipo: 'caixa' as const, id: 'alinhado', rotulo: 'Alinhado entre os tamanhos (desmarque para ele voltar a acompanhar a peça na proporção)', inicial: true }]
+          : []),
+      ],
       nota: marca.formato
         ? 'O pique interno é refeito com o formato novo, centrado no mesmo ponto.'
         : 'Esta marca ainda é só um ponto. Aplicando, ela passa a ser um pique interno com o formato escolhido, centrado no mesmo lugar.',
@@ -932,8 +939,20 @@ export function aplicarAlteracaoDoPique(
     const marca = peca.marcas.find((m) => m.id === id);
     if (!marca) throw new Error('Esse pique interno já não está na peça.');
     const formato = formatoLido(valores, cadastrados, marca.formato ?? PIQUE_PADRAO);
-    const nova = { ...peca, marcas: peca.marcas.map((m) => (m.id === id ? { ...m, formato } : m)) };
-    return { pecas: trocar(pecas, peca.id, nova), recado: `Pique interno de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.`, mover };
+    // A caixa "alinhado" desmarcada desfaz o alinhamento entre os tamanhos: o pique volta a acompanhar a peça na proporção.
+    const solto = marca.alinhamento !== undefined && valores.alinhado === false;
+    const alterada = (m: Marca): Marca => {
+      if (!solto) return { ...m, formato };
+      const copia: { -readonly [K in keyof Marca]: Marca[K] } = { ...m, formato };
+      delete copia.alinhamento;
+      return copia;
+    };
+    const nova = { ...peca, marcas: peca.marcas.map((m) => (m.id === id ? alterada(m) : m)) };
+    return {
+      pecas: trocar(pecas, peca.id, nova),
+      recado: `Pique interno de “${peca.nome}” alterado: ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.` + (solto ? ' Voltou a acompanhar a peça na proporção, de tamanho em tamanho.' : ''),
+      mover,
+    };
   }
   const pique = peca.piques.find((q) => q.id === id);
   if (!pique) throw new Error('Esse pique já não está na peça.');
@@ -1074,6 +1093,24 @@ function ditoDoAlinhamento(peca: Molde, perimetros: readonly number[]): string {
   const graduacao = peca.graduacao!;
   const partes = graduacao.tamanhos.map((nome, t) => (t === graduacao.base ? null : `${nome} ${paraCampo(perimetros[t] ?? 0)} mm`)).filter((parte): parte is string => parte !== null);
   return `Em relação ao tamanho ${graduacao.tamanhos[graduacao.base]}, a distância dele ao ponto de referência muda: ${partes.join('; ')}.`;
+}
+
+/** O que dizer do pique interno alinhado: quanto ele fica, em cada tamanho, de onde está no base. */
+function ditoDoAlinhamentoInterno(peca: Molde, deslocamentos: readonly Ponto2D[]): string {
+  const graduacao = peca.graduacao!;
+  if (deslocamentos.every((d) => Math.hypot(d.x, d.y) < MESMO_PONTO_MM)) return 'Fica no mesmo lugar em todos os tamanhos.';
+  const partes = graduacao.tamanhos
+    .map((nome, t) => (t === graduacao.base ? null : `${nome} a ${paraCampo(Math.hypot(deslocamentos[t]?.x ?? 0, deslocamentos[t]?.y ?? 0))} mm`))
+    .filter((parte): parte is string => parte !== null);
+  return `Contado de onde fica no tamanho ${graduacao.tamanhos[graduacao.base]}: ${partes.join('; ')}.`;
+}
+
+/** O pique sob o clique, para o "Alinhar": o do contorno ou o interno — o que estiver mais perto. */
+function piqueOuInternoPerto(peca: Molde, p: Ponto2D, raioMm: number): { readonly id: string; readonly posicao: Ponto2D } | null {
+  const doContorno = piquePerto(peca, p, raioMm);
+  const interno = marcaPerto(peca, p, raioMm);
+  if (doContorno && interno) return distancia(doContorno.posicao, p) <= distancia(interno.posicao, p) ? doContorno : interno;
+  return doContorno ?? interno;
 }
 
 /** O ponto a `s` mm do começo da linha, andando sobre ela. */
@@ -1223,19 +1260,27 @@ export function cliqueDeMarcacao(
       case 'alinhar-piques': {
         const modo = opcoes.alinhar.modo;
         const NOME: Record<ModoDeAlinhar, string> = { horizontal: 'na horizontal', vertical: 'na vertical', elemento: 'pelo elemento', 'ponto-horizontal': 'pela horizontal do ponto', 'ponto-vertical': 'pela vertical do ponto' };
+        const ehDoContorno = (id: string): boolean => peca.piques.some((q) => q.id === id);
         const alinhado = (id: string, alvo: { readonly linhaInterna?: number; readonly ponto?: number } = {}): CliqueDeMarcacao => {
+          const doPonto = alvo.ponto === undefined ? '' : ` ${alvo.ponto + 1}`;
+          if (!ehDoContorno(id)) {
+            const feito = alinharPiqueInterno(peca, id, modo, alvo);
+            return com(feito.molde, `Pique interno de “${peca.nome}” alinhado ${NOME[modo]}${doPonto}. ${ditoDoAlinhamentoInterno(peca, feito.deslocamentos)}`);
+          }
           const feito = alinharPique(peca, id, modo, alvo);
-          return com(feito.molde, `Pique de “${peca.nome}” alinhado ${NOME[modo]}${alvo.ponto === undefined ? '' : ` ${alvo.ponto + 1}`}. ${ditoDoAlinhamento(peca, feito.perimetros)}`);
+          return com(feito.molde, `Pique de “${peca.nome}” alinhado ${NOME[modo]}${doPonto}. ${ditoDoAlinhamento(peca, feito.perimetros)}`);
         };
         if (estado.alvo === undefined) {
           if (!peca.graduacao) return { estado, recado: 'Esta peça não tem tamanhos: o alinhamento é entre os tamanhos da graduação.' };
-          const pique = piquePerto(peca, clique.livre, contexto.raioMm);
-          if (!pique) return { estado, recado: 'Clique em cima de um pique do contorno da peça selecionada.' };
+          const pique = piqueOuInternoPerto(peca, clique.livre, contexto.raioMm);
+          if (!pique) return { estado, recado: 'Clique em cima de um pique da peça selecionada: do contorno ou interno.' };
           if (modo === 'horizontal' || modo === 'vertical') return alinhado(pique.id);
           return { estado: { ...SEM_TRECHO, alvo: pique.id }, recado: null };
         }
         if (modo === 'elemento') {
-          if (contexto.linhaInterna === null) return { estado, recado: 'Clique em cima da linha interna que cruza o contorno de todos os tamanhos.' };
+          if (contexto.linhaInterna === null) {
+            return { estado, recado: ehDoContorno(estado.alvo) ? 'Clique em cima da linha interna que cruza o contorno de todos os tamanhos.' : 'Clique em cima da linha interna para onde o pique interno deve ir.' };
+          }
           return alinhado(estado.alvo, { linhaInterna: contexto.linhaInterna });
         }
         const doContorno = pontoDoContornoSob(peca, clique, contexto.raioMm);
@@ -1347,9 +1392,10 @@ export function previaDaMarcacao(
       case 'pique-texto':
         return pontoDentroDoContorno(mouse.livre, peca.contorno) ? { novo: extensaoDoTexto(mouse.livre, opcoes.texto), marcas: [mouse.livre] } : {};
       case 'alinhar-piques': {
-        const doAlvo = peca.piques.find((q) => q.id === estado.alvo);
+        // O alvo é um pique do contorno ou um interno.
+        const doAlvo = peca.piques.find((q) => q.id === estado.alvo) ?? peca.marcas.find((m) => m.id === estado.alvo);
         if (!doAlvo) {
-          const sob = piquePerto(peca, mouse.livre, contexto.raioMm);
+          const sob = piqueOuInternoPerto(peca, mouse.livre, contexto.raioMm);
           return sob ? { marcas: [sob.posicao] } : {};
         }
         if (opcoes.alinhar.modo === 'elemento') {
@@ -1414,8 +1460,12 @@ export function instrucaoDaMarcacao(modo: ModoDeMarcacao, opcoes: OpcoesDeMarcac
       return `Pique texto: clique dentro da peça selecionada, onde “${opcoes.texto.texto}” deve ficar — o traço mostra por onde o texto se estende.` + ESC;
     case 'alinhar-piques': {
       const modo = opcoes.alinhar.modo;
-      if (estado.alvo === undefined) return 'Alinhar piques: clique em cima de um pique do contorno da peça selecionada.' + ESC;
-      return (modo === 'elemento' ? 'Alinhar piques: agora clique na linha interna que cruza o contorno de todos os tamanhos.' : 'Alinhar piques: agora clique no ponto do contorno que dá a linha de cada tamanho.') + ESC;
+      if (estado.alvo === undefined) return 'Alinhar piques: clique em cima de um pique da peça selecionada — do contorno ou interno.' + ESC;
+      return (
+        (modo === 'elemento'
+          ? 'Alinhar piques: agora clique na linha interna de referência (para o pique do contorno, a que cruza o contorno de todos os tamanhos).'
+          : 'Alinhar piques: agora clique no ponto do contorno que dá a linha de cada tamanho.') + ESC
+      );
     }
     case 'cadastrar-pique': {
       if ((estado.grupos?.length ?? 0) > 0) return 'Cadastrar pique: desenho confirmado. Clique no ponto de referência — o ponto do desenho que fica na borda da peça.' + ESC;

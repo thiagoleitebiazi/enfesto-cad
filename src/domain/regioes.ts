@@ -8,7 +8,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { ancoraDoRotulo, transformarCota } from './cota';
-import { curvaLevada, penceLevada, type Molde } from './molde';
+import { comOAlinhamentoLevado, curvaLevada, penceLevada, type Molde } from './molde';
 
 /**
  * Pences e pregas abrem a peça: uma parte dela gira ou anda, e leva junto o
@@ -115,7 +115,8 @@ export function levarOQueEstaNasRegioes(
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),
     linhasInternas: molde.linhasInternas.map((l) => (linhaDentro(l) ? levar(l) : l)),
     ...(molde.elementos ? { elementos: molde.elementos.map((l) => (linhaDentro(l) ? levar(l) : l)) } : {}),
-    marcas: molde.marcas.map((m) => (dentro(m.posicao) ? { ...m, posicao: movimento.ponto(m.posicao) } : m)),
+    // O pique interno alinhado leva junto o que anda em cada tamanho, girado como a região.
+    marcas: molde.marcas.map((m) => (dentro(m.posicao) ? comOAlinhamentoLevado({ ...m, posicao: movimento.ponto(m.posicao) }, movimento.vetor) : m)),
     piques: molde.piques.map((p) => {
       const levado = naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p;
       // A referência da graduação do pique é um ponto do contorno: anda se estiver na borda que anda.
