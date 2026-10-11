@@ -233,7 +233,10 @@ describe('as alças de tangente na tela', () => {
   it('a instrução é a da alça escolhida, e o aviso só fala das alças de tangente quando há curva que as tem', () => {
     expect(instrucaoComAlca({ curvaId: 'c1', indice: 1 })).toBe(INSTRUCAO_COM_ALCA);
     expect(instrucaoComAlca({ curvaId: 'c1', indice: -1, tangente: 'fim' })).toBe(INSTRUCAO_COM_TANGENTE);
-    expect(INSTRUCAO_COM_TANGENTE).toMatch(/o comprimento não conta\)\. Delete tira a alça\.$/);
+    // O limite da alça não é falta: a instrução diz qual é, e por quê.
+    expect(INSTRUCAO_COM_TANGENTE).toMatch(
+      /o comprimento não conta\)\. A alça precisa apontar para o lado do ponto de passagem vizinho, até 85° da reta que vai até ele: de lado ou para trás, a curva teria de dar a volta para chegar a ele\. Delete tira a alça\.$/,
+    );
     expect(avisoDasAlcas(comArco())).toMatch(/põem um ponto de passagem ali\.$/);
   });
 });

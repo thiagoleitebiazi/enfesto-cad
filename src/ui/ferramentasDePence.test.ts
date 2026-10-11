@@ -470,6 +470,8 @@ describe('Fechar e Transferir com o início, o vértice e o fim indicados (a pen
     expect(transferir.titulo).toBe('Transferir pence');
     expect(transferir.campos.map((c) => [c.id, c.inicial])).toEqual([['indicarPontas', true]]);
     expect(transferir.nota).toMatch(/os três primeiros cliques são esses pontos do contorno, nessa ordem \(a do manual da referência; a contrária também serve\)/);
+    // As pernas retas da pence transferida não são falta: a janela diz por quê, e o que fazer se elas devem ser curvas.
+    expect(transferir.nota).toMatch(/Ela nasce com pernas retas, do vértice às pontas: o manual da referência dá os passos e não fala da forma das pernas, e a reta é a que não inventa nada — se elas devem ser curvas, redesenhe-as depois com as ferramentas de curva\./);
     expect(dialogoDaPence('fechar-pence', O)!.campos.map((c) => [c.id, c.inicial])).toEqual([
       ['somenteORecorte', false],
       ['indicarPontas', false],
@@ -1155,12 +1157,51 @@ describe('“Criar acabamento” no Abrir', () => {
     expect(dialogo.campos.map((c) => c.id)).toEqual(['abertura', 'profundidade', 'desvio', 'dobra', 'apagar']);
     expect(dialogo.campos.find((c) => c.id === 'dobra')).toMatchObject({ inicial: 'esquerda' });
     expect(dialogo.nota).toMatch(/O acabamento é refeito para as medidas novas/);
+    // Onde há o campo do desvio, a nota diz o que ele faz com o acabamento.
+    expect(dialogo.nota).toMatch(/até a linha da dobra da pence \(a que divide ao meio o ângulo das pernas\)/);
+    expect(dialogo.nota).toMatch(/ Com desvio do vértice as pernas ficam com comprimentos diferentes: costurada a pence, as bordas dos dois lados se desencontram\. O acabamento mostra essa diferença como um degrau na ponta de uma das pernas, e a mensagem diz de quanto\.$/);
 
     const trocada = aplicarEdicaoDaPence([peca], peca, pence.id, { abertura: 40, profundidade: 100, desvio: 0, dobra: 'direita', apagar: false }, ids());
     const nova = pencesDaPeca(trocada.pecas[0]!)[0]!;
     expect(dobraDaPence(nova)).toBe('direita');
     expect(distancia(nova.bico!, pence.bico!)).toBeGreaterThan(0.5);
     expect(trocada.recado).toMatch(/^Pence de “Frente” refeita: abertura de 40,0 mm, profundidade de 100,0 mm. O acabamento ficou dobrado para a direita.$/);
+  });
+
+  it('com desvio do vértice, a mensagem diz a diferença das pernas, o que ela dá na costura e como aparece no acabamento', () => {
+    // Borda de cima reta dos dois lados da pence; abertura de 40 e profundidade de 80.
+    const reta = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)]);
+    const recortada = criarPence(reta, na(2, 100, 300), { aberturaMm: 40, profundidadeMm: 80, modo: 'recortar', piquesLaterais: false, marcaNoVertice: false }, ids());
+    const peca = comAcabamento(recortada, pencesDaPeca(recortada)[0]!.id, 'esquerda');
+    const id = pencesDaPeca(peca)[0]!.id;
+
+    // O vértice 10 mm para o lado: as pernas ficam com 80,6 e 85,4 mm.
+    const comDesvio = aplicarEdicaoDaPence([peca], peca, id, { abertura: 40, profundidade: 80, desvio: 10, dobra: 'esquerda', apagar: false }, ids());
+    expect(comDesvio.recado).toBe(
+      'Pence de “Frente” refeita: abertura de 40,0 mm, profundidade de 80,0 mm, desvio de 10,0 mm. O acabamento ficou dobrado para a esquerda. As pernas ficaram com 4,8 mm de diferença: costurada a pence, as bordas dos dois lados se desencontram isso. O acabamento foi feito pela dobra de verdade (a bissetriz das pernas), e a diferença aparece nele como um degrau, na ponta da outra perna. Para igualar as pernas, zere o desvio do vértice.',
+    );
+    expect(pencesDaPeca(comDesvio.pecas[0]!)[0]!.capa).toHaveLength(2);
+
+    // Sem lado de dobra, o bico é um ponto só: não há degrau no desenho, e a mensagem não fala dele.
+    const semLado = aplicarEdicaoDaPence([peca], peca, id, { abertura: 40, profundidade: 80, desvio: 10, dobra: 'meio', apagar: false }, ids());
+    expect(semLado.recado).toMatch(
+      / O acabamento ficou sem lado de dobra, com o bico no meio\. As pernas ficaram com 4,8 mm de diferença: costurada a pence, as bordas dos dois lados se desencontram isso\. Para igualar as pernas, zere o desvio do vértice\.$/,
+    );
+
+    // Zerado o desvio, as pernas voltam a ser iguais, e a mensagem não fala de diferença.
+    const depois = comDesvio.pecas[0]!;
+    const semDesvio = aplicarEdicaoDaPence([depois], depois, pencesDaPeca(depois)[0]!.id, { abertura: 40, profundidade: 80, desvio: 0, dobra: 'esquerda', apagar: false }, ids());
+    expect(semDesvio.recado).toBe('Pence de “Frente” refeita: abertura de 40,0 mm, profundidade de 80,0 mm. O acabamento ficou dobrado para a esquerda.');
+    expect('capa' in pencesDaPeca(semDesvio.pecas[0]!)[0]!).toBe(false);
+
+    // A diferença pequena é dita com duas casas, para não aparecer como zero.
+    const quaseEmEsquadro = aplicarEdicaoDaPence([peca], peca, id, { abertura: 40, profundidade: 80, desvio: 0.1, dobra: 'esquerda', apagar: false }, ids());
+    expect(quaseEmEsquadro.recado).toMatch(/ As pernas ficaram com 0,05 mm de diferença: /);
+
+    // A pence recortada, sem acabamento, não ganha o aviso: o acabamento é que mostra a diferença.
+    const idDaRecortada = pencesDaPeca(recortada)[0]!.id;
+    const soRecortada = aplicarEdicaoDaPence([recortada], recortada, idDaRecortada, { abertura: 40, profundidade: 80, desvio: 10, apagar: false }, ids());
+    expect(soRecortada.recado).not.toMatch(/pernas/);
   });
 
   it('a pence sem acabamento não tem lado de dobra a pedir', () => {

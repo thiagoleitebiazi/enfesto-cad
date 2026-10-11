@@ -6,6 +6,7 @@ import {
   comAcabamento,
   comPenceReconhecida,
   criarPence,
+  diferencaDasPernas,
   dobraDaPence,
   pencesDaPeca,
   penceSemRegistroPerto,
@@ -248,5 +249,162 @@ describe('quando a dobra não alcança a borda, o contorno passa reto pelo meio 
     const peca = comABorda(ponto(200, 340), ponto(118, 340));
     expect(aDela(peca).bico).toEqual(ponto(100, 300));
     expect('capa' in aDela(peca)).toBe(false);
+  });
+});
+
+describe('pence de pernas desiguais: o acabamento pela dobra de verdade, a bissetriz das pernas', () => {
+  // Borda reta em y = 300; pontas em (120, 300) e (80, 300); o vértice fora do esquadro, em (110, 220).
+  const A = ponto(120, 300);
+  const V = ponto(110, 220);
+  const B = ponto(80, 300);
+  const DIFERENCA = Math.sqrt(7300) - Math.sqrt(6500);
+  const desigual = (): Molde => {
+    const peca = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), A, V, B, ponto(0, 300)]);
+    return comPenceReconhecida(peca, penceSemRegistroPerto(peca, V, 6, 'do-contorno', 'r1')!);
+  };
+  /** Um ponto da bissetriz das pernas, adiante do vértice. */
+  const naBissetriz = (): Ponto2D => {
+    const [pa, pb] = [distancia(V, A), distancia(V, B)];
+    return ponto(V.x + (A.x - V.x) / pa + (B.x - V.x) / pb, V.y + (A.y - V.y) / pa + (B.y - V.y) / pb);
+  };
+  /** A distância do ponto à reta por a e b. */
+  const daReta = (p: Ponto2D, a: Ponto2D, b: Ponto2D): number => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / distancia(a, b);
+  /** Duas arestas não vizinhas do contorno se cruzam. */
+  const seCruza = (contorno: readonly Ponto2D[]): boolean => {
+    const n = contorno.length;
+    const lado = (p: Ponto2D, q: Ponto2D, r: Ponto2D): number => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        const [p1, p2, q1, q2] = [contorno[i]!, contorno[(i + 1) % n]!, contorno[j]!, contorno[(j + 1) % n]!];
+        if (lado(p1, p2, q1) * lado(p1, p2, q2) < 0 && lado(q1, q2, p1) * lado(q1, q2, p2) < 0) return true;
+      }
+    }
+    return false;
+  };
+
+  it('as pernas têm 4,8 mm de diferença, e a conta diz qual é a mais comprida', () => {
+    const pence = aDela(desigual());
+    const [primeira, segunda] = [distancia(V, pence.pontos[0]!), distancia(V, pence.pontos[2]!)];
+
+    expect(Math.abs(diferencaDasPernas(pence))).toBeCloseTo(DIFERENCA, 9);
+    expect(diferencaDasPernas(pence)).toBeCloseTo(primeira - segunda, 12);
+    expect(diferencaDasPernas({ ...pence, pontos: [...pence.pontos].reverse() })).toBeCloseTo(segunda - primeira, 12);
+    // De pernas iguais, zero — e a pence interna não tem pernas.
+    expect(diferencaDasPernas(aDela(noArco()))).toBe(0);
+    expect(diferencaDasPernas({ id: 'i', tipo: 'interna', pontos: [A, V, B, V] })).toBe(0);
+  });
+
+  it.each(['esquerda', 'direita'] as const)('dobrada para a %s: o bico fica na bissetriz, e o espelho da ponta desse lado entra no acabamento, sobre a reta da outra perna', (dobra) => {
+    const peca = comAcabamento(desigual(), 'r1', dobra);
+    const pence = aDela(peca);
+    const [ponta, outra] = [pence.pontos[pence.dobra!]!, pence.pontos[pence.dobra === 0 ? 2 : 0]!];
+    // De quem olha da borda para o vértice (para baixo), a esquerda é o x maior.
+    expect(ponta).toEqual(dobra === 'esquerda' ? A : B);
+
+    // O bico está na bissetriz — e não na linha do vértice ao meio das pontas.
+    expect(daReta(pence.bico!, V, naBissetriz())).toBeLessThan(1e-9);
+    expect(daReta(pence.bico!, V, ponto(100, 300))).toBeGreaterThan(0.5);
+    // Espelhado de volta na perna do lado da dobra, o bico cai na borda desse lado (y = 300), para lá da ponta.
+    const naBorda = espelhar(pence.bico!, ponta, V);
+    expect(naBorda.y).toBeCloseTo(300, 9);
+    expect(Math.abs(naBorda.x - 100)).toBeGreaterThan(20);
+
+    // O acabamento tem dois pontos: o bico e o espelho da ponta na bissetriz, que fica na reta da outra perna, à distância da perna deste lado.
+    const capa = pence.capa!;
+    expect(capa).toHaveLength(2);
+    const [doBico, daPonta] = pence.dobra === 0 ? [capa[0]!, capa[1]!] : [capa[1]!, capa[0]!];
+    expect(doBico).toEqual(pence.bico);
+    expect(perto(daPonta, espelhar(ponta, V, naBissetriz()))).toBe(true);
+    expect(daReta(daPonta, V, outra)).toBeLessThan(1e-9);
+    expect(distancia(V, daPonta)).toBeCloseTo(distancia(V, ponta), 9);
+    // O degrau à mostra, sobre a linha da costura, é a diferença das pernas.
+    expect(distancia(daPonta, outra)).toBeCloseTo(DIFERENCA, 9);
+
+    // No contorno: a ponta do lado da dobra, o bico, o espelho da ponta e a outra ponta, nessa ordem (num sentido ou no outro).
+    const k = peca.contorno.findIndex((p) => perto(p, ponta));
+    const n = peca.contorno.length;
+    const passo = perto(peca.contorno[(k + 1) % n]!, doBico) ? 1 : -1;
+    expect([1, 2, 3].map((j) => peca.contorno[(((k + passo * j) % n) + n) % n]!)).toEqual([doBico, daPonta, outra]);
+    expect(seCruza(peca.contorno)).toBe(false);
+    expect(pencesDaPeca(peca)).toHaveLength(1);
+  });
+
+  it('com as pernas iguais não há o ponto a mais: o acabamento de borda reta é só o bico', () => {
+    const igual = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), A, ponto(100, 220), B, ponto(0, 300)]);
+    const comRegistro = comPenceReconhecida(igual, penceSemRegistroPerto(igual, ponto(100, 220), 6, 'do-contorno', 'r1')!);
+    const pence = aDela(comAcabamento(comRegistro, 'r1', 'esquerda'));
+
+    expect('capa' in pence).toBe(false);
+    expect(pence.bico!.x).toBeCloseTo(100, 9);
+  });
+
+  it('sem lado de dobra, o bico é um ponto só, na bissetriz, a meio caminho dos bicos das duas dobras', () => {
+    const [semLado, esquerda, direita] = (['meio', 'esquerda', 'direita'] as const).map((dobra) => aDela(comAcabamento(desigual(), 'r1', dobra)));
+
+    expect('capa' in semLado!).toBe(false);
+    expect(daReta(semLado!.bico!, V, naBissetriz())).toBeLessThan(1e-9);
+    expect(distancia(V, semLado!.bico!)).toBeCloseTo((distancia(V, esquerda!.bico!) + distancia(V, direita!.bico!)) / 2, 9);
+    // Para fora da reta das pontas.
+    expect(semLado!.bico!.y).toBeGreaterThan(300);
+  });
+
+  it('sem o acabamento, a pence volta a ser a recortada de antes, sem o ponto a mais', () => {
+    const antes = desigual();
+    const depois = semAcabamento(comAcabamento(antes, 'r1', 'direita'), 'r1');
+
+    expect(depois.contorno).toEqual(antes.contorno);
+    expect(aDela(depois).tipo).toBe('recortada');
+    expect('capa' in aDela(depois)).toBe(false);
+  });
+
+  it('pelo desvio do vértice nas medidas: a pence com acabamento ganha o degrau, e zerando o desvio ele some', () => {
+    const reta = molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)]);
+    const novoId = ids();
+    const comPenceReta = criarPence(reta, { indiceAresta: 2, ponto: ponto(100, 300) }, { ...RECORTAR, aberturaMm: 40 }, novoId);
+    const acabada = comAcabamento(comPenceReta, aDela(comPenceReta).id, 'esquerda');
+    expect('capa' in aDela(acabada)).toBe(false);
+
+    const comDesvio = alterarPence(acabada, aDela(acabada).id, { aberturaMm: 40, profundidadeMm: 80, desvioMm: 10 }, novoId);
+    expect(Math.abs(diferencaDasPernas(aDela(comDesvio)))).toBeCloseTo(DIFERENCA, 9);
+    expect(aDela(comDesvio).capa).toHaveLength(2);
+    const semDesvio = alterarPence(comDesvio, aDela(comDesvio).id, { aberturaMm: 40, profundidadeMm: 80, desvioMm: 0 }, novoId);
+    expect(diferencaDasPernas(aDela(semDesvio))).toBe(0);
+    expect('capa' in aDela(semDesvio)).toBe(false);
+    expect(area(semDesvio.contorno)).toBeCloseTo(area(acabada.contorno), 6);
+  });
+});
+
+describe('pernas quase iguais, e o bico sem lado de dobra', () => {
+  const comAPence = (...contorno: Ponto2D[]): Molde => {
+    const peca = molde(contorno);
+    const vertice = contorno.find((p) => p.y < 250 && p.x > 50 && p.x < 150)!;
+    return comPenceReconhecida(peca, penceSemRegistroPerto(peca, vertice, 6, 'do-contorno', 'r1')!);
+  };
+
+  it('pernas quase iguais — menos de um centésimo de milímetro de diferença — contam como iguais: sem diferença a dizer, e sem ponto a mais no acabamento', () => {
+    // O vértice um centésimo de milímetro fora do esquadro: as pernas diferem em 0,005 mm.
+    const quaseIgual = comAPence(ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(120, 300), ponto(100.01, 220), ponto(80, 300), ponto(0, 300));
+    const pence = aDela(quaseIgual);
+    const [primeira, segunda] = [distancia(pence.pontos[1]!, pence.pontos[0]!), distancia(pence.pontos[1]!, pence.pontos[2]!)];
+
+    expect(Math.abs(primeira - segunda)).toBeGreaterThan(0.004);
+    expect(Math.abs(primeira - segunda)).toBeLessThan(0.006);
+    expect(diferencaDasPernas(pence)).toBe(0);
+    expect('capa' in aDela(comAcabamento(quaseIgual, 'r1', 'esquerda'))).toBe(false);
+    expect('capa' in aDela(comAcabamento(quaseIgual, 'r1', 'direita'))).toBe(false);
+  });
+
+  it('sem lado, só conta a dobra cujo bico sai para fora da reta das pontas', () => {
+    // Do lado de x = 80 a borda é reta (y = 300); do outro, desce logo depois da ponta: dobrada para lá, o bico fica para dentro da reta das pontas.
+    const peca = comAPence(ponto(0, 0), ponto(200, 0), ponto(200, 250), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300));
+    const [paraDentro, paraFora, semLado] = (['esquerda', 'direita', 'meio'] as const).map((dobra) => aDela(comAcabamento(peca, 'r1', dobra)));
+
+    expect(paraDentro!.bico!.y).toBeLessThan(299);
+    expect(paraDentro!.bico!.y).toBeGreaterThan(290);
+    expect(paraFora!.bico!.y).toBeCloseTo(300 + (20 * 0.4) / (1 - 0.04), 9);
+    // Sem lado: o bico é o da dobra que sai para fora — e não a média dele com o que fica para dentro.
+    expect(semLado!.bico!.x).toBeCloseTo(100, 9);
+    expect(semLado!.bico!.y).toBeCloseTo(paraFora!.bico!.y, 9);
   });
 });

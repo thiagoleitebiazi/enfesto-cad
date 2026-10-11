@@ -29,6 +29,10 @@ const MODOS: ReadonlyArray<{ readonly valor: ModoDeDobra; readonly rotulo: strin
 /** Dois pontos do contorno a menos disso (mm) são o mesmo. */
 const MESMO_PONTO_MM = 1e-6;
 
+/** O fim da mensagem da linha interna que não é reta: por que a dobra é sempre reta, e o que fazer. */
+const PORQUE_A_DOBRA_E_RETA =
+  'para servir de linha de dobra: papel e tecido só dobram em linha reta. Desenhe uma reta por onde a peça dobra, ou use os dois pontos do contorno.';
+
 export function dialogoDeDobrar(opcoes: OpcoesDeDobrar): { readonly campos: readonly CampoDoDialogo[]; readonly nota: string } {
   return {
     campos: [
@@ -36,7 +40,7 @@ export function dialogoDeDobrar(opcoes: OpcoesDeDobrar): { readonly campos: read
       { tipo: 'caixa', id: 'manter', rotulo: 'Manter dobra do molde: guardar a outra metade como ela é', inicial: opcoes.manter },
       { tipo: 'caixa', id: 'fioNoCentro', rotulo: 'Fio no centro do molde, ao dobrar e ao desdobrar', inicial: opcoes.fioNoCentro },
     ],
-    nota: 'Depois de confirmar, clique dentro da peça, do lado que deve ficar. Sem “Manter dobra”, o “Desdobrar” devolve a outra metade espelhada — o que você mudar na metade que ficou vale para as duas. Com “Manter dobra”, a outra metade fica guardada e volta como era: use em peças que não são simétricas. O manual da referência não diz por onde passa a linha nos modos Horizontal e Vertical; aqui, pelo meio da peça.',
+    nota: 'Depois de confirmar, clique dentro da peça, do lado que deve ficar. Sem “Manter dobra”, o “Desdobrar” devolve a outra metade espelhada — o que você mudar na metade que ficou vale para as duas. Com “Manter dobra”, a outra metade fica guardada e volta como era: use em peças que não são simétricas. O manual da referência não diz por onde passa a linha nos modos Horizontal e Vertical; aqui, pelo meio da peça. A linha de dobra é sempre uma reta — papel e tecido só dobram em linha reta —, e por isso o modo Elemento pede uma linha interna reta: a curva é recusada.',
   };
 }
 
@@ -93,8 +97,9 @@ export function cliqueDeDobrar(
     const resultado = aplicarReta('dobrar', pecas, peca, { inicio: linha[0], fim: linha[1], livres: [clique.livre] }, novoId, opcoes);
     return { estado: SEM_TRECHO, pecas: resultado.pecas, recado: resultado.recado };
   } catch (e) {
-    // Deu errado: a ferramenta volta a esperar a linha de dobra.
-    return { estado: SEM_TRECHO, recado: e instanceof Error ? e.message : String(e) };
+    // Deu errado: a ferramenta volta a esperar a linha de dobra. À linha que não é reta, a mensagem acrescenta o porquê.
+    const mensagem = e instanceof Error ? e.message : String(e);
+    return { estado: SEM_TRECHO, recado: mensagem.replace('para servir de linha de dobra.', PORQUE_A_DOBRA_E_RETA) };
   }
 }
 

@@ -702,6 +702,30 @@ function capaNoContorno(contorno: Contorno, pence: PenceDaPeca): number[] | null
 
 /** Até onde a borda é seguida para achar o bico, em vezes a abertura da pence. */
 const ALCANCE_DA_CAPA = 4;
+/** Pernas com menos disto (mm) de diferença no comprimento contam como iguais. */
+const PERNAS_IGUAIS_MM = 0.01;
+
+/**
+ * A linha da dobra da pence fechada, como direção a partir do vértice: a que
+ * divide ao meio o ângulo das pernas — é em torno dela que uma perna cai
+ * sobre a outra. Com pernas iguais, passa pelo meio das pontas. `null` se as
+ * pernas não formam ângulo (uma delas sem comprimento, ou as duas em linha).
+ */
+function linhaDaDobra(a: Ponto2D, v: Ponto2D, b: Ponto2D): Ponto2D | null {
+  const [pernaA, pernaB] = [distancia(v, a), distancia(v, b)];
+  if (pernaA < MESMO_PONTO_MM || pernaB < MESMO_PONTO_MM) return null;
+  const soma = ponto((a.x - v.x) / pernaA + (b.x - v.x) / pernaB, (a.y - v.y) / pernaA + (b.y - v.y) / pernaB);
+  const tamanho = Math.hypot(soma.x, soma.y);
+  return tamanho < MESMO_PONTO_MM ? null : ponto(soma.x / tamanho, soma.y / tamanho);
+}
+
+/** Quanto a primeira perna da pence do contorno é mais comprida que a segunda (mm; negativo, se é mais curta). Costurada a pence, é o quanto as bordas dos dois lados se desencontram. */
+export function diferencaDasPernas(pence: PenceDaPeca): number {
+  if (pence.tipo === 'interna') return 0;
+  const [a, v, b] = pence.pontos as readonly [Ponto2D, Ponto2D, Ponto2D];
+  const diferenca = distancia(v, a) - distancia(v, b);
+  return Math.abs(diferenca) <= PERNAS_IGUAIS_MM ? 0 : diferenca;
+}
 /** O ponto do acabamento a menos disto (mm) da reta entre os vizinhos não faz falta: a borda ali é reta. */
 const NA_RETA_DA_CAPA_MM = 1e-6;
 
@@ -710,13 +734,19 @@ const NA_RETA_DA_CAPA_MM = 1e-6;
  * para um lado — o do ponto anterior ou o do seguinte ao vértice —, pelo
  * traçado de ofício: dobrada, a pence fica por baixo da peça desse lado, e a
  * borda dali passa por cima dela. A borda desse lado é seguida ponto a ponto
- * e espelhada na perna, até cruzar a linha do meio da pence — aí está o bico;
- * a outra metade é o espelho dessa na linha do meio. Numa borda reta, dá um
- * ponto só, o bico. O bico pode ficar para dentro da reta das pontas: é o que
- * a dobra dá quando a borda desse lado se afasta da pence.
+ * e espelhada na perna, até cruzar a linha da dobra da pence (a bissetriz das
+ * pernas) — aí está o bico; a outra metade é o espelho dessa na linha da
+ * dobra. Numa borda reta, dá um ponto só, o bico. O bico pode ficar para
+ * dentro da reta das pontas: é o que a dobra dá quando a borda desse lado se
+ * afasta da pence.
+ *
+ * Com pernas de comprimentos diferentes, a dobra não leva a ponta deste lado
+ * à ponta do outro: leva-a para a reta da outra perna, antes ou depois da
+ * ponta dela. Esse ponto entra no acabamento, e a diferença das pernas fica à
+ * mostra como um degrau sobre a linha da costura.
  *
  * `null` quando a dobra não alcança a borda: a borda espelhada continua a
- * perna ou passa para o outro lado dela, ou não chega à linha do meio dentro
+ * perna ou passa para o outro lado dela, ou não chega à linha da dobra dentro
  * do alcance.
  *
  * Devolve os pontos do ponto anterior ao seguinte (sem os dois) e o bico.
@@ -726,12 +756,10 @@ function dobraParaOLado(contorno: Contorno, i: number, lado: 'antes' | 'depois')
   const a = contorno[(i - 1 + n) % n]!;
   const v = contorno[i]!;
   const b = contorno[(i + 1) % n]!;
-  const meio = meioDe(a, b);
-  const ateOMeio = distancia(v, meio);
   const [ponta, outra] = lado === 'antes' ? [a, b] : [b, a];
   const perna = distancia(ponta, v);
-  if (ateOMeio < MESMO_PONTO_MM || perna < MESMO_PONTO_MM) return null;
-  const eixo = ponto((meio.x - v.x) / ateOMeio, (meio.y - v.y) / ateOMeio);
+  const eixo = linhaDaDobra(a, v, b);
+  if (!eixo || perna < MESMO_PONTO_MM) return null;
   const l = ponto((v.x - ponta.x) / perna, (v.y - ponta.y) / perna);
   const naPerna = (p: Ponto2D): Ponto2D => {
     const aoLongo = (p.x - ponta.x) * l.x + (p.y - ponta.y) * l.y;
@@ -741,10 +769,10 @@ function dobraParaOLado(contorno: Contorno, i: number, lado: 'antes' | 'depois')
     const aoLongo = (p.x - v.x) * eixo.x + (p.y - v.y) * eixo.y;
     return ponto(2 * (v.x + eixo.x * aoLongo) - p.x, 2 * (v.y + eixo.y * aoLongo) - p.y);
   };
-  /** A distância do ponto à linha do meio, com o sinal do lado em que ele está. */
+  /** A distância do ponto à linha da dobra, com o sinal do lado em que ele está. */
   const doEixo = (p: Ponto2D): number => eixo.x * (p.y - v.y) - eixo.y * (p.x - v.x);
   /** A distância do ponto à reta da perna, positiva do lado em que a pence está. */
-  const ladoDaPence = Math.sign(l.x * (meio.y - ponta.y) - l.y * (meio.x - ponta.x));
+  const ladoDaPence = Math.sign(l.x * (outra.y - ponta.y) - l.y * (outra.x - ponta.x));
   const daPerna = (p: Ponto2D): number => (l.x * (p.y - ponta.y) - l.y * (p.x - ponta.x)) * ladoDaPence;
   const passo = lado === 'antes' ? -1 : 1;
   const alcance = ALCANCE_DA_CAPA * distancia(a, b);
@@ -760,7 +788,9 @@ function dobraParaOLado(contorno: Contorno, i: number, lado: 'antes' | 'depois')
       // Atrás do vértice, ou longe demais da pence, não há bico.
       const doVertice = (bico.x - v.x) * eixo.x + (bico.y - v.y) * eixo.y;
       if (doVertice <= MESMO_PONTO_MM || andado + distancia(anterior, bico) > alcance) return null;
-      const daPonta = [...metade, bico, ...metade.map(noEixo).reverse()];
+      // Com pernas desiguais, o espelho da ponta deste lado cai na reta da outra perna, fora da ponta dela: entra no acabamento.
+      const pernasDesiguais = Math.abs(perna - distancia(outra, v)) > PERNAS_IGUAIS_MM;
+      const daPonta = [...metade, bico, ...metade.map(noEixo).reverse(), ...(pernasDesiguais ? [noEixo(ponta)] : [])];
       // A borda reta dá pontos em linha: só os que fazem canto ficam (o bico fica sempre).
       const fila = [ponta, ...daPonta, outra];
       const comCanto = daPonta.filter((p, j) => {
@@ -788,7 +818,7 @@ function capaDaPence(contorno: Contorno, i: number, lado: 'antes' | 'depois'): {
 }
 
 /**
- * O bico do acabamento sem lado de dobra: na linha do meio da pence, a meio
+ * O bico do acabamento sem lado de dobra: na linha da dobra da pence, a meio
  * caminho entre os bicos das duas dobras possíveis. Só conta a dobra cujo bico
  * sai para fora da reta das pontas; sem nenhuma (bordas que fogem da pence),
  * o bico é o meio das pontas: a borda passa reta.
@@ -796,18 +826,22 @@ function capaDaPence(contorno: Contorno, i: number, lado: 'antes' | 'depois'): {
 function bicoDaPence(contorno: Contorno, i: number): Ponto2D {
   const n = contorno.length;
   const v = contorno[i]!;
-  const meio = meioDe(contorno[(i - 1 + n) % n]!, contorno[(i + 1) % n]!);
-  const ateOMeio = distancia(v, meio);
-  // Os bicos das dobras estão na linha do meio: basta a distância de cada um ao vértice.
+  const [a, b] = [contorno[(i - 1 + n) % n]!, contorno[(i + 1) % n]!];
+  const meio = meioDe(a, b);
+  const eixo = linhaDaDobra(a, v, b);
+  if (!eixo) return meio;
+  // Do vértice até onde a linha da dobra cruza a reta das pontas: o bico que não passa dali não sai para fora.
+  const ateAReta = ((a.x - v.x) * (b.y - a.y) - (a.y - v.y) * (b.x - a.x)) / (eixo.x * (b.y - a.y) - eixo.y * (b.x - a.x));
+  // Os bicos das dobras estão na linha da dobra: basta a distância de cada um ao vértice.
   const paraFora = (['antes', 'depois'] as const)
     .flatMap((lado) => {
       const dobra = dobraParaOLado(contorno, i, lado);
       return dobra ? [distancia(v, dobra.bico)] : [];
     })
-    .filter((t) => t >= ateOMeio - MESMO_PONTO_MM);
+    .filter((t) => t >= ateAReta - MESMO_PONTO_MM);
   if (paraFora.length === 0) return meio;
   const t = paraFora.reduce((soma, valor) => soma + valor, 0) / paraFora.length;
-  return ponto(v.x + ((meio.x - v.x) / ateOMeio) * t, v.y + ((meio.y - v.y) / ateOMeio) * t);
+  return ponto(v.x + eixo.x * t, v.y + eixo.y * t);
 }
 
 /** Para que lado a pence é dobrada na costura, de quem olha da borda para o vértice; 'meio' = sem lado. */

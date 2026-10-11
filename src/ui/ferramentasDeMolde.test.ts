@@ -488,6 +488,8 @@ describe('Cortar por elementos: uma linha interna curva, ou várias emendadas', 
     expect(lerContornoDoCorte({})).toBe(false);
     // A janela diz que a emenda e o prolongamento são leitura nossa.
     expect(dialogoDeCortar(COSTURA).nota).toMatch(/nem o que se faz com o que não chega à borda: é a nossa leitura\.$/);
+    // O trecho do contorno como elemento do corte não é falta: a janela diz por quê.
+    expect(dialogoDeCortar(COSTURA).nota).toMatch(/Um trecho do contorno não entra como elemento do corte: ele já é a borda da peça, e cortar por ele não separa nada — o elemento é uma linha desenhada por cima da peça\./);
   });
 
   it('contorno automático: o clique na linha corta por ela na hora', () => {

@@ -42,6 +42,8 @@ describe('a janela do Dobrar', () => {
     expect(campos.map((c) => c.id)).toEqual(['modo', 'manter', 'fioNoCentro']);
     expect(campos[0]!.tipo === 'escolha' && campos[0]!.opcoes.map((o) => o.valor)).toEqual(['horizontal', 'vertical', 'elemento', 'dois-pontos']);
     expect(nota).toMatch(/não diz por onde passa a linha nos modos Horizontal e Vertical; aqui, pelo meio da peça/);
+    // A dobra por uma curva não é falta: a janela diz por quê.
+    expect(nota).toMatch(/A linha de dobra é sempre uma reta — papel e tecido só dobram em linha reta —, e por isso o modo Elemento pede uma linha interna reta: a curva é recusada\.$/);
     expect(lerDialogoDeDobrar({ modo: 'elemento', manter: true, fioNoCentro: false })).toEqual({ modo: 'elemento', manter: true, fioNoCentro: false });
     expect(lerDialogoDeDobrar({ modo: 'qualquer coisa', manter: false, fioNoCentro: true })).toEqual({ modo: 'horizontal', manter: false, fioNoCentro: true });
   });
@@ -101,7 +103,10 @@ describe('cliqueDeDobrar', () => {
     const peca = molde(FRENTE, { linhasInternas: [[ponto(50, 100), ponto(100, 120), ponto(150, 100)]] });
 
     const resultado = clicar(com({ modo: 'elemento' }), peca, dentro(100, 120, 0));
-    expect(resultado.recado).toBe('A linha interna precisa ser reta para servir de linha de dobra.');
+    // A mensagem diz por que a dobra é sempre reta, e o que fazer.
+    expect(resultado.recado).toBe(
+      'A linha interna precisa ser reta para servir de linha de dobra: papel e tecido só dobram em linha reta. Desenhe uma reta por onde a peça dobra, ou use os dois pontos do contorno.',
+    );
     expect(resultado.estado).toBe(SEM_TRECHO);
   });
 

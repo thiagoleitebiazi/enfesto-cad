@@ -13,6 +13,7 @@ import {
   criarMultiplasPences,
   criarPence,
   criarPenceInterna,
+  diferencaDasPernas,
   dobraDaPence,
   ehVerticeDePence,
   fecharPence,
@@ -677,7 +678,25 @@ const NOME_DA_DOBRA: Record<DobraDaPence, string> = { meio: 'sem lado de dobra, 
 
 /** O que a explicação das medidas diz a mais quando a pence tem acabamento. */
 const NOTA_DO_ACABAMENTO =
-  ' O acabamento é refeito para as medidas novas e para o lado da dobra escolhido: dobrada para um lado, a borda desse lado, espelhada na perna, até a linha do meio — numa borda curva, o acabamento acompanha a curva; sem lado, o bico fica no meio dos dois.';
+  ' O acabamento é refeito para as medidas novas e para o lado da dobra escolhido: dobrada para um lado, a borda desse lado, espelhada na perna, até a linha da dobra da pence (a que divide ao meio o ângulo das pernas) — numa borda curva, o acabamento acompanha a curva; sem lado, o bico fica no meio dos dois.';
+
+/** O que a explicação diz a mais na pence com acabamento que tem o campo do desvio. */
+const NOTA_DO_DESVIO_NO_ACABAMENTO =
+  ' Com desvio do vértice as pernas ficam com comprimentos diferentes: costurada a pence, as bordas dos dois lados se desencontram. O acabamento mostra essa diferença como um degrau na ponta de uma das pernas, e a mensagem diz de quanto.';
+
+/**
+ * O que a mensagem diz a mais quando a pence com acabamento ficou com pernas
+ * de comprimentos diferentes: de quanto, o que isso dá na costura e como
+ * aparece no desenho.
+ */
+function avisoDasPernas(pence: PenceDaPeca | undefined): string {
+  if (!pence?.bico) return '';
+  const diferenca = Math.abs(diferencaDasPernas(pence));
+  if (diferenca === 0) return '';
+  const naCostura = ` As pernas ficaram com ${formatarMm(diferenca, diferenca < 0.1 ? 2 : 1)} de diferença: costurada a pence, as bordas dos dois lados se desencontram isso.`;
+  const noDesenho = pence.dobra === undefined ? '' : ' O acabamento foi feito pela dobra de verdade (a bissetriz das pernas), e a diferença aparece nele como um degrau, na ponta da outra perna.';
+  return `${naCostura}${noDesenho} Para igualar as pernas, zere o desvio do vértice.`;
+}
 
 /** O que a explicação do diálogo diz antes, quando a pence não tinha registro. */
 const NOTA_DA_RECONHECIDA =
@@ -745,7 +764,9 @@ function dialogoDasMedidas(peca: Molde, id: string): DialogoDePence | null {
     nota:
       pence.tipo === 'recortada'
         ? 'A pence é refeita no mesmo lugar, com as medidas novas: o contorno volta a ser o de antes do recorte e é recortado de novo. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, o contorno fica como era antes da pence.'
-        : 'A pence é refeita no mesmo lugar, com as medidas novas. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, a linha, os piques e a marca dela saem da peça.' + doAcabamento,
+        : 'A pence é refeita no mesmo lugar, com as medidas novas. O desvio leva o vértice para o lado da segunda ponta (negativo, para o da primeira). Apagando, a linha, os piques e a marca dela saem da peça.' +
+          doAcabamento +
+          (pence.bico ? NOTA_DO_DESVIO_NO_ACABAMENTO : ''),
   };
 }
 
@@ -809,7 +830,9 @@ export function aplicarEdicaoDaPence(
     recado:
       `Pence de “${peca.nome}” refeita: abertura de ${formatarMm(medidas.aberturaMm)}, profundidade de ${formatarMm(medidas.profundidadeMm)}${desvio}.` +
       (pence.tipo === 'recortada' ? ` A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.` : '') +
-      doAcabamento,
+      doAcabamento +
+      // A pence refeita é a última do registro.
+      avisoDasPernas(pencesDaPeca(nova).at(-1)),
   };
 }
 
@@ -916,7 +939,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
       return {
         titulo: 'Transferir pence',
         campos: [CAMPO_DE_INDICAR_PONTAS(opcoes.indicarPontas)],
-        nota: 'Depois de confirmar, clique no vértice da pence recortada e, em seguida, no contorno, na nova posição: a peça é cortada do vértice até ela, e o lado sem a linha de fio gira em torno do vértice até a pence antiga fechar. A pence nova tem o mesmo vértice e o mesmo ângulo, e a área da peça não muda.' + NOTA_DE_INDICAR_PONTAS,
+        nota: 'Depois de confirmar, clique no vértice da pence recortada e, em seguida, no contorno, na nova posição: a peça é cortada do vértice até ela, e o lado sem a linha de fio gira em torno do vértice até a pence antiga fechar. A pence nova tem o mesmo vértice e o mesmo ângulo, e a área da peça não muda. Ela nasce com pernas retas, do vértice às pontas: o manual da referência dá os passos e não fala da forma das pernas, e a reta é a que não inventa nada — se elas devem ser curvas, redesenhe-as depois com as ferramentas de curva.' + NOTA_DE_INDICAR_PONTAS,
       };
     case 'multiplas-pences':
       return {

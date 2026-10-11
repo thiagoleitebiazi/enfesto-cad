@@ -109,7 +109,7 @@ export const INSTRUCAO_COM_ALCA =
   'Editar pontos de curva: clique onde o ponto de passagem deve ficar — a curva é refeita por ele. Delete tira o ponto de passagem.';
 /** A instrução com uma alça de tangente escolhida. */
 export const INSTRUCAO_COM_TANGENTE =
-  'Editar pontos de curva: clique para onde a alça de tangente deve apontar — a curva sai dessa ponta na direção dela (o comprimento não conta). Delete tira a alça.';
+  'Editar pontos de curva: clique para onde a alça de tangente deve apontar — a curva sai dessa ponta na direção dela (o comprimento não conta). A alça precisa apontar para o lado do ponto de passagem vizinho, até 85° da reta que vai até ele: de lado ou para trás, a curva teria de dar a volta para chegar a ele. Delete tira a alça.';
 
 /** A instrução com uma alça escolhida: a do ponto de passagem ou a da alça de tangente. */
 export function instrucaoComAlca(alca: AlcaEscolhida): string {
