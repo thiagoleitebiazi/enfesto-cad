@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
 import { PainelDeInformacoesDosMoldes } from './PainelDeInformacoesDosMoldes';
 import { ponto } from '../core/geometria';
+import { tornarElementos } from '../domain/linhasAuxiliares';
 import { adicionarPique, criarMolde } from '../domain/molde';
 
 // Frente: 200 × 300 mm, 600 cm², perímetro 1000 mm; 2 unidades, costura de 10 mm e um pique.
@@ -54,9 +55,21 @@ describe('PainelDeInformacoesDosMoldes', () => {
   it('mostra uma linha por peça, com as medidas do contorno', () => {
     renderizar();
 
-    // Referência, tamanho, quantidade, largura, altura, área, perímetro, costura, pontos, piques, furos.
-    expect(celulasDaLinha('Frente')).toEqual(['REF-001', 'M', '2', '200,0', '300,0', '600,0', '1000,0', '10,0', '4', '1', '0']);
-    expect(celulasDaLinha('Gola')).toEqual(['—', '—', '3', '30,0', '40,0', '6,0', '120,0', '0,0', '3', '0', '0']);
+    // Referência, tamanho, quantidade, largura, altura, área, perímetro, linhas auxiliares, costura, pontos, piques, furos.
+    expect(celulasDaLinha('Frente')).toEqual(['REF-001', 'M', '2', '200,0', '300,0', '600,0', '1000,0', '0,0', '10,0', '4', '1', '0']);
+    expect(celulasDaLinha('Gola')).toEqual(['—', '—', '3', '30,0', '40,0', '6,0', '120,0', '0,0', '0,0', '3', '0', '0']);
+  });
+
+  it('as linhas auxiliares somam as linhas internas que fazem parte do molde, sem os elementos só de construção', () => {
+    // Uma reta de 160 mm e outra de 80 mm; a segunda é só de construção.
+    const comLinhas = { ...frente, linhasInternas: [[ponto(20, 50), ponto(180, 50)], [ponto(20, 100), ponto(100, 100)]] };
+
+    renderizar([comLinhas]);
+    expect(celulasDaLinha('Frente')[7]).toBe('240,0');
+    cleanup();
+
+    renderizar([tornarElementos(comLinhas, [1])]);
+    expect(celulasDaLinha('Frente')[7]).toBe('160,0');
   });
 
   it('soma no rodapé as peças a cortar e a área, contando a quantidade de cada molde', () => {

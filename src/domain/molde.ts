@@ -368,6 +368,11 @@ export interface Molde {
   readonly pregas?: readonly PregaDaPeca[];
   /** As pregas em cunha abertas com "Cortar intersecções" (aba Produção > Pence no contorno > Abrir), para fechar ou mudar a abertura depois. */
   readonly cunhas?: readonly CunhaDaPeca[];
+  /**
+   * As linhas internas que são só de construção (os "elementos" da aba Marcações > Linhas auxiliares): ficam na tela e
+   * servem às ferramentas, mas não fazem parte do molde. Cada uma é guardada pelos pontos dela; ver `linhasAuxiliares.ts`.
+   */
+  readonly elementos?: readonly Contorno[];
   /** A figura que a peça é, quando foi feita inteira por ferramenta (o círculo do "Por raio", a espiral): para mudar as medidas depois. */
   readonly figura?: FiguraDaPeca;
 }
@@ -519,7 +524,7 @@ function acompanhandoOsPontos(molde: Molde, contornoNovo: Contorno): { readonly 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
 export function semCampo(
   molde: Molde,
-  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas' | 'pregas' | 'cunhas',
+  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas' | 'pregas' | 'cunhas' | 'elementos',
 ): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
@@ -564,6 +569,7 @@ function anotacoesTransformadas(
   readonly curvas?: readonly CurvaDaPeca[];
   readonly pregas?: readonly PregaDaPeca[];
   readonly cunhas?: readonly CunhaDaPeca[];
+  readonly elementos?: readonly Contorno[];
   readonly figura?: FiguraDaPeca;
 } {
   const guardada = molde.dobraMantida;
@@ -577,6 +583,7 @@ function anotacoesTransformadas(
       : {}),
     ...(molde.pences ? { pences: molde.pences.map((pence) => penceLevada(pence, ponto)) } : {}),
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),
+    ...(molde.elementos ? { elementos: molde.elementos.map((linha) => linha.map(ponto)) } : {}),
     ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: ponto(molde.linhaDeSimetria.de), ate: ponto(molde.linhaDeSimetria.ate) } } : {}),
     ...(guardada
       ? {

@@ -12,6 +12,7 @@ import {
 } from '../core/geometria';
 import { alinharPique, type ModoDeAlinhar } from '../domain/alinharPiques';
 import { adicionarTexto, alterarTexto, piquePerto, textoPerto, type PoseDoTexto } from '../domain/anotacoes';
+import { ehElemento, tornarAuxiliares, tornarElementos } from '../domain/linhasAuxiliares';
 import type { FormatoDePique, Marca, Molde, Pique } from '../domain/molde';
 import {
   conferirFormato,
@@ -54,9 +55,18 @@ export type FerramentaDeMarcacao =
   | 'linhas-auxiliares';
 
 /** As que ficam ligadas à espera de cliques no desenho ("Substituir" age pela janela). */
-export type ModoDeMarcacao = 'inserir-pique' | 'remover-pique' | 'pique-texto' | 'multiplos-piques' | 'alinhar-piques' | 'cadastrar-pique' | 'alterar-pique';
+export type ModoDeMarcacao = Exclude<FerramentaDeMarcacao, 'substituir-piques'>;
 
-const MODOS: ReadonlySet<string> = new Set<ModoDeMarcacao>(['inserir-pique', 'remover-pique', 'pique-texto', 'multiplos-piques', 'alinhar-piques', 'cadastrar-pique', 'alterar-pique']);
+const MODOS: ReadonlySet<string> = new Set<ModoDeMarcacao>([
+  'inserir-pique',
+  'remover-pique',
+  'pique-texto',
+  'multiplos-piques',
+  'alinhar-piques',
+  'cadastrar-pique',
+  'alterar-pique',
+  'linhas-auxiliares',
+]);
 
 export function ehModoDeMarcacao(modo: string): modo is ModoDeMarcacao {
   return MODOS.has(modo);
@@ -106,6 +116,8 @@ export interface OpcoesDeMarcacao {
   readonly alinhar: { readonly modo: ModoDeAlinhar };
   /** O "Cadastrar pique": criar um formato pelo desenho, ou mudar o nome ou excluir um dos cadastrados (`qual`, pelo id). */
   readonly cadastrar: { readonly acao: 'criar' | 'alterar' | 'excluir'; readonly qual: string; readonly nome: string; readonly descricao: string };
+  /** As "Linhas auxiliares": adicionar (o elemento passa a ser do molde) ou remover (volta a ser elemento); no modo manual, o Enter confirma as linhas indicadas. */
+  readonly linhas: { readonly acao: 'adicionar' | 'remover'; readonly manual: boolean };
 }
 
 export const TODOS_OS_TIPOS = 'todos-os-tipos';
@@ -131,6 +143,7 @@ export const OPCOES_INICIAIS_DE_MARCACAO: OpcoesDeMarcacao = {
   texto: { texto: '', alturaMm: 10, anguloGraus: 0, ancora: 'centro' },
   alinhar: { modo: 'vertical' },
   cadastrar: { acao: 'criar', qual: '', nome: '', descricao: '' },
+  linhas: { acao: 'remover', manual: false },
 };
 
 const MESMO_PONTO_MM = 1e-6;
@@ -434,6 +447,34 @@ export function dialogoDaMarcacao(
         rotuloDoBotao: 'Confirmar',
       };
     }
+    case 'linhas-auxiliares':
+      return {
+        titulo: 'Linhas auxiliares',
+        campos: [
+          {
+            tipo: 'escolha',
+            id: 'acao',
+            rotulo: 'Ação',
+            opcoes: [
+              { valor: 'adicionar', rotulo: 'Adicionar: o elemento passa a ser linha auxiliar — faz parte do molde' },
+              { valor: 'remover', rotulo: 'Remover: a linha auxiliar volta a ser elemento — só de construção' },
+            ],
+            inicial: opcoes.linhas.acao,
+          },
+          {
+            tipo: 'escolha',
+            id: 'modo',
+            rotulo: 'Modo',
+            opcoes: [
+              { valor: 'automatico', rotulo: 'Automático: cada clique numa linha já a converte' },
+              { valor: 'manual', rotulo: 'Manual: clique nas linhas e confirme todas com Enter' },
+            ],
+            inicial: opcoes.linhas.manual ? 'manual' : 'automatico',
+          },
+        ],
+        nota: 'A linha auxiliar faz parte do molde: sai no PDF com ele. O elemento é só de construção: continua na tela, clara e pontilhada, e serve às ferramentas que pedem um elemento (cortar, dobrar, alinhar, múltiplos piques), mas não sai no PDF. Aqui toda linha interna já nasce fazendo parte do molde — é o “Remover” que a deixa só de construção, e o “Adicionar” que a traz de volta. No programa de referência é o contrário: o elemento desenhado só passa a ser do molde com o “Adicionar”.',
+        rotuloDoBotao: 'Indicar no desenho',
+      };
     default:
       return null;
   }
@@ -523,6 +564,8 @@ export function lerDialogoDaMarcacao(
       }
       return { ...opcoes, cadastrar: { acao, qual: valores.qual === undefined ? '' : String(valores.qual), nome, descricao: valores.descricao === undefined ? '' : String(valores.descricao).trim() } };
     }
+    case 'linhas-auxiliares':
+      return { ...opcoes, linhas: { acao: valores.acao === 'adicionar' ? 'adicionar' : 'remover', manual: valores.modo === 'manual' } };
     default:
       return opcoes;
   }
@@ -864,6 +907,46 @@ export function confirmarLinhasDoCadastro(peca: Molde, estado: TrechoEmEdicao): 
   return { estado: { ...SEM_TRECHO, grupos: [estado.livres] }, recado: null };
 }
 
+/**
+ * "Linhas auxiliares": converte as linhas internas de número dado — as que
+ * ainda não estão no estado pedido. Lança erro, sem mudar nada, se nenhuma
+ * delas tem o que converter.
+ */
+export function aplicarLinhasAuxiliares(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], peca: Molde, indices: readonly number[]): ResultadoDeFerramentaDeMolde {
+  const adicionar = opcoes.linhas.acao === 'adicionar';
+  // Adicionar vale para os elementos; remover, para as linhas que fazem parte do molde.
+  const alvos = indices.filter((i) => ehElemento(peca, i) === adicionar);
+  if (alvos.length === 0) {
+    const uma = indices.length === 1;
+    throw new Error(
+      adicionar
+        ? `${uma ? 'Essa linha já faz' : 'Essas linhas já fazem'} parte do molde: ${uma ? 'é uma linha auxiliar' : 'são linhas auxiliares'}.`
+        : `${uma ? 'Essa linha já é só um elemento' : 'Essas linhas já são só elementos'} de construção.`,
+    );
+  }
+  const nova = adicionar ? tornarAuxiliares(peca, alvos) : tornarElementos(peca, alvos);
+  const n = alvos.length;
+  return {
+    pecas: trocar(pecas, peca.id, nova),
+    recado: adicionar
+      ? `${plural(n, 'elemento', 'elementos')} de “${peca.nome}” ${n === 1 ? 'passou a ser linha auxiliar: agora faz' : 'passaram a ser linhas auxiliares: agora fazem'} parte do molde e ${n === 1 ? 'sai' : 'saem'} no PDF.`
+      : `${plural(n, 'linha auxiliar', 'linhas auxiliares')} de “${peca.nome}” ${n === 1 ? 'voltou a ser elemento: continua' : 'voltaram a ser elementos: continuam'} na tela, só de construção, e não ${n === 1 ? 'sai' : 'saem'} no PDF.`,
+  };
+}
+
+/** O Enter das "Linhas auxiliares" no modo manual: converte as linhas indicadas. `null` se não há nenhuma. */
+export function confirmarLinhasAuxiliares(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], peca: Molde, estado: TrechoEmEdicao): CliqueDeMarcacao | null {
+  const indices = linhasDasMarcas(peca, estado.livres);
+  if (indices.length === 0) return null;
+  try {
+    const feito = aplicarLinhasAuxiliares(opcoes, pecas, peca, indices);
+    return { estado: SEM_TRECHO, pecas: feito.pecas, recado: feito.recado };
+  } catch (e) {
+    // As linhas continuam indicadas: dá para tirar as que não servem.
+    return { estado, recado: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Por onde o texto do "Pique texto" se estende, mais ou menos: do começo ao fim dele, em mm, para a prévia. */
 function extensaoDoTexto(posicao: Ponto2D, o: OpcoesDeMarcacao['texto']): Ponto2D[] {
   // Cada letra ocupa, em média, pouco mais de metade da altura.
@@ -1077,6 +1160,19 @@ export function cliqueDeMarcacao(
         const livres = jaIndicada ? estado.livres.filter((q) => distancia(q, marca) > MESMO_PONTO_MM) : [...estado.livres, marca];
         return { estado: { ...SEM_TRECHO, livres }, recado: null };
       }
+      case 'linhas-auxiliares': {
+        const numero = contexto.linhaInterna;
+        const linha = numero === null ? undefined : peca.linhasInternas[numero];
+        if (numero === null || !linha || linha.length < 2) return { estado, recado: 'Clique em cima de uma linha interna da peça selecionada.' };
+        if (!opcoes.linhas.manual) {
+          const feito = aplicarLinhasAuxiliares(opcoes, pecas, peca, [numero]);
+          return { estado: SEM_TRECHO, pecas: feito.pecas, recado: feito.recado };
+        }
+        // No manual, a linha entra na lista (ou sai, se já estava); o Enter converte todas.
+        const marca = marcaDaLinha(linha);
+        const jaIndicada = estado.livres.some((q) => distancia(q, marca) <= MESMO_PONTO_MM);
+        return { estado: { ...SEM_TRECHO, livres: jaIndicada ? estado.livres.filter((q) => distancia(q, marca) > MESMO_PONTO_MM) : [...estado.livres, marca] }, recado: null };
+      }
     }
   } catch (e) {
     return { estado, recado: e instanceof Error ? e.message : String(e) };
@@ -1158,6 +1254,12 @@ export function previaDaMarcacao(
         const emJogo = contexto.linhaInterna !== null && !indicadas.includes(contexto.linhaInterna) ? [...indicadas, contexto.linhaInterna] : indicadas;
         return emJogo.length > 0 ? { linhas: emJogo.map((i) => peca.linhasInternas[i]!).filter((linha) => linha.length >= 2) } : {};
       }
+      case 'linhas-auxiliares': {
+        // As linhas já indicadas (no manual) tracejadas, e a que está sob o mouse em destaque.
+        const indicadas = linhasDasMarcas(peca, estado.livres).map((i) => peca.linhasInternas[i]!);
+        const sob = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
+        return { ...(indicadas.length > 0 ? { linhas: indicadas } : {}), ...(sob && sob.length >= 2 ? { substituido: sob } : {}) };
+      }
     }
   } catch {
     return estado.inicio ? { marcas: [estado.inicio.ponto] } : {};
@@ -1211,6 +1313,12 @@ export function instrucaoDaMarcacao(modo: ModoDeMarcacao, opcoes: OpcoesDeMarcac
           ? `Cadastrar pique “${opcoes.cadastrar.nome}”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter.`
           : `Cadastrar pique: ${plural(n, 'linha indicada', 'linhas indicadas')} — clique nas outras, ou aperte Enter para confirmar o desenho.`) + ESC
       );
+    }
+    case 'linhas-auxiliares': {
+      const oQue = opcoes.linhas.acao === 'adicionar' ? 'Adicionar linhas auxiliares: clique no elemento que deve passar a fazer parte do molde' : 'Remover linhas auxiliares: clique na linha que deve voltar a ser só elemento de construção';
+      if (!opcoes.linhas.manual) return `${oQue} — cada clique já converte a linha.` + ESC;
+      const n = estado.livres.length;
+      return (n === 0 ? `${oQue}; no modo manual, indique todas e aperte Enter.` : `Linhas auxiliares: ${plural(n, 'linha indicada', 'linhas indicadas')} — clique nas outras, ou aperte Enter para converter.`) + ESC;
     }
   }
 }

@@ -64,6 +64,8 @@ function naFormaDoTamanho(molde: Molde, graduacao: Graduacao, tamanho: number): 
     contorno,
     furos: molde.furos.map((furo) => furo.map(levar)),
     linhasInternas: molde.linhasInternas.map((linha) => linha.map(levar)),
+    // Os elementos (linhas só de construção) acompanham as linhas internas, para continuarem sendo elementos no tamanho.
+    ...(molde.elementos ? { elementos: molde.elementos.map((linha) => linha.map(levar)) } : {}),
     marcas: molde.marcas.map((m) => ({ ...m, posicao: levar(m.posicao) })),
     // O pique graduado fica à distância certa do ponto de referência dele; os outros, na mesma proporção da aresta.
     piques: piquesNoTamanho(molde, contorno, tamanho),

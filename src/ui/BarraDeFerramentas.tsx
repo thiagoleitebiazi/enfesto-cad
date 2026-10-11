@@ -153,8 +153,6 @@ interface BarraDeFerramentasProps {
 
 const SEM_PECA = 'selecione uma peça primeiro';
 const SEM_PECAS = 'não há peças no projeto';
-/** Ferramenta da aba Marcações que entra na etapa seguinte deste mesmo trabalho. */
-const FALTA_NESTA_ETAPA = 'entra na etapa seguinte desta aba';
 const SEM_TAMANHOS = 'defina os tamanhos primeiro, em “Tabela”';
 
 /**
@@ -1169,9 +1167,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo={['Inserir ou', 'remover']}
                   icone="linhas-auxiliares"
-                  pressionado={false}
-                  dica="Inserir ou remover linhas auxiliares: diz quais linhas internas fazem parte do molde e quais são só de construção"
-                  falta={FALTA_NESTA_ETAPA}
+                  pressionado={props.modo === 'linhas-auxiliares'}
+                  dica="Inserir ou remover linhas auxiliares: diz quais linhas internas fazem parte do molde (saem no PDF) e quais são só elementos de construção"
+                  falta={props.temSelecaoUnica ? null : SEM_PECA}
                   onClick={() => props.onUsarFerramentaDeMarcacao('linhas-auxiliares')}
                 />
               </div>

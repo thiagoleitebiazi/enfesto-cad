@@ -11,6 +11,7 @@ import {
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos } from '../domain/graduacao';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
+import { elementosDaPeca } from '../domain/linhasAuxiliares';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import {
   perimetro,
@@ -53,6 +54,8 @@ const COR_FIO = '#c62828';
 const COR_LINHA_DE_CORTE = '#6b7280';
 const COR_PIQUE = '#8e24aa';
 const COR_MARCA = '#00838f';
+/** As linhas internas que são só de construção (os elementos): claras, para não se confundirem com as do molde. */
+const COR_ELEMENTO_DE_CONSTRUCAO = '#8a93a0';
 const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#f7f8fa';
 const COR_REGUA_TRACO = '#5a6270';
@@ -106,6 +109,7 @@ export type ModoDeDesenho =
   | 'alinhar-piques'
   | 'cadastrar-pique'
   | 'alterar-pique'
+  | 'linhas-auxiliares'
   | 'mover-ponto'
   | 'modificar'
   | 'inserir-ponto'
@@ -248,6 +252,7 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'alinhar-piques',
   'cadastrar-pique',
   'alterar-pique',
+  'linhas-auxiliares',
 ]);
 
 /**
@@ -913,17 +918,22 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.stroke();
       }
 
-      for (const linha of peca.linhasInternas) {
+      // As linhas internas: as que fazem parte do molde, cheias; os elementos (só de construção), claros e pontilhados.
+      const deConstrucao = new Set(peca.elementos ? elementosDaPeca(peca) : []);
+      peca.linhasInternas.forEach((linha, numero) => {
         ctx.beginPath();
         linha.forEach((p, i) => {
           const tela = mundoParaTela(p, transform);
           if (i === 0) ctx.moveTo(tela.x, tela.y);
           else ctx.lineTo(tela.x, tela.y);
         });
-        ctx.strokeStyle = COR_CONTORNO;
+        const elemento = deConstrucao.has(numero);
+        ctx.strokeStyle = elemento ? COR_ELEMENTO_DE_CONSTRUCAO : COR_CONTORNO;
         ctx.lineWidth = 1;
+        if (elemento) ctx.setLineDash([2, 4]);
         ctx.stroke();
-      }
+        ctx.setLineDash([]);
+      });
 
       if (peca.margemDeCosturaMm > 0) {
         ctx.beginPath();

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, type FormatoDePique, type Molde, type Pique } from '../domain/molde';
 import { definirRegra } from '../domain/graduacao';
+import { elementosDaPeca, tornarElementos } from '../domain/linhasAuxiliares';
 import { PIQUE_PADRAO } from '../domain/piques';
 import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
 import {
@@ -13,6 +14,7 @@ import {
   cadastroAgeNaHora,
   caminhoHorario,
   cliqueDeMarcacao,
+  confirmarLinhasAuxiliares,
   confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
   dialogoDeAlterarPique,
@@ -58,8 +60,8 @@ const pique = (id: string, x: number, f?: FormatoDePique, extra: Partial<Pique> 
 const VALORES_DO_FORMATO = { tipo: 'v', largura: 8, altura: 10, angulo: 0 };
 
 describe('quais ferramentas ficam ligadas à espera de cliques', () => {
-  it('sete ferramentas esperam cliques; Substituir age pela janela', () => {
-    for (const modo of ['inserir-pique', 'remover-pique', 'pique-texto', 'multiplos-piques', 'alinhar-piques', 'cadastrar-pique', 'alterar-pique']) expect(ehModoDeMarcacao(modo)).toBe(true);
+  it('oito ferramentas esperam cliques; Substituir age pela janela', () => {
+    for (const modo of ['inserir-pique', 'remover-pique', 'pique-texto', 'multiplos-piques', 'alinhar-piques', 'cadastrar-pique', 'alterar-pique', 'linhas-auxiliares']) expect(ehModoDeMarcacao(modo)).toBe(true);
     for (const outro of ['substituir-piques', 'selecionar', 'pique']) expect(ehModoDeMarcacao(outro)).toBe(false);
   });
 });
@@ -121,7 +123,6 @@ describe('as janelas', () => {
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.nota).toMatch(/não a conta: os espaços iguais do começo ao fim e a contagem a partir do começo são a nossa leitura\./);
     expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'tipo', 'largura', 'altura', 'angulo', 'distancia']);
     expect(dialogoDaMarcacao('alterar-pique', O, [molde()])).toBeNull();
-    expect(dialogoDaMarcacao('linhas-auxiliares', O, [molde()])).toBeNull();
     expect(lerDialogoDaMarcacao('alterar-pique', O, {})).toBe(O);
   });
 
@@ -776,5 +777,137 @@ describe('Cadastrar pique', () => {
     expect(instrucaoDaMarcacao('cadastrar-pique', criar(), SEM_TRECHO)).toBe('Cadastrar pique “Meu V”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter. Esc sai.');
     expect(instrucaoDaMarcacao('cadastrar-pique', criar(), uma)).toMatch(/^Cadastrar pique: 1 linha indicada — clique nas outras, ou aperte Enter/);
     expect(instrucaoDaMarcacao('cadastrar-pique', criar(), confirmado)).toMatch(/^Cadastrar pique: desenho confirmado\. Clique no ponto de referência/);
+  });
+});
+
+describe('Linhas auxiliares', () => {
+  // Três linhas internas: uma reta (o meio em (100, 50)), uma em L (o meio do primeiro trecho em (60, 100)) e uma reta curta (o meio em (150, 250)).
+  const RETA = [ponto(20, 50), ponto(180, 50)];
+  const EM_L = [ponto(20, 100), ponto(100, 100), ponto(100, 200)];
+  const CURTA = [ponto(150, 220), ponto(150, 280)];
+  const comLinhas = (): Molde => molde({ linhasInternas: [RETA, EM_L, CURTA] });
+  const linhas = (parte: Partial<OpcoesDeMarcacao['linhas']>): OpcoesDeMarcacao => ({ ...O, linhas: { ...O.linhas, ...parte } });
+  const MODO = 'linhas-auxiliares';
+  const SO_UM_PONTO = molde({ linhasInternas: [[ponto(10, 10)]] });
+
+  it('a janela pergunta a ação e o modo, e diz que aqui a linha já nasce fazendo parte do molde', () => {
+    const dialogo = dialogoDaMarcacao(MODO, O, [comLinhas()])!;
+
+    expect(dialogo.titulo).toBe('Linhas auxiliares');
+    expect(dialogo.campos.map((c) => [c.id, c.tipo === 'escolha' && c.opcoes.map((o) => o.valor), c.tipo === 'escolha' && c.inicial])).toEqual([
+      ['acao', ['adicionar', 'remover'], 'remover'],
+      ['modo', ['automatico', 'manual'], 'automatico'],
+    ]);
+    expect(dialogo.rotuloDoBotao).toBe('Indicar no desenho');
+    expect(dialogo.nota).toMatch(/O elemento é só de construção: continua na tela, clara e pontilhada/);
+    expect(dialogo.nota).toMatch(/Aqui toda linha interna já nasce fazendo parte do molde .* No programa de referência é o contrário: o elemento desenhado só passa a ser do molde com o “Adicionar”\.$/);
+    // A janela reabre com o que foi escolhido da última vez.
+    const outra = dialogoDaMarcacao(MODO, linhas({ acao: 'adicionar', manual: true }), [comLinhas()])!;
+    expect(outra.campos.map((c) => c.tipo === 'escolha' && c.inicial)).toEqual(['adicionar', 'manual']);
+  });
+
+  it('lê a janela, sem mexer nas opções das outras ferramentas', () => {
+    const lido = lerDialogoDaMarcacao(MODO, O, { acao: 'adicionar', modo: 'manual' });
+
+    expect(lido.linhas).toEqual({ acao: 'adicionar', manual: true });
+    expect(lido.inserir).toBe(O.inserir);
+    expect(lerDialogoDaMarcacao(MODO, lido, { acao: 'remover', modo: 'automatico' }).linhas).toEqual({ acao: 'remover', manual: false });
+  });
+
+  it('no automático, cada clique numa linha já a converte', () => {
+    const peca = comLinhas();
+    const outra = molde({}, 'o');
+    const removida = clicar(MODO, O, peca, solto(100, 50), SEM_TRECHO, 0, [outra]);
+
+    expect(removida.pecas![0]!.elementos).toEqual([RETA]);
+    expect(removida.pecas![1]).toBe(outra);
+    expect(removida.estado).toBe(SEM_TRECHO);
+    expect(removida.recado).toBe('1 linha auxiliar de “Frente” voltou a ser elemento: continua na tela, só de construção, e não sai no PDF.');
+    // O clique de novo na mesma linha não tem o que fazer; o "Adicionar" a traz de volta.
+    const comElemento = removida.pecas![0]!;
+    const repetido = clicar(MODO, O, comElemento, solto(100, 50), SEM_TRECHO, 0);
+    expect(repetido.pecas).toBeUndefined();
+    expect(repetido.recado).toBe('Essa linha já é só um elemento de construção.');
+    const devolvida = clicar(MODO, linhas({ acao: 'adicionar' }), comElemento, solto(100, 50), SEM_TRECHO, 0);
+    expect('elementos' in devolvida.pecas![0]!).toBe(false);
+    expect(devolvida.recado).toBe('1 elemento de “Frente” passou a ser linha auxiliar: agora faz parte do molde e sai no PDF.');
+    expect(clicar(MODO, linhas({ acao: 'adicionar' }), comElemento, solto(150, 250), SEM_TRECHO, 2).recado).toBe('Essa linha já faz parte do molde: é uma linha auxiliar.');
+  });
+
+  it('fora das linhas, ou numa linha de um ponto só, o clique diz o que fazer', () => {
+    const peca = comLinhas();
+
+    expect(clicar(MODO, O, peca, solto(150, 150), SEM_TRECHO, null)).toEqual({ estado: SEM_TRECHO, recado: 'Clique em cima de uma linha interna da peça selecionada.' });
+    expect(clicar(MODO, O, peca, solto(150, 150), SEM_TRECHO, 9).recado).toBe('Clique em cima de uma linha interna da peça selecionada.');
+    expect(clicar(MODO, O, SO_UM_PONTO, solto(10, 10), SEM_TRECHO, 0)).toEqual({ estado: SEM_TRECHO, recado: 'Clique em cima de uma linha interna da peça selecionada.' });
+    expect(clicar(MODO, linhas({ manual: true }), SO_UM_PONTO, solto(10, 10), SEM_TRECHO, 0).estado.livres).toEqual([]);
+  });
+
+  it('no manual, os cliques indicam as linhas e o Enter converte todas', () => {
+    const peca = comLinhas();
+    const manual = linhas({ manual: true });
+    const uma = clicar(MODO, manual, peca, solto(100, 50), SEM_TRECHO, 0);
+    const duas = clicar(MODO, manual, peca, solto(150, 250), uma.estado, 2);
+
+    expect(uma.pecas).toBeUndefined();
+    expect(uma.recado).toBeNull();
+    expect(duas.estado.livres).toEqual([ponto(100, 50), ponto(150, 250)]);
+    // O clique numa linha já indicada tira ela da lista.
+    expect(clicar(MODO, manual, peca, solto(100, 50), duas.estado, 0).estado.livres).toEqual([ponto(150, 250)]);
+
+    const outra = molde({}, 'o');
+    const feito = confirmarLinhasAuxiliares(manual, [outra, peca], peca, duas.estado)!;
+    expect(feito.pecas![0]).toBe(outra);
+    expect(elementosDaPeca(feito.pecas![1]!)).toEqual([0, 2]);
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.recado).toBe('2 linhas auxiliares de “Frente” voltaram a ser elementos: continuam na tela, só de construção, e não saem no PDF.');
+    // Sem linha indicada, o Enter não é desta ferramenta.
+    expect(confirmarLinhasAuxiliares(manual, [peca], peca, SEM_TRECHO)).toBeNull();
+  });
+
+  it('o Enter só converte as linhas que ainda não estão no estado pedido, e avisa quando não há nenhuma', () => {
+    const peca = tornarElementos(comLinhas(), [0]);
+    const manual = linhas({ manual: true });
+    const adicionar = linhas({ acao: 'adicionar', manual: true });
+    const retaEEmL: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(100, 50), ponto(60, 100)] };
+
+    // A reta já é elemento: só a em L é convertida. No "Adicionar", só a reta volta.
+    const feito = confirmarLinhasAuxiliares(manual, [peca], peca, retaEEmL)!;
+    expect(elementosDaPeca(feito.pecas![0]!)).toEqual([0, 1]);
+    expect(feito.recado).toMatch(/^1 linha auxiliar de “Frente” voltou a ser elemento: continua na tela/);
+    const devolvido = confirmarLinhasAuxiliares(adicionar, [peca], peca, retaEEmL)!;
+    expect('elementos' in devolvido.pecas![0]!).toBe(false);
+    expect(devolvido.recado).toMatch(/^1 elemento de “Frente” passou a ser linha auxiliar: agora faz parte/);
+    // Nenhuma a converter: nada muda, e as linhas continuam indicadas.
+    const soAReta: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(100, 50)] };
+    expect(confirmarLinhasAuxiliares(manual, [peca], peca, soAReta)).toEqual({ estado: soAReta, recado: 'Essa linha já é só um elemento de construção.' });
+    const emLECurta: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(60, 100), ponto(150, 250)] };
+    expect(confirmarLinhasAuxiliares(adicionar, [peca], peca, emLECurta)).toEqual({ estado: emLECurta, recado: 'Essas linhas já fazem parte do molde: são linhas auxiliares.' });
+    const doisElementos = tornarElementos(comLinhas(), [0, 1]);
+    expect(confirmarLinhasAuxiliares(manual, [doisElementos], doisElementos, retaEEmL)!.recado).toBe('Essas linhas já são só elementos de construção.');
+    expect(confirmarLinhasAuxiliares(adicionar, [doisElementos], doisElementos, retaEEmL)!.recado).toBe('2 elementos de “Frente” passaram a ser linhas auxiliares: agora fazem parte do molde e saem no PDF.');
+  });
+
+  it('a prévia destaca a linha sob o mouse e mostra as já indicadas', () => {
+    const peca = comLinhas();
+    const uma: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(100, 50)] };
+    const previa = (estado: TrechoEmEdicao, linhaInterna: number | null, daPeca: Molde = peca) => previaDaMarcacao(MODO, linhas({ manual: true }), daPeca, estado, solto(150, 150), { raioMm: RAIO, linhaInterna });
+
+    expect(previa(SEM_TRECHO, null)).toEqual({});
+    expect(previa(SEM_TRECHO, 1)).toEqual({ substituido: EM_L });
+    expect(previa(uma, null)).toEqual({ linhas: [RETA] });
+    expect(previa(uma, 2)).toEqual({ linhas: [RETA], substituido: CURTA });
+    expect(previa(SEM_TRECHO, 0, SO_UM_PONTO)).toEqual({});
+  });
+
+  it('a instrução diz a ação, o modo e quantas linhas já foram indicadas', () => {
+    const uma: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(100, 50)] };
+    const duas: TrechoEmEdicao = { ...SEM_TRECHO, livres: [ponto(100, 50), ponto(150, 250)] };
+
+    expect(instrucaoDaMarcacao(MODO, O, SEM_TRECHO)).toBe('Remover linhas auxiliares: clique na linha que deve voltar a ser só elemento de construção — cada clique já converte a linha. Esc sai.');
+    expect(instrucaoDaMarcacao(MODO, linhas({ acao: 'adicionar' }), SEM_TRECHO)).toBe('Adicionar linhas auxiliares: clique no elemento que deve passar a fazer parte do molde — cada clique já converte a linha. Esc sai.');
+    expect(instrucaoDaMarcacao(MODO, linhas({ manual: true }), SEM_TRECHO)).toBe('Remover linhas auxiliares: clique na linha que deve voltar a ser só elemento de construção; no modo manual, indique todas e aperte Enter. Esc sai.');
+    expect(instrucaoDaMarcacao(MODO, linhas({ manual: true }), uma)).toBe('Linhas auxiliares: 1 linha indicada — clique nas outras, ou aperte Enter para converter. Esc sai.');
+    expect(instrucaoDaMarcacao(MODO, linhas({ acao: 'adicionar', manual: true }), duas)).toBe('Linhas auxiliares: 2 linhas indicadas — clique nas outras, ou aperte Enter para converter. Esc sai.');
   });
 });

@@ -463,6 +463,8 @@ function desdobrada(molde: Molde, indiceAresta: number, novoId: () => string): M
     contorno,
     furos: [...molde.furos, ...molde.furos.map((f) => f.map(espelhar))],
     linhasInternas: [...molde.linhasInternas, ...molde.linhasInternas.map((l) => l.map(espelhar)), [pontaInicial, pontaFinal]],
+    // O elemento (linha só de construção) ganha a cópia espelhada, que também é elemento.
+    ...(molde.elementos ? { elementos: [...molde.elementos, ...molde.elementos.map((l) => l.map(espelhar))] } : {}),
     marcas: [...molde.marcas, ...molde.marcas.map((m) => ({ ...m, id: novoId(), posicao: espelhar(m.posicao) }))],
     piques: piquesQueFicamNoContorno([...molde.piques, ...piquesEspelhados], contorno),
     // Os pontos graduados da metade que existia ganham o par espelhado, com a regra espelhada.
@@ -616,6 +618,8 @@ export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, aresta
     contorno,
     furos: [...moldeA.furos, ...b.furos],
     linhasInternas: [...moldeA.linhasInternas, ...b.linhasInternas],
+    // Os elementos (linhas só de construção) das duas peças continuam elementos na unida.
+    ...(moldeA.elementos || b.elementos ? { elementos: [...(moldeA.elementos ?? []), ...(b.elementos ?? [])] } : {}),
     marcas: [...moldeA.marcas, ...b.marcas],
     piques: piquesQueFicamNoContorno([...moldeA.piques, ...b.piques], contorno),
     ...(cotas.length > 0 ? { cotas } : {}),

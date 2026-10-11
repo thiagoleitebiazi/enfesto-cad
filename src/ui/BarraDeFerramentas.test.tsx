@@ -269,7 +269,7 @@ describe('BarraDeFerramentas: abas', () => {
 
   it('cada ferramenta da aba Marcações pede a sua, e a que está em uso fica pressionada', () => {
     const props = renderizar('Marcações', { modo: 'multiplos-piques', temGraduacao: true });
-    for (const nome of ['Inserir', 'Remover pique', 'Pique texto', 'Múltiplos', 'Alinhar', 'Cadastrar pique', 'Substituir', 'Alterar']) fireEvent.click(botao(nome));
+    for (const nome of ['Inserir', 'Remover pique', 'Pique texto', 'Múltiplos', 'Alinhar', 'Cadastrar pique', 'Substituir', 'Alterar', 'Inserir ou remover']) fireEvent.click(botao(nome));
 
     expect(vi.mocked(props.onUsarFerramentaDeMarcacao).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
       'inserir-pique',
@@ -280,10 +280,23 @@ describe('BarraDeFerramentas: abas', () => {
       'cadastrar-pique',
       'substituir-piques',
       'alterar-pique',
+      'linhas-auxiliares',
     ]);
     expect(botao('Múltiplos')).toHaveAttribute('aria-pressed', 'true');
     expect(botao('Inserir')).toHaveAttribute('aria-pressed', 'false');
     expect(botao('Inserir').title).toMatch(/^Inserir pique: põe piques na peça selecionada — na borda ou internos/);
+  });
+
+  it('as Linhas auxiliares ficam pressionadas em uso, e sem peça selecionada dizem o que falta', () => {
+    renderizar('Marcações', { modo: 'linhas-auxiliares' });
+    expect(botao('Inserir ou remover')).toHaveAttribute('aria-pressed', 'true');
+    expect(botao('Inserir ou remover').title).toMatch(/^Inserir ou remover linhas auxiliares: diz quais linhas internas fazem parte do molde \(saem no PDF\) e quais são só elementos de construção$/);
+    cleanup();
+
+    renderizar('Marcações', { modo: 'selecionar', temSelecao: false, temSelecaoUnica: false });
+    expect(botao('Inserir ou remover')).toBeDisabled();
+    expect(botao('Inserir ou remover')).toHaveAttribute('aria-pressed', 'false');
+    expect(botao('Inserir ou remover').title).toMatch(/^Inserir ou remover — /);
   });
 
   it('o Alinhar só liga na peça graduada, e diz por quê', () => {
@@ -329,8 +342,7 @@ describe('BarraDeFerramentas: ferramentas desligadas', () => {
       cleanup();
     }
 
-    // Na aba Marcações, as Linhas auxiliares ainda entram na etapa seguinte deste mesmo trabalho.
-    expect(desligadas).toEqual({ Marcações: ['Inserir ou remover'] });
+    expect(desligadas).toEqual({});
   });
 
   it('Digitalizar e Imagens abrem as imagens do modelo, cada um do seu jeito, mesmo sem peça nenhuma', () => {

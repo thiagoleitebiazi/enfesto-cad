@@ -1,5 +1,6 @@
 import { Sobreposicao } from './Sobreposicao';
 import { perimetro } from '../core/geometria';
+import { comprimentoDasLinhasAuxiliares } from '../domain/linhasAuxiliares';
 import { dimensoesDoMolde, type Molde } from '../domain/molde';
 
 interface PainelDeInformacoesDosMoldesProps {
@@ -54,6 +55,9 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                     Perímetro (mm)
                   </th>
                   <th scope="col" className="coluna-numerica">
+                    Linhas aux. (mm)
+                  </th>
+                  <th scope="col" className="coluna-numerica">
                     Costura (mm)
                   </th>
                   <th scope="col" className="coluna-numerica">
@@ -83,6 +87,7 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                     <td className="coluna-numerica">{numero(dim.alturaMm)}</td>
                     <td className="coluna-numerica">{numero(dim.areaMm2 / 100)}</td>
                     <td className="coluna-numerica">{numero(perimetroMm)}</td>
+                    <td className="coluna-numerica">{numero(comprimentoDasLinhasAuxiliares(peca))}</td>
                     <td className="coluna-numerica">{numero(peca.margemDeCosturaMm)}</td>
                     <td className="coluna-numerica">{peca.contorno.length}</td>
                     <td className="coluna-numerica">{peca.piques.length}</td>
@@ -98,15 +103,16 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                   <td className="coluna-numerica">{totalACortar}</td>
                   <td colSpan={2} />
                   <td className="coluna-numerica">{numero(areaTotalMm2 / 100)}</td>
-                  <td colSpan={5} />
+                  <td colSpan={6} />
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
         <p className="nota-do-formulario">
-          Largura, altura e área são as do contorno, sem a costura, como no diálogo de propriedades. Os totais contam a
-          quantidade de cada molde. Clique numa linha para selecionar a peça no desenho.
+          Largura, altura e área são as do contorno, sem a costura, como no diálogo de propriedades. “Linhas aux.” soma as
+          linhas internas que fazem parte do molde, sem os elementos só de construção. Os totais contam a quantidade de
+          cada molde. Clique numa linha para selecionar a peça no desenho.
         </p>
         <div className="acoes-da-sobreposicao">
           <button type="button" className="botao-primario" onClick={props.onFechar}>

@@ -179,6 +179,7 @@ import {
   aplicarSubstituir,
   cadastroAgeNaHora,
   cliqueDeMarcacao,
+  confirmarLinhasAuxiliares,
   confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
   dialogoDeAlterarPique,
@@ -3034,6 +3035,16 @@ export default function App(): React.JSX.Element {
           if (confirmado.pecas) aplicarMudanca([...confirmado.pecas]);
           setRecadoDaFerramenta(confirmado.recado);
         }
+      } else if (e.key === 'Enter' && modo === 'linhas-auxiliares' && trecho.livres.length > 0) {
+        // "Linhas auxiliares", no modo manual: o Enter converte as linhas indicadas.
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const confirmado = peca && confirmarLinhasAuxiliares(opcoesDeMarcacao, pecas, peca, trecho);
+        if (confirmado) {
+          setTrecho(confirmado.estado);
+          if (confirmado.pecas) aplicarMudanca([...confirmado.pecas]);
+          setRecadoDaFerramenta(confirmado.recado);
+        }
       } else if (e.key === 'Enter' && modo === 'cadastrar-pique' && trecho.livres.length > 0) {
         // "Cadastrar pique": o Enter confirma as linhas do desenho; o clique seguinte é o do ponto de referência.
         e.preventDefault();
@@ -3135,6 +3146,7 @@ export default function App(): React.JSX.Element {
       trecho,
       opcoesDeCorte,
       opcoesDeRemover,
+      opcoesDeMarcacao,
       alcaDeCurva,
       pecas,
       selecionadoId,

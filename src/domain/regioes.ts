@@ -114,6 +114,7 @@ export function levarOQueEstaNasRegioes(
     ...molde,
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),
     linhasInternas: molde.linhasInternas.map((l) => (linhaDentro(l) ? levar(l) : l)),
+    ...(molde.elementos ? { elementos: molde.elementos.map((l) => (linhaDentro(l) ? levar(l) : l)) } : {}),
     marcas: molde.marcas.map((m) => (dentro(m.posicao) ? { ...m, posicao: movimento.ponto(m.posicao) } : m)),
     piques: molde.piques.map((p) => {
       const levado = naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p;

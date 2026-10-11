@@ -12,6 +12,7 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { fioDaParte } from './corteEUniao';
+import { elementosLevados } from './linhasAuxiliares';
 import { adicionarMarca, piquesQueFicamNoContorno, semGraduacao, type Molde } from './molde';
 import { semPontosRepetidos } from './regioes';
 
@@ -109,13 +110,14 @@ function linhaDoMolde(molde: Molde, indice: number): Contorno {
 }
 
 function comAPonta(molde: Molde, indice: number, ponta: PontaDaLinha, novaPonta: Ponto2D): Molde {
-  return {
+  // O elemento (linha só de construção) continua elemento com a ponta nova.
+  return elementosLevados(molde, {
     ...molde,
     linhasInternas: molde.linhasInternas.map((linha, i) => {
       if (i !== indice) return linha;
       return ponta === 'inicio' ? [novaPonta, ...linha.slice(1)] : [...linha.slice(0, -1), novaPonta];
     }),
-  };
+  });
 }
 
 /** "Estender reta": a ponta indicada da linha interna anda `comprimentoMm` para fora, na direção em que a linha já ia. */
@@ -367,7 +369,7 @@ export function moverElemento(molde: Molde, elemento: ElementoDaPeca, delta: Pon
     return { ...molde, marcas: molde.marcas.map((m) => (m.id === elemento.id ? { ...m, posicao: levar(m.posicao) } : m)) };
   }
   linhaDoMolde(molde, elemento.indice);
-  return { ...molde, linhasInternas: molde.linhasInternas.map((linha, i) => (i === elemento.indice ? linha.map(levar) : linha)) };
+  return elementosLevados(molde, { ...molde, linhasInternas: molde.linhasInternas.map((linha, i) => (i === elemento.indice ? linha.map(levar) : linha)) });
 }
 
 /** Tira o elemento da peça. */
@@ -394,10 +396,15 @@ export function dividirLinha(molde: Molde, indice: number, em: Ponto2D): Molde {
   }
   const primeira = semPontosRepetidosNaLinha([...linha.slice(0, melhor.segmento), corte]);
   const segunda = semPontosRepetidosNaLinha([corte, ...linha.slice(melhor.segmento)]);
-  return {
-    ...molde,
-    linhasInternas: molde.linhasInternas.flatMap((outra, i) => (i === indice ? [primeira, segunda] : [outra])),
-  };
+  // Dividido, o elemento vira dois elementos; as linhas depois dele passam um número adiante.
+  return elementosLevados(
+    molde,
+    {
+      ...molde,
+      linhasInternas: molde.linhasInternas.flatMap((outra, i) => (i === indice ? [primeira, segunda] : [outra])),
+    },
+    (i) => (i < indice ? [i] : i === indice ? [i, i + 1] : [i + 1]),
+  );
 }
 
 function semPontosRepetidosNaLinha(linha: readonly Ponto2D[]): Ponto2D[] {

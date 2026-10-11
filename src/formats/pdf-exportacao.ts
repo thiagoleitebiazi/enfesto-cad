@@ -8,6 +8,7 @@ import type { Molde } from '../domain/molde';
 import { contornoDeCorte } from '../domain/molde';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
+import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 
@@ -153,7 +154,8 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D): vo
     doc.restore();
   }
 
-  for (const linha of peca.linhasInternas) {
+  // Só as linhas que fazem parte do molde: os elementos de construção ficam fora do PDF.
+  for (const linha of linhasDoMolde(peca)) {
     doc.save();
     tracarContorno(doc, linha, origem);
     doc.dash(mmParaPontos(1.5), { space: mmParaPontos(1) });

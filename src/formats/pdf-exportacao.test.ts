@@ -3,6 +3,7 @@ import { ponto } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
 import { adicionarTexto, definirCodigoDoPique, definirLinhaDeSimetria } from '../domain/anotacoes';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { tornarElementos } from '../domain/linhasAuxiliares';
 import {
   gerarPdfDeEncaixe,
   gerarPdfDeMoldesIndividuais,
@@ -185,6 +186,18 @@ describe('gerarPdfDeMoldesIndividuais — o que foi anotado na peça', () => {
     const tracoEPonto = /\[[\d.]+ [\d.]+ [\d.]+ [\d.]+\] 0 d/;
     expect(semLinha).not.toMatch(tracoEPonto);
     expect(comLinha).toMatch(tracoEPonto);
+  });
+
+  it('a linha auxiliar sai tracejada com o molde; o elemento de construção fica fora do PDF', async () => {
+    const semLinhas = pecaRetangular('Frente', 80, 80);
+    const comDuas: Molde = { ...semLinhas, linhasInternas: [[ponto(10, 20), ponto(70, 20)], [ponto(10, 60), ponto(70, 60)]] };
+    // O traço das linhas internas: 1,5 mm de risco e 1 mm de vão.
+    const tracejadas = async (peca: Molde): Promise<number> => [...(await paraTexto(await gerarPdfDeMoldesIndividuais([peca], OPCOES))).matchAll(/\[4\.25\d* 2\.83\d*\] 0 d/g)].length;
+
+    expect(await tracejadas(semLinhas)).toBe(0);
+    expect(await tracejadas(comDuas)).toBe(2);
+    expect(await tracejadas(tornarElementos(comDuas, [1]))).toBe(1);
+    expect(await tracejadas(tornarElementos(comDuas, [0, 1]))).toBe(0);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { area, somar } from '../core/geometria';
 import { graduacaoComOsPontosMovidos } from './graduacao';
+import { elementosLevados } from './linhasAuxiliares';
 import { comAsCurvasAcompanhando, pencesComOsPontosMovidos, reancorarPiques, type Molde } from './molde';
 
 /**
@@ -171,7 +172,8 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
       ? { inicio: somar(molde.linhaDeFio.inicio, delta), fim: somar(molde.linhaDeFio.fim, delta) }
       : molde.linhaDeFio;
   // As curvas registradas acompanham: a que foi inteira com a cerca anda junto, e a que teve só as pontas levadas é refeita.
-  return comAsCurvasAcompanhando(molde, {
+  // Os elementos (linhas só de construção) continuam elementos, com os pontos onde ficaram.
+  const movido = comAsCurvasAcompanhando(molde, {
     ...molde,
     contorno,
     furos,
@@ -182,4 +184,5 @@ export function moverDentroDaCerca(molde: Molde, cerca: Cerca, delta: Ponto2D, o
     ...(molde.graduacao ? { graduacao: graduacaoComOsPontosMovidos(molde.graduacao, molde.contorno, contorno) } : {}),
     ...(molde.pences ? { pences: pencesComOsPontosMovidos(molde.pences, molde.contorno, contorno) } : {}),
   });
+  return elementosLevados(molde, movido);
 }
