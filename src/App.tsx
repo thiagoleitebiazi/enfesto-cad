@@ -40,6 +40,7 @@ import {
   lerDialogoDeCortar,
   lerDialogoDeRemoverRegiao,
   cliqueNoElementoDeRemover,
+  confirmarElementosDeRemover,
   cliqueNoElementoDoCorte,
   confirmarCortePelosElementos,
   previaDoCortePelosElementos,
@@ -2441,8 +2442,9 @@ export default function App(): React.JSX.Element {
             return;
           }
         }
-        // No "Remover região" sem "Unir moldes", o clique numa linha interna (reta ou curva) indica o elemento; com elementos indicados, o clique fora deles escolhe o lado.
-        if (modo === 'remover-regiao' && !segundaReta) {
+        // No "Remover região", o clique numa linha interna indica o elemento; com elementos indicados (ou a linha confirmada com Enter), o clique escolhe o lado.
+        // Com "Unir moldes", os elementos de cada linha são confirmados com Enter; a reta clicada sozinha continua valendo na hora.
+        if (modo === 'remover-regiao') {
           const noElemento = cliqueNoElementoDeRemover(
             pecas,
             peca,
@@ -2965,6 +2967,16 @@ export default function App(): React.JSX.Element {
       } else if (e.key === 'Enter' && (modo === 'novo-molde' || modo === 'novo-furo')) {
         e.preventDefault();
         finalizarContornoEmEdicao();
+      } else if (e.key === 'Enter' && modo === 'remover-regiao' && !trecho.inicio && trecho.livres.length > 0) {
+        // "Remover região" pelos elementos: o Enter confirma a linha (e, com "Unir moldes", a segunda tira a faixa).
+        e.preventDefault();
+        const peca = pecas.find((p) => p.id === selecionadoId);
+        const confirmado = peca && confirmarElementosDeRemover(pecas, peca, trecho, proximoId, opcoesDeRemover);
+        if (confirmado) {
+          setTrecho(confirmado.estado);
+          if (confirmado.pecas) aplicarMudanca([...confirmado.pecas]);
+          setRecadoDaFerramenta(confirmado.recado);
+        }
       } else if (e.key === 'Enter' && modo === 'cortar' && !trecho.inicio && trecho.livres.length > 0) {
         // "Contorno manual" do Cortar: o Enter confirma os elementos indicados.
         e.preventDefault();
@@ -3056,6 +3068,7 @@ export default function App(): React.JSX.Element {
       modo,
       trecho,
       opcoesDeCorte,
+      opcoesDeRemover,
       alcaDeCurva,
       pecas,
       selecionadoId,
@@ -3191,9 +3204,9 @@ export default function App(): React.JSX.Element {
         const pelosElementos = previaDoCortePelosElementos(pecaSelecionada, trecho, sobOMouse, corteManual);
         if (pelosElementos) return pelosElementos;
       }
-      if (modo === 'remover-regiao' && !opcoesDeRemover.unir) {
+      if (modo === 'remover-regiao') {
         const sobOMouse = cursorMundo && !mouse?.noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null;
-        const pelosElementos = previaDoRemoverPelosElementos(pecaSelecionada, trecho, sobOMouse, cursorMundo);
+        const pelosElementos = previaDoRemoverPelosElementos(pecaSelecionada, trecho, sobOMouse, cursorMundo, opcoesDeRemover.unir);
         if (pelosElementos) return pelosElementos;
       }
       return modo === 'bainha'

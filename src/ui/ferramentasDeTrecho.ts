@@ -30,6 +30,12 @@ export interface TrechoEmEdicao {
   readonly inicio: PosicaoNoContorno | null;
   readonly fim: PosicaoNoContorno | null;
   readonly livres: readonly Ponto2D[];
+  /**
+   * Os grupos de elementos já confirmados com Enter, cada um pelas marcas dos
+   * elementos dele: no "Remover região", a linha confirmada e, com "Unir
+   * moldes", a primeira das duas linhas.
+   */
+  readonly grupos?: readonly (readonly Ponto2D[])[];
 }
 
 export const SEM_TRECHO: TrechoEmEdicao = { inicio: null, fim: null, livres: [] };

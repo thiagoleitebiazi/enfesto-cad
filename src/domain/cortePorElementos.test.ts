@@ -3,7 +3,7 @@ import { area, ponto, type Ponto2D } from '../core/geometria';
 import { definirRegra, regraDoVertice } from './graduacao';
 import { definirTamanhosDoMolde, moldeDoTamanho } from './tamanhosGraduados';
 import { cortarMoldeComOpcoes, exigirCorteValido, separarRegiaoDoMolde, type OpcoesDeCorte } from './corteEUniao';
-import { cortarMoldePelosElementos, linhaDeCortePelosElementos, separarRegiaoPelosElementos } from './cortePorElementos';
+import { cortarMoldePelosElementos, linhaDeCortePelosElementos, removerFaixaPelosElementos, separarRegiaoPelosElementos } from './cortePorElementos';
 import { criarMolde, type DadosDeNovoMolde, type Molde } from './molde';
 
 // Retângulo de 200 × 300 mm, no sentido anti-horário: arestas 0 (y = 0), 1 (x = 200), 2 (y = 300) e 3 (x = 0).
@@ -293,6 +293,64 @@ describe('separarRegiaoPelosElementos', () => {
     expect(() => separarRegiaoPelosElementos(comALinha(), [], ponto(100, 250), 'r1')).toThrow(/Indique ao menos um elemento/);
     const soltos = molde({ linhasInternas: [[ponto(0, 100), ponto(60, 120)], [ponto(140, 120), ponto(200, 100)]] });
     expect(() => separarRegiaoPelosElementos(soltos, [0, 1], ponto(100, 250), 'r1')).toThrow(/não se emendam/);
+  });
+});
+
+describe('removerFaixaPelosElementos: a faixa entre duas linhas que não são retas', () => {
+  // A mesma linha quebrada, 60 mm acima: a faixa entre as duas tem 200 × 60 = 120 cm².
+  const DE_CIMA = QUEBRADA.map((p) => ponto(p.x, p.y + 60));
+  const RETA_DE_CIMA = [ponto(0, 160), ponto(200, 160)];
+
+  it('duas linhas iguais: a faixa sai, as partes se encaixam, e a emenda some do contorno', () => {
+    const { peca, faixa, degrauMm, areaDasPartesMm2 } = removerFaixaPelosElementos(molde({ linhasInternas: [QUEBRADA, DE_CIMA, [ponto(20, 20), ponto(60, 20)]] }), [0], [1], 'r1');
+
+    expect(area(faixa.contorno)).toBeCloseTo(12000, 6);
+    expect(area(peca.contorno)).toBeCloseTo(48000, 6);
+    expect(areaDasPartesMm2).toBeCloseTo(48000, 6);
+    expect(degrauMm).toBeCloseTo(0, 9);
+    expect([peca.id, faixa.id, faixa.nome]).toEqual(['m1', 'r1', 'Frente (2)']);
+    // O bico das duas linhas não está mais no contorno: a peça unida é o retângulo de 200 × 240.
+    expect(contem(peca.contorno, 100, 150)).toBe(false);
+    expect(contem(peca.contorno, 100, 210)).toBe(false);
+    const ys = peca.contorno.map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(240, 6);
+    // Os dois elementos viraram borda e saíram; a linha solta ficou, levada com a parte dela.
+    expect(peca.linhasInternas).toHaveLength(1);
+    expect(faixa.linhasInternas).toEqual([]);
+  });
+
+  it('linhas de formas diferentes são unidas pelas pontas: a peça unida não tem a soma das duas partes', () => {
+    const { peca, faixa, areaDasPartesMm2 } = removerFaixaPelosElementos(molde({ linhasInternas: [QUEBRADA, RETA_DE_CIMA] }), [0], [1], 'r1');
+
+    // Entre o bico e a reta: 200 × 60 menos o triângulo do bico (50 cm²).
+    expect(area(faixa.contorno)).toBeCloseTo(7000, 6);
+    // As partes somavam 250 + 280; unidas pelas pontas, o triângulo do bico fica por cima da outra: 480.
+    expect(areaDasPartesMm2).toBeCloseTo(53000, 6);
+    expect(area(peca.contorno)).toBeCloseTo(48000, 6);
+  });
+
+  it('a segunda linha é achada pelo meio dela, medido sobre a linha — e não pelo meio da reta entre as pontas', () => {
+    // Dois bicos para cima, o de cima mais alto: a reta entre as pontas da segunda linha passa por baixo do bico da primeira.
+    const baixa = [ponto(0, 100), ponto(100, 180), ponto(200, 100)];
+    const alta = [ponto(0, 130), ponto(100, 240), ponto(200, 130)];
+    const { faixa, peca } = removerFaixaPelosElementos(molde({ linhasInternas: [baixa, alta], linhaDeFio: { inicio: ponto(100, 260), fim: ponto(100, 290) } }), [0], [1], 'r1');
+
+    // Entre as duas: de 30 mm nas bordas a 60 mm no meio.
+    expect(area(faixa.contorno)).toBeCloseTo(9000, 6);
+    expect(area(peca.contorno)).toBeGreaterThan(40000);
+  });
+
+  it('tanto faz a ordem das duas linhas', () => {
+    const aoContrario = removerFaixaPelosElementos(molde({ linhasInternas: [QUEBRADA, DE_CIMA] }), [1], [0], 'r1');
+    expect(area(aoContrario.faixa.contorno)).toBeCloseTo(12000, 6);
+    expect(area(aoContrario.peca.contorno)).toBeCloseTo(48000, 6);
+  });
+
+  it('recusa o mesmo elemento nas duas linhas e as linhas que se cruzam', () => {
+    expect(() => removerFaixaPelosElementos(molde({ linhasInternas: [QUEBRADA, DE_CIMA] }), [0], [0], 'r1')).toThrow(/O mesmo elemento não pode estar nas duas linhas/);
+    // Um bico para baixo que cruza o bico para cima.
+    const invertida = [ponto(0, 150), ponto(100, 100), ponto(200, 150)];
+    expect(() => removerFaixaPelosElementos(molde({ linhasInternas: [QUEBRADA, invertida] }), [0], [1], 'r1')).toThrow();
   });
 });
 

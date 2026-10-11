@@ -853,6 +853,14 @@ export function separarRegiaoDoMolde(
  * de fio gira e anda até encostar na outra. Bordas de comprimentos diferentes
  * ficam centralizadas uma na outra, e sobra um degrau (`degrauMm`).
  * A segunda reta é dada pelos dois pontos dela no contorno da peça.
+ *
+ * Com `miolo1` e `miolo2`, as linhas não são retas: passam por esses pontos
+ * (quem chama já tirou da peça os elementos que viraram borda). Unidas as
+ * partes, a linha da emenda some do contorno — só as pontas dela contam.
+ * Por isso cada linha é trocada pela corda dela, e as duas cordas se
+ * encostam como duas arestas. Linhas de formas diferentes ficam, ao longo da
+ * emenda, uma por cima da outra (ou aquém): `areaDasPartesMm2` é o que as
+ * duas partes somavam antes de unidas, para comparar com a peça unida.
  */
 export function removerFaixaDoMolde(
   molde: Molde,
@@ -861,30 +869,39 @@ export function removerFaixaDoMolde(
   a2: Ponto2D,
   b2: Ponto2D,
   novoId: string,
-): { readonly peca: Molde; readonly faixa: Molde; readonly degrauMm: number } {
-  const semLinhas = semAsLinhasDaReta(semAsLinhasDaReta(molde, a1.ponto, b1.ponto), a2, b2);
-  const primeiras = partesDoCorte(semLinhas, a1, b1);
+  miolo1: readonly Ponto2D[] = [],
+  miolo2: readonly Ponto2D[] = [],
+): { readonly peca: Molde; readonly faixa: Molde; readonly degrauMm: number; readonly areaDasPartesMm2: number } {
+  // A linha interna que estava em cima de uma reta do corte sai: virou a borda. Da linha que não é reta, quem chama já tirou os elementos.
+  const semADaPrimeira = miolo1.length > 0 ? molde : semAsLinhasDaReta(molde, a1.ponto, b1.ponto);
+  const semLinhas = miolo2.length > 0 ? semADaPrimeira : semAsLinhasDaReta(semADaPrimeira, a2, b2);
+  const primeiras = partesDoCorte(semLinhas, a1, b1, miolo1);
   const noContornoDe = (parte: Molde, p: Ponto2D): PosicaoNoContorno | null => {
     const perto = pontoMaisProximoNoContorno(p, parte.contorno);
     return perto.distancia <= NO_CONTORNO_DA_PARTE_MM ? { indiceAresta: perto.indiceAresta, ponto: perto.ponto } : null;
   };
-  // A segunda reta fica inteira numa das partes; a outra é a parte de perto, que encosta na primeira reta.
-  const meioDaSegunda = ponto((a2.x + b2.x) / 2, (a2.y + b2.y) / 2);
+  // A segunda linha fica inteira numa das partes; a outra é a parte de perto, que encosta na primeira.
+  const meioDaSegunda = meioDaLinha([a2, ...miolo2, b2]);
   const comASegunda = primeiras.findIndex((parte) => noContornoDe(parte, a2) && noContornoDe(parte, b2) && pontoDentroDoContorno(meioDaSegunda, parte.contorno));
   if (comASegunda < 0) {
     throw new Error('A segunda reta precisa ficar toda de um lado da primeira, de um ponto do contorno a outro, sem cruzar com ela.');
   }
-  const dePerto = primeiras[1 - comASegunda]!;
+  const dePertoComALinha = primeiras[1 - comASegunda]!;
   const resto = primeiras[comASegunda]!;
-  const segundas = partesDoCorte(resto, noContornoDe(resto, a2)!, noContornoDe(resto, b2)!);
-  // Das duas partes do resto, a faixa é a que tem a primeira reta como aresta.
-  const qualEAFaixa = segundas.findIndex((parte) => arestaEntre(parte.contorno, a1.ponto, b1.ponto) >= 0);
+  const segundas = partesDoCorte(resto, noContornoDe(resto, a2)!, noContornoDe(resto, b2)!, miolo2);
+  // Das duas partes do resto, a faixa é a que tem a primeira linha na borda.
+  const primeiraLinha = [a1.ponto, ...miolo1, b1.ponto];
+  const qualEAFaixa = segundas.findIndex((parte) => linhaNoContorno(parte.contorno, primeiraLinha) !== null);
   if (qualEAFaixa < 0) throw new Error('As duas retas precisam delimitar uma faixa da peça, de borda a borda.');
   const faixa = segundas[qualEAFaixa]!;
-  const deLonge = segundas[1 - qualEAFaixa]!;
-  const arestaDePerto = arestaEntre(dePerto.contorno, a1.ponto, b1.ponto);
-  const arestaDeLonge = arestaEntre(deLonge.contorno, a2, b2);
-  if (arestaDePerto < 0 || arestaDeLonge < 0) throw new Error('As duas retas precisam delimitar uma faixa da peça, de borda a borda.');
+  const deLongeComALinha = segundas[1 - qualEAFaixa]!;
+  const areaDasPartesMm2 = area(dePertoComALinha.contorno) + area(deLongeComALinha.contorno);
+  // Cada parte que sobra tem a linha dela na borda; a que não é reta dá lugar à corda.
+  const dePerto = comACordaNaBorda(dePertoComALinha, primeiraLinha);
+  const deLonge = comACordaNaBorda(deLongeComALinha, [a2, ...miolo2, b2]);
+  const arestaDePerto = dePerto ? arestaEntre(dePerto.contorno, a1.ponto, b1.ponto) : -1;
+  const arestaDeLonge = deLonge ? arestaEntre(deLonge.contorno, a2, b2) : -1;
+  if (!dePerto || !deLonge || arestaDePerto < 0 || arestaDeLonge < 0) throw new Error('As duas retas precisam delimitar uma faixa da peça, de borda a borda.');
   // Fica parada a parte que tem o meio da linha de fio; a outra vai até ela.
   const meioDoFio = ponto((molde.linhaDeFio.inicio.x + molde.linhaDeFio.fim.x) / 2, (molde.linhaDeFio.inicio.y + molde.linhaDeFio.fim.y) / 2);
   const fioNaDeLonge = pontoDentroDoContorno(meioDoFio, deLonge.contorno) && !pontoDentroDoContorno(meioDoFio, dePerto.contorno);
@@ -892,11 +909,43 @@ export function removerFaixaDoMolde(
     ? unirMoldes({ ...deLonge, linhaDeFio: molde.linhaDeFio }, arestaDeLonge, { ...dePerto, id: `${molde.id}-parte` }, arestaDePerto)
     : unirMoldes(dePerto, arestaDePerto, { ...deLonge, id: `${molde.id}-parte` }, arestaDeLonge);
   if (!(area(unida.contorno) > AREA_MINIMA_DE_UMA_PARTE_MM2)) throw new Error('A peça ficaria sem área sem essa faixa.');
+  if (contornoSeCruza(unida.contorno)) throw new Error('Unidas por essas duas linhas, as partes ficariam uma por cima da outra: a peça cruzaria a si mesma.');
   return {
     // A parte que tem a linha de fio não saiu do lugar: a seta original fica onde estava se ainda cabe na peça unida;
     // senão, vai para o meio dela (e encolhe, se a peça ficou mais curta que a seta).
     peca: { ...unida, linhaDeFio: fioDaParte(molde.linhaDeFio, unida.contorno) },
     faixa: { ...faixa, id: novoId, nome: `${molde.nome} (2)` },
     degrauMm: Math.abs(distancia(a1.ponto, b1.ponto) - distancia(a2, b2)),
+    areaDasPartesMm2,
   };
+}
+
+/** O ponto a meio caminho de uma linha, medido sobre ela. */
+function meioDaLinha(linha: readonly Ponto2D[]): Ponto2D {
+  const total = linha.slice(1).reduce((soma, p, i) => soma + distancia(linha[i]!, p), 0);
+  let falta = total / 2;
+  for (let i = 1; i < linha.length; i++) {
+    const trecho = distancia(linha[i - 1]!, linha[i]!);
+    if (falta <= trecho && trecho > 0) {
+      const k = falta / trecho;
+      return ponto(linha[i - 1]!.x + (linha[i]!.x - linha[i - 1]!.x) * k, linha[i - 1]!.y + (linha[i]!.y - linha[i - 1]!.y) * k);
+    }
+    falta -= trecho;
+  }
+  return linha.at(-1)!;
+}
+
+/**
+ * A parte com a linha do corte trocada, no contorno, pela corda dela (a reta
+ * entre as duas pontas): os pontos do caminho saem. A linha reta fica como
+ * está. `null` se a linha não está na borda da parte.
+ */
+function comACordaNaBorda(parte: Molde, linha: readonly Ponto2D[]): Molde | null {
+  if (linha.length <= 2) return parte;
+  const onde = linhaNoContorno(parte.contorno, linha);
+  if (!onde) return null;
+  const doCaminho = new Set(onde.slice(1, -1));
+  const contorno = parte.contorno.filter((_, i) => !doCaminho.has(i));
+  if (contorno.length < 3) return null;
+  return { ...parte, contorno, piques: piquesQueFicamNoContorno(parte.piques, contorno) };
 }

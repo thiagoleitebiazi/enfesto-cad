@@ -6,7 +6,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
-import { cortarMoldeComOpcoes, CORTE_SEM_COSTURA, separarRegiaoDoMolde, type OpcoesDeCorte } from './corteEUniao';
+import { cortarMoldeComOpcoes, CORTE_SEM_COSTURA, removerFaixaDoMolde, separarRegiaoDoMolde, type OpcoesDeCorte } from './corteEUniao';
 import type { Molde } from './molde';
 
 /**
@@ -188,4 +188,22 @@ export function separarRegiaoPelosElementos(
   const { a, b, miolo } = linhaDeCortePelosElementos(molde, indices);
   const semOsElementos: Molde = { ...molde, linhasInternas: molde.linhasInternas.filter((_, i) => !indices.includes(i)) };
   return separarRegiaoDoMolde(semOsElementos, a, b, pontoDoLado, novoId, miolo);
+}
+
+/**
+ * "Remover região" com "Unir moldes" pelas linhas de dois grupos de elementos
+ * (cada uma reta, curva, quebrada ou de vários elementos emendados): a faixa
+ * entre as duas sai, e as duas partes que sobram são unidas pelas pontas das
+ * linhas. Os elementos saem da peça: viraram a borda da emenda.
+ */
+export function removerFaixaPelosElementos(
+  molde: Molde,
+  primeira: readonly number[],
+  segunda: readonly number[],
+  novoId: string,
+): { readonly peca: Molde; readonly faixa: Molde; readonly degrauMm: number; readonly areaDasPartesMm2: number } {
+  if (primeira.some((i) => segunda.includes(i))) throw new Error('O mesmo elemento não pode estar nas duas linhas.');
+  const [l1, l2] = [linhaDeCortePelosElementos(molde, primeira), linhaDeCortePelosElementos(molde, segunda)];
+  const semOsElementos: Molde = { ...molde, linhasInternas: molde.linhasInternas.filter((_, i) => !primeira.includes(i) && !segunda.includes(i)) };
+  return removerFaixaDoMolde(semOsElementos, l1.a, l1.b, l2.a.ponto, l2.b.ponto, novoId, l1.miolo, l2.miolo);
 }

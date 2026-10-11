@@ -9,11 +9,13 @@ import {
   aplicarUniao,
   arestaDeOutraPecaPerto,
   arestaPerto,
+  aplicarRemoverFaixaPelosElementos,
   aplicarRemoverPelosElementos,
   cliqueDeReta,
   cliqueNoElementoDeRemover,
   cliqueNoElementoDoCorte,
   confirmarCortePelosElementos,
+  confirmarElementosDeRemover,
   dialogoDeCortar,
   elementosDoCorte,
   lerContornoDoCorte,
@@ -455,7 +457,9 @@ describe('Cortar e Remover região: as opções das janelas', () => {
     expect(instrucaoDaReta('cortar', SEM_TRECHO)).toMatch(/onde o corte começa\. Ou clique numa linha interna da peça \(reta ou curva\): ela vira a linha do corte, de borda a borda\. Esc sai\.$/);
     expect(instrucaoDaReta('remover-regiao', SEM_TRECHO)).toMatch(/Ou clique numa linha interna da peça \(reta ou curva\): ela vira a linha que separa a região, de borda a borda\. Esc sai\.$/);
     // Com “Unir moldes”, as duas linhas são retas.
-    expect(instrucaoDaReta('remover-regiao', SEM_TRECHO, { manter: false, unir: true })).toMatch(/Ou clique numa linha interna reta da peça: ela vira a reta, de borda a borda\. Esc sai\.$/);
+    expect(instrucaoDaReta('remover-regiao', SEM_TRECHO, { manter: false, unir: true })).toBe(
+      'Remover região (unir): clique no contorno da peça selecionada, numa ponta da primeira reta. Ou clique nas linhas internas que formam a primeira linha (reta, curva ou várias emendadas) e confirme com Enter. Esc sai.',
+    );
     // Com elementos indicados, o que falta é o lado.
     expect(instrucaoDaReta('remover-regiao', { ...SEM_TRECHO, livres: [ponto(50, 125)] })).toMatch(/^Remover região: 1 elemento indicado — clique dentro da peça, na região que deve sair \(ela fica em destaque\)\. /);
     expect(instrucaoDaReta('remover-regiao', { ...SEM_TRECHO, livres: [ponto(50, 125), ponto(150, 125)] })).toMatch(/2 elementos indicados/);
@@ -649,7 +653,9 @@ describe('“Remover região” pelos elementos: a linha curva, a linha quebrada
     expect(um.pecas).toBeUndefined();
     // O que falta fazer, quem diz é a instrução da ferramenta.
     expect(um.recado).toBeNull();
-    expect(instrucaoDaReta('remover-regiao', um.estado)).toBe('Remover região: 1 elemento indicado — clique dentro da peça, na região que deve sair (ela fica em destaque). O clique em outra linha interna junta ela à linha; num elemento já indicado, tira ele. Esc sai.');
+    expect(instrucaoDaReta('remover-regiao', um.estado)).toBe(
+      'Remover região: 1 elemento indicado — clique dentro da peça, na região que deve sair (ela fica em destaque). O clique em outra linha interna junta ela à linha; num elemento já indicado, tira ele. Enter confirma a linha: depois dele, o clique do lado vale mesmo em cima de outra linha. Esc sai.',
+    );
     const nenhum = cliqueNoElementoDeRemover([peca], peca, um.estado, 0, ponto(50, 125), ids())!;
     expect(elementosDoCorte(peca, nenhum.estado)).toEqual([]);
     expect(nenhum.recado).toBeNull();
@@ -721,7 +727,147 @@ describe('“Remover região” pelos elementos: a linha curva, a linha quebrada
     expect(previaDoRemoverPelosElementos(peca, SEM_TRECHO, null, EM_CIMA)).toBeNull();
   });
 
-  it('a janela diz que a linha pode ser curva ou de vários elementos, e que com “Unir moldes” as duas são retas', () => {
-    expect(dialogoDeRemoverRegiao({ manter: false, unir: false }).nota).toMatch(/uma linha interna da peça \(o elemento: reta, curva, arco ou linha quebrada — ou várias emendadas, clicando uma a uma\)\..*Com “Unir moldes”, as duas linhas têm de ser retas/);
+  it('a janela diz que a linha pode ser curva ou de vários elementos, do Enter, e de como as duas linhas do “Unir moldes” são indicadas', () => {
+    const nota = dialogoDeRemoverRegiao({ manter: false, unir: false }).nota;
+    expect(nota).toMatch(/uma linha interna da peça \(o elemento: reta, curva, arco ou linha quebrada — ou várias emendadas, clicando uma a uma\)\./);
+    expect(nota).toMatch(/Num molde cheio de linhas, confirme a linha com Enter: depois dele, o clique do lado vale em qualquer lugar\./);
+    expect(nota).toMatch(/clique nas linhas internas da primeira e confirme com Enter, depois nas da segunda e Enter\. Linhas de formas diferentes são unidas pelas pontas delas, e a mensagem diz a diferença\.$/);
+  });
+});
+
+describe('“Remover região”: o Enter confirma a linha, e daí em diante o clique escolhe o lado em qualquer lugar', () => {
+  const QUEBRADA = [ponto(0, 100), ponto(100, 150), ponto(200, 100)];
+  // Um molde com a linha quebrada e, logo acima dela, outra linha interna: não sobra lugar livre perto.
+  const cheio = (): Molde => molde('f', 'Frente', FRENTE, { linhasInternas: [QUEBRADA, [ponto(20, 200), ponto(180, 200)]] });
+
+  it('sem o Enter, o clique em cima de outra linha junta essa linha; com o Enter, é o clique do lado', () => {
+    const peca = cheio();
+    const um = cliqueNoElementoDeRemover([peca], peca, SEM_TRECHO, 0, ponto(50, 125), ids())!.estado;
+    // Em cima da outra linha, sem confirmar: ela entra na lista.
+    const semConfirmar = cliqueNoElementoDeRemover([peca], peca, um, 1, ponto(100, 200), ids())!;
+    expect(semConfirmar.pecas).toBeUndefined();
+    expect(elementosDoCorte(peca, semConfirmar.estado)).toEqual([0, 1]);
+
+    const confirmado = confirmarElementosDeRemover([peca], peca, um, ids())!;
+    expect(confirmado.pecas).toBeUndefined();
+    expect(confirmado.recado).toBeNull();
+    expect(confirmado.estado.livres).toEqual([]);
+    expect(confirmado.estado.grupos).toHaveLength(1);
+    expect(instrucaoDaReta('remover-regiao', confirmado.estado)).toBe('Remover região: linha confirmada — clique dentro da peça, na região que deve sair (ela fica em destaque). Agora o clique vale mesmo em cima de outra linha. Esc sai.');
+    // O mesmo clique, em cima da outra linha: agora é o lado, e a região de cima sai.
+    const feito = cliqueNoElementoDeRemover([peca], peca, confirmado.estado, 1, ponto(100, 200), ids())!;
+    expect(feito.pecas).toHaveLength(1);
+    expect(area(feito.pecas![0]!.contorno)).toBeCloseTo(25000, 6);
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.recado).toBe('Região de 350,0 cm² removida de “Frente”, pelo elemento indicado.');
+  });
+
+  it('com a linha confirmada, a prévia mostra a região sob o mouse mesmo em cima de outra linha', () => {
+    const peca = cheio();
+    const um = cliqueNoElementoDeRemover([peca], peca, SEM_TRECHO, 0, ponto(50, 125), ids())!.estado;
+    const confirmado = confirmarElementosDeRemover([peca], peca, um, ids())!.estado;
+    const previa = previaDoRemoverPelosElementos(peca, confirmado, 1, ponto(100, 200))!;
+
+    expect(previa.novo).toEqual(QUEBRADA);
+    expect(area(previa.substituido!.slice(0, -1))).toBeCloseTo(35000, 6);
+    expect(previaDoRemoverPelosElementos(peca, confirmado, null, null)!.substituido).toBeUndefined();
+  });
+
+  it('o Enter só confirma o que dá uma linha de borda a borda; sem nada indicado, não é com ele', () => {
+    const soltos = molde('f', 'Frente', FRENTE, { linhasInternas: [[ponto(0, 100), ponto(60, 120)], [ponto(140, 120), ponto(200, 100)]] });
+    const um = cliqueNoElementoDeRemover([soltos], soltos, SEM_TRECHO, 0, ponto(30, 110), ids())!.estado;
+    const dois = cliqueNoElementoDeRemover([soltos], soltos, um, 1, ponto(170, 110), ids())!.estado;
+    const recusado = confirmarElementosDeRemover([soltos], soltos, dois, ids())!;
+
+    expect(recusado.recado).toMatch(/não se emendam/);
+    expect(recusado.estado).toBe(dois);
+    expect(confirmarElementosDeRemover([soltos], soltos, SEM_TRECHO, ids())).toBeNull();
+    expect(confirmarElementosDeRemover([soltos], soltos, AO_MEIO, ids())).toBeNull();
+  });
+});
+
+describe('“Remover região” com “Unir moldes” por linhas que não são retas', () => {
+  const UNIR = { manter: false, unir: true };
+  const QUEBRADA = [ponto(0, 100), ponto(100, 150), ponto(200, 100)];
+  const DE_CIMA = QUEBRADA.map((p) => ponto(p.x, p.y + 60));
+  // A linha de fio na parte de cima: é ela que fica parada.
+  const peca = (): Molde => molde('f', 'Frente', FRENTE, { linhasInternas: [QUEBRADA, DE_CIMA, [ponto(0, 250), ponto(200, 250)]], linhaDeFio: { inicio: ponto(100, 255), fim: ponto(100, 295) } });
+  const clicarNa = (p: Molde, estado: TrechoEmEdicao, linha: number | null, x = 50, y = 125) => cliqueNoElementoDeRemover([p], p, estado, linha, ponto(x, y), ids(), UNIR);
+
+  it('os elementos de cada linha são confirmados com Enter: o segundo tira a faixa e une as partes', () => {
+    const p = peca();
+    const um = clicarNa(p, SEM_TRECHO, 0)!;
+    expect(um.recado).toBeNull();
+    expect(instrucaoDaReta('remover-regiao', um.estado, UNIR)).toBe('Remover região (unir): 1 elemento indicado para a primeira linha — clique nos outros que a formam, ou aperte Enter para confirmá-la. Esc sai.');
+    const primeira = confirmarElementosDeRemover([p], p, um.estado, ids(), UNIR)!;
+    expect(primeira.pecas).toBeUndefined();
+    expect(primeira.estado.grupos).toHaveLength(1);
+    expect(instrucaoDaReta('remover-regiao', primeira.estado, UNIR)).toBe('Remover região (unir): primeira linha confirmada — agora clique nos elementos da segunda linha. Esc sai.');
+    const dois = clicarNa(p, primeira.estado, 1, 50, 185)!;
+    expect(dois.estado.grupos).toHaveLength(1);
+    expect(instrucaoDaReta('remover-regiao', dois.estado, UNIR)).toBe('Remover região (unir): 1 elemento indicado para a segunda linha — aperte Enter para confirmar: a faixa entre as duas sai (fica em destaque). Esc sai.');
+    const feito = confirmarElementosDeRemover([p], p, dois.estado, ids(), UNIR)!;
+
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.pecas).toHaveLength(1);
+    expect(area(feito.pecas![0]!.contorno)).toBeCloseTo(48000, 6);
+    expect(feito.recado).toBe('Faixa de 120,0 cm² removida de “Frente”, entre as duas linhas indicadas, e as duas partes que sobraram foram unidas: a peça passou de 600,0 cm² para 480,0 cm².');
+  });
+
+  it('com “Manter região”, a faixa vira uma peça; linhas de formas diferentes são unidas pelas pontas, e a mensagem diz a diferença', () => {
+    const p = peca();
+    const mantida = aplicarRemoverFaixaPelosElementos([p], p, [0], [1], ids(), { manter: true, unir: true });
+    expect(mantida.pecas).toHaveLength(2);
+    expect(mantida.recado).toMatch(/ A faixa virou a peça “Frente \(2\)”\.$/);
+    // A linha quebrada e a reta de cima.
+    const diferentes = aplicarRemoverFaixaPelosElementos([p], p, [0], [2], ids(), UNIR);
+    expect(diferentes.recado).toMatch(/ As duas linhas não têm a mesma forma: as partes foram unidas pelas pontas delas, e a peça unida tem 50,0 cm² a menos que as duas partes somadas — é o que uma linha tem de diferente da outra\.$/);
+  });
+
+  it('a reta também entra no grupo da vez, antes ou depois da primeira linha confirmada: assim várias retas emendadas formam uma linha', () => {
+    const p = peca();
+    // A reta clicada antes de qualquer outra coisa: é o primeiro elemento da primeira linha.
+    const comecandoPelaReta = clicarNa(p, SEM_TRECHO, 2, 100, 250)!;
+    expect(elementosDoCorte(p, comecandoPelaReta.estado)).toEqual([2]);
+    expect(comecandoPelaReta.estado.inicio).toBeNull();
+    // Com a primeira reta posta por dois pontos do contorno, o clique numa linha interna reta continua sendo a segunda reta inteira.
+    expect(clicarNa(p, AO_MEIO, 2, 100, 250)).toBeNull();
+    expect(retaPeloElemento('remover-regiao', p, AO_MEIO, 2, true)!.estado.livres).toHaveLength(2);
+    // Depois da primeira linha confirmada, a reta é um elemento da segunda.
+    const primeira = confirmarElementosDeRemover([p], p, clicarNa(p, SEM_TRECHO, 0)!.estado, ids(), UNIR)!.estado;
+    const comAReta = clicarNa(p, primeira, 2, 100, 250)!;
+    expect(elementosDoCorte(p, comAReta.estado)).toEqual([2]);
+    expect(comAReta.estado.grupos).toHaveLength(1);
+    // O clique nela de novo tira; a primeira linha continua confirmada.
+    const semAReta = clicarNa(p, comAReta.estado, 2, 100, 250)!;
+    expect(semAReta.estado.livres).toEqual([]);
+    expect(semAReta.estado.grupos).toHaveLength(1);
+  });
+
+  it('fora das linhas, com um grupo em andamento, o clique não começa outra coisa: a mensagem lembra o Enter', () => {
+    const p = peca();
+    const um = clicarNa(p, SEM_TRECHO, 0)!.estado;
+    const fora = clicarNa(p, um, null, 100, 280)!;
+    expect(fora.estado).toBe(um);
+    expect(fora.recado).toBe('Enter confirma os elementos indicados; Esc desiste.');
+    const primeira = confirmarElementosDeRemover([p], p, um, ids(), UNIR)!.estado;
+    expect(clicarNa(p, primeira, null, 100, 280)!.recado).toMatch(/A primeira linha está confirmada/);
+    // Sem nada em andamento, o clique fora das linhas não é com ela.
+    expect(clicarNa(p, SEM_TRECHO, null, 100, 280)).toBeNull();
+  });
+
+  it('a prévia desenha a primeira linha confirmada e, com a segunda sob o mouse, a faixa em destaque', () => {
+    const p = peca();
+    // Antes de tudo: a linha sob o mouse — curva ou reta — dá a prévia da linha, de borda a borda.
+    expect(previaDoRemoverPelosElementos(p, SEM_TRECHO, 0, ponto(50, 125), true)!.novo).toEqual(QUEBRADA);
+    expect(previaDoRemoverPelosElementos(p, SEM_TRECHO, 2, ponto(100, 250), true)!.novo).toEqual([ponto(0, 250), ponto(200, 250)]);
+    expect(previaDoRemoverPelosElementos(p, SEM_TRECHO, null, ponto(100, 280), true)).toBeNull();
+    const primeira = confirmarElementosDeRemover([p], p, clicarNa(p, SEM_TRECHO, 0)!.estado, ids(), UNIR)!.estado;
+    const soAPrimeira = previaDoRemoverPelosElementos(p, primeira, null, ponto(100, 280), true)!;
+    expect(soAPrimeira.linhas).toContainEqual(QUEBRADA);
+    expect(soAPrimeira.substituido).toBeUndefined();
+    const comASegunda = previaDoRemoverPelosElementos(p, primeira, 1, ponto(50, 185), true)!;
+    expect(comASegunda.novo).toEqual(DE_CIMA);
+    expect(area(comASegunda.substituido!.slice(0, -1))).toBeCloseTo(12000, 6);
   });
 });
