@@ -184,6 +184,22 @@ describe('abrirPelasIntersecoes', () => {
     expect(() => abrir({ indiceAresta: 0, ponto: ponto(50, 0) }, { indiceAresta: 0, ponto: ponto(150, 0) }, 30, convexa)).toThrow();
   });
 
+  it('a peça que dá a volta por fora da ponta da linha (em caracol) é recusada: os dois lados da linha são o mesmo pedaço de tecido', () => {
+    // O "C" com um braço a mais, que sai do alto da haste, passa por cima da posição da pence, desce pela direita e volta para dentro do vão,
+    // atravessando a linha entre os dois braços. O trecho do contorno que sai da posição pela esquerda chega à travessia seguinte pela direita.
+    const emCaracol = [
+      ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(100, 100), ponto(100, 200), ponto(200, 200), ponto(200, 300), ponto(100, 300),
+      ponto(100, 350), ponto(250, 350), ponto(250, 170), ponto(120, 170), ponto(120, 130), ponto(300, 130), ponto(300, 400), ponto(0, 400),
+    ];
+    const peca = molde({ contorno: emCaracol });
+    // A linha entra e sai da peça três vezes entre a posição e o pivô.
+    expect(cruzaOContornoMaisDeDuasVezes(emCaracol, ponto(150, 300), ponto(150, 0))).toBe(true);
+
+    expect(() => abrirPelasIntersecoes(peca, { indiceAresta: 6, ponto: ponto(150, 300) }, PIVO, 30, false, ids())).toThrow(/dá a volta por fora da linha/);
+    // Sem o braço a mais, a mesma linha abre a peça.
+    expect(abrirPelasIntersecoes(molde(), POSICAO, PIVO, 30, false, ids())).not.toBeNull();
+  });
+
   it('a linha que encosta num canto do contorno sem atravessar é recusada', () => {
     // Um bico que desce do braço de cima até tocar a linha em (150, 250)… por dentro não há como: o toque é num canto de um recorte.
     const comToque = [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(100, 100), ponto(100, 200), ponto(200, 200), ponto(200, 240), ponto(150, 250), ponto(200, 260), ponto(200, 300), ponto(0, 300)];

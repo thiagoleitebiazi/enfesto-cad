@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { area, distancia, ponto, rotacionar, type PosicaoNoContorno } from '../core/geometria';
 import { criarMolde, semCampo, type Molde } from '../domain/molde';
+import { aberturaDaCunha, cunhasDaPeca, faixasDaCunha } from '../domain/penceComIntersecoes';
 import { abrirPence, comAcabamento, comPenceReconhecida, criarPence, criarPenceInterna, dobraDaPence, medidasDaPence, pencesDaPeca, pivoDaPence } from '../domain/pences';
 import { criarPregas, medidasDaPrega, pregasDaPeca } from '../domain/pregas';
 import {
+  aplicarEdicaoDaCunha,
   aplicarEdicaoDaPence,
   aplicarEdicaoDaPrega,
+  cunhaSobOClique,
+  dialogoDeEditarCunha,
   dialogoDeEditarPrega,
   aplicarPence,
   cliqueDePence,
@@ -487,7 +491,7 @@ describe('Pence aberta com “Cortar intersecções”', () => {
     expect(aberta.pecas[0]!.linhasInternas).toHaveLength(4);
     expect(pencesDaPeca(aberta.pecas[0]!)).toHaveLength(0);
     expect(aberta.recado).toBe(
-      '“Frente” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, 30,0 mm na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. A peça passou de 500,0 cm² para 530,0 cm².',
+      '“Frente” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, 30,0 mm na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. Para mudar a abertura ou fechá-la, clique dentro dela. A peça passou de 500,0 cm² para 530,0 cm².',
     );
   });
 
@@ -511,7 +515,80 @@ describe('Pence aberta com “Cortar intersecções”', () => {
   it('a janela tem a opção e diz que a conta é leitura nossa', () => {
     const dialogo = dialogoDaPence('pence-no-contorno', abrir(true))!;
     expect(dialogo.campos.find((c) => c.id === 'cortarIntersecoes')!.inicial).toBe(true);
-    expect(dialogo.nota).toMatch(/uma prega em cunha, sem vértice, com as bordas desenhadas\. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura\.$/);
+    expect(dialogo.nota).toMatch(/uma prega em cunha, sem vértice, com as bordas desenhadas — clicando dentro dela depois, dá para mudar a abertura ou fechá-la\. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura\.$/);
+  });
+
+  describe('a prega já aberta: o clique dentro dela abre a abertura', () => {
+    const emPrega = (): Molde => {
+      const peca = molde(EM_C);
+      return aplicarPence('pence-no-contorno', abrir(true), [peca], peca, clicar('pence-no-contorno', abrir(true), peca, cliques), ids()).pecas[0]!;
+    };
+    // Dentro do trecho aberto do braço de cima (entre x = 150 e a borda que girou).
+    const DENTRO = ponto(160, 280);
+    const noClique = (ferramenta: FerramentaDePence, peca: Molde, p = DENTRO) => ({ ...solto(p.x, p.y), cunha: cunhaSobOClique(ferramenta, peca, p) });
+
+    it('com “Pence no contorno” e com “Pregas”; com as outras ferramentas, não', () => {
+      const peca = emPrega();
+      const id = cunhasDaPeca(peca)[0]!.id;
+
+      expect(cunhaSobOClique('pence-no-contorno', peca, DENTRO)).toBe(id);
+      expect(cunhaSobOClique('pregas', peca, DENTRO)).toBe(id);
+      expect(cunhaSobOClique('fechar-pence', peca, DENTRO)).toBeNull();
+      expect(cunhaSobOClique('pregas', peca, ponto(50, 150))).toBeNull();
+      expect(cliqueDePence('pence-no-contorno', O, peca, SEM_TRECHO, noClique('pence-no-contorno', peca)).editarCunha).toBe(id);
+      expect(cliqueDePence('pregas', O, peca, SEM_TRECHO, noClique('pregas', peca)).editarCunha).toBe(id);
+      // Mesmo que o clique traga a cunha, a ferramenta que não mexe nela não abre nada.
+      expect(cliqueDePence('pence-interna', O, peca, SEM_TRECHO, { ...solto(160, 280), cunha: id }).editarCunha).toBeUndefined();
+      // No contorno, o clique começa outra pence; e depois do primeiro ponto, o clique é o segundo ponto.
+      expect(cliqueDePence('pence-no-contorno', O, peca, SEM_TRECHO, { ...noContorno(na(0, 50, 0)), cunha: id }).editarCunha).toBeUndefined();
+      const comUmPonto = clicar('pregas', O, peca, [noContorno(na(0, 50, 0))]);
+      expect(cliqueDePence('pregas', O, peca, comUmPonto, noClique('pregas', peca)).editarCunha).toBeUndefined();
+      // O registro que já não vale não abre.
+      const mexida = { ...peca, linhasInternas: peca.linhasInternas.slice(1) };
+      expect(cliqueDePence('pregas', O, mexida, SEM_TRECHO, { ...solto(160, 280), cunha: id }).editarCunha).toBeUndefined();
+    });
+
+    it('a prévia marca o meio de cada trecho aberto e põe em destaque o que está sob o mouse', () => {
+      const peca = emPrega();
+      const faixas = faixasDaCunha(peca, cunhasDaPeca(peca)[0]!);
+
+      expect(previaDaPence('pregas', O, peca, SEM_TRECHO, null).marcas).toHaveLength(2);
+      expect(previaDaPence('pence-no-contorno', O, peca, SEM_TRECHO, null).marcas).toHaveLength(2);
+      expect(previaDaPence('pence-interna', O, peca, SEM_TRECHO, null).marcas).toHaveLength(0);
+      const deCima = faixas.find((f) => f.length === 4)!;
+      const deBaixo = faixas.find((f) => f.length === 3)!;
+      expect(previaDaPence('pregas', O, peca, SEM_TRECHO, noClique('pregas', peca)).substituido).toEqual([...deCima, deCima[0]]);
+      expect(previaDaPence('pregas', O, peca, SEM_TRECHO, noClique('pregas', peca, ponto(152, 50))).substituido).toEqual([...deBaixo, deBaixo[0]]);
+      expect(previaDaPence('pregas', O, peca, SEM_TRECHO, noClique('pregas', peca, ponto(50, 150))).substituido).toBeUndefined();
+    });
+
+    it('a janela mostra a abertura e oferece fechar; diz que é leitura nossa', () => {
+      const peca = emPrega();
+      const dialogo = dialogoDeEditarCunha(peca, cunhasDaPeca(peca)[0]!.id)!;
+
+      expect(dialogo.titulo).toBe('Prega em cunha: abertura');
+      expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([['abertura', '30'], ['apagar', false]]);
+      expect(dialogo.nota).toMatch(/aberta com “Pence no contorno”, no Abrir, com “Cortar intersecções”.*O manual da referência não diz como mudar ou fechar essa prega: é a nossa leitura\.$/);
+      expect(dialogoDeEditarCunha(peca, 'outra')).toBeNull();
+    });
+
+    it('aplicar muda a abertura; com “Fechar”, a peça volta a ser a de antes; as mensagens dizem', () => {
+      const peca = emPrega();
+      const id = cunhasDaPeca(peca)[0]!.id;
+
+      const mudada = aplicarEdicaoDaCunha([peca], peca, id, { abertura: 50, apagar: false }, ids());
+      expect(aberturaDaCunha(cunhasDaPeca(mudada.pecas[0]!)[0]!)).toBeCloseTo(50, 9);
+      expect(mudada.recado).toMatch(/^Prega em cunha de “Frente” aberta de novo em torno do pivô: 50,0 mm na posição da pence\. A peça passou de 530,0 cm² para 549,8 cm²\.$/);
+
+      const fechada = aplicarEdicaoDaCunha([peca], peca, id, { abertura: 30, apagar: true }, ids());
+      expect(fechada.pecas[0]!.contorno).toHaveLength(8);
+      expect(area(fechada.pecas[0]!.contorno)).toBeCloseTo(50000, 6);
+      expect(fechada.pecas[0]!.linhasInternas).toEqual([]);
+      expect(fechada.recado).toBe('Prega em cunha de “Frente” fechada: o lado que tinha girado voltou. A peça passou de 530,0 cm² para 500,0 cm².');
+
+      expect(() => aplicarEdicaoDaCunha([peca], peca, id, { abertura: 0, apagar: false }, ids())).toThrow('maior que zero');
+      expect(() => aplicarEdicaoDaCunha([peca], peca, 'outra', { abertura: 40, apagar: false }, ids())).toThrow('mexida à mão');
+    });
   });
 });
 

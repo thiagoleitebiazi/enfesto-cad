@@ -62,8 +62,9 @@ export function regiaoQueAnda(molde: Molde, regiao0: Contorno, regiao1: Contorno
 }
 
 /**
- * A peça com o que está na região levado pelo movimento: furos, linhas
- * internas, marcas e cotas pela posição (dentro da região), e piques e pontos
+ * A peça com o que está na região levado pelo movimento: furos, marcas e
+ * cotas pela posição (dentro da região), linhas internas pela região em que
+ * está a maior parte delas, e piques e pontos
  * graduados pela borda em que estão (`cadeiaQueAnda`, o trecho do contorno
  * que se move, ou `cadeiaQueFica`). O contorno e a linha de fio não são
  * tocados aqui.
@@ -92,13 +93,27 @@ export function levarOQueEstaNasRegioes(
   movimento: Transformacao,
 ): Molde {
   const dentro = (p: Ponto2D): boolean => regioes.some((regiao) => pontoDentroDoContorno(p, regiao));
+  /**
+   * A linha vai com a região quando a maior parte dela está lá: conta o meio de
+   * cada trecho. As pontas não servem para decidir — a linha que vai de borda a
+   * borda tem as duas em cima do contorno, que é a divisa da região, e ali
+   * "dentro" tanto pode dar sim como não.
+   */
+  const linhaDentro = (linha: Contorno): boolean => {
+    if (linha.length < 2) return linha.length === 1 && dentro(linha[0]!);
+    let trechosDentro = 0;
+    for (let i = 1; i < linha.length; i++) {
+      if (dentro({ x: (linha[i - 1]!.x + linha[i]!.x) / 2, y: (linha[i - 1]!.y + linha[i]!.y) / 2 })) trechosDentro++;
+    }
+    return trechosDentro * 2 > linha.length - 1;
+  };
   const levar = (linha: Contorno): Contorno => linha.map(movimento.ponto);
   const ate = (p: Ponto2D, cadeias: readonly (readonly Ponto2D[])[]): number => Math.min(...cadeias.map((cadeia) => distanciaAteALinha(p, cadeia)));
   const naBordaQueAnda = (p: Ponto2D): boolean => ate(p, cadeiasQueAndam) < ate(p, cadeiasQueFicam) - 1e-9;
   return {
     ...molde,
     furos: molde.furos.map((f) => (dentro(f[0]!) ? levar(f) : f)),
-    linhasInternas: molde.linhasInternas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
+    linhasInternas: molde.linhasInternas.map((l) => (linhaDentro(l) ? levar(l) : l)),
     marcas: molde.marcas.map((m) => (dentro(m.posicao) ? { ...m, posicao: movimento.ponto(m.posicao) } : m)),
     piques: molde.piques.map((p) => {
       const levado = naBordaQueAnda(p.posicao) ? { ...p, posicao: movimento.ponto(p.posicao) } : p;
@@ -137,9 +152,22 @@ export function levarOQueEstaNasRegioes(
               ...prega,
               parada: [ponta(prega.parada[0]), ponta(prega.parada[1])] as const,
               movida: [ponta(prega.movida[0]), ponta(prega.movida[1])] as const,
-              linhas: prega.linhas.map((l) => (dentro(l[0]!) ? levar(l) : l)),
+              linhas: prega.linhas.map((l) => (linhaDentro(l) ? levar(l) : l)),
               // As linhas guardadas estão em cima da borda parada da prega: andam com ela.
               ...(prega.linhasTiradas ? { linhasTiradas: prega.linhasTiradas.map((l) => (naBordaQueAnda(prega.parada[0]) ? levar(l) : l)) } : {}),
+            };
+          }),
+        }
+      : {}),
+    // A prega em cunha registrada: do mesmo jeito, cada ponta com a borda em que está e cada linha como a linha interna que é.
+    ...(molde.cunhas
+      ? {
+          cunhas: molde.cunhas.map((cunha) => {
+            const ponta = (p: Ponto2D): Ponto2D => (naBordaQueAnda(p) ? movimento.ponto(p) : p);
+            return {
+              ...cunha,
+              travessias: cunha.travessias.map((x) => ({ ...x, parada: ponta(x.parada), movida: ponta(x.movida) })),
+              linhas: cunha.linhas.map((l) => (linhaDentro(l) ? levar(l) : l)),
             };
           }),
         }
@@ -148,7 +176,8 @@ export function levarOQueEstaNasRegioes(
     ...(molde.pences
       ? {
           pences: molde.pences.map((pence) => {
-            const anda = pence.tipo === 'recortada' ? pence.pontos.every(naBordaQueAnda) : dentro(pence.pontos[0]!);
+            // A marcada tem as pontas em cima do contorno: quem diz onde ela está é a linha das pernas, como a linha interna que é.
+            const anda = pence.tipo === 'recortada' ? pence.pontos.every(naBordaQueAnda) : pence.tipo === 'marcada' ? linhaDentro(pence.pontos) : dentro(pence.pontos[0]!);
             // O pivô é um ponto do contorno: anda se estiver na borda que anda, esteja a pence onde estiver.
             const comPivo = pence.pivo && naBordaQueAnda(pence.pivo) ? { ...pence, pivo: movimento.ponto(pence.pivo) } : pence;
             // A pence que anda leva todos os pontos dela; o pivô segue a regra de cima.

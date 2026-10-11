@@ -227,6 +227,40 @@ export interface PregaDaPeca {
   readonly piques?: readonly string[];
 }
 
+/** Um ponto em que a reta da prega em cunha atravessava o contorno da peça. */
+export interface TravessiaDaCunha {
+  /** Onde ficou a ponta do lado que não se moveu. */
+  readonly parada: Ponto2D;
+  /** Onde foi parar a ponta do lado que girou; no pivô, é o mesmo ponto. Fora dele, é vizinha da parada no contorno. */
+  readonly movida: Ponto2D;
+  /** A ponta foi posta no contorno pela abertura (não era um ponto dele)? Fechada a prega, sai junto. */
+  readonly criada: boolean;
+}
+
+/**
+ * Uma prega em cunha, aberta pela pence por pivô com "Cortar intersecções": a
+ * peça foi cortada em todos os trechos da reta da posição ao pivô que estavam
+ * dentro dela, e um lado girou em torno do pivô. Guardada pelos pontos em que
+ * a reta atravessava o contorno, para fechar a peça de volta ou mudar a
+ * abertura depois. O registro só vale enquanto esses pontos e as linhas
+ * continuam na peça como foram postos.
+ */
+export interface CunhaDaPeca {
+  readonly id: string;
+  /** As travessias da reta, na ordem do contorno. */
+  readonly travessias: readonly TravessiaDaCunha[];
+  /** Qual das travessias é a posição da pence (onde a abertura é a pedida). */
+  readonly posicao: number;
+  /** Qual é o pivô. */
+  readonly pivo: number;
+  /** As linhas internas que a abertura desenhou: as duas bordas de cada trecho aberto. */
+  readonly linhas: readonly Contorno[];
+  /** Os piques postos nas duas pontas da abertura, se foram pedidos. */
+  readonly piques?: readonly string[];
+  /** O primeiro ponto do contorno de antes de abrir, onde ele estava: fechada a prega, a numeração dos pontos volta a começar nele. */
+  readonly comeco?: Ponto2D;
+}
+
 /**
  * A metade que o "Dobrar" tirou da peça com "Manter dobra do molde" ligado:
  * fica guardada, fora do desenho, para o "Desdobrar" trazê-la de volta como
@@ -285,6 +319,8 @@ export interface Molde {
   readonly curvas?: readonly CurvaDaPeca[];
   /** As pregas abertas por ferramenta, com as bordas e as linhas delas (para mudar as larguras e tirar depois). */
   readonly pregas?: readonly PregaDaPeca[];
+  /** As pregas em cunha abertas com "Cortar intersecções" (aba Produção > Pence no contorno > Abrir), para fechar ou mudar a abertura depois. */
+  readonly cunhas?: readonly CunhaDaPeca[];
   /** A figura que a peça é, quando foi feita inteira por ferramenta (o círculo do "Por raio", a espiral): para mudar as medidas depois. */
   readonly figura?: FiguraDaPeca;
 }
@@ -430,7 +466,7 @@ function acompanhandoOsPontos(molde: Molde, contornoNovo: Contorno): { readonly 
 /** A peça sem um dos campos que podem faltar (a cor, a graduação, a linha de simetria…). */
 export function semCampo(
   molde: Molde,
-  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas' | 'pregas',
+  campo: 'graduacao' | 'cor' | 'linhaDeSimetria' | 'textos' | 'dobraMantida' | 'pences' | 'curvas' | 'pregas' | 'cunhas',
 ): Molde {
   const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
   delete copia[campo];
@@ -453,6 +489,16 @@ export function pregasLevadas(pregas: readonly PregaDaPeca[], ponto: (p: Ponto2D
   }));
 }
 
+/** As pregas em cunha registradas com os pontos delas levados por `ponto`. */
+export function cunhasLevadas(cunhas: readonly CunhaDaPeca[], ponto: (p: Ponto2D) => Ponto2D): readonly CunhaDaPeca[] {
+  return cunhas.map((cunha) => ({
+    ...cunha,
+    travessias: cunha.travessias.map((x) => ({ ...x, parada: ponto(x.parada), movida: ponto(x.movida) })),
+    linhas: cunha.linhas.map((linha) => linha.map(ponto)),
+    ...(cunha.comeco ? { comeco: ponto(cunha.comeco) } : {}),
+  }));
+}
+
 /** Os textos, a linha de simetria, a metade guardada, as pences, as curvas e as pregas da peça levados por uma transformação, prontos para espalhar no molde novo. */
 function anotacoesTransformadas(
   molde: Molde,
@@ -464,6 +510,7 @@ function anotacoesTransformadas(
   readonly pences?: readonly PenceDaPeca[];
   readonly curvas?: readonly CurvaDaPeca[];
   readonly pregas?: readonly PregaDaPeca[];
+  readonly cunhas?: readonly CunhaDaPeca[];
   readonly figura?: FiguraDaPeca;
 } {
   const guardada = molde.dobraMantida;
@@ -471,14 +518,11 @@ function anotacoesTransformadas(
   return {
     ...(figura ? { figura: { ...figura, centro: ponto(figura.centro), eixoX: ponto(figura.eixoX), eixoY: ponto(figura.eixoY) } } : {}),
     ...(molde.pregas ? { pregas: pregasLevadas(molde.pregas, ponto) } : {}),
+    ...(molde.cunhas ? { cunhas: cunhasLevadas(molde.cunhas, ponto) } : {}),
     ...(molde.curvas
       ? { curvas: molde.curvas.map((curva) => curvaLevada(curva, ponto)) }
       : {}),
-    ...(molde.pences
-      ? {
-          pences: molde.pences.map((pence) => penceLevada(pence, ponto)),
-        }
-      : {}),
+    ...(molde.pences ? { pences: molde.pences.map((pence) => penceLevada(pence, ponto)) } : {}),
     ...(molde.textos ? { textos: molde.textos.map((t) => ({ ...t, posicao: ponto(t.posicao) })) } : {}),
     ...(molde.linhaDeSimetria ? { linhaDeSimetria: { de: ponto(molde.linhaDeSimetria.de), ate: ponto(molde.linhaDeSimetria.ate) } } : {}),
     ...(guardada

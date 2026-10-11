@@ -60,10 +60,13 @@ import {
 import {
   aplicarPence,
   cliqueDePence,
+  aplicarEdicaoDaCunha,
   aplicarEdicaoDaPence,
   aplicarEdicaoDaPrega,
   dialogoDeEditarPrega,
   dialogoDaPence,
+  cunhaSobOClique,
+  dialogoDeEditarCunha,
   dialogoDeEditarPence,
   ehFerramentaDePence,
   instrucaoDaPence,
@@ -464,6 +467,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'conferir' }
   | { readonly tipo: 'editar-pence'; readonly id: string; readonly reconhecer?: PenceDaPeca }
   | { readonly tipo: 'editar-prega'; readonly id: string; readonly reconhecer?: PregaDaPeca }
+  | { readonly tipo: 'editar-cunha'; readonly id: string }
   | { readonly tipo: 'unir' }
   | { readonly tipo: 'pence'; readonly ferramenta: FerramentaDePence }
   | { readonly tipo: 'elemento'; readonly ferramenta: FerramentaDeElemento }
@@ -2512,9 +2516,10 @@ export default function App(): React.JSX.Element {
         const peca = pecas.find((p) => p.id === selecionadoId);
         if (!peca) return;
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
-        const { estado, recusa, editar, reconhecer, editarPrega, reconhecerPrega } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
+        const { estado, recusa, editar, reconhecer, editarPrega, reconhecerPrega, editarCunha } = cliqueDePence(modo, opcoesDasPences, peca, trecho, {
           noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm),
           livre: semCaptura,
+          cunha: cunhaSobOClique(modo, peca, semCaptura),
           pence: pencePerto(peca, semCaptura, raioMm)?.id ?? null,
           semRegistro: penceSemRegistroSobOClique(modo, peca, semCaptura, raioMm),
           prega: pregaPerto(peca, semCaptura, 0)?.id ?? null,
@@ -2523,6 +2528,11 @@ export default function App(): React.JSX.Element {
         });
         setRecadoDaFerramenta(recusa);
         if (recusa) return;
+        // O clique dentro de uma prega em cunha (a do "Cortar intersecções") abre a abertura dela.
+        if (editarCunha) {
+          setDialogoDeFerramenta({ tipo: 'editar-cunha', id: editarCunha });
+          return;
+        }
         // Com "Pregas", o clique dentro de uma prega já feita abre as medidas dela.
         if (editarPrega) {
           setDialogoDeFerramenta({ tipo: 'editar-prega', id: editarPrega });
@@ -3109,6 +3119,7 @@ export default function App(): React.JSX.Element {
             semRegistro: penceSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo, raioMm),
             prega: pregaPerto(pecaSelecionada, cursorMundo, 0)?.id ?? null,
             pregaSemRegistro: pregaSemRegistroSobOClique(modo, pecaSelecionada, cursorMundo),
+            cunha: cunhaSobOClique(modo, pecaSelecionada, cursorMundo),
             linhaInterna: linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null,
           }
         : null;
@@ -4062,6 +4073,33 @@ export default function App(): React.JSX.Element {
               onAplicar={(valores) => {
                 try {
                   const resultado = aplicarEdicaoDaPrega(pecas, pecaDaPrega, dialogoDeFerramenta.id, valores, proximoId);
+                  aplicarMudanca([...resultado.pecas]);
+                  setRecadoDaFerramenta(resultado.recado);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta(null)}
+            />
+          );
+        })()}
+      {dialogoDeFerramenta?.tipo === 'editar-cunha' &&
+        pecaSelecionada &&
+        (() => {
+          const dialogo = dialogoDeEditarCunha(pecaSelecionada, dialogoDeFerramenta.id);
+          if (!dialogo) return null;
+          return (
+            <DialogoDeCampos
+              key={dialogoDeFerramenta.id}
+              titulo={dialogo.titulo}
+              resumo={[['Peça', pecaSelecionada.nome]]}
+              campos={dialogo.campos}
+              nota={dialogo.nota}
+              rotuloDoBotao="Aplicar"
+              onAplicar={(valores) => {
+                try {
+                  const resultado = aplicarEdicaoDaCunha(pecas, pecaSelecionada, dialogoDeFerramenta.id, valores, proximoId);
                   aplicarMudanca([...resultado.pecas]);
                   setRecadoDaFerramenta(resultado.recado);
                   return null;

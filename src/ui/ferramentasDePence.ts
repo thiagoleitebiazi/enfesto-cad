@@ -1,7 +1,7 @@
-import { area, distancia, type Ponto2D } from '../core/geometria';
+import { area, distancia, pontoDentroDoContorno, type Ponto2D } from '../core/geometria';
 import { dobraPelaLinhaInterna } from '../domain/corteEUniao';
 import type { Molde, PenceDaPeca, PregaDaPeca } from '../domain/molde';
-import { cruzaOContornoMaisDeDuasVezes } from '../domain/penceComIntersecoes';
+import { aberturaDaCunha, alterarCunha, cruzaOContornoMaisDeDuasVezes, cunhaPerto, cunhasDaPeca, faixasDaCunha, fecharCunha } from '../domain/penceComIntersecoes';
 import {
   abrirPence,
   alterarPence,
@@ -203,6 +203,8 @@ export interface CliqueDePence {
   readonly editarPrega?: string;
   /** Com "Pregas": o clique caiu dentro de uma prega que não tem registro; as medidas abrem, e é aplicando que ela passa a ter (o registro que teria). */
   readonly reconhecerPrega?: PregaDaPeca;
+  /** Com "Pregas" ou "Pence no contorno": o clique caiu dentro de uma prega em cunha (a do "Cortar intersecções"), e abre a abertura dela (o id do registro). */
+  readonly editarCunha?: string;
 }
 
 /** Um clique com a ferramenta de pence ligada: além do que todo clique traz, a pence que está sob ele (se há) — a registrada, ou a que não tem registro. */
@@ -213,6 +215,8 @@ export interface CliqueNaPence extends CliqueDeTrecho {
   readonly prega?: string | null;
   /** A prega sem registro em cuja faixa o clique caiu (se há), com o registro que teria. */
   readonly pregaSemRegistro?: PregaDaPeca | null;
+  /** A prega em cunha registrada dentro da qual o clique caiu (se há). */
+  readonly cunha?: string | null;
   /** A linha interna da peça que está sob o clique (o número dela), se há. */
   readonly linhaInterna?: number | null;
 }
@@ -221,6 +225,16 @@ export interface CliqueNaPence extends CliqueDeTrecho {
 export const ID_DA_PENCE_RECONHECIDA = 'pence-reconhecida';
 /** O mesmo, para a prega reconhecida. */
 export const ID_DA_PREGA_RECONHECIDA = 'prega-reconhecida';
+
+/** A prega em cunha é mexida pela ferramenta que a abriu ("Pence no contorno") e pela "Pregas", que é o que ela é. */
+function mexeEmCunha(ferramenta: FerramentaDePence): boolean {
+  return ferramenta === 'pregas' || ferramenta === 'pence-no-contorno';
+}
+
+/** A prega em cunha registrada dentro da qual o ponto está (o id dela), para as ferramentas que mexem nela. */
+export function cunhaSobOClique(ferramenta: FerramentaDePence, peca: Molde, p: Ponto2D): string | null {
+  return mexeEmCunha(ferramenta) ? (cunhaPerto(peca, p, 0)?.id ?? null) : null;
+}
 
 /** A prega sem registro em cuja faixa o ponto está, com a ferramenta "Pregas" ligada; as outras ferramentas não reconhecem pregas. */
 export function pregaSemRegistroSobOClique(ferramenta: FerramentaDePence, peca: Molde, p: Ponto2D, id = ID_DA_PREGA_RECONHECIDA): PregaDaPeca | null {
@@ -290,6 +304,10 @@ export function cliqueDePence(
       pence !== undefined &&
       ((ferramenta === 'pence-no-contorno' && pence.tipo !== 'interna') || (ferramenta === 'pence-interna' && pence.tipo === 'interna'));
     if (pence && daFerramenta) return { estado, recusa: null, editar: pence.id };
+  }
+  // O clique dentro de uma prega em cunha — e fora do contorno, onde começaria outra coisa — abre a abertura dela.
+  if (mexeEmCunha(ferramenta) && !estado.inicio && !clique.noContorno && clique.cunha && cunhasDaPeca(peca).some((q) => q.id === clique.cunha)) {
+    return { estado, recusa: null, editarCunha: clique.cunha };
   }
   // Com "Pregas", o clique dentro de uma prega já feita — e fora do contorno, onde começaria outra — abre as medidas dela.
   if (ferramenta === 'pregas' && !estado.inicio && !clique.noContorno && clique.prega && pregasDaPeca(peca).some((q) => q.id === clique.prega)) {
@@ -369,7 +387,7 @@ export function aplicarPence(
         const emPrega = abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento, true);
         return pronto(
           emPrega,
-          `“${peca.nome}” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, ${formatarMm(aberturaMm)} na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. A peça passou de ${areaDe(peca)} para ${areaDe(emPrega)}.`,
+          `“${peca.nome}” aberta com “Cortar intersecções”: a linha até o pivô sai da peça no caminho, e a peça abriu em todos os trechos dela, ${formatarMm(aberturaMm)} na posição indicada. O resultado é uma prega, sem vértice (a profundidade não conta), com as bordas de cada trecho desenhadas. Para mudar a abertura ou fechá-la, clique dentro dela. A peça passou de ${areaDe(peca)} para ${areaDe(emPrega)}.`,
         );
       }
       const nova =
@@ -450,9 +468,19 @@ export function previaDaPence(
   const dasPences = ferramenta === 'pregas' || ferramenta === 'multiplas-pences' ? [] : pencesDaPeca(peca).map((pence) => pence.pontos[pence.tipo === 'interna' ? 0 : 1]!);
   // Com "Pregas", o meio de cada prega registrada: é onde se clica para mudá-la.
   const dasPregas = ferramenta === 'pregas' ? pregasDaPeca(peca).map((prega) => meioDaFaixa(faixaDaPrega(prega))) : [];
+  // E o meio de cada trecho aberto das pregas em cunha.
+  const dasCunhas = mexeEmCunha(ferramenta) ? cunhasDaPeca(peca).flatMap((cunha) => faixasDaCunha(peca, cunha).map(meioDaFaixa)) : [];
   const indicadas = comPontasIndicadas(ferramenta, opcoes) ? estado.livres : [];
-  const marcas = [...dasPences, ...dasPregas, ...indicadas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
+  const marcas = [...dasPences, ...dasPregas, ...dasCunhas, ...indicadas, ...[estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined)];
   if (!mouse) return { marcas };
+  const cunhaSobOMouse = cliqueDePence(ferramenta, opcoes, peca, estado, mouse).editarCunha;
+  const cunhaEmDestaque = cunhaSobOMouse ? cunhasDaPeca(peca).find((q) => q.id === cunhaSobOMouse) : undefined;
+  if (cunhaEmDestaque) {
+    // Em destaque, o trecho aberto em que o mouse está.
+    const faixas = faixasDaCunha(peca, cunhaEmDestaque);
+    const faixa = faixas.find((f) => pontoDentroDoContorno(mouse.livre, f)) ?? faixas[0]!;
+    return { marcas, substituido: [...faixa, faixa[0]!] };
+  }
   const { editarPrega: pregaSobOMouse, reconhecerPrega } = cliqueDePence(ferramenta, opcoes, peca, estado, mouse);
   const pregaEmDestaque = pregaSobOMouse ? pregasDaPeca(peca).find((q) => q.id === pregaSobOMouse) : reconhecerPrega;
   if (pregaEmDestaque) {
@@ -596,6 +624,33 @@ export function aplicarEdicaoDaPrega(pecas: readonly Molde[], peca: Molde, id: s
     pecas: trocar(pecas, peca.id, nova),
     recado: `Prega de “${peca.nome}” aberta de novo: ${modo === 'dupla' ? 'dupla' : 'simples'}, ${larguras}. ${areas(nova)}`,
   };
+}
+
+/** O diálogo da abertura de uma prega em cunha já feita; `null` se ela não está mais na peça como foi aberta. */
+export function dialogoDeEditarCunha(peca: Molde, id: string): DialogoDePence | null {
+  const cunha = cunhasDaPeca(peca).find((q) => q.id === id);
+  if (!cunha) return null;
+  return {
+    titulo: 'Prega em cunha: abertura',
+    campos: [
+      { tipo: 'medida', id: 'abertura', rotulo: 'Abertura na posição da pence: de uma ponta à outra (mm)', inicial: paraCampo(arredondar(aberturaDaCunha(cunha))) },
+      { tipo: 'caixa', id: 'apagar', rotulo: 'Fechar esta prega (a peça volta a ser a de antes de abrir)', inicial: false },
+    ],
+    nota: 'Esta prega foi aberta com “Pence no contorno”, no Abrir, com “Cortar intersecções”: a peça foi cortada em todos os trechos da linha até o pivô, e um lado girou em torno dele. Mudando a abertura, a peça fecha em torno do mesmo pivô e abre de novo com a abertura nova. Fechando, o lado que girou volta, levando o que está nele, e as bordas desenhadas e os piques da prega saem. O manual da referência não diz como mudar ou fechar essa prega: é a nossa leitura.',
+  };
+}
+
+/** Aplica o diálogo da prega em cunha: muda a abertura ou, com "Fechar", fecha a peça de volta. Lança erro quando a abertura não serve. */
+export function aplicarEdicaoDaCunha(pecas: readonly Molde[], peca: Molde, id: string, valores: ValoresDoDialogo, novoId: () => string): ResultadoDeFerramentaDeMolde {
+  if (!cunhasDaPeca(peca).some((q) => q.id === id)) throw new Error('Essa prega foi mexida à mão e já não pode ser mudada pela abertura.');
+  const areas = (nova: Molde): string => `A peça passou de ${cm2(area(peca.contorno))} para ${cm2(area(nova.contorno))}.`;
+  if (valores.apagar === true) {
+    const fechada = fecharCunha(peca, id);
+    return { pecas: trocar(pecas, peca.id, fechada), recado: `Prega em cunha de “${peca.nome}” fechada: o lado que tinha girado voltou. ${areas(fechada)}` };
+  }
+  const aberturaMm = Number(valores.abertura);
+  const nova = alterarCunha(peca, id, aberturaMm, novoId);
+  return { pecas: trocar(pecas, peca.id, nova), recado: `Prega em cunha de “${peca.nome}” aberta de novo em torno do pivô: ${formatarMm(aberturaMm)} na posição da pence. ${areas(nova)}` };
 }
 
 /** O campo do lado para onde a pence com acabamento é dobrada, o mesmo ao abrir a pence e ao mudar as medidas dela. */
@@ -818,7 +873,7 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             inicial: opcoes.pence.cortarIntersecoes,
           },
         ],
-        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois. Dobrada para um lado numa borda curva, o acabamento acompanha a curva. Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura.',
+        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois. Dobrada para um lado numa borda curva, o acabamento acompanha a curva. Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas — clicando dentro dela depois, dá para mudar a abertura ou fechá-la. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura.',
       };
     case 'pence-interna':
       return {
