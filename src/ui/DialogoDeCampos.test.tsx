@@ -152,6 +152,19 @@ describe('DialogoDeCampos', () => {
     expect(onAplicar).not.toHaveBeenCalled();
   });
 
+  it('os botões e a mensagem de erro ficam no rodapé, que não rola com os campos', () => {
+    renderizar(() => 'A largura precisa ser maior que zero.');
+    const rodape = document.querySelector('.rodape-do-formulario')!;
+
+    expect(rodape).toContainElement(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(rodape).toContainElement(screen.getByRole('button', { name: 'Criar bainha' }));
+    // Os campos e a nota ficam fora dele: são eles que rolam.
+    expect(rodape).not.toContainElement(screen.getByLabelText('Largura (mm)'));
+    expect(rodape).not.toContainElement(screen.getByText('A bainha dobra para dentro.'));
+    aplicar();
+    expect(rodape).toContainElement(screen.getByRole('alert'));
+  });
+
   it('Cancelar fecha sem aplicar', () => {
     const { aplicar: onAplicar, fechar } = renderizar();
 

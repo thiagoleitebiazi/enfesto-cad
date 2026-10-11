@@ -178,6 +178,12 @@ export interface PenceDaPeca {
    * recortada: fica desenhada, e o contorno passa pelo bico.
    */
   readonly bico?: Ponto2D;
+  /**
+   * Com acabamento: a ponta (0 ou 2, em `pontos`) para o lado da qual a pence
+   * é dobrada na costura — o bico é o dessa dobra. Sem o campo, o bico fica no
+   * meio do das duas dobras possíveis.
+   */
+  readonly dobra?: 0 | 2;
 }
 
 /**

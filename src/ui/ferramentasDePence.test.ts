@@ -511,7 +511,7 @@ describe('Pence aberta com “Cortar intersecções”', () => {
   it('a janela tem a opção e diz que a conta é leitura nossa', () => {
     const dialogo = dialogoDaPence('pence-no-contorno', abrir(true))!;
     expect(dialogo.campos.find((c) => c.id === 'cortarIntersecoes')!.inicial).toBe(true);
-    expect(dialogo.nota).toMatch(/uma prega em cunha, sem vértice, com as bordas desenhadas\. O manual da referência tem as duas opções, mas não diz a conta; a que está aqui é a nossa leitura\.$/);
+    expect(dialogo.nota).toMatch(/uma prega em cunha, sem vértice, com as bordas desenhadas\. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura\.$/);
   });
 });
 
@@ -545,7 +545,11 @@ describe('diálogos', () => {
       marcaNoVertice: false,
       acabamento: true,
       cortarIntersecoes: false,
+      dobraDoAcabamento: 'meio',
     });
+    expect(lerDialogoDaPence('pence-no-contorno', O, { ...valores, dobraDoAcabamento: 'esquerda' }).pence.dobraDoAcabamento).toBe('esquerda');
+    expect(lerDialogoDaPence('pence-no-contorno', O, { ...valores, dobraDoAcabamento: 'direita' }).pence.dobraDoAcabamento).toBe('direita');
+    expect(lerDialogoDaPence('pence-no-contorno', O, { ...valores, dobraDoAcabamento: 'outra' }).pence.dobraDoAcabamento).toBe('meio');
     expect(lerDialogoDaPence('pence-no-contorno', O, { ...valores, cortarIntersecoes: true }).pence.cortarIntersecoes).toBe(true);
     expect(() => lerDialogoDaPence('pence-no-contorno', O, { ...valores, abertura: 0 })).toThrow(/abertura/);
     // As outras ferramentas não mudam.
@@ -995,8 +999,27 @@ describe('“Criar acabamento” no Abrir', () => {
 
   it('o diálogo tem a opção, e ela é lida', () => {
     expect(dialogoDaPence('pence-no-contorno', O)!.campos.map((c) => c.id)).toContain('acabamento');
-    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada/);
+    expect(dialogoDaPence('pence-no-contorno', O)!.nota).toMatch(/Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois\./);
+    expect(dialogoDaPence('pence-no-contorno', O)!.campos.find((c) => c.id === 'dobraDoAcabamento')).toMatchObject({ tipo: 'escolha', inicial: 'meio' });
     expect(lerDialogoDaPence('pence-no-contorno', O, { modo: 'abrir', abertura: 40, profundidade: 100, perpendicular: true, piquesLaterais: false, marcaNoVertice: false }).pence.acabamento).toBe(false);
+  });
+
+  it('o lado da dobra muda o bico quando as bordas dos dois lados da pence chegam com inclinações diferentes', () => {
+    // A borda de cima é reta à direita da pence e desce à esquerda dela (de (100, 300) a (0, 280)).
+    const torta = (): Molde => molde([ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(100, 300), ponto(0, 280)]);
+    const estado = clicar('pence-no-contorno', com({ pence: { ...ABRIR, acabamento: true } }), torta(), [noContorno(na(3, 100, 300)), noContorno(na(0, 100, 0))]);
+    const aberta = (dobraDoAcabamento: 'meio' | 'esquerda' | 'direita') => {
+      const peca = aplicarPence('pence-no-contorno', com({ pence: { ...ABRIR, acabamento: true, dobraDoAcabamento } }), [torta()], torta(), estado, ids()).pecas[0]!;
+      return pencesDaPeca(peca)[0]!;
+    };
+    const [doMeio, daEsquerda, daDireita] = [aberta('meio'), aberta('esquerda'), aberta('direita')];
+
+    expect(doMeio.dobra).toBeUndefined();
+    expect(daEsquerda.dobra).not.toBe(daDireita.dobra);
+    expect(distancia(daEsquerda.bico!, daDireita.bico!)).toBeGreaterThan(0.5);
+    // Sem lado, o bico fica no meio dos dois.
+    expect(doMeio.bico!.x).toBeCloseTo((daEsquerda.bico!.x + daDireita.bico!.x) / 2, 6);
+    expect(doMeio.bico!.y).toBeCloseTo((daEsquerda.bico!.y + daDireita.bico!.y) / 2, 6);
   });
 
   it('com a opção, a pence aberta fica desenhada e o contorno ganha o bico; a mensagem diz', () => {

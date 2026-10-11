@@ -16,6 +16,7 @@ import {
   alterarPence,
   alterarPenceInterna,
   comAcabamento,
+  dobraDaPence,
   comPenceReconhecida,
   comPencesValidas,
   criarMultiplasPences,
@@ -644,6 +645,63 @@ describe('pence com acabamento: desenhada, com o bico no contorno', () => {
     const bicoDaEspelhada = aDela(comAcabamento(comPenceReconhecida(espelhada, achadaNaEspelhada), 'r1')).bico!;
     expect(bicoDaEspelhada.x).toBeCloseTo(100, 9);
     expect(bicoDaEspelhada.y).toBeCloseTo(bico.y, 9);
+  });
+
+  it('com o lado da dobra, o bico é o do traçado de ofício: a borda desse lado, espelhada na perna, até a linha do meio', () => {
+    // À direita de quem olha o desenho (x = 120), a borda sobe; à esquerda (x = 80), é reta. Quem olha da borda para o vértice (para baixo) tem o x = 120 à esquerda.
+    const inclinada = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 320), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const comRegistro = comPenceReconhecida(inclinada, penceSemRegistroPerto(inclinada, ponto(100, 200), 6, 'do-contorno', 'r1')!);
+    const doMeio = aDela(comAcabamento(comRegistro, 'r1'));
+    const paraAReta = aDela(comAcabamento(comRegistro, 'r1', 'direita'));
+    const paraAInclinada = aDela(comAcabamento(comRegistro, 'r1', 'esquerda'));
+
+    // Dobrada para o lado da borda reta, o bico é o da pence numa borda reta.
+    expect(paraAReta.bico!.x).toBeCloseTo(100, 9);
+    expect(paraAReta.bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
+    // Dobrada para o lado da borda que sobe, o bico sobe mais; sem lado, fica no meio dos dois.
+    expect(paraAInclinada.bico!.y).toBeGreaterThan(paraAReta.bico!.y + 5);
+    expect(doMeio.bico!.y).toBeCloseTo((paraAReta.bico!.y + paraAInclinada.bico!.y) / 2, 9);
+    // O registro guarda a ponta do lado da dobra, e lê o lado de volta.
+    expect(doMeio.dobra).toBeUndefined();
+    expect(dobraDaPence(doMeio)).toBe('meio');
+    expect(paraAInclinada.pontos[paraAInclinada.dobra!]).toEqual(ponto(120, 300));
+    expect(paraAReta.pontos[paraAReta.dobra!]).toEqual(ponto(80, 300));
+    expect(dobraDaPence(paraAInclinada)).toBe('esquerda');
+    expect(dobraDaPence(paraAReta)).toBe('direita');
+  });
+
+  it('sem o acabamento o lado da dobra sai do registro; mudada a pence, ela continua dobrada para o mesmo lado', () => {
+    const inclinada = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 320), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const comRegistro = comPenceReconhecida(inclinada, penceSemRegistroPerto(inclinada, ponto(100, 200), 6, 'do-contorno', 'r1')!);
+    const peca = comAcabamento(comRegistro, 'r1', 'esquerda');
+
+    expect('dobra' in aDela(semAcabamento(peca, 'r1'))).toBe(false);
+    const mudada = alterarPence(peca, 'r1', { aberturaMm: 40, profundidadeMm: 60, desvioMm: 0 }, ids());
+    expect(dobraDaPence(aDela(mudada))).toBe('esquerda');
+    expect(aDela(mudada).pontos[aDela(mudada).dobra!]).toEqual(ponto(120, 300));
+  });
+
+  it('na peça espelhada, a esquerda e a direita trocam, e a pence continua dobrada para a mesma borda', () => {
+    const inclinada = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 320), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const comRegistro = comPenceReconhecida(inclinada, penceSemRegistroPerto(inclinada, ponto(100, 200), 6, 'do-contorno', 'r1')!);
+    const espelhada = espelharMolde(comAcabamento(comRegistro, 'r1', 'esquerda'), 'm1');
+    const pence = aDela(espelhada);
+
+    expect(dobraDaPence(pence)).toBe('direita');
+    // A ponta da dobra continua sendo a da borda inclinada: a que tem, ao lado, o canto mais alto da peça.
+    const maisAlto = Math.max(...espelhada.contorno.map((p) => p.y));
+    const cantoAlto = espelhada.contorno.find((p) => p.y === maisAlto)!;
+    const [daDobra, aOutra] = [pence.pontos[pence.dobra!]!, pence.pontos[pence.dobra === 0 ? 2 : 0]!];
+    expect(Math.abs(daDobra.x - cantoAlto.x)).toBeLessThan(Math.abs(aOutra.x - cantoAlto.x));
+  });
+
+  it('dobrada para o lado em que a borda foge da pence, não há encontro: o contorno passa reto', () => {
+    // À direita (x = 120) a borda desce para longe da pence; à esquerda, é reta.
+    const fugindo = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const comRegistro = comPenceReconhecida(fugindo, penceSemRegistroPerto(fugindo, ponto(100, 200), 6, 'do-contorno', 'r1')!);
+
+    expect(aDela(comAcabamento(comRegistro, 'r1', 'esquerda')).bico).toEqual(ponto(100, 300));
+    expect(aDela(comAcabamento(comRegistro, 'r1', 'direita')).bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
   });
 
   it('com as bordas fugindo da pence, não há encontro: o contorno passa reto pelo meio das pontas', () => {

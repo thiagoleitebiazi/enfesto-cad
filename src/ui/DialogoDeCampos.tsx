@@ -155,19 +155,22 @@ export function DialogoDeCampos(props: DialogoDeCamposProps): React.JSX.Element 
 
         {props.nota && <p className="nota-do-formulario">{props.nota}</p>}
 
-        {erro && (
-          <p className="mensagem-de-erro" role="alert">
-            {erro}
-          </p>
-        )}
+        {/* O rodapé fica sempre à vista: numa janela mais alta que a tela, os campos rolam por trás dele. */}
+        <div className="rodape-do-formulario">
+          {erro && (
+            <p className="mensagem-de-erro" role="alert">
+              {erro}
+            </p>
+          )}
 
-        <div className="acoes-da-sobreposicao">
-          <button type="button" onClick={props.onFechar}>
-            Cancelar
-          </button>
-          <button type="submit" className="botao-primario">
-            {props.rotuloDoBotao}
-          </button>
+          <div className="acoes-da-sobreposicao">
+            <button type="button" onClick={props.onFechar}>
+              Cancelar
+            </button>
+            <button type="submit" className="botao-primario">
+              {props.rotuloDoBotao}
+            </button>
+          </div>
         </div>
       </form>
     </Sobreposicao>

@@ -24,6 +24,7 @@ import {
   pivoDaPence,
   removerPence,
   transferirPence,
+  type DobraDaPence,
   type ModoDePence,
   type OpcoesDePenceInterna,
   type PontasDaPence,
@@ -90,6 +91,8 @@ export interface OpcoesDasPences {
     readonly acabamento: boolean;
     /** "Cortar intersecções" (só no Abrir): a linha até o pivô que sai da peça e volta corta em todos os trechos, e o resultado é uma prega. */
     readonly cortarIntersecoes: boolean;
+    /** Com o acabamento: para que lado a pence é dobrada na costura, de quem olha da borda para o vértice (sem lado, o bico fica no meio dos dois). */
+    readonly dobraDoAcabamento: DobraDaPence;
   };
   readonly interna: OpcoesDePenceInterna;
   readonly fecharSomenteORecorte: boolean;
@@ -112,7 +115,7 @@ export interface OpcoesDasPences {
 }
 
 export const OPCOES_INICIAIS_DAS_PENCES: OpcoesDasPences = {
-  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true, acabamento: false, cortarIntersecoes: false },
+  pence: { modo: 'recortar', aberturaMm: 30, profundidadeMm: 100, perpendicular: true, piquesLaterais: true, marcaNoVertice: true, acabamento: false, cortarIntersecoes: false, dobraDoAcabamento: 'meio' },
   interna: { altura1Mm: 80, altura2Mm: 80, larguraMm: 20, anguloGraus: 0, linhaAuxiliar: true, marcas: true },
   fecharSomenteORecorte: false,
   indicarPontas: false,
@@ -358,7 +361,7 @@ export function aplicarPence(
 
   switch (ferramenta) {
     case 'pence-no-contorno': {
-      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular, acabamento, cortarIntersecoes } = opcoes.pence;
+      const { modo, aberturaMm, profundidadeMm, piquesLaterais, marcaNoVertice, perpendicular, acabamento, cortarIntersecoes, dobraDoAcabamento } = opcoes.pence;
       const medidas = `abertura de ${formatarMm(aberturaMm)}, profundidade de ${formatarMm(profundidadeMm)}`;
       // Com "Cortar intersecções", a linha que sai da peça e volta abre a peça em todos os trechos: uma prega, sem vértice.
       if (modo === 'abrir' && cortarIntersecoes && cruzaOContornoMaisDeDuasVezes(peca.contorno, inicio!.ponto, fim!.ponto)) {
@@ -370,7 +373,7 @@ export function aplicarPence(
       }
       const nova =
         modo === 'abrir'
-          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento, cortarIntersecoes)
+          ? abrirPence(peca, inicio!, fim!, aberturaMm, profundidadeMm, piquesLaterais, novoId, marcaNoVertice, acabamento, cortarIntersecoes, dobraDoAcabamento)
           : criarPence(
               peca,
               inicio!,
@@ -771,13 +774,24 @@ export function dialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesDasP
             inicial: opcoes.pence.acabamento,
           },
           {
+            tipo: 'escolha',
+            id: 'dobraDoAcabamento',
+            rotulo: 'No acabamento, a pence é dobrada (de quem olha da borda para o vértice)',
+            opcoes: [
+              { valor: 'meio', rotulo: 'Sem lado: o bico fica no meio' },
+              { valor: 'esquerda', rotulo: 'Para a esquerda' },
+              { valor: 'direita', rotulo: 'Para a direita' },
+            ],
+            inicial: opcoes.pence.dobraDoAcabamento,
+          },
+          {
             tipo: 'caixa',
             id: 'cortarIntersecoes',
             rotulo: 'Cortar intersecções (só no Abrir): a linha até o pivô que sai da peça e volta corta em todos os trechos; o resultado é uma prega',
             inicial: opcoes.pence.cortarIntersecoes,
           },
         ],
-        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada (a borda de cada lado, espelhada na perna, até a linha do meio). Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta; a que está aqui é a nossa leitura.',
+        nota: 'Depois de confirmar, clique no contorno da peça, no meio da pence. Para abrir, clique em seguida no pivô, no contorno do lado oposto: a peça é cortada até ele, e o lado sem a linha de fio gira até abrir a medida pedida. Com “Criar acabamento”, a pence aberta fica desenhada, e o contorno ganha o bico que ela faz quando é dobrada: a borda do lado para onde ela dobra, espelhada na perna, até a linha do meio — é o traçado de ofício; sem lado, fica no meio dos dois. Com “Cortar intersecções”, a linha até o pivô que sai da peça e volta corta em cada trecho de dentro; o que abre vira tecido: uma prega em cunha, sem vértice, com as bordas desenhadas. O manual da referência tem as duas opções, mas não diz a conta: a da prega é a nossa leitura.',
       };
     case 'pence-interna':
       return {
@@ -902,6 +916,7 @@ export function lerDialogoDaPence(ferramenta: FerramentaDePence, opcoes: OpcoesD
         marcaNoVertice: caixa('marcaNoVertice'),
         acabamento: caixa('acabamento'),
         cortarIntersecoes: caixa('cortarIntersecoes'),
+        dobraDoAcabamento: (valores.dobraDoAcabamento === 'esquerda' || valores.dobraDoAcabamento === 'direita' ? valores.dobraDoAcabamento : 'meio') as DobraDaPence,
       };
       conferirMedidasDaPence(pence.aberturaMm, pence.profundidadeMm);
       return { ...opcoes, pence };
