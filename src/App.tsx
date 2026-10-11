@@ -96,6 +96,7 @@ import {
   mesmosTamanhos,
   OPCOES_INICIAIS_DA_GRADUACAO,
   previaDaGraduacao,
+  separarAgeNaHora,
   type FerramentaDeGraduacao,
   type OpcoesDaGraduacao,
 } from './ui/ferramentasDeGraduacao';
@@ -2521,7 +2522,7 @@ export default function App(): React.JSX.Element {
           { noContorno: posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm), livre: semCaptura },
           { regra: regraEmUso, raioMm, novoId: proximoId },
         );
-        // "Separar" com a posição indicada: postas as peças, a ferramenta desliga (outro clique poria outra cópia).
+        // "Separar": postas as peças, a ferramenta desliga (outro clique poria outra cópia). O clique que só indica o tamanho não põe nada.
         if (modo === 'separar-tamanhos' && resultado.pecas) {
           const novasPecas = [...resultado.pecas];
           aplicarMudanca(novasPecas);
@@ -3146,7 +3147,7 @@ export default function App(): React.JSX.Element {
       return previaDoTrecho(modo, pecaSelecionada.contorno, trecho, mouse, opcoes);
     }
     if (pecaSelecionada && ehModoDeGraduacao(modo)) {
-      return previaDaGraduacao(modo, opcoesDaGraduacao, pecaSelecionada, trecho, cursorMundo);
+      return previaDaGraduacao(modo, opcoesDaGraduacao, pecaSelecionada, trecho, cursorMundo, RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm);
     }
     if (pecaSelecionada && ehModoDeElemento(modo)) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
@@ -4424,11 +4425,11 @@ export default function App(): React.JSX.Element {
               const novas = lerDialogoDaGraduacao(ferramenta, opcoesDaGraduacao, valores);
               // "Separar", "Unir" e "Remover do molde inteiro" agem na hora; as outras ligam a ferramenta.
               const naHora =
-                // "Separar" só age na hora quando a posição não é para ser indicada com o mouse.
+                // "Separar" só age na hora quando nem o tamanho nem a posição são para indicar com o mouse.
                 ferramenta === 'separar-tamanhos'
-                  ? novas.separar.indicarPosicao
-                    ? null
-                    : aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
+                  ? separarAgeNaHora(novas)
+                    ? aplicarSeparar(novas, pecas, pecaSelecionada, proximoId)
+                    : null
                   : ferramenta === 'unir-tamanhos'
                     ? aplicarUnir(pecas, pecaSelecionada, idsSelecionadosEmLote, novas.unir.ajustarCurvas)
                     : ferramenta === 'remover-graduacao' && novas.remover.onde === 'molde'

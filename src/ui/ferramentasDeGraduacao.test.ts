@@ -17,6 +17,9 @@ import {
   mesmosTamanhos,
   OPCOES_INICIAIS_DA_GRADUACAO,
   previaDaGraduacao,
+  separarAgeNaHora,
+  TAMANHO_INDICADO_NO_DESENHO,
+  tamanhoSobOPonto,
   type CliqueDeGraduacao,
   type FerramentaDeGraduacao,
   type ModoDeGraduacao,
@@ -50,6 +53,8 @@ function comRegraNoCanto(): Molde {
 
 const O = OPCOES_INICIAIS_DA_GRADUACAO;
 const com = (parte: Partial<OpcoesDaGraduacao>): OpcoesDaGraduacao => ({ ...O, ...parte });
+/** O "Separar" com todos os tamanhos escolhidos na janela, e a posição indicada com o mouse. */
+const SEPARAR_TODOS = com({ separar: { tamanho: 'todos', indicarPosicao: true } });
 const noPonto = (i: number): CliqueDeTrecho => {
   const posicao: PosicaoNoContorno = { indiceAresta: i, ponto: RETANGULO[i]! };
   return { noContorno: posicao, livre: posicao.ponto };
@@ -525,7 +530,7 @@ describe('o que age na hora', () => {
 
   it('Separar todos: uma peça por tamanho que não é o base, depois das que já existem', () => {
     const peca = comRegraNoCanto();
-    const resultado = aplicarSeparar(O, [peca], peca, ids());
+    const resultado = aplicarSeparar(SEPARAR_TODOS, [peca], peca, ids());
     expect(resultado.pecas.map((p) => [p.id, p.tamanho])).toEqual([
       ['f', 'M'],
       ['novo-1', 'P'],
@@ -559,7 +564,7 @@ describe('o que age na hora', () => {
 
   it('Separar com a posição indicada: a primeira peça fica com o canto de cima à esquerda no ponto, e as outras em fila depois dela', () => {
     const peca = comRegraNoCanto();
-    const resultado = aplicarSeparar(O, [peca], peca, ids(), ponto(500, 1000));
+    const resultado = aplicarSeparar(SEPARAR_TODOS, [peca], peca, ids(), ponto(500, 1000));
     const caixa = (m: Molde) => ({
       minX: Math.min(...m.contorno.map((p) => p.x)),
       minY: Math.min(...m.contorno.map((p) => p.y)),
@@ -582,32 +587,32 @@ describe('o que age na hora', () => {
   it('com a ferramenta ligada, o clique em qualquer lugar põe as peças ali; a prévia mostra os contornos presos ao mouse', () => {
     const peca = comRegraNoCanto();
     const novoId = ids();
-    const clique = cliqueDeGraduacao('separar-tamanhos', O, [peca], peca, SEM_TRECHO, solto(500, 1000), { regra: null, novoId });
+    const clique = cliqueDeGraduacao('separar-tamanhos', SEPARAR_TODOS, [peca], peca, SEM_TRECHO, solto(500, 1000), { regra: null, novoId });
 
     expect(clique.pecas).toHaveLength(3);
     expect(clique.estado).toBe(SEM_TRECHO);
     expect(Math.min(...clique.pecas![1]!.contorno.map((v) => v.y))).toBeCloseTo(1000, 9);
     expect(clique.recado).toMatch(/onde foi indicado/);
     // Sem quem dê os ids das peças novas, o clique não faz nada; o que não dá para separar é explicado.
-    const semIds = cliqueDeGraduacao('separar-tamanhos', O, [peca], peca, SEM_TRECHO, solto(500, 1000), { regra: null });
+    const semIds = cliqueDeGraduacao('separar-tamanhos', SEPARAR_TODOS, [peca], peca, SEM_TRECHO, solto(500, 1000), { regra: null });
     expect(semIds.pecas).toBeUndefined();
     expect(semIds.recado).toBeNull();
     const noBase = cliqueDeGraduacao('separar-tamanhos', com({ separar: { tamanho: 'M', indicarPosicao: true } }), [peca], peca, SEM_TRECHO, solto(500, 1000), { regra: null, novoId });
     expect(noBase.pecas).toBeUndefined();
     expect(noBase.recado).toMatch(/diferente do base/);
 
-    const previa = previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, ponto(500, 1000));
+    const previa = previaDaGraduacao('separar-tamanhos', SEPARAR_TODOS, peca, SEM_TRECHO, ponto(500, 1000));
     expect(previa.linhas).toHaveLength(2);
     // Cada contorno vem fechado, e o primeiro começa no ponto do mouse.
     expect(previa.linhas![0]![0]).toEqual(previa.linhas![0]!.at(-1));
     expect(Math.min(...previa.linhas![0]!.map((v) => v.x))).toBeCloseTo(500, 9);
     expect(Math.min(...previa.linhas![0]!.map((v) => v.y))).toBeCloseTo(1000, 9);
-    expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, null)).toEqual({});
+    expect(previaDaGraduacao('separar-tamanhos', SEPARAR_TODOS, peca, SEM_TRECHO, null)).toEqual({});
     expect(previaDaGraduacao('separar-tamanhos', com({ separar: { tamanho: 'M', indicarPosicao: true } }), peca, SEM_TRECHO, ponto(500, 1000))).toEqual({});
   });
 
   it('a instrução do Separar diz o que o clique faz', () => {
-    expect(instrucaoDaGraduacao('separar-tamanhos', O, SEM_TRECHO, null)).toBe(
+    expect(instrucaoDaGraduacao('separar-tamanhos', SEPARAR_TODOS, SEM_TRECHO, null)).toBe(
       'Separar: clique onde as peças separadas devem ficar (a primeira ali, pelo canto de cima à esquerda, e as outras em fila depois dela) — o tracejado mostra. Esc sai.',
     );
     expect(instrucaoDaGraduacao('separar-tamanhos', com({ separar: { tamanho: 'G', indicarPosicao: true } }), SEM_TRECHO, null)).toBe(
@@ -617,8 +622,150 @@ describe('o que age na hora', () => {
 
   it('Separar recusa o base e a peça sem graduação', () => {
     const peca = comRegraNoCanto();
+    // Com o tamanho por indicar no desenho, sem ele não há o que separar.
+    expect(() => aplicarSeparar(O, [peca], peca, ids())).toThrow(/Indique o tamanho no desenho: clique na linha dele\./);
     expect(() => aplicarSeparar(com({ separar: { tamanho: 'M', indicarPosicao: false } }), [peca], peca, ids())).toThrow(/diferente do base/);
     expect(() => aplicarSeparar(O, [molde()], molde(), ids())).toThrow(/Defina os tamanhos primeiro/);
+  });
+
+  describe('Separar: o tamanho indicado com o mouse, no desenho', () => {
+    // No G, o canto (200, 300) vai para (210, 320); no P, para (190, 280). A aresta de (0, 0) a (200, 0) é a mesma nos três.
+    const NA_LINHA_DO_G = ponto(205, 160);
+    const NA_LINHA_DO_P = ponto(195, 140);
+    const RAIO = 3;
+    const NA_FILA = com({ separar: { tamanho: TAMANHO_INDICADO_NO_DESENHO, indicarPosicao: false } });
+    const clicarEm = (opcoes: OpcoesDaGraduacao, peca: Molde, estado: TrechoEmEdicao, p: Ponto2D, raioMm = RAIO): CliqueDeGraduacao =>
+      cliqueDeGraduacao('separar-tamanhos', opcoes, [peca], peca, estado, { noContorno: null, livre: p }, { regra: null, novoId: ids(), raioMm });
+
+    it('é assim que a ferramenta vem: o tamanho é o que for clicado no desenho', () => {
+      expect(O.separar).toEqual({ tamanho: TAMANHO_INDICADO_NO_DESENHO, indicarPosicao: true });
+      // Com o tamanho ou a posição por indicar, a janela não age: liga a ferramenta.
+      expect(separarAgeNaHora(O)).toBe(false);
+      expect(separarAgeNaHora(NA_FILA)).toBe(false);
+      expect(separarAgeNaHora(SEPARAR_TODOS)).toBe(false);
+      expect(separarAgeNaHora(com({ separar: { tamanho: 'todos', indicarPosicao: false } }))).toBe(true);
+    });
+
+    it('o tamanho sob o ponto é o da linha mais perto de todas', () => {
+      const peca = comRegraNoCanto();
+      expect(tamanhoSobOPonto(peca, NA_LINHA_DO_G, RAIO)).toEqual({ tamanho: 'G' });
+      expect(tamanhoSobOPonto(peca, NA_LINHA_DO_P, RAIO)).toEqual({ tamanho: 'P' });
+      // Um pouco para fora da linha do G, ainda dentro do raio.
+      expect(tamanhoSobOPonto(peca, ponto(207, 160), RAIO)).toEqual({ tamanho: 'G' });
+      // Com as três linhas no raio, a mais perto: em y = 150 a do G passa em x = 204,7, a do base em 200 e a do P em 194,6.
+      expect(tamanhoSobOPonto(peca, ponto(203, 150), 8)).toEqual({ tamanho: 'G' });
+      expect(tamanhoSobOPonto(peca, ponto(196.5, 150), 8)).toEqual({ tamanho: 'P' });
+      // Mais perto da do base que das outras duas: é a do base, que não se separa.
+      expect(tamanhoSobOPonto(peca, ponto(201, 150), 8)).toEqual({
+        recado: 'Essa é a linha do tamanho base (M), que continua nesta peça: clique na linha de outro tamanho.',
+      });
+      expect(tamanhoSobOPonto(peca, ponto(198, 150), 8)).toHaveProperty('recado');
+      // Longe de todas as linhas, e na peça sem graduação: nada.
+      expect(tamanhoSobOPonto(peca, ponto(100, 150), RAIO)).toBeNull();
+      expect(tamanhoSobOPonto(peca, ponto(207, 160), 0)).toBeNull();
+      expect(tamanhoSobOPonto(molde(), NA_LINHA_DO_G, RAIO)).toBeNull();
+    });
+
+    it('onde só passa o contorno do base, ou duas linhas passam juntas, o que vem é a explicação', () => {
+      const peca = comRegraNoCanto();
+      expect(tamanhoSobOPonto(peca, ponto(200, 150), RAIO)).toEqual({
+        recado: 'Essa é a linha do tamanho base (M), que continua nesta peça: clique na linha de outro tamanho.',
+      });
+      expect(tamanhoSobOPonto(peca, ponto(100, 0), RAIO)).toEqual({
+        recado: 'Aqui as linhas dos tamanhos P e G passam juntas: clique onde a do tamanho que quer passa sozinha — ou escolha o tamanho na janela da ferramenta.',
+      });
+      // Onde uma linha só coincide com a do base, é ela: o base não se separa.
+      const soOG = { ...graduada(), graduacao: definirRegra(graduada().graduacao!, RETANGULO, 2, [ZERO, ZERO, ponto(10, 20)]) };
+      expect(tamanhoSobOPonto(soOG, ponto(205, 160), RAIO)).toEqual({ tamanho: 'G' });
+      expect(tamanhoSobOPonto(soOG, ponto(200, 150), RAIO)).toEqual({ tamanho: 'P' });
+    });
+
+    it('a meio caminho entre duas linhas, o clique não escolhe nenhuma — e a mensagem não diz que elas passam juntas', () => {
+      // Quatro tamanhos, com a borda x = 200 inteira andando 10 mm por tamanho: P em 190, M em 200, G em 210 e GG em 220.
+      const quatro = definirTamanhosDoMolde(molde(), ['P', 'M', 'G', 'GG'], 'M');
+      const passo = [ponto(-10, 0), ZERO, ponto(10, 0), ponto(20, 0)];
+      const peca = { ...quatro, graduacao: definirRegra(definirRegra(quatro.graduacao!, RETANGULO, 1, passo), RETANGULO, 2, passo) };
+
+      expect(tamanhoSobOPonto(peca, ponto(215, 150), 8)).toEqual({
+        recado: 'O clique ficou a meio caminho entre as linhas dos tamanhos G e GG: clique em cima de uma delas.',
+      });
+      expect(tamanhoSobOPonto(peca, ponto(214, 150), 8)).toEqual({ tamanho: 'G' });
+      expect(tamanhoSobOPonto(peca, ponto(216, 150), 8)).toEqual({ tamanho: 'GG' });
+    });
+
+    it('o primeiro clique indica o tamanho; o segundo põe a peça dele onde for clicado', () => {
+      const peca = comRegraNoCanto();
+      const indicado = clicarEm(O, peca, SEM_TRECHO, NA_LINHA_DO_G);
+
+      expect(indicado.estado).toEqual({ ...SEM_TRECHO, tamanho: 'G' });
+      expect(indicado.pecas).toBeUndefined();
+      expect(indicado.recado).toBeNull();
+
+      // O clique da posição vale em qualquer lugar — também em cima da linha de outro tamanho.
+      const posto = clicarEm(O, peca, indicado.estado, NA_LINHA_DO_P);
+      expect(posto.estado).toBe(SEM_TRECHO);
+      expect(posto.pecas!.map((p) => p.tamanho)).toEqual(['M', 'G']);
+      expect(posto.pecas![1]!.graduacao).toBeUndefined();
+      expect(area(posto.pecas![1]!.contorno)).toBeCloseTo(63500, 6);
+      expect(Math.min(...posto.pecas![1]!.contorno.map((v) => v.x))).toBeCloseTo(195, 9);
+      expect(Math.min(...posto.pecas![1]!.contorno.map((v) => v.y))).toBeCloseTo(140, 9);
+      expect(posto.recado).toBe('Tamanho G de “Frente” separado: é uma peça própria, posta onde foi indicado, pronta para o encaixe.');
+    });
+
+    it('sem a posição por indicar, o clique na linha já põe a peça na fila', () => {
+      const peca = comRegraNoCanto();
+      const posto = clicarEm(NA_FILA, peca, SEM_TRECHO, NA_LINHA_DO_P);
+
+      expect(posto.estado).toBe(SEM_TRECHO);
+      expect(posto.pecas!.map((p) => p.tamanho)).toEqual(['M', 'P']);
+      // Depois da peça graduada, que vai até y = 300.
+      expect(Math.min(...posto.pecas![1]!.contorno.map((v) => v.y))).toBeCloseTo(320, 6);
+      expect(posto.recado).toBe('Tamanho P de “Frente” separado: é uma peça própria, posta depois das que já estavam na mesa, pronta para o encaixe.');
+    });
+
+    it('o clique que não indica um tamanho não muda nada, e diz por quê', () => {
+      const peca = comRegraNoCanto();
+      const fora = clicarEm(O, peca, SEM_TRECHO, ponto(100, 150));
+      expect(fora.estado).toBe(SEM_TRECHO);
+      expect(fora.pecas).toBeUndefined();
+      expect(fora.recado).toBe('Clique na linha do tamanho que quer separar: são as linhas finas, por dentro e por fora do contorno da peça.');
+      expect(clicarEm(O, peca, SEM_TRECHO, ponto(200, 150)).recado).toMatch(/^Essa é a linha do tamanho base \(M\)/);
+      expect(clicarEm(O, peca, SEM_TRECHO, ponto(100, 0)).recado).toMatch(/^Aqui as linhas dos tamanhos P e G passam juntas/);
+      expect(clicarEm(O, peca, SEM_TRECHO, ponto(100, 0)).pecas).toBeUndefined();
+      // Sem o raio do clique, nada está "sob o mouse".
+      expect(cliqueDeGraduacao('separar-tamanhos', O, [peca], peca, SEM_TRECHO, { noContorno: null, livre: ponto(207, 160) }, { regra: null, novoId: ids() }).recado).toMatch(/^Clique na linha do tamanho/);
+    });
+
+    it('a prévia destaca a linha do tamanho sob o mouse e, com ele indicado, mostra a peça presa ao mouse', () => {
+      const peca = comRegraNoCanto();
+      const DO_G = [ponto(0, 0), ponto(200, 0), ponto(210, 320), ponto(0, 300), ponto(0, 0)];
+
+      expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, NA_LINHA_DO_G, RAIO)).toEqual({ substituido: DO_G });
+      expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, NA_LINHA_DO_P, RAIO).substituido![2]).toEqual(ponto(190, 280));
+      // Longe das linhas, onde duas passam juntas, e sem o raio: nada em destaque.
+      expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, ponto(100, 150), RAIO)).toEqual({});
+      expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, ponto(100, 0), RAIO)).toEqual({});
+      expect(previaDaGraduacao('separar-tamanhos', O, peca, SEM_TRECHO, ponto(207, 160))).toEqual({});
+
+      const comOG = previaDaGraduacao('separar-tamanhos', O, peca, { ...SEM_TRECHO, tamanho: 'G' }, ponto(500, 1000), RAIO);
+      expect(comOG.substituido).toEqual(DO_G);
+      expect(comOG.linhas).toHaveLength(1);
+      expect(Math.min(...comOG.linhas![0]!.map((v) => v.x))).toBeCloseTo(500, 9);
+      expect(Math.min(...comOG.linhas![0]!.map((v) => v.y))).toBeCloseTo(1000, 9);
+      expect(Math.max(...comOG.linhas![0]!.map((v) => v.y))).toBeCloseTo(1320, 9);
+      // Com o tamanho escolhido na janela, nada fica em destaque na peça.
+      expect(previaDaGraduacao('separar-tamanhos', SEPARAR_TODOS, peca, SEM_TRECHO, NA_LINHA_DO_G, RAIO).substituido).toBeUndefined();
+    });
+
+    it('a instrução diz o que o clique faz, antes e depois de o tamanho ser indicado', () => {
+      expect(instrucaoDaGraduacao('separar-tamanhos', O, SEM_TRECHO, null)).toBe(
+        'Separar: clique na linha do tamanho que vai virar uma peça própria — as linhas finas, por dentro e por fora do contorno, são os outros tamanhos, e a que está sob o mouse fica em destaque. O clique seguinte diz onde a peça fica. Esc sai.',
+      );
+      expect(instrucaoDaGraduacao('separar-tamanhos', NA_FILA, SEM_TRECHO, null)).toMatch(/fica em destaque\. A peça vai para depois das que já estão na mesa\. Esc sai\.$/);
+      expect(instrucaoDaGraduacao('separar-tamanhos', O, { ...SEM_TRECHO, tamanho: 'G' }, null)).toBe(
+        'Separar: tamanho G indicado. Clique onde a peça do tamanho G deve ficar (pelo canto de cima à esquerda) — o tracejado mostra. Esc sai.',
+      );
+    });
   });
 
   it('Unir: as peças marcadas na lista viram tamanhos da selecionada e saem do projeto', () => {
@@ -700,7 +847,14 @@ describe('diálogos das ferramentas', () => {
   it('Separar oferece todos e cada tamanho que não é o base', () => {
     const dialogo = dialogoDaGraduacao('separar-tamanhos', O, graduada())!;
     const campo = dialogo.campos[0]!;
-    expect(campo.tipo === 'escolha' && campo.opcoes.map((o) => o.valor)).toEqual(['todos', 'P', 'G']);
+    expect(campo.tipo === 'escolha' && campo.opcoes.map((o) => o.valor)).toEqual([TAMANHO_INDICADO_NO_DESENHO, 'todos', 'P', 'G']);
+    expect(campo.tipo === 'escolha' && campo.opcoes[0]!.rotulo).toBe('O que eu indicar com o mouse, no desenho');
+    // Vem no que o manual da referência pede — o tamanho indicado no desenho —, e guarda o que foi escolhido por último, se a peça tem esse tamanho.
+    expect(campo.inicial).toBe(TAMANHO_INDICADO_NO_DESENHO);
+    expect(dialogoDaGraduacao('separar-tamanhos', SEPARAR_TODOS, graduada())!.campos[0]!.inicial).toBe('todos');
+    expect(dialogoDaGraduacao('separar-tamanhos', com({ separar: { tamanho: 'G', indicarPosicao: true } }), graduada())!.campos[0]!.inicial).toBe('G');
+    expect(dialogoDaGraduacao('separar-tamanhos', com({ separar: { tamanho: 'GG', indicarPosicao: true } }), graduada())!.campos[0]!.inicial).toBe(TAMANHO_INDICADO_NO_DESENHO);
+    expect(dialogo.nota).toMatch(/Indicando o tamanho com o mouse, depois de confirmar clique na linha dele: as linhas finas, por dentro e por fora do contorno, são os outros tamanhos/);
     expect(dialogo.rotuloDoBotao).toBe('Separar');
     // A posição é indicada com o mouse, a menos que se desmarque.
     expect(dialogo.campos.map((c) => [c.id, c.tipo])).toEqual([['tamanho', 'escolha'], ['indicarPosicao', 'caixa']]);

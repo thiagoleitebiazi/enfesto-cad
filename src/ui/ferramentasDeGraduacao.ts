@@ -1,10 +1,11 @@
-import { distancia, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
+import { distancia, pontoMaisProximoNoContorno, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
 import {
   agruparTamanhos,
   ajustarEntre,
   alternarPontoGraduado,
   apagarRegras,
   contornoDoTamanho,
+  contornosDosTamanhos,
   definirRegra,
   descontarPonto,
   indiceDoTamanho,
@@ -110,11 +111,18 @@ export interface OpcoesDaGraduacao {
     readonly inverterDy: boolean;
     readonly destino: 'cliques' | 'todos';
   };
-  /** O nome do tamanho a separar, ou "todos"; e se a posição das peças novas é indicada com o mouse (sem isso, vão para uma fila depois das que já estão na mesa). */
+  /**
+   * O tamanho a separar: o nome dele, "todos" ou `TAMANHO_INDICADO_NO_DESENHO`
+   * (o que for clicado no desenho). E se a posição das peças novas é indicada
+   * com o mouse (sem isso, vão para uma fila depois das que já estão na mesa).
+   */
   readonly separar: { readonly tamanho: string; readonly indicarPosicao: boolean };
 }
 
 export const TODOS_OS_TAMANHOS = 'todos';
+
+/** No "Separar": o tamanho é o que for indicado com o mouse, no desenho — um clique na linha dele, como o manual da referência pede. */
+export const TAMANHO_INDICADO_NO_DESENHO = 'indicar-no-desenho';
 
 export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
   automatico: { dxMm: 10, dyMm: 0, tamanho: TODOS_OS_TAMANHOS },
@@ -125,7 +133,7 @@ export const OPCOES_INICIAIS_DA_GRADUACAO: OpcoesDaGraduacao = {
   tangente: { distanciaMm: 5, inverter: false, usarContornoBase: true, tamanho: TODOS_OS_TAMANHOS, incremental: true },
   remover: { onde: 'pontos', eixo: 'dx-dy' },
   copiar: { eixo: 'dx-dy', inverterDx: false, inverterDy: false, destino: 'cliques' },
-  separar: { tamanho: TODOS_OS_TAMANHOS, indicarPosicao: true },
+  separar: { tamanho: TAMANHO_INDICADO_NO_DESENHO, indicarPosicao: true },
 };
 
 /** Dois pontos a menos disso (mm) são o mesmo. */
@@ -366,14 +374,15 @@ export function dialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes: Op
             id: 'tamanho',
             rotulo: 'Qual tamanho vira uma peça própria',
             opcoes: [
+              { valor: TAMANHO_INDICADO_NO_DESENHO, rotulo: 'O que eu indicar com o mouse, no desenho' },
               { valor: TODOS_OS_TAMANHOS, rotulo: `Todos (${lista(outros)}): uma peça para cada` },
               ...outros.map((nome) => ({ valor: nome, rotulo: `Só o ${nome}` })),
             ],
-            inicial: outros.includes(opcoes.separar.tamanho) ? opcoes.separar.tamanho : TODOS_OS_TAMANHOS,
+            inicial: opcoes.separar.tamanho === TODOS_OS_TAMANHOS || outros.includes(opcoes.separar.tamanho) ? opcoes.separar.tamanho : TAMANHO_INDICADO_NO_DESENHO,
           },
           { tipo: 'caixa', id: 'indicarPosicao', rotulo: 'Indicar com o mouse onde as peças separadas ficam (sem isso, vão para uma fila depois das que já estão na mesa)', inicial: opcoes.separar.indicarPosicao },
         ],
-        nota: `Cada peça nova sai com o contorno e o nome do seu tamanho, sem graduação — pronta para o encaixe. Indicando a posição, depois de confirmar o desenho mostra as peças presas ao mouse: o clique põe a primeira ali (pelo canto de cima à esquerda) e as outras em fila depois dela. Esta continua graduada, no tamanho ${graduacao.tamanhos[graduacao.base]}.`,
+        nota: `Cada peça nova sai com o contorno e o nome do seu tamanho, sem graduação — pronta para o encaixe. Indicando o tamanho com o mouse, depois de confirmar clique na linha dele: as linhas finas, por dentro e por fora do contorno, são os outros tamanhos, e a que está sob o mouse fica em destaque. Indicando a posição, o desenho mostra as peças presas ao mouse: o clique põe a primeira ali (pelo canto de cima à esquerda) e as outras em fila depois dela. Esta continua graduada, no tamanho ${graduacao.tamanhos[graduacao.base]}.`,
         rotuloDoBotao: 'Separar',
       };
     }
@@ -433,11 +442,54 @@ export function lerDialogoDaGraduacao(ferramenta: FerramentaDeGraduacao, opcoes:
 // O que age na hora: Separar, Unir e Remover do molde inteiro
 // ---------------------------------------------------------------------------
 
-/** Os tamanhos (pelo número) que o "Separar" tira da peça, pelo que a janela deixou escolhido. Lança erro se não há nenhum. */
-function tamanhosASeparar(opcoes: OpcoesDaGraduacao, peca: Molde): number[] {
+/** O "Separar" age assim que a janela fecha: nem o tamanho nem a posição ficam por indicar com o mouse. */
+export function separarAgeNaHora(opcoes: OpcoesDaGraduacao): boolean {
+  return !opcoes.separar.indicarPosicao && opcoes.separar.tamanho !== TAMANHO_INDICADO_NO_DESENHO;
+}
+
+/** Duas linhas de tamanho a menos disso (mm) uma da outra, no lugar do clique, passam juntas: o clique não diz qual das duas é. */
+const MESMA_LINHA_MM = 0.05;
+
+/**
+ * No "Separar", o tamanho cuja linha passa sob o ponto (a até `raioMm`): a
+ * linha clicada é a mais perto de todas, a do base inclusive — mas, onde a de
+ * outro tamanho passa junto com a do base, é a do outro (o base não se
+ * separa). Sobre a linha do base sozinha, onde duas linhas passam juntas e a
+ * meio caminho entre duas, o que vem é a explicação; longe de todas, `null`.
+ */
+export function tamanhoSobOPonto(peca: Molde, p: Ponto2D, raioMm: number): { readonly tamanho: string } | { readonly recado: string } | null {
+  const graduacao = peca.graduacao;
+  if (!graduacao) return null;
+  const perto = contornosDosTamanhos(graduacao, peca.contorno)
+    .map((contorno, t) => ({ t, ...pontoMaisProximoNoContorno(p, contorno) }))
+    .filter((linha) => linha.distancia <= raioMm);
+  if (perto.length === 0) return null;
+  const menor = Math.min(...perto.map((linha) => linha.distancia));
+  const clicadas = perto.filter((linha) => linha.distancia - menor < MESMA_LINHA_MM && linha.t !== graduacao.base);
+  if (clicadas.length === 0) {
+    return { recado: `Essa é a linha do tamanho base (${graduacao.tamanhos[graduacao.base]}), que continua nesta peça: clique na linha de outro tamanho.` };
+  }
+  if (clicadas.length === 1) return { tamanho: graduacao.tamanhos[clicadas[0]!.t]! };
+  const nomes = lista(clicadas.map((linha) => graduacao.tamanhos[linha.t]!));
+  const juntas = clicadas.every((linha) => distancia(linha.ponto, clicadas[0]!.ponto) < MESMA_LINHA_MM);
+  return {
+    recado: juntas
+      ? `Aqui as linhas dos tamanhos ${nomes} passam juntas: clique onde a do tamanho que quer passa sozinha — ou escolha o tamanho na janela da ferramenta.`
+      : `O clique ficou a meio caminho entre as linhas dos tamanhos ${nomes}: clique em cima de uma delas.`,
+  };
+}
+
+/**
+ * Os tamanhos (pelo número) que o "Separar" tira da peça: o que a janela
+ * deixou escolhido ou, com o tamanho indicado no desenho, o `indicado`. Lança
+ * erro se não há nenhum.
+ */
+function tamanhosASeparar(opcoes: OpcoesDaGraduacao, peca: Molde, indicado: string | null = null): number[] {
   const graduacao = peca.graduacao;
   if (!graduacao) throw new Error(SEM_TAMANHOS);
-  const pedido = opcoes.separar.tamanho;
+  const noDesenho = opcoes.separar.tamanho === TAMANHO_INDICADO_NO_DESENHO;
+  if (noDesenho && indicado === null) throw new Error('Indique o tamanho no desenho: clique na linha dele.');
+  const pedido = noDesenho ? indicado! : opcoes.separar.tamanho;
   const quais =
     pedido === TODOS_OS_TAMANHOS
       ? graduacao.tamanhos.map((_, t) => t).filter((t) => t !== graduacao.base)
@@ -450,9 +502,17 @@ function tamanhosASeparar(opcoes: OpcoesDaGraduacao, peca: Molde): number[] {
  * "Separar": as peças novas entram no projeto. Com `posicao` (indicada com o
  * mouse), a primeira fica ali, pelo canto de cima à esquerda, e as outras em
  * fila depois dela; sem ela, vão para depois das que já estão na mesa.
+ * `indicado` é o tamanho clicado no desenho, quando é assim que ele é escolhido.
  */
-export function aplicarSeparar(opcoes: OpcoesDaGraduacao, pecas: readonly Molde[], peca: Molde, novoId: () => string, posicao: Ponto2D | null = null): ResultadoDeFerramentaDeMolde {
-  const quais = tamanhosASeparar(opcoes, peca);
+export function aplicarSeparar(
+  opcoes: OpcoesDaGraduacao,
+  pecas: readonly Molde[],
+  peca: Molde,
+  novoId: () => string,
+  posicao: Ponto2D | null = null,
+  indicado: string | null = null,
+): ResultadoDeFerramentaDeMolde {
+  const quais = tamanhosASeparar(opcoes, peca, indicado);
   const graduacao = peca.graduacao!;
   // Sem posição indicada, a fila das peças novas começa depois de todas as que já estão na mesa, para não cair em cima de nenhuma.
   const fimDasPecas = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
@@ -601,11 +661,20 @@ export function cliqueDeGraduacao(
     recado,
   });
 
-  // "Separar", com a posição indicada pelo mouse: o clique diz onde as peças novas ficam.
+  // "Separar": o clique na linha de um tamanho o indica; o clique da posição diz onde as peças novas ficam.
   if (modo === 'separar-tamanhos') {
     if (!contexto.novoId) return { estado, recado: null };
     try {
-      const feito = aplicarSeparar(opcoes, pecas, peca, contexto.novoId, clique.livre);
+      if (opcoes.separar.tamanho === TAMANHO_INDICADO_NO_DESENHO && estado.tamanho === undefined) {
+        const sob = tamanhoSobOPonto(peca, clique.livre, contexto.raioMm ?? 0);
+        if (!sob) return { estado, recado: 'Clique na linha do tamanho que quer separar: são as linhas finas, por dentro e por fora do contorno da peça.' };
+        if ('recado' in sob) return { estado, recado: sob.recado };
+        // Com a posição por indicar, o tamanho fica guardado à espera dela; sem isso, a peça já vai para a fila.
+        if (opcoes.separar.indicarPosicao) return { estado: { ...SEM_TRECHO, tamanho: sob.tamanho }, recado: null };
+        const naFila = aplicarSeparar(opcoes, pecas, peca, contexto.novoId, null, sob.tamanho);
+        return { estado: SEM_TRECHO, pecas: naFila.pecas, recado: naFila.recado };
+      }
+      const feito = aplicarSeparar(opcoes, pecas, peca, contexto.novoId, clique.livre, estado.tamanho ?? null);
       return { estado: SEM_TRECHO, pecas: feito.pecas, recado: feito.recado };
     } catch (e) {
       return { estado, recado: e instanceof Error ? e.message : String(e) };
@@ -847,7 +916,8 @@ export function cliqueDeGraduacao(
 /**
  * O que o desenho mostra com a ferramenta ligada: um anel em cada ponto
  * graduado da peça e, no "Mouse", o tamanho da ponta como ficaria com o ponto
- * indicado posto onde o mouse está.
+ * indicado posto onde o mouse está. No "Separar", a linha do tamanho sob o
+ * mouse (a até `raioMm`) e, com ele indicado, as peças novas presas ao mouse.
  */
 export function previaDaGraduacao(
   modo: ModoDeGraduacao,
@@ -855,15 +925,27 @@ export function previaDaGraduacao(
   peca: Molde,
   estado: TrechoEmEdicao,
   mouse: Ponto2D | null,
+  raioMm = 0,
 ): PreviaDeFerramentaDeMolde {
   const graduacao = peca.graduacao;
   if (!graduacao) return {};
-  // "Separar": as peças novas presas ao mouse, como ficariam com o clique.
   if (modo === 'separar-tamanhos') {
     if (!mouse) return {};
+    const linhaDoTamanho = (nome: string): Ponto2D[] => {
+      const contorno = contornoDoTamanho(graduacao, peca.contorno, indiceDoTamanho(graduacao.tamanhos, nome));
+      return [...contorno, contorno[0]!];
+    };
+    const noDesenho = opcoes.separar.tamanho === TAMANHO_INDICADO_NO_DESENHO;
+    // O tamanho ainda por indicar: a linha do que está sob o mouse, em destaque.
+    if (noDesenho && estado.tamanho === undefined) {
+      const sob = tamanhoSobOPonto(peca, mouse, raioMm);
+      return sob && 'tamanho' in sob ? { substituido: linhaDoTamanho(sob.tamanho) } : {};
+    }
+    // As peças novas presas ao mouse, como ficariam com o clique (e a linha do tamanho indicado, em destaque).
     try {
-      const novas = separarTamanhosEm(peca, tamanhosASeparar(opcoes, peca), () => 'previa', mouse);
-      return { linhas: novas.map((nova) => [...nova.contorno, nova.contorno[0]!]) };
+      const novas = separarTamanhosEm(peca, tamanhosASeparar(opcoes, peca, estado.tamanho ?? null), () => 'previa', mouse);
+      const linhas = novas.map((nova) => [...nova.contorno, nova.contorno[0]!]);
+      return noDesenho ? { linhas, substituido: linhaDoTamanho(estado.tamanho!) } : { linhas };
     } catch {
       return {};
     }
@@ -914,8 +996,18 @@ export function instrucaoDaGraduacao(
 ): string {
   const numero = estado.inicio ? estado.inicio.indiceAresta + 1 : 0;
   switch (modo) {
-    case 'separar-tamanhos':
-      return `Separar: clique onde ${opcoes.separar.tamanho === TODOS_OS_TAMANHOS ? 'as peças separadas devem ficar (a primeira ali, pelo canto de cima à esquerda, e as outras em fila depois dela)' : `a peça do tamanho ${opcoes.separar.tamanho} deve ficar (pelo canto de cima à esquerda)`} — o tracejado mostra.` + ESC;
+    case 'separar-tamanhos': {
+      const noDesenho = opcoes.separar.tamanho === TAMANHO_INDICADO_NO_DESENHO;
+      if (noDesenho && estado.tamanho === undefined) {
+        return (
+          'Separar: clique na linha do tamanho que vai virar uma peça própria — as linhas finas, por dentro e por fora do contorno, são os outros tamanhos, e a que está sob o mouse fica em destaque.' +
+          (opcoes.separar.indicarPosicao ? ' O clique seguinte diz onde a peça fica.' : ' A peça vai para depois das que já estão na mesa.') +
+          ESC
+        );
+      }
+      const qual = noDesenho ? estado.tamanho! : opcoes.separar.tamanho;
+      return `Separar: ${noDesenho ? `tamanho ${qual} indicado. Clique` : 'clique'} onde ${qual === TODOS_OS_TAMANHOS ? 'as peças separadas devem ficar (a primeira ali, pelo canto de cima à esquerda, e as outras em fila depois dela)' : `a peça do tamanho ${qual} deve ficar (pelo canto de cima à esquerda)`} — o tracejado mostra.` + ESC;
+    }
     case 'graduar-tabela':
       return 'Tabela: clique num ponto do contorno da peça selecionada para ver e mudar a graduação dele (os anéis marcam os pontos graduados) — ou num pique, para a tabela dele.' + ESC;
     case 'graduar-automatico':

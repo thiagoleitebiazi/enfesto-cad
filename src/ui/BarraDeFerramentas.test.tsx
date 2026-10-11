@@ -456,7 +456,7 @@ describe('BarraDeFerramentas: Graduação', () => {
 
     expect(botao('Separar')).toHaveAttribute('aria-pressed', 'false');
     expect(botao('Unir')).not.toHaveAttribute('aria-pressed');
-    expect(botao('Separar').title).toContain('onde for indicado com o mouse');
+    expect(botao('Separar').title).toContain('para o tamanho clicado no desenho (ou para todos), onde for indicado com o mouse');
   });
 
   it('com o Separar à espera do clique, o botão dele fica pressionado', () => {

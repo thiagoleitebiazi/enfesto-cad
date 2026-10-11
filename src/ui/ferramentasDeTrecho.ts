@@ -36,6 +36,8 @@ export interface TrechoEmEdicao {
    * moldes", a primeira das duas linhas.
    */
   readonly grupos?: readonly (readonly Ponto2D[])[];
+  /** O tamanho indicado com o mouse, no desenho, pelo nome dele (o "Separar" da graduação). */
+  readonly tamanho?: string;
 }
 
 export const SEM_TRECHO: TrechoEmEdicao = { inicio: null, fim: null, livres: [] };

@@ -1192,7 +1192,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   rotulo="Separar"
                   icone="separar-graduacao"
                   pressionado={props.modo === 'separar-tamanhos'}
-                  dica="Separar: cria uma peça própria para um tamanho (ou para todos), onde for indicado com o mouse ou em fila depois das outras — é assim que os tamanhos vão para o encaixe"
+                  dica="Separar: cria uma peça própria para o tamanho clicado no desenho (ou para todos), onde for indicado com o mouse ou em fila depois das outras — é assim que os tamanhos vão para o encaixe"
                   falta={faltaParaGraduar}
                   onClick={() => props.onUsarFerramentaDeGraduacao('separar-tamanhos')}
                 />
