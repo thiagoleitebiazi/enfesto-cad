@@ -1707,6 +1707,38 @@ button:focus-visible {
   color: var(--cor-texto-secundario);
 }
 
+/* Tabela do "Criar regra": o nome do tamanho também se digita, e os botões agem na linha escolhida. */
+.botoes-da-tabela-da-regra {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tabela-da-regra td input[type='radio'] {
+  width: auto;
+  min-width: 0;
+}
+
+.tabela-da-regra td:nth-child(2) {
+  white-space: nowrap;
+}
+
+.tabela-da-regra td:nth-child(2) input {
+  width: 6em;
+  min-width: 0;
+}
+
+.tabela-da-regra tr.linha-escolhida td {
+  box-shadow: inset 0 0 0 9999px rgba(21, 101, 192, 0.08);
+}
+
+.tabela-da-regra tr.linha-escolhida td:first-child {
+  border-left: 3px solid var(--cor-selecao);
+}
+
+.tabela-da-regra .marca-do-base {
+  font-weight: 600;
+}
+
 /* Imagens do modelo e Digitalizar: a lista das imagens guardadas no projeto. */
 .painel-de-imagens {
   width: 520px;

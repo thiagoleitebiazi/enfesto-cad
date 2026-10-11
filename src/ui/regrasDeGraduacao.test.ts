@@ -3,13 +3,11 @@ import { ponto } from '../core/geometria';
 import { iniciarGraduacao } from '../domain/graduacao';
 import {
   criarConjuntoDeRegras,
-  dialogoDeCriarRegra,
   gravarConjuntosDeRegras,
   gravarRegrasCadastradas,
   lerConjuntosDeRegras,
   lerRegrasCadastradas,
   regraDaVez,
-  regraDoDialogo,
   regraDoPonto,
   regraParaAGraduacao,
   regrasDoConjunto,
@@ -76,82 +74,6 @@ describe('regraDoPonto', () => {
 
   it('pede um nome', () => {
     expect(() => regraDoPonto('r1', '   ', graduacao, OMBRO.deslocamentos)).toThrow('Dê um nome à regra.');
-  });
-});
-
-describe('a janela do “Criar regra”: a tabela do ponto, que pode ser mudada antes de guardar', () => {
-  // P, M (base) e G; o ponto anda, no mundo, (3, 6) no G e (-3, -6) no P: na tela, DX é o y do mundo (6) e DY é o x (3).
-  const graduacao = iniciarGraduacao(RETANGULO, ['P', 'M', 'G'], 1);
-  const DO_PONTO = [ponto(-3, -6), ZERO, ponto(3, 6)];
-  const VALORES = { nome: 'Ombro', codigo: 'A1', tamanhos: 'P, M, G', base: 'M', dx: '-6; 0; 6', dy: '-3; 0; 3', incremental: false };
-
-  it('abre com os tamanhos, o base e os DX e DY do ponto, um valor por tamanho', () => {
-    const dialogo = dialogoDeCriarRegra(graduacao, DO_PONTO);
-
-    expect(dialogo.campos.map((c) => [c.id, c.inicial])).toEqual([
-      ['nome', ''],
-      ['codigo', ''],
-      ['tamanhos', 'P, M, G'],
-      ['base', 'M'],
-      ['dx', '-6; 0; 6'],
-      ['dy', '-3; 0; 3'],
-      ['incremental', false],
-    ]);
-    expect(dialogo.nota).toMatch(/para criar um tamanho, acrescente o nome dele em “Tamanhos” e um valor em DX e em DY, na mesma posição; para excluir, apague os três; para mudar o base, troque o nome em “Tamanho base”/);
-    // O ponto sem regra abre com zeros.
-    expect(dialogoDeCriarRegra(graduacao, []).campos.find((c) => c.id === 'dx')!.inicial).toBe('0; 0; 0');
-  });
-
-  it('sem mexer na tabela, a regra é a do ponto', () => {
-    expect(regraDoDialogo('r1', VALORES)).toEqual({ id: 'r1', nome: 'Ombro', codigo: 'A1', tamanhos: ['P', 'M', 'G'], base: 'M', deslocamentos: DO_PONTO });
-    expect(regraDoDialogo('r1', VALORES)).toEqual(regraDoPonto('r1', ' Ombro ', graduacao, DO_PONTO, 'A1'));
-    expect('codigo' in regraDoDialogo('r1', { ...VALORES, codigo: '  ' })).toBe(false);
-    expect('codigo' in regraDoDialogo('r1', { nome: 'Ombro', tamanhos: 'P, M, G', base: 'M', dx: '-6; 0; 6', dy: '-3; 0; 3', incremental: false })).toBe(false);
-  });
-
-  it('os valores podem ser mudados: com vírgula ou ponto nas casas, e com espaços', () => {
-    const regra = regraDoDialogo('r1', { ...VALORES, dx: ' -7,5 ;0; 7.5', dy: '-1;0;1' });
-    // DX é o y do mundo; DY é o x.
-    expect(regra.deslocamentos).toEqual([ponto(-1, -7.5), ZERO, ponto(1, 7.5)]);
-  });
-
-  it('criar um tamanho é acrescentar o nome e um valor em cada coluna; excluir é apagar os três', () => {
-    const comGG = regraDoDialogo('r1', { ...VALORES, tamanhos: 'P, M, G, GG', dx: '-6; 0; 6; 12', dy: '-3; 0; 3; 6' });
-    expect(comGG.tamanhos).toEqual(['P', 'M', 'G', 'GG']);
-    expect(comGG.deslocamentos[3]).toEqual(ponto(6, 12));
-    // A regra com o tamanho a mais serve para a peça que o tem.
-    expect(regraParaAGraduacao(comGG, iniciarGraduacao(RETANGULO, ['M', 'G', 'GG'], 0))).toEqual([ZERO, ponto(3, 6), ponto(6, 12)]);
-    const semP = regraDoDialogo('r1', { ...VALORES, tamanhos: 'M; G', dx: '0; 6', dy: '0; 3' });
-    expect(semP.tamanhos).toEqual(['M', 'G']);
-    expect(semP.deslocamentos).toEqual([ZERO, ponto(3, 6)]);
-  });
-
-  it('mudado o base, os valores passam a ser contados dele', () => {
-    const regra = regraDoDialogo('r1', { ...VALORES, base: 'P' });
-
-    expect(regra.base).toBe('P');
-    expect(regra.deslocamentos).toEqual([ZERO, ponto(3, 6), ponto(6, 12)]);
-    // Aplicada numa peça de base M, dá o mesmo que a regra de antes.
-    expect(regraParaAGraduacao(regra, graduacao)).toEqual(DO_PONTO);
-  });
-
-  it('“Incremental”: cada valor é a diferença para o vizinho do lado do base — o mesmo número repetido dá o mesmo passo a todos', () => {
-    const regra = regraDoDialogo('r1', { ...VALORES, tamanhos: 'PP, P, M, G, GG', dx: '-6; -6; 0; 6; 6', dy: '0; 0; 0; 0; 0', incremental: true });
-
-    expect(regra.deslocamentos.map((d) => d.y)).toEqual([-12, -6, 0, 6, 12]);
-    expect(regra.deslocamentos.every((d) => d.x === 0)).toBe(true);
-    // O valor digitado no base não conta no incremental.
-    expect(regraDoDialogo('r1', { ...VALORES, dx: '-6; 99; 6', incremental: true }).deslocamentos.map((d) => d.y)).toEqual([-6, 0, 6]);
-  });
-
-  it('recusa a tabela que não serve, dizendo o que falta', () => {
-    expect(() => regraDoDialogo('r1', { ...VALORES, nome: '  ' })).toThrow(/Dê um nome à regra/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, tamanhos: 'M' })).toThrow(/pelo menos dois tamanhos/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, tamanhos: 'P, M, P' })).toThrow(/nomes diferentes/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, base: 'GG' })).toThrow(/O tamanho base “GG” não está entre os tamanhos da regra \(P, M, G\)/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, dx: '-6; 0' })).toThrow(/DX precisa de um número para cada tamanho \(3\), separados por ponto e vírgula/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, dy: '-3; x; 3' })).toThrow(/DY precisa de um número para cada tamanho \(3\)/);
-    expect(() => regraDoDialogo('r1', { ...VALORES, tamanhos: 'P, M, G, GG' })).toThrow(/DX precisa de um número para cada tamanho \(4\)/);
   });
 });
 

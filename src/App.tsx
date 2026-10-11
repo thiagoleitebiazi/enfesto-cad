@@ -103,18 +103,18 @@ import {
 import {
   criarConjuntoDeRegras,
   gravarConjuntosDeRegras,
-  dialogoDeCriarRegra,
   gravarRegrasCadastradas,
   lerConjuntosDeRegras,
   lerRegrasCadastradas,
   regraDaVez,
-  regraDoDialogo,
   regraDoPonto,
   regraParaAGraduacao,
   type ConjuntoDeRegras,
   type RegraCadastrada,
 } from './ui/regrasDeGraduacao';
 import { PainelDeTabelaDeGraduacao } from './ui/PainelDeTabelaDeGraduacao';
+import { PainelDeCriarRegra } from './ui/PainelDeCriarRegra';
+import { regraDaTabela } from './ui/tabelaDaRegra';
 import { aplicarDialogoDoPique, dialogoDoPique, type GraduacaoDePiqueCopiada } from './ui/graduacaoDePiques';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
@@ -4542,19 +4542,16 @@ export default function App(): React.JSX.Element {
           );
         })()}
       {dialogoDeFerramenta?.tipo === 'nome-da-regra' && pontoDaGraduacao && pecaSelecionada && (
-        <DialogoDeCampos
-          titulo="Criar regra"
-          resumo={[
-            ['Peça', pecaSelecionada.nome],
-            ['Ponto', String(pontoDaGraduacao.indice + 1)],
-            ['Tamanhos', pontoDaGraduacao.graduacao.tamanhos.join(', ')],
-          ]}
-          campos={dialogoDeCriarRegra(pontoDaGraduacao.graduacao, pontoDaGraduacao.regra).campos}
-          nota={dialogoDeCriarRegra(pontoDaGraduacao.graduacao, pontoDaGraduacao.regra).nota}
-          rotuloDoBotao="Criar regra"
-          onAplicar={(valores) => {
+        <PainelDeCriarRegra
+          key={pontoDaGraduacao.indice}
+          nomeDaPeca={pecaSelecionada.nome}
+          numeroDoPonto={pontoDaGraduacao.indice + 1}
+          tamanhos={pontoDaGraduacao.graduacao.tamanhos}
+          base={pontoDaGraduacao.graduacao.base}
+          deslocamentos={pontoDaGraduacao.regra}
+          onCriar={(nome, codigo, tabela) => {
             try {
-              const regra = regraDoDialogo(proximoId(), valores);
+              const regra = regraDaTabela(proximoId(), nome, codigo, tabela);
               const novas = [...regrasDoUsuario, regra];
               if (!gravarRegrasCadastradas(window.localStorage, novas)) return 'Não foi possível guardar a regra neste computador.';
               setRegrasDoUsuario(novas);
