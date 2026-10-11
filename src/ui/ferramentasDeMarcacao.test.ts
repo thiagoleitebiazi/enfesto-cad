@@ -14,6 +14,7 @@ import {
   cadastroAgeNaHora,
   caminhoHorario,
   cliqueDeMarcacao,
+  comOCadastrado,
   confirmarLinhasAuxiliares,
   confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
@@ -121,7 +122,7 @@ describe('as janelas', () => {
     expect(dialogoDaMarcacao('remover-pique', O, [molde()])!.campos.map((c) => c.id)).toEqual(['doContorno', 'internos']);
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['modo', 'por', 'quantidade', 'espaco', 'tipo', 'largura', 'altura', 'angulo']);
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.nota).toMatch(/não a conta: os espaços iguais do começo ao fim e a contagem a partir do começo são a nossa leitura\./);
-    expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'tipo', 'largura', 'altura', 'angulo', 'distancia']);
+    expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'tipo', 'largura', 'altura', 'angulo', 'distancia', 'internos']);
     expect(dialogoDaMarcacao('alterar-pique', O, [molde()])).toBeNull();
     expect(lerDialogoDaMarcacao('alterar-pique', O, {})).toBe(O);
   });
@@ -133,7 +134,7 @@ describe('as janelas', () => {
     expect(() => lerDialogoDaMarcacao('multiplos-piques', O, { ...VALORES_DO_FORMATO, por: 'numero', quantidade: 0, espaco: 25 })).toThrow('O número de piques precisa ficar entre 1 e 200.');
     expect(() => lerDialogoDaMarcacao('multiplos-piques', O, { ...VALORES_DO_FORMATO, por: 'numero', quantidade: 201, espaco: 25 })).toThrow(/entre 1 e 200/);
     expect(() => lerDialogoDaMarcacao('multiplos-piques', O, { ...VALORES_DO_FORMATO, por: 'perimetro', quantidade: 0, espaco: 0 })).toThrow('O espaço entre um pique e outro precisa ser maior que zero.');
-    expect(lerDialogoDaMarcacao('substituir-piques', O, { ...VALORES_DO_FORMATO, de: 't', onde: 'todas', acao: 'marca', distancia: 12 }).substituir).toEqual({ de: 't', onde: 'todas', acao: 'marca', formato: formato('v', 8, 10), distanciaMm: 12 });
+    expect(lerDialogoDaMarcacao('substituir-piques', O, { ...VALORES_DO_FORMATO, de: 't', onde: 'todas', acao: 'marca', distancia: 12 }).substituir).toEqual({ de: 't', onde: 'todas', acao: 'marca', formato: formato('v', 8, 10), distanciaMm: 12, internos: false });
     expect(lerDialogoDaMarcacao('substituir-piques', O, { ...VALORES_DO_FORMATO, de: 't', onde: 'x', acao: 'x', distancia: 0 }).substituir).toMatchObject({ onde: 'selecionada', acao: 'trocar' });
     expect(() => lerDialogoDaMarcacao('substituir-piques', O, { ...VALORES_DO_FORMATO, de: 't', onde: 'todas', acao: 'marca', distancia: 0 })).toThrow('A distância do pique interno precisa ser maior que zero.');
   });
@@ -695,7 +696,7 @@ describe('Alinhar', () => {
 
 describe('Cadastrar pique', () => {
   const SETA: PiqueCadastrado = { id: 'c1', nome: 'Seta', descricao: 'ponta fina', forma: [[ponto(-0.5, 0), ponto(0, 1), ponto(0.5, 0)]] };
-  const criar = (nome = 'Meu V', descricao = ''): OpcoesDeMarcacao => ({ ...O, cadastrar: { acao: 'criar', qual: '', nome, descricao } });
+  const criar = (nome = 'Meu V', descricao = ''): OpcoesDeMarcacao => ({ ...O, cadastrar: { ...O.cadastrar, acao: 'criar', nome, descricao } });
   // Um V desenhado de pé na tela: a boca de (100, 40) a (100, 60), a ponta em (70, 50) — em duas linhas.
   const comDesenho = (): Molde => molde({ linhasInternas: [[ponto(100, 40), ponto(70, 50)], [ponto(70, 50), ponto(100, 60)], [ponto(20, 200), ponto(180, 200)]] });
 
@@ -704,26 +705,26 @@ describe('Cadastrar pique', () => {
     expect(semNada.campos.map((c) => c.id)).toEqual(['acao', 'nome', 'descricao']);
     expect(semNada.campos[0]!.tipo === 'escolha' && semNada.campos[0]!.opcoes.map((o) => o.valor)).toEqual(['criar']);
     const comUm = dialogoDaMarcacao('cadastrar-pique', O, [molde()], [SETA])!;
-    expect(comUm.campos.map((c) => c.id)).toEqual(['acao', 'qual', 'nome', 'descricao']);
+    expect(comUm.campos.map((c) => c.id)).toEqual(['acao', 'qual', 'nome', 'descricao', 'redesenhar', 'atualizar']);
     expect(comUm.campos[0]!.tipo === 'escolha' && comUm.campos[0]!.opcoes.map((o) => o.valor)).toEqual(['criar', 'alterar', 'excluir']);
     expect(comUm.campos[1]!.tipo === 'escolha' && comUm.campos[1]!.opcoes).toEqual([{ valor: 'c1', rotulo: 'Seta: ponta fina' }]);
     expect(comUm.nota).toMatch(/Só os formatos cadastrados aqui podem ser alterados ou excluídos: os do programa são fixos\. No manual da referência o nome é pedido no fim; aqui, antes\.$/);
   });
 
   it('lê a janela, e recusa o que falta: o nome, o cadastrado, o nome repetido', () => {
-    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: ' Meu V ', descricao: ' largo ' }).cadastrar).toEqual({ acao: 'criar', qual: '', nome: 'Meu V', descricao: 'largo' });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: ' Meu V ', descricao: ' largo ' }).cadastrar).toEqual({ acao: 'criar', qual: '', nome: 'Meu V', descricao: 'largo', redesenhar: false, atualizar: false });
     expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar' })).toThrow('Dê um nome ao formato do pique.');
     expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: 'seta' }, [SETA])).toThrow('Já há um formato cadastrado com o nome “seta”.');
     expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'x', nome: 'Outro' }, [SETA])).toThrow('Escolha um dos formatos cadastrados.');
     // Alterar o próprio pode manter o nome; excluir não pede nome.
-    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra' }, [SETA]).cadastrar).toEqual({ acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra' });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra' }, [SETA]).cadastrar).toEqual({ acao: 'alterar', qual: 'c1', nome: 'Seta', descricao: 'outra', redesenhar: false, atualizar: false });
     expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'excluir', qual: 'c1' }, [SETA]).cadastrar).toMatchObject({ acao: 'excluir', qual: 'c1' });
     expect(() => lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'excluir', qual: 'x' }, [SETA])).toThrow('Escolha um dos formatos cadastrados.');
   });
 
   it('alterar e excluir agem ao confirmar a janela, sem mexer em peça nenhuma', () => {
-    const alterar: OpcoesDeMarcacao = { ...O, cadastrar: { acao: 'alterar', qual: 'c1', nome: 'Flecha', descricao: 'nova' } };
-    const excluir: OpcoesDeMarcacao = { ...O, cadastrar: { acao: 'excluir', qual: 'c1', nome: '', descricao: '' } };
+    const alterar: OpcoesDeMarcacao = { ...O, cadastrar: { ...O.cadastrar, acao: 'alterar', qual: 'c1', nome: 'Flecha', descricao: 'nova' } };
+    const excluir: OpcoesDeMarcacao = { ...O, cadastrar: { ...O.cadastrar, acao: 'excluir', qual: 'c1' } };
 
     expect(cadastroAgeNaHora(criar())).toBe(false);
     expect(cadastroAgeNaHora(alterar)).toBe(true);
@@ -909,5 +910,179 @@ describe('Linhas auxiliares', () => {
     expect(instrucaoDaMarcacao(MODO, linhas({ manual: true }), SEM_TRECHO)).toBe('Remover linhas auxiliares: clique na linha que deve voltar a ser só elemento de construção; no modo manual, indique todas e aperte Enter. Esc sai.');
     expect(instrucaoDaMarcacao(MODO, linhas({ manual: true }), uma)).toBe('Linhas auxiliares: 1 linha indicada — clique nas outras, ou aperte Enter para converter. Esc sai.');
     expect(instrucaoDaMarcacao(MODO, linhas({ acao: 'adicionar', manual: true }), duas)).toBe('Linhas auxiliares: 2 linhas indicadas — clique nas outras, ou aperte Enter para converter. Esc sai.');
+  });
+});
+
+describe('Substituir, com os piques internos', () => {
+  // Dois piques no contorno (V e T) e três marcas: um V e uma cruz internos, e um ponto sem formato.
+  const comInternos = (): Molde =>
+    molde({
+      piques: [pique('a', 50, formato('v')), pique('b', 150, formato('t'))],
+      marcas: [
+        { id: 'm1', posicao: ponto(100, 100), formato: formato('v', 6, 6, 30) },
+        { id: 'm2', posicao: ponto(100, 200), formato: formato('cruz') },
+        { id: 'm3', posicao: ponto(50, 250) },
+      ],
+    });
+  const VALORES = { de: 'v', onde: 'selecionada', acao: 'trocar', ...VALORES_DO_FORMATO, distancia: 10 };
+
+  it('a janela tem a caixa dos internos, e a lista de tipos conta os que só os internos usam', () => {
+    const dialogo = dialogoDaMarcacao('substituir-piques', O, [comInternos()])!;
+
+    expect(dialogo.campos.at(-1)).toMatchObject({ tipo: 'caixa', id: 'internos', inicial: false });
+    expect(dialogo.nota).toMatch(/o ponto sem formato não entra\. O manual da referência só fala dos piques do contorno: os internos são a nossa leitura\.$/);
+    expect(tiposEmUso([comInternos()])).toEqual(['v', 't', 'cruz']);
+    expect(lerDialogoDaMarcacao('substituir-piques', O, { ...VALORES, internos: true }).substituir.internos).toBe(true);
+    expect(lerDialogoDaMarcacao('substituir-piques', O, VALORES).substituir.internos).toBe(false);
+    expect(dialogoDaMarcacao('substituir-piques', substituir({ internos: true }), [comInternos()])!.campos.at(-1)).toMatchObject({ inicial: true });
+  });
+
+  it('sem a caixa, os internos ficam como estão; com ela, a troca pega os do tipo escolhido, e a mensagem diz quantos de cada', () => {
+    const peca = comInternos();
+    const sem = aplicarSubstituir(substituir({ de: 'v', acao: 'trocar', formato: formato('u', 8, 8) }), [peca], ['f'], ids());
+    expect(sem.pecas[0]!.marcas).toBe(peca.marcas);
+    expect(sem.recado).toBe('1 pique substituído do tipo V em 1 peça: agora é U, de 8,0 mm × 8,0 mm.');
+
+    const com = aplicarSubstituir(substituir({ de: 'v', acao: 'trocar', formato: formato('u', 8, 8), internos: true }), [peca], ['f'], ids());
+    expect(com.pecas[0]!.piques.map((q) => q.formato!.tipo)).toEqual(['u', 't']);
+    expect(com.pecas[0]!.marcas.map((m) => m.formato?.tipo)).toEqual(['u', 'cruz', undefined]);
+    expect(com.pecas[0]!.marcas[0]!.posicao).toEqual(ponto(100, 100));
+    expect(com.pecas[0]!.marcas[1]).toBe(peca.marcas[1]);
+    expect(com.recado).toBe('2 piques substituídos (1 do contorno e 1 interno) do tipo V em 1 peça: agora são U, de 8,0 mm × 8,0 mm.');
+    // Todos os tipos: os dois do contorno e os dois internos com formato; o ponto sem formato não entra.
+    const todos = aplicarSubstituir(substituir({ de: TODOS_OS_TIPOS, acao: 'trocar', formato: formato('u', 8, 8), internos: true }), [peca], ['f'], ids());
+    expect(todos.pecas[0]!.marcas.map((m) => m.formato?.tipo)).toEqual(['u', 'u', undefined]);
+    expect(todos.recado).toBe('4 piques substituídos (2 do contorno e 2 internos) em 1 peça: agora são U, de 8,0 mm × 8,0 mm.');
+  });
+
+  it('o tipo que só os internos têm também se troca; e a remoção leva os internos do tipo', () => {
+    const peca = comInternos();
+    const soInterno = aplicarSubstituir(substituir({ de: 'cruz', acao: 'trocar', formato: formato('u', 5, 5), internos: true }), [peca], ['f'], ids());
+    expect(soInterno.pecas[0]!.piques).toEqual(peca.piques);
+    expect(soInterno.pecas[0]!.marcas.map((m) => m.formato?.tipo)).toEqual(['v', 'u', undefined]);
+    expect(soInterno.recado).toMatch(/^1 pique substituído \(0 do contorno e 1 interno\) do tipo .+ em 1 peça: agora é U, de 5,0 mm × 5,0 mm\.$/);
+
+    const removidos = aplicarSubstituir(substituir({ de: 'v', acao: 'remover', internos: true }), [peca], ['f'], ids());
+    expect(removidos.pecas[0]!.piques.map((q) => q.id)).toEqual(['b']);
+    expect(removidos.pecas[0]!.marcas.map((m) => m.id)).toEqual(['m2', 'm3']);
+    expect(removidos.recado).toBe('2 piques removidos (1 do contorno e 1 interno) do tipo V em 1 peça.');
+    // Sem a caixa, a remoção não toca nos internos.
+    expect(aplicarSubstituir(substituir({ de: 'v', acao: 'remover' }), [peca], ['f'], ids()).pecas[0]!.marcas).toBe(peca.marcas);
+  });
+
+  it('“por marca” continua sendo só para os do contorno, e a falta de piques diz onde foi procurado', () => {
+    const peca = comInternos();
+    const porMarca = aplicarSubstituir(substituir({ de: 'v', acao: 'marca', formato: formato('cruz'), distanciaMm: 15, internos: true }), [peca], ['f'], ids());
+
+    // O V do contorno vira interno; o V que já era interno fica como estava.
+    expect(porMarca.pecas[0]!.marcas.map((m) => m.formato?.tipo)).toEqual(['v', 'cruz', undefined, 'cruz']);
+    expect(porMarca.pecas[0]!.marcas[0]).toBe(peca.marcas[0]);
+    expect(() => aplicarSubstituir(substituir({ de: 'u', internos: true }), [peca], ['f'], ids())).toThrow('Não há pique do tipo U no contorno nem dentro da peça escolhida.');
+    expect(() => aplicarSubstituir(substituir({ de: 'u', acao: 'marca', internos: true }), [peca], ['f'], ids())).toThrow('Não há pique do tipo U no contorno da peça escolhida.');
+    expect(() => aplicarSubstituir(substituir({ de: 'cruz' }), [peca], ['f'], ids())).toThrow(/^Não há pique do tipo .+ no contorno da peça escolhida\.$/);
+  });
+});
+
+describe('Cadastrar pique: alterar a forma e levar a mudança aos piques postos', () => {
+  const SETA: PiqueCadastrado = { id: 'c1', nome: 'Seta', descricao: 'ponta fina', forma: [[ponto(-0.5, 0), ponto(0, 1), ponto(0.5, 0)]] };
+  const BARRA: PiqueCadastrado = { id: 'c2', nome: 'Barra', descricao: '', forma: [[ponto(-0.5, 0), ponto(0.5, 0)]] };
+  const daSeta = (extra: Partial<FormatoDePique> = {}): FormatoDePique => ({ tipo: 'cadastrado:c1', larguraMm: 10, alturaMm: 12, anguloGraus: 20, forma: SETA.forma, nome: 'Seta', ...extra });
+  const alterar = (parte: Partial<OpcoesDeMarcacao['cadastrar']> = {}): OpcoesDeMarcacao => ({ ...O, cadastrar: { ...O.cadastrar, acao: 'alterar', qual: 'c1', nome: 'Flecha', ...parte } });
+  // Um V desenhado de pé, em duas linhas; e os piques já postos: da Seta, um no contorno e um interno espelhado; da Barra, um no contorno.
+  const comPostos = (): Molde =>
+    molde({
+      linhasInternas: [[ponto(100, 40), ponto(70, 50)], [ponto(70, 50), ponto(100, 60)]],
+      piques: [pique('a', 50, daSeta()), pique('b', 150, { tipo: 'cadastrado:c2', larguraMm: 4, alturaMm: 6, anguloGraus: 0, forma: BARRA.forma, nome: 'Barra' })],
+      marcas: [{ id: 'm1', posicao: ponto(150, 200), formato: daSeta({ espelhado: true, anguloGraus: -40 }) }],
+    });
+
+  it('a janela oferece redesenhar e levar a mudança, e as duas caixas só valem no Alterar', () => {
+    const dialogo = dialogoDaMarcacao('cadastrar-pique', O, [molde()], [SETA])!;
+
+    expect(dialogo.campos.slice(-2).map((c) => [c.id, c.tipo, c.inicial])).toEqual([
+      ['redesenhar', 'caixa', false],
+      ['atualizar', 'caixa', false],
+    ]);
+    expect(dialogo.campos[0]!.tipo === 'escolha' && dialogo.campos[0]!.opcoes[1]!.rotulo).toBe('Alterar: trocar o nome, a descrição ou a forma de um cadastrado');
+    expect(dialogo.nota).toMatch(/Para trocar a forma de um cadastrado, escolha “Alterar” e marque “redesenhar”/);
+    const lido = lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c1', nome: 'Flecha', redesenhar: true, atualizar: true }, [SETA]).cadastrar;
+    expect(lido).toEqual({ acao: 'alterar', qual: 'c1', nome: 'Flecha', descricao: '', redesenhar: true, atualizar: true });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'alterar', qual: 'c1', nome: 'Flecha' }, [SETA]).cadastrar).toMatchObject({ redesenhar: false, atualizar: false });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'criar', nome: 'Novo', redesenhar: true, atualizar: true }, [SETA]).cadastrar).toMatchObject({ redesenhar: false, atualizar: false });
+    expect(lerDialogoDaMarcacao('cadastrar-pique', O, { acao: 'excluir', qual: 'c1', redesenhar: true, atualizar: true }, [SETA]).cadastrar).toMatchObject({ redesenhar: false, atualizar: false });
+    // A janela reabre com as caixas como ficaram.
+    expect(dialogoDaMarcacao('cadastrar-pique', alterar({ redesenhar: true, atualizar: true }), [molde()], [SETA])!.campos.slice(-2).map((c) => c.inicial)).toEqual([true, true]);
+  });
+
+  it('alterar só o nome age na hora; redesenhar espera os cliques no desenho', () => {
+    expect(cadastroAgeNaHora(alterar())).toBe(true);
+    expect(cadastroAgeNaHora(alterar({ redesenhar: true }))).toBe(false);
+    expect(cadastroAgeNaHora(alterar({ acao: 'excluir', redesenhar: true }))).toBe(true);
+    expect(cadastroAgeNaHora(alterar({ acao: 'criar' }))).toBe(false);
+  });
+
+  it('o nome novo vai para os piques deste projeto quando pedido, e a mensagem diz quantos', () => {
+    const peca = comPostos();
+    const outra = molde({}, 'o');
+    const semLevar = aplicarCadastro(alterar(), [SETA, BARRA], [peca]);
+    expect(semLevar.pecas).toBeUndefined();
+    expect(semLevar.recado).toBe('Formato de pique “Seta” alterado: agora é “Flecha”.');
+
+    const levando = aplicarCadastro(alterar({ atualizar: true }), [SETA, BARRA], [peca, outra]);
+    expect(levando.cadastrados).toEqual([{ ...SETA, nome: 'Flecha', descricao: '' }, BARRA]);
+    expect(levando.pecas![0]!.piques.map((q) => q.formato!.nome)).toEqual(['Flecha', 'Barra']);
+    expect(levando.pecas![0]!.piques[1]).toBe(peca.piques[1]);
+    expect(levando.pecas![0]!.marcas[0]!.formato).toEqual(daSeta({ espelhado: true, anguloGraus: -40, nome: 'Flecha' }));
+    expect(levando.pecas![1]).toBe(outra);
+    expect(levando.recado).toBe('Formato de pique “Seta” alterado: agora é “Flecha”. 2 piques deste projeto foram atualizados.');
+    // Sem pique posto com ele, as peças não mudam.
+    const semPostos = aplicarCadastro(alterar({ atualizar: true }), [SETA], [outra]);
+    expect(semPostos.pecas).toBeUndefined();
+    expect(semPostos.recado).toBe('Formato de pique “Seta” alterado: agora é “Flecha”. Nenhum pique deste projeto estava posto com ele.');
+    // Um só pique posto: a mensagem no singular.
+    const umSo = aplicarCadastro(alterar({ atualizar: true }), [SETA], [molde({ piques: [pique('a', 50, daSeta())] })]);
+    expect(umSo.recado).toBe('Formato de pique “Seta” alterado: agora é “Flecha”. 1 pique deste projeto foi atualizado.');
+  });
+
+  it('redesenhar: as linhas, o Enter e o ponto de referência trocam a forma do mesmo cadastrado', () => {
+    const peca = comPostos();
+    const opcoes = alterar({ redesenhar: true });
+    const uma = clicar('cadastrar-pique', opcoes, peca, solto(85, 45), SEM_TRECHO, 0);
+    const duas = clicar('cadastrar-pique', opcoes, peca, solto(85, 55), uma.estado, 1);
+    const confirmado = confirmarLinhasDoCadastro(peca, duas.estado)!;
+    const feito = clicar('cadastrar-pique', opcoes, peca, solto(100, 50), confirmado.estado);
+
+    // O id é o do cadastrado alterado; a forma é a do desenho novo.
+    expect(feito.cadastrar).toEqual({ id: 'c1', nome: 'Flecha', descricao: '', forma: [[ponto(-0.5, 0), ponto(0, 1)], [ponto(0, 1), ponto(0.5, 0)]] });
+    expect(feito.pecas).toBeUndefined();
+    expect(feito.estado).toBe(SEM_TRECHO);
+    expect(feito.recado).toBe('Formato de pique “Flecha” redesenhado. Os piques já postos com ele continuam como estavam.');
+    // No cadastro, fica no lugar do que era; o que é novo vai para o fim.
+    expect(comOCadastrado([SETA, BARRA], feito.cadastrar!)).toEqual([feito.cadastrar, BARRA]);
+    expect(comOCadastrado([BARRA], feito.cadastrar!)).toEqual([BARRA, feito.cadastrar]);
+    expect(instrucaoDaMarcacao('cadastrar-pique', opcoes, SEM_TRECHO)).toBe('Redesenhar pique “Flecha”: clique nas linhas internas que desenham a forma nova, uma a uma, e aperte Enter. Esc sai.');
+  });
+
+  it('redesenhar levando a mudança: os piques postos ganham a forma nova e guardam as medidas, o ângulo e o espelhamento', () => {
+    const peca = comPostos();
+    const outra = molde({}, 'o');
+    const opcoes = alterar({ redesenhar: true, atualizar: true });
+    const uma = clicar('cadastrar-pique', opcoes, peca, solto(85, 45), SEM_TRECHO, 0, [outra]);
+    const feito = clicar('cadastrar-pique', opcoes, peca, solto(100, 40), confirmarLinhasDoCadastro(peca, uma.estado)!.estado, null, [outra]);
+    const formaNova = feito.cadastrar!.forma;
+
+    expect(formaNova).toHaveLength(1);
+    expect(feito.pecas![0]!.piques[0]!.formato).toEqual(daSeta({ forma: formaNova, nome: 'Flecha' }));
+    expect(feito.pecas![0]!.piques[1]).toBe(peca.piques[1]);
+    expect(feito.pecas![0]!.marcas[0]!.formato).toEqual(daSeta({ forma: formaNova, nome: 'Flecha', espelhado: true, anguloGraus: -40 }));
+    expect(feito.pecas![1]).toBe(outra);
+    expect(feito.recado).toBe('Formato de pique “Flecha” redesenhado. 2 piques deste projeto foram atualizados.');
+    // Sem pique posto com ele: o cadastro muda, as peças não.
+    const semPostos = molde({ linhasInternas: peca.linhasInternas });
+    const um = clicar('cadastrar-pique', opcoes, semPostos, solto(85, 45), SEM_TRECHO, 0);
+    const fim = clicar('cadastrar-pique', opcoes, semPostos, solto(100, 40), confirmarLinhasDoCadastro(semPostos, um.estado)!.estado);
+    expect(fim.pecas).toBeUndefined();
+    expect(fim.cadastrar!.id).toBe('c1');
+    expect(fim.recado).toBe('Formato de pique “Flecha” redesenhado. Nenhum pique deste projeto estava posto com ele.');
   });
 });

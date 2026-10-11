@@ -70,11 +70,38 @@ export interface FormatoDePique {
   readonly forma?: readonly (readonly Ponto2D[])[];
   /** No pique cadastrado: o nome que ele tem no cadastro. */
   readonly nome?: string;
+  /** No pique cadastrado: o desenho vai espelhado (a direita dele vira esquerda) — é como ele fica na peça espelhada. */
+  readonly espelhado?: true;
 }
 
-/** O formato com o ângulo trocado de sinal: é como ele fica na peça espelhada. */
-function formatoEspelhado<T extends { readonly formato?: FormatoDePique }>(item: T): T {
-  return item.formato && item.formato.anguloGraus !== 0 ? { ...item, formato: { ...item.formato, anguloGraus: 0 - item.formato.anguloGraus } } : item;
+/** O formato com o ângulo dado e, no pique cadastrado, o desenho espelhado (ou de volta ao que era, se já estava). */
+function formatoNoEspelho(formato: FormatoDePique, anguloGraus: number): FormatoDePique {
+  const { espelhado, ...resto } = formato;
+  return { ...resto, anguloGraus, ...(formato.forma && !espelhado ? { espelhado: true as const } : {}) };
+}
+
+/**
+ * O pique do contorno na peça espelhada: o ângulo, contado do esquadro com a
+ * borda, troca de sinal, e o desenho cadastrado é espelhado. O pique de um
+ * tipo do programa, sem ângulo, fica como está: é simétrico.
+ */
+export function piqueNoEspelho<T extends { readonly formato?: FormatoDePique }>(item: T): T {
+  const formato = item.formato;
+  if (!formato || (formato.anguloGraus === 0 && !formato.forma)) return item;
+  return { ...item, formato: formatoNoEspelho(formato, 0 - formato.anguloGraus) };
+}
+
+/**
+ * O pique interno (a marca com formato) espelhado numa reta que faz
+ * `direcaoDaRetaGraus` com o eixo x: o ângulo dele, que é contado da tela,
+ * passa a ser o dobro da direção da reta menos o que era — o bico que apontava
+ * para um lado passa a apontar para o lado espelhado —, e o desenho cadastrado
+ * é espelhado.
+ */
+export function marcaNoEspelho<T extends { readonly formato?: FormatoDePique }>(item: T, direcaoDaRetaGraus: number): T {
+  const formato = item.formato;
+  if (!formato) return item;
+  return { ...item, formato: formatoNoEspelho(formato, normalizarAnguloDoFormato(2 * direcaoDaRetaGraus - formato.anguloGraus)) };
 }
 
 /** Pique (marcação de corte) na aresta indicada do contorno. Sem formato, é um pequeno traço em esquadro com a borda. */
@@ -709,8 +736,9 @@ export function espelharMolde(molde: Molde, novoId: string): Molde {
     contorno: espelharContornoHorizontal(molde.contorno, centroX),
     linhasInternas: molde.linhasInternas.map((l) => espelharContornoHorizontal(l, centroX)),
     furos: molde.furos.map((f) => espelharContornoHorizontal(f, centroX)),
-    piques: molde.piques.map((p) => formatoEspelhado(piqueLevado(p, (q) => espelharHorizontal(q, centroX)))),
-    marcas: molde.marcas.map((m) => formatoEspelhado({ ...m, posicao: espelharHorizontal(m.posicao, centroX) })),
+    piques: molde.piques.map((p) => piqueNoEspelho(piqueLevado(p, (q) => espelharHorizontal(q, centroX)))),
+    // O espelho troca o x de sinal: é uma reta em pé no mundo, a 90° do eixo x.
+    marcas: molde.marcas.map((m) => marcaNoEspelho({ ...m, posicao: espelharHorizontal(m.posicao, centroX) }, 90)),
     linhaDeFio: {
       inicio: espelharHorizontal(molde.linhaDeFio.inicio, centroX),
       fim: espelharHorizontal(molde.linhaDeFio.fim, centroX),

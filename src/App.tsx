@@ -179,6 +179,7 @@ import {
   aplicarSubstituir,
   cadastroAgeNaHora,
   cliqueDeMarcacao,
+  comOCadastrado,
   confirmarLinhasAuxiliares,
   confirmarLinhasDoCadastro,
   dialogoDaMarcacao,
@@ -2567,7 +2568,8 @@ export default function App(): React.JSX.Element {
         if (resultado.pecas) aplicarMudanca([...resultado.pecas]);
         if (resultado.abrir) setDialogoDeFerramenta({ tipo: 'alterar-pique', ...resultado.abrir });
         if (resultado.cadastrar) {
-          const novos = [...piquesCadastrados, resultado.cadastrar];
+          // Um formato novo entra no fim; o redesenhado fica no lugar do que era.
+          const novos = comOCadastrado(piquesCadastrados, resultado.cadastrar);
           if (gravarPiquesCadastrados(window.localStorage, novos)) setPiquesCadastrados(novos);
           else setRecadoDaFerramenta('Não foi possível guardar o formato neste computador.');
         }
@@ -4518,14 +4520,17 @@ export default function App(): React.JSX.Element {
               onAplicar={(valores) => {
                 try {
                   const novas = lerDialogoDaMarcacao(ferramenta, opcoesDeMarcacao, valores, piquesCadastrados);
-                  // "Cadastrar pique", alterar ou excluir: o cadastro muda ao confirmar, sem mexer em peça nenhuma.
+                  // "Cadastrar pique", excluir ou alterar o nome: o cadastro muda ao confirmar. As peças só mudam se foi
+                  // pedido levar a mudança aos piques já postos.
                   if (ferramenta === 'cadastrar-pique' && cadastroAgeNaHora(novas)) {
-                    const feito = aplicarCadastro(novas, piquesCadastrados);
+                    const feito = aplicarCadastro(novas, piquesCadastrados, pecas);
                     if (!gravarPiquesCadastrados(window.localStorage, feito.cadastrados)) return 'Não foi possível guardar o cadastro neste computador.';
                     setPiquesCadastrados(feito.cadastrados);
-                    setOpcoesDeMarcacao({ ...novas, cadastrar: { ...novas.cadastrar, acao: 'criar', nome: '', descricao: '' } });
+                    setOpcoesDeMarcacao({ ...novas, cadastrar: { ...novas.cadastrar, acao: 'criar', nome: '', descricao: '', redesenhar: false } });
                     cancelarModo();
-                    avisar(feito.recado, pecas);
+                    const comOsPiquesLevados = feito.pecas ? [...feito.pecas] : null;
+                    if (comOsPiquesLevados) aplicarMudanca(comOsPiquesLevados);
+                    avisar(feito.recado, comOsPiquesLevados ?? pecas);
                     return null;
                   }
                   // "Substituir" e o "Remover" com "todos" agem ao confirmar; as outras ligam a ferramenta.

@@ -15,6 +15,8 @@ import {
 import { ancoraDoRotulo, type Cota } from './cota';
 import { contornoDoTamanho, definirRegra, deslocamentosDoContorno, semPontosSoltos, type Graduacao } from './graduacao';
 import {
+  marcaNoEspelho,
+  piqueNoEspelho,
   piquesQueFicamNoContorno,
   rotacionarMolde,
   semCampo,
@@ -457,7 +459,9 @@ function desdobrada(molde: Molde, indiceAresta: number, novoId: () => string): M
   // O pique que está sobre a dobra é a própria imagem no espelho: não se repete.
   const piquesEspelhados = molde.piques
     .filter((p) => Math.abs(lado(p.posicao)) > TOLERANCIA_DA_DOBRA_MM)
-    .map((p) => ({ ...p, id: novoId(), posicao: espelhar(p.posicao) }));
+    .map((p) => piqueNoEspelho({ ...p, id: novoId(), posicao: espelhar(p.posicao) }));
+  // A direção da dobra, para o pique interno espelhado apontar para o lado certo.
+  const direcaoDaDobraGraus = (Math.atan2(pontaFinal.y - pontaInicial.y, pontaFinal.x - pontaInicial.x) * 180) / Math.PI;
   return {
     ...molde,
     contorno,
@@ -465,7 +469,7 @@ function desdobrada(molde: Molde, indiceAresta: number, novoId: () => string): M
     linhasInternas: [...molde.linhasInternas, ...molde.linhasInternas.map((l) => l.map(espelhar)), [pontaInicial, pontaFinal]],
     // O elemento (linha só de construção) ganha a cópia espelhada, que também é elemento.
     ...(molde.elementos ? { elementos: [...molde.elementos, ...molde.elementos.map((l) => l.map(espelhar))] } : {}),
-    marcas: [...molde.marcas, ...molde.marcas.map((m) => ({ ...m, id: novoId(), posicao: espelhar(m.posicao) }))],
+    marcas: [...molde.marcas, ...molde.marcas.map((m) => marcaNoEspelho({ ...m, id: novoId(), posicao: espelhar(m.posicao) }, direcaoDaDobraGraus))],
     piques: piquesQueFicamNoContorno([...molde.piques, ...piquesEspelhados], contorno),
     // Os pontos graduados da metade que existia ganham o par espelhado, com a regra espelhada.
     ...(molde.graduacao

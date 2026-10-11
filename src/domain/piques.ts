@@ -73,7 +73,9 @@ export function nomeDoFormato(formato: FormatoDePique | undefined): string {
 
 /** Os traços do formato no quadro de 1 × 1: os do tipo do programa, ou os que o pique cadastrado traz. */
 function tracosNoQuadro(formato: FormatoDePique): readonly (readonly Ponto2D[])[] {
-  return formato.forma ?? tipoDePique(formato.tipo)?.tracos ?? TIPOS_DE_PIQUE[0]!.tracos;
+  const tracos = formato.forma ?? tipoDePique(formato.tipo)?.tracos ?? TIPOS_DE_PIQUE[0]!.tracos;
+  // Na peça espelhada o desenho cadastrado vai espelhado: o x do quadro troca de sinal.
+  return formato.espelhado ? tracos.map((traco) => traco.map((q) => p(0 - q.x, q.y))) : tracos;
 }
 
 /** Recusa o formato que não dá para desenhar. */
@@ -103,6 +105,20 @@ function eixosNoPique(contorno: Contorno, pique: Pique): { readonly aoLongo: Pon
   return { aoLongo, paraDentro: pontoDentroDoContorno(umPasso, contorno) ? normal : p(0 - normal.x, 0 - normal.y) };
 }
 
+/**
+ * Os eixos em que o formato do pique é desenhado na borda. O desenho
+ * cadastrado tem direita e esquerda: sai sempre com a mão em que foi
+ * desenhado (de pé na tela, a borda embaixo), seja qual for o sentido do
+ * contorno — para isso a direção ao longo da borda é virada quando preciso.
+ * Os tipos do programa são simétricos, e ficam com os eixos da borda.
+ */
+function eixosDoDesenho(contorno: Contorno, pique: Pique): { readonly aoLongo: Ponto2D; readonly paraDentro: Ponto2D } {
+  const eixos = eixosNoPique(contorno, pique);
+  const mesmaMao = eixos.aoLongo.x * eixos.paraDentro.y - eixos.aoLongo.y * eixos.paraDentro.x > 0;
+  if (!pique.formato?.forma || mesmaMao) return eixos;
+  return { aoLongo: p(0 - eixos.aoLongo.x, 0 - eixos.aoLongo.y), paraDentro: eixos.paraDentro };
+}
+
 /** Os traços do formato postos em `base`, com `aoLongo` e `paraDentro` de eixos, girados do ângulo do formato. `centrado`: o meio do quadro fica em `base`. */
 function tracosEm(formato: FormatoDePique, base: Ponto2D, aoLongo: Ponto2D, paraDentro: Ponto2D, centrado: boolean): Ponto2D[][] {
   return tracosNoQuadro(formato).map((traco) =>
@@ -129,7 +145,7 @@ export function tracosDoPique(molde: Molde, pique: Pique): Ponto2D[][] {
     const normal = p((b.y - a.y) / comprimento, (0 - (b.x - a.x)) / comprimento);
     return [[pique.posicao, p(pique.posicao.x + normal.x * TRACO_DE_SEMPRE_MM, pique.posicao.y + normal.y * TRACO_DE_SEMPRE_MM)]];
   }
-  const { aoLongo, paraDentro } = eixosNoPique(molde.contorno, pique);
+  const { aoLongo, paraDentro } = eixosDoDesenho(molde.contorno, pique);
   return tracosEm(pique.formato, pique.posicao, aoLongo, paraDentro, false);
 }
 
@@ -154,7 +170,7 @@ export function tracosDaMarca(marca: Marca): Ponto2D[][] | null {
 export function tracosNaLinhaDeCorte(molde: Molde, pique: Pique): Ponto2D[][] | null {
   if (!pique.formato || !pique.naCostura || !(molde.margemDeCosturaMm > 0)) return null;
   const corte = contornoDeCorte(molde);
-  const { aoLongo, paraDentro } = eixosNoPique(molde.contorno, pique);
+  const { aoLongo, paraDentro } = eixosDoDesenho(molde.contorno, pique);
   const perto = pontoMaisProximoNoContorno(pique.posicao, corte).ponto;
   let base = perto;
   if (pique.naCostura === 'estendido' && pique.formato.anguloGraus !== 0) {

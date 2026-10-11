@@ -110,12 +110,25 @@ export interface OpcoesDeMarcacao {
     readonly acao: 'trocar' | 'marca' | 'remover';
     readonly formato: FormatoDePique;
     readonly distanciaMm: number;
+    /** Na troca de formato e na remoção: também os piques internos (as marcas com formato) do tipo escolhido. */
+    readonly internos: boolean;
   };
   /** O "Pique texto": o que escrever, a altura das letras, o ângulo e o que fica no ponto clicado. */
   readonly texto: { readonly texto: string; readonly alturaMm: number } & PoseDoTexto;
   readonly alinhar: { readonly modo: ModoDeAlinhar };
-  /** O "Cadastrar pique": criar um formato pelo desenho, ou mudar o nome ou excluir um dos cadastrados (`qual`, pelo id). */
-  readonly cadastrar: { readonly acao: 'criar' | 'alterar' | 'excluir'; readonly qual: string; readonly nome: string; readonly descricao: string };
+  /**
+   * O "Cadastrar pique": criar um formato pelo desenho, ou alterar ou excluir um dos cadastrados (`qual`, pelo id).
+   * No alterar, `redesenhar` troca também a forma (pelas linhas indicadas, como no criar), e `atualizar` leva a mudança
+   * aos piques do projeto já postos com o formato.
+   */
+  readonly cadastrar: {
+    readonly acao: 'criar' | 'alterar' | 'excluir';
+    readonly qual: string;
+    readonly nome: string;
+    readonly descricao: string;
+    readonly redesenhar: boolean;
+    readonly atualizar: boolean;
+  };
   /** As "Linhas auxiliares": adicionar (o elemento passa a ser do molde) ou remover (volta a ser elemento); no modo manual, o Enter confirma as linhas indicadas. */
   readonly linhas: { readonly acao: 'adicionar' | 'remover'; readonly manual: boolean };
 }
@@ -139,10 +152,10 @@ export const OPCOES_INICIAIS_DE_MARCACAO: OpcoesDeMarcacao = {
   },
   remover: { doContorno: false, internos: false },
   multiplos: { modo: 'contorno', por: 'numero', quantidade: 3, espacoMm: 50, formato: PIQUE_PADRAO },
-  substituir: { de: TODOS_OS_TIPOS, onde: 'selecionada', acao: 'trocar', formato: { ...PIQUE_PADRAO, tipo: 'v' }, distanciaMm: 10 },
+  substituir: { de: TODOS_OS_TIPOS, onde: 'selecionada', acao: 'trocar', formato: { ...PIQUE_PADRAO, tipo: 'v' }, distanciaMm: 10, internos: false },
   texto: { texto: '', alturaMm: 10, anguloGraus: 0, ancora: 'centro' },
   alinhar: { modo: 'vertical' },
-  cadastrar: { acao: 'criar', qual: '', nome: '', descricao: '' },
+  cadastrar: { acao: 'criar', qual: '', nome: '', descricao: '', redesenhar: false, atualizar: false },
   linhas: { acao: 'remover', manual: false },
 };
 
@@ -225,7 +238,8 @@ export interface DialogoDeMarcacao {
 
 /** Os tipos de pique que as peças dadas têm no contorno, na ordem da lista do programa. */
 export function tiposEmUso(pecas: readonly Molde[]): string[] {
-  const usados = new Set(pecas.flatMap((peca) => peca.piques.map(tipoDo)));
+  // Os do contorno e os internos (as marcas com formato).
+  const usados = new Set(pecas.flatMap((peca) => [...peca.piques.map(tipoDo), ...peca.marcas.filter((marca) => marca.formato).map(tipoDo)]));
   const doPrograma = TIPOS_DE_PIQUE.map((tipo) => tipo.id).filter((id) => usados.has(id));
   return [...doPrograma, ...[...usados].filter((id) => !doPrograma.includes(id))];
 }
@@ -363,8 +377,9 @@ export function dialogoDaMarcacao(
           },
           ...camposDoFormato(o.formato, cadastrados),
           { tipo: 'medida', id: 'distancia', rotulo: 'Distância: do pique do contorno ao pique interno que o substitui (mm)', inicial: paraCampo(o.distanciaMm) },
+          { tipo: 'caixa', id: 'internos', rotulo: 'Também os piques internos do tipo escolhido (na troca de formato e na remoção)', inicial: o.internos },
         ],
-        nota: 'Vale para os piques do contorno do tipo escolhido. Ao aplicar, a faixa de mensagens diz quantos foram substituídos ou removidos. O pique interno fica para dentro da peça, em esquadro com a borda.',
+        nota: 'Vale para os piques do contorno do tipo escolhido. Ao aplicar, a faixa de mensagens diz quantos foram substituídos ou removidos. O pique interno fica para dentro da peça, em esquadro com a borda. Com a última caixa marcada, a troca de formato e a remoção pegam também os piques internos — as marcas com formato; o ponto sem formato não entra. O manual da referência só fala dos piques do contorno: os internos são a nossa leitura.',
         rotuloDoBotao: 'Aplicar',
       };
     }
@@ -425,7 +440,7 @@ export function dialogoDaMarcacao(
             rotulo: 'O que fazer',
             opcoes: [
               { valor: 'criar', rotulo: 'Criar: um formato novo, pelas linhas que eu indicar no desenho' },
-              ...(haCadastrados ? [{ valor: 'alterar', rotulo: 'Alterar: trocar o nome e a descrição de um cadastrado' }, { valor: 'excluir', rotulo: 'Excluir um cadastrado' }] : []),
+              ...(haCadastrados ? [{ valor: 'alterar', rotulo: 'Alterar: trocar o nome, a descrição ou a forma de um cadastrado' }, { valor: 'excluir', rotulo: 'Excluir um cadastrado' }] : []),
             ],
             inicial: haCadastrados ? o.acao : 'criar',
           },
@@ -442,8 +457,14 @@ export function dialogoDaMarcacao(
             : []),
           { tipo: 'texto', id: 'nome', rotulo: 'Pique: o nome do formato', inicial: o.nome, opcional: true },
           { tipo: 'texto', id: 'descricao', rotulo: 'Descrição (opcional)', inicial: o.descricao, opcional: true },
+          ...(haCadastrados
+            ? [
+                { tipo: 'caixa' as const, id: 'redesenhar', rotulo: 'Ao alterar: redesenhar a forma — depois de confirmar, indique as linhas do desenho novo, como no Criar', inicial: o.redesenhar },
+                { tipo: 'caixa' as const, id: 'atualizar', rotulo: 'Ao alterar: levar a mudança aos piques deste projeto já postos com o formato', inicial: o.atualizar },
+              ]
+            : []),
         ],
-        nota: 'Para criar: desenhe o formato com linhas internas na peça selecionada, de pé na tela — a boca do pique embaixo, a ponta para cima. Depois de confirmar, clique em cada linha do desenho, aperte Enter e clique no ponto de referência: é o ponto do desenho que fica na borda da peça. O formato vai para a lista de tipos das outras janelas, neste computador; a largura e a altura são dadas em cada uso. Só os formatos cadastrados aqui podem ser alterados ou excluídos: os do programa são fixos. No manual da referência o nome é pedido no fim; aqui, antes.',
+        nota: 'Para criar: desenhe o formato com linhas internas na peça selecionada, de pé na tela — a boca do pique embaixo, a ponta para cima. Depois de confirmar, clique em cada linha do desenho, aperte Enter e clique no ponto de referência: é o ponto do desenho que fica na borda da peça. O formato vai para a lista de tipos das outras janelas, neste computador; a largura e a altura são dadas em cada uso. Para trocar a forma de um cadastrado, escolha “Alterar” e marque “redesenhar”: o desenho novo é indicado do mesmo jeito. O pique já posto guarda a forma que tinha; com a outra caixa marcada, os deste projeto passam a ter a nova (os de outros projetos, não). Só os formatos cadastrados aqui podem ser alterados ou excluídos: os do programa são fixos. No manual da referência o nome é pedido no fim; aqui, antes.',
         rotuloDoBotao: 'Confirmar',
       };
     }
@@ -538,6 +559,7 @@ export function lerDialogoDaMarcacao(
           acao,
           formato: formatoLido(valores, cadastrados, opcoes.substituir.formato),
           distanciaMm,
+          internos: valores.internos === true,
         },
       };
     }
@@ -562,7 +584,18 @@ export function lerDialogoDaMarcacao(
       if (acao !== 'excluir' && cadastrados.some((c) => c.nome.toLocaleUpperCase('pt-BR') === nome.toLocaleUpperCase('pt-BR') && (acao === 'criar' || c.id !== valores.qual))) {
         throw new Error(`Já há um formato cadastrado com o nome “${nome}”.`);
       }
-      return { ...opcoes, cadastrar: { acao, qual: valores.qual === undefined ? '' : String(valores.qual), nome, descricao: valores.descricao === undefined ? '' : String(valores.descricao).trim() } };
+      return {
+        ...opcoes,
+        cadastrar: {
+          acao,
+          qual: valores.qual === undefined ? '' : String(valores.qual),
+          nome,
+          descricao: valores.descricao === undefined ? '' : String(valores.descricao).trim(),
+          // As duas caixas só valem no "Alterar".
+          redesenhar: acao === 'alterar' && valores.redesenhar === true,
+          atualizar: acao === 'alterar' && valores.atualizar === true,
+        },
+      };
     }
     case 'linhas-auxiliares':
       return { ...opcoes, linhas: { acao: valores.acao === 'adicionar' ? 'adicionar' : 'remover', manual: valores.modo === 'manual' } };
@@ -589,14 +622,59 @@ export function aplicarRemoverTodos(opcoes: OpcoesDeMarcacao, pecas: readonly Mo
   return { pecas: trocar(pecas, peca.id, semOsPiques(peca, opcoes.remover)), recado: `Removidos de “${peca.nome}”: ${partes.join(' e ')}.` };
 }
 
-/** O "Cadastrar pique" age ao confirmar a janela: alterar o nome ou excluir um cadastrado. ("Criar" espera os cliques no desenho.) */
+/**
+ * O "Cadastrar pique" age ao confirmar a janela: excluir um cadastrado, ou
+ * alterar só o nome e a descrição. ("Criar", e o alterar que redesenha a
+ * forma, esperam os cliques no desenho.)
+ */
 export function cadastroAgeNaHora(opcoes: OpcoesDeMarcacao): boolean {
-  return opcoes.cadastrar.acao !== 'criar';
+  const { acao, redesenhar } = opcoes.cadastrar;
+  return acao === 'excluir' || (acao === 'alterar' && !redesenhar);
 }
 
-/** "Cadastrar pique", alterar ou excluir: o cadastro novo e o que dizer. */
-export function aplicarCadastro(opcoes: OpcoesDeMarcacao, cadastrados: readonly PiqueCadastrado[]): { readonly cadastrados: PiqueCadastrado[]; readonly recado: string } {
-  const { acao, qual, nome, descricao } = opcoes.cadastrar;
+/** O cadastro com o formato dado: no lugar do que tem o mesmo id, ou no fim, se é novo. */
+export function comOCadastrado(cadastrados: readonly PiqueCadastrado[], formato: PiqueCadastrado): PiqueCadastrado[] {
+  return cadastrados.some((c) => c.id === formato.id) ? cadastrados.map((c) => (c.id === formato.id ? formato : c)) : [...cadastrados, formato];
+}
+
+/**
+ * As peças com os piques — do contorno e internos — postos com o formato
+ * cadastrado dado levados à forma e ao nome que ele tem agora, e quantos eram.
+ * As medidas, o ângulo e o espelhamento de cada pique ficam como estão.
+ */
+function comOCadastradoNosPiques(pecas: readonly Molde[], cadastrado: PiqueCadastrado): { readonly pecas: Molde[]; readonly quantos: number } {
+  const tipo = DO_CADASTRO + cadastrado.id;
+  let quantos = 0;
+  const levado = <T extends { readonly formato?: FormatoDePique }>(item: T): T => {
+    if (item.formato?.tipo !== tipo) return item;
+    quantos++;
+    return { ...item, formato: { ...item.formato, forma: cadastrado.forma, nome: cadastrado.nome } };
+  };
+  const novas = pecas.map((peca) => {
+    const piques = peca.piques.map(levado);
+    const marcas = peca.marcas.map(levado);
+    return piques.some((q, i) => q !== peca.piques[i]) || marcas.some((m, i) => m !== peca.marcas[i]) ? { ...peca, piques, marcas } : peca;
+  });
+  return { pecas: novas, quantos };
+}
+
+/** O que dizer dos piques do projeto depois de alterar um cadastrado: quantos foram levados à mudança, ou que ficaram como estavam. */
+function ditoDosPiquesPostos(levados: number | null): string {
+  if (levados === null) return 'Os piques já postos com ele continuam como estavam.';
+  return levados === 0 ? 'Nenhum pique deste projeto estava posto com ele.' : `${plural(levados, 'pique deste projeto foi atualizado', 'piques deste projeto foram atualizados')}.`;
+}
+
+/**
+ * "Cadastrar pique", alterar (o nome e a descrição) ou excluir: o cadastro
+ * novo e o que dizer. Com "levar a mudança aos piques deste projeto", também
+ * as peças, quando algum pique delas mudou.
+ */
+export function aplicarCadastro(
+  opcoes: OpcoesDeMarcacao,
+  cadastrados: readonly PiqueCadastrado[],
+  pecas: readonly Molde[] = [],
+): { readonly cadastrados: PiqueCadastrado[]; readonly recado: string; readonly pecas?: Molde[] } {
+  const { acao, qual, nome, descricao, atualizar } = opcoes.cadastrar;
   const alvo = cadastrados.find((c) => c.id === qual);
   if (!alvo) throw new Error('Escolha um dos formatos cadastrados.');
   if (acao === 'excluir') {
@@ -605,9 +683,12 @@ export function aplicarCadastro(opcoes: OpcoesDeMarcacao, cadastrados: readonly 
       recado: `Formato de pique “${alvo.nome}” excluído do cadastro. Os piques já postos com ele continuam como estão.`,
     };
   }
+  const novo: PiqueCadastrado = { ...alvo, nome, descricao };
+  const levado = atualizar ? comOCadastradoNosPiques(pecas, novo) : null;
   return {
-    cadastrados: cadastrados.map((c) => (c.id === qual ? { ...c, nome, descricao } : c)),
-    recado: `Formato de pique “${alvo.nome}” alterado: agora é “${nome}”${descricao ? ` (${descricao})` : ''}.`,
+    cadastrados: comOCadastrado(cadastrados, novo),
+    recado: `Formato de pique “${alvo.nome}” alterado: agora é “${nome}”${descricao ? ` (${descricao})` : ''}.` + (levado ? ` ${ditoDosPiquesPostos(levado.quantos)}` : ''),
+    ...(levado && levado.quantos > 0 ? { pecas: levado.pecas } : {}),
   };
 }
 
@@ -632,25 +713,41 @@ function paraDentroDoPique(peca: Molde, pique: Pique, distanciaMm: number): Pont
  */
 export function aplicarSubstituir(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], alvos: readonly string[], novoId: () => string): ResultadoDeFerramentaDeMolde {
   const { de, acao, formato, distanciaMm } = opcoes.substituir;
+  // Os internos entram na troca de formato e na remoção; "por marca" é só para os do contorno.
+  const comInternos = opcoes.substituir.internos && acao !== 'marca';
   if (acao !== 'remover') conferirFormato(formato);
   if (alvos.length === 0) throw new Error('Não há peça em que substituir: selecione uma, ou marque as peças na lista.');
   let feitos = 0;
+  let feitosInternos = 0;
   let semLugar = 0;
   const pecasComPique = new Set<string>();
   const novas = pecas.map((peca) => {
     if (!alvos.includes(peca.id)) return peca;
-    const doTipo = (pique: Pique): boolean => de === TODOS_OS_TIPOS || tipoDo(pique) === de;
+    const doTipo = (pique: { readonly formato?: FormatoDePique }): boolean => de === TODOS_OS_TIPOS || tipoDo(pique) === de;
     const escolhidos = peca.piques.filter(doTipo);
-    if (escolhidos.length === 0) return peca;
+    // O pique interno é a marca com formato: o ponto sem formato não tem tipo que se troque.
+    const interno = (marca: Marca): boolean => comInternos && marca.formato !== undefined && doTipo(marca);
+    const internosEscolhidos = peca.marcas.filter(interno).length;
+    if (escolhidos.length + internosEscolhidos === 0) return peca;
     if (acao === 'trocar') {
       feitos += escolhidos.length;
+      feitosInternos += internosEscolhidos;
       pecasComPique.add(peca.id);
-      return { ...peca, piques: peca.piques.map((pique) => (doTipo(pique) ? { ...pique, formato } : pique)) };
+      return {
+        ...peca,
+        piques: peca.piques.map((pique) => (doTipo(pique) ? { ...pique, formato } : pique)),
+        ...(internosEscolhidos > 0 ? { marcas: peca.marcas.map((marca) => (interno(marca) ? { ...marca, formato } : marca)) } : {}),
+      };
     }
     if (acao === 'remover') {
       feitos += escolhidos.length;
+      feitosInternos += internosEscolhidos;
       pecasComPique.add(peca.id);
-      return { ...peca, piques: peca.piques.filter((pique) => !doTipo(pique)) };
+      return {
+        ...peca,
+        piques: peca.piques.filter((pique) => !doTipo(pique)),
+        ...(internosEscolhidos > 0 ? { marcas: peca.marcas.filter((marca) => !interno(marca)) } : {}),
+      };
     }
     // Por marca: o pique do contorno sai, e entra um pique interno, para dentro da peça. O que não cabe dentro dela fica como está.
     const marcas: Marca[] = [];
@@ -670,19 +767,22 @@ export function aplicarSubstituir(opcoes: OpcoesDeMarcacao, pecas: readonly Mold
     return { ...peca, piques: peca.piques.filter((pique) => !saem.has(pique.id)), marcas: [...peca.marcas, ...marcas] };
   });
   const doTipoDito = de === TODOS_OS_TIPOS ? '' : ` do tipo ${nomeDoFormato({ ...PIQUE_PADRAO, tipo: de })}`;
-  if (feitos === 0) {
+  const total = feitos + feitosInternos;
+  if (total === 0) {
     throw new Error(
       semLugar > 0
         ? `Nenhum pique substituído: a ${formatarMm(distanciaMm)} da borda, o pique interno cairia fora da peça.`
-        : `Não há pique${doTipoDito} no contorno ${alvos.length === 1 ? 'da peça escolhida' : 'das peças escolhidas'}.`,
+        : `Não há pique${doTipoDito} ${comInternos ? 'no contorno nem dentro' : 'no contorno'} ${alvos.length === 1 ? 'da peça escolhida' : 'das peças escolhidas'}.`,
     );
   }
   const ondeDito = pecasComPique.size === 1 ? 'em 1 peça' : `em ${pecasComPique.size} peças`;
+  // Com internos na conta, a mensagem diz quantos são de cada.
+  const deCada = feitosInternos > 0 ? ` (${feitos} do contorno e ${feitosInternos} ${feitosInternos === 1 ? 'interno' : 'internos'})` : '';
   const feito =
     acao === 'trocar'
-      ? `${plural(feitos, 'pique substituído', 'piques substituídos')}${doTipoDito} ${ondeDito}: agora ${feitos === 1 ? 'é' : 'são'} ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.`
+      ? `${plural(total, 'pique substituído', 'piques substituídos')}${deCada}${doTipoDito} ${ondeDito}: agora ${total === 1 ? 'é' : 'são'} ${nomeDoFormato(formato)}, de ${formatarMm(formato.larguraMm)} × ${formatarMm(formato.alturaMm)}.`
       : acao === 'remover'
-        ? `${plural(feitos, 'pique removido', 'piques removidos')}${doTipoDito} ${ondeDito}.`
+        ? `${plural(total, 'pique removido', 'piques removidos')}${deCada}${doTipoDito} ${ondeDito}.`
         : `${plural(feitos, 'pique do contorno substituído', 'piques do contorno substituídos')}${doTipoDito} por ${feitos === 1 ? 'pique interno' : 'piques internos'} a ${formatarMm(distanciaMm)} da borda, ${ondeDito}.`;
   return { pecas: novas, recado: feito + (semLugar > 0 ? ` ${plural(semLugar, 'ficou como estava', 'ficaram como estavam')}: o pique interno cairia fora da peça.` : '') };
 }
@@ -1149,8 +1249,20 @@ export function cliqueDeMarcacao(
           const linhas = confirmadas.map((i) => peca.linhasInternas[i]!);
           const pontas = linhas.flat().filter((q) => distancia(q, clique.livre) <= contexto.raioMm);
           const referencia = pontas.length > 0 ? pontas.reduce((a, b) => (distancia(a, clique.livre) <= distancia(b, clique.livre) ? a : b)) : clique.livre;
-          const { nome, descricao } = opcoes.cadastrar;
-          const cadastrar: PiqueCadastrado = { id: contexto.novoId(), nome, descricao, forma: formaDosElementos(linhas, referencia) };
+          const { acao, qual, nome, descricao, atualizar } = opcoes.cadastrar;
+          const forma = formaDosElementos(linhas, referencia);
+          if (acao === 'alterar') {
+            // Redesenhar: o cadastrado continua o mesmo (o id dele), com a forma nova.
+            const cadastrar: PiqueCadastrado = { id: qual, nome, descricao, forma };
+            const levado = atualizar ? comOCadastradoNosPiques(pecas, cadastrar) : null;
+            return {
+              estado: SEM_TRECHO,
+              recado: `Formato de pique “${nome}” redesenhado. ${ditoDosPiquesPostos(levado ? levado.quantos : null)}`,
+              cadastrar,
+              ...(levado && levado.quantos > 0 ? { pecas: levado.pecas } : {}),
+            };
+          }
+          const cadastrar: PiqueCadastrado = { id: contexto.novoId(), nome, descricao, forma };
           return { estado: SEM_TRECHO, recado: `Formato de pique “${nome}” cadastrado: está na lista de tipos das janelas de pique.`, cadastrar };
         }
         const linha = contexto.linhaInterna === null ? undefined : peca.linhasInternas[contexto.linhaInterna];
@@ -1310,7 +1422,9 @@ export function instrucaoDaMarcacao(modo: ModoDeMarcacao, opcoes: OpcoesDeMarcac
       const n = estado.livres.length;
       return (
         (n === 0
-          ? `Cadastrar pique “${opcoes.cadastrar.nome}”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter.`
+          ? opcoes.cadastrar.acao === 'alterar'
+            ? `Redesenhar pique “${opcoes.cadastrar.nome}”: clique nas linhas internas que desenham a forma nova, uma a uma, e aperte Enter.`
+            : `Cadastrar pique “${opcoes.cadastrar.nome}”: clique nas linhas internas que desenham o formato, uma a uma, e aperte Enter.`
           : `Cadastrar pique: ${plural(n, 'linha indicada', 'linhas indicadas')} — clique nas outras, ou aperte Enter para confirmar o desenho.`) + ESC
       );
     }
