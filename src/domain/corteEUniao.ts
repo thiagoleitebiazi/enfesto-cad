@@ -630,7 +630,7 @@ export function unirMoldes(moldeA: Molde, arestaA: number, moldeB: Molde, aresta
 export interface OpcoesDeCorte {
   /** Costura acrescentada ao contorno, na borda do corte (mm); 0 = sem costura. */
   readonly costuraMm: number;
-  /** A costura entra nas duas partes; sem isso, só na parte nova (a menor). */
+  /** A costura entra nas duas partes; sem isso, só numa: a indicada a quem corta ou, sem indicação, a nova (a menor). */
   readonly costuraNasDuas: boolean;
   /** Um pique em cada ponta da linha do corte, nas partes que ganharam costura. */
   readonly piques: boolean;
@@ -646,6 +646,11 @@ export interface OpcoesDeCorte {
 }
 
 export const CORTE_SEM_COSTURA: OpcoesDeCorte = { costuraMm: 0, costuraNasDuas: false, piques: false, modo: 'tangente', manterDistancias: true };
+
+/** O corte dá costura a uma parte só: falta dizer a qual (no programa, a clicada depois de indicada a linha do corte). */
+export function cortePedeAParte(opcoes: OpcoesDeCorte): boolean {
+  return opcoes.costuraMm > 0 && !opcoes.costuraNasDuas;
+}
 
 /** O que o ponto do contorno anda em cada tamanho, na peça inteira: num ponto do contorno, a regra dele; no meio de uma aresta, a proporção entre as duas pontas dela. */
 function regraNaPosicao(graduacao: Graduacao, contorno: Contorno, posicao: PosicaoNoContorno): Ponto2D[] {
@@ -801,9 +806,12 @@ function comCosturaNoCorte(parte: Molde, linha: readonly Ponto2D[], opcoes: Opco
 /**
  * "Cortar", com o que a janela pergunta: a peça é dividida pela reta, as
  * linhas internas que estavam em cima dela saem (viraram a borda), e a borda
- * do corte ganha a costura pedida — na parte nova ou nas duas. Com `miolo`, o
+ * do corte ganha a costura pedida — nas duas partes ou numa só. Com `miolo`, o
  * corte passa por esses pontos (uma curva, vários elementos): quem chama já
  * tirou da peça os elementos que viraram a borda.
+ *
+ * Com a costura numa parte só, `parteDaCostura` é um ponto dentro da parte
+ * que a ganha (o lado clicado); sem ele, é a nova, a menor.
  */
 export function cortarMoldeComOpcoes(
   molde: Molde,
@@ -812,6 +820,7 @@ export function cortarMoldeComOpcoes(
   novoId: () => string,
   opcoes: OpcoesDeCorte = CORTE_SEM_COSTURA,
   miolo: readonly Ponto2D[] = [],
+  parteDaCostura: Ponto2D | null = null,
 ): readonly [Molde, Molde] {
   conferirOpcoesDeCorte(opcoes);
   const cortadas = cortarMolde(miolo.length > 0 ? molde : semAsLinhasDaReta(molde, a.ponto, b.ponto), a, b, novoId(), miolo);
@@ -823,7 +832,13 @@ export function cortarMoldeComOpcoes(
       : cortadas;
   if (!(opcoes.costuraMm > 0)) return [maior, menor];
   const linha = [a.ponto, ...miolo, b.ponto];
-  return [opcoes.costuraNasDuas ? comCosturaNoCorte(maior, linha, opcoes, novoId) : maior, comCosturaNoCorte(menor, linha, opcoes, novoId)];
+  if (opcoes.costuraNasDuas) return [comCosturaNoCorte(maior, linha, opcoes, novoId), comCosturaNoCorte(menor, linha, opcoes, novoId)];
+  // Numa parte só: a que tem o ponto indicado dentro dela.
+  const naMaior = parteDaCostura !== null && pontoDentroDoContorno(parteDaCostura, maior.contorno);
+  if (parteDaCostura !== null && !naMaior && !pontoDentroDoContorno(parteDaCostura, menor.contorno)) {
+    throw new Error('Clique dentro da peça, na parte que deve ganhar a costura.');
+  }
+  return naMaior ? [comCosturaNoCorte(maior, linha, opcoes, novoId), menor] : [maior, comCosturaNoCorte(menor, linha, opcoes, novoId)];
 }
 
 /**

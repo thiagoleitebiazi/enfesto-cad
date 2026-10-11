@@ -4,6 +4,7 @@ import { criarMolde, type DadosDeNovoMolde, type Molde } from '../domain/molde';
 import { definirTamanhosDoMolde } from '../domain/tamanhosGraduados';
 import {
   aplicarBainha,
+  aplicarCortePelosElementos,
   aplicarDesdobrar,
   aplicarReta,
   aplicarUniao,
@@ -12,7 +13,10 @@ import {
   aplicarRemoverFaixaPelosElementos,
   aplicarRemoverPelosElementos,
   cliqueDeReta,
+  cliqueNaParteDoCorte,
   cliqueNoElementoDeRemover,
+  corteEsperaAParte,
+  previaDaParteDoCorte,
   cliqueNoElementoDoCorte,
   confirmarCortePelosElementos,
   confirmarElementosDeRemover,
@@ -505,17 +509,155 @@ describe('Cortar por elementos: uma linha interna curva, ou várias emendadas', 
 
   it('com costura, a mensagem manda conferir a costura do corte que não é reto', () => {
     const peca = comLinhas([QUEBRADA]);
-    const feito = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+    const feito = aplicarCortePelosElementos([peca], peca, [0], ids(), COSTURA);
 
     expect(feito.recado).toMatch(/A borda do corte ganhou 10,0 mm de costura na peça nova\. Num corte que não é reto, confira a costura: ela é a borda do corte deslocada\.$/);
-    expect(area(feito.pecas![1]!.contorno)).toBeGreaterThan(25000);
+    expect(area(feito.pecas[1]!.contorno)).toBeGreaterThan(25000);
     // O corte por um elemento reto também não ganha o aviso: a costura dele é a de sempre.
     const comReta = comLinhas([[ponto(50, 100), ponto(150, 100)]]);
-    const peloReto = cliqueNoElementoDoCorte([comReta], comReta, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+    const peloReto = aplicarCortePelosElementos([comReta], comReta, [0], ids(), COSTURA);
     expect(peloReto.recado).toMatch(/pelo elemento indicado: .* de costura na peça nova\.$/);
     // O corte reto pelos dois pontos não ganha esse aviso.
     const reto = aplicarReta('cortar', [peca], peca, { inicio: na(0, 50, 0), fim: na(2, 50, 300), livres: [] }, ids(), undefined, { corte: COSTURA });
     expect(reto.recado).not.toMatch(/confira a costura/);
+  });
+
+  describe('sem “2 moldes”, a costura vai para a parte clicada depois de indicada a linha do corte', () => {
+    // A linha quebrada divide a peça em 250 cm² (de y = 0 até ela) e 350 cm² (dela até y = 300).
+    const NA_MENOR = ponto(100, 50);
+    const NA_MAIOR = ponto(100, 250);
+    const NAS_DUAS = { ...COSTURA, costuraNasDuas: true };
+    const SEM = { ...COSTURA, costuraMm: 0 };
+    const DOIS_PONTOS: TrechoEmEdicao = { inicio: na(0, 50, 0), fim: na(2, 50, 300), livres: [] };
+
+    it('contorno automático: o clique no elemento o deixa como a linha do corte, à espera da parte', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+
+      expect(indicado.pecas).toBeUndefined();
+      expect(indicado.recado).toBeNull();
+      expect(indicado.estado).toEqual({ ...SEM_TRECHO, grupos: [[ponto(50, 125)]] });
+      expect(corteEsperaAParte(peca, indicado.estado, COSTURA)).toBe(true);
+      // Sem costura, ou com a costura nas duas, corta na hora, como sempre.
+      expect(cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), SEM)!.pecas).toHaveLength(2);
+      expect(cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), NAS_DUAS)!.pecas).toHaveLength(2);
+      // O elemento que não dá uma linha de corte não fica à espera de nada.
+      const fechada = comLinhas([[ponto(50, 50), ponto(150, 50), ponto(100, 120), ponto(50, 50)]]);
+      const recusado = cliqueNoElementoDoCorte([fechada], fechada, SEM_TRECHO, 0, false, ids(), COSTURA)!;
+      expect(recusado.estado).toBe(SEM_TRECHO);
+      expect(recusado.pecas).toBeUndefined();
+      expect(recusado.recado).toMatch(/fecham uma volta/);
+    });
+
+    it('o clique numa parte corta, e é ela que ganha a costura — a maior ou a menor', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!.estado;
+
+      const naMaior = cliqueNaParteDoCorte([peca], peca, indicado, NA_MAIOR, ids(), COSTURA)!;
+      expect(naMaior.estado).toBe(SEM_TRECHO);
+      expect(naMaior.pecas!.map((p) => p.nome)).toEqual(['Frente', 'Frente (2)']);
+      expect(area(naMaior.pecas![0]!.contorno)).toBeGreaterThan(35000 + 1500);
+      expect(area(naMaior.pecas![1]!.contorno)).toBeCloseTo(25000, 6);
+      expect(naMaior.recado).toMatch(/A borda do corte ganhou 10,0 mm de costura na parte que continua sendo “Frente” \(a clicada\)\. Num corte que não é reto, confira a costura/);
+      expect(naMaior.pecas!.flatMap((p) => p.linhasInternas)).toEqual([]);
+
+      const naMenor = cliqueNaParteDoCorte([peca], peca, indicado, NA_MENOR, ids(), COSTURA)!;
+      expect(area(naMenor.pecas![0]!.contorno)).toBeCloseTo(35000, 6);
+      expect(area(naMenor.pecas![1]!.contorno)).toBeGreaterThan(25000 + 1500);
+      expect(naMenor.recado).toMatch(/de costura na peça nova \(a clicada\)\./);
+    });
+
+    it('o clique fora da peça não corta: a linha continua indicada, e a mensagem pede outro clique', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!.estado;
+      const fora = cliqueNaParteDoCorte([peca], peca, indicado, ponto(300, 150), ids(), COSTURA)!;
+
+      expect(fora.pecas).toBeUndefined();
+      expect(fora.estado).toBe(indicado);
+      expect(fora.recado).toBe('Clique dentro da peça, na parte que deve ganhar a costura.');
+    });
+
+    it('pelos dois pontos do contorno: os dois não bastam, e o terceiro clique é o da parte', () => {
+      expect(retaCompleta('cortar', DOIS_PONTOS)).toBe(true);
+      expect(retaCompleta('cortar', DOIS_PONTOS, false, true)).toBe(false);
+      // O terceiro clique não é com a função dos dois pontos: ela deixa o estado como está.
+      expect(cliqueDeReta('cortar', DOIS_PONTOS, solto(120, 150))).toBe(DOIS_PONTOS);
+      const peca = frente();
+      expect(corteEsperaAParte(peca, DOIS_PONTOS, COSTURA)).toBe(true);
+
+      const naMaior = cliqueNaParteDoCorte([peca], peca, DOIS_PONTOS, ponto(120, 150), ids(), COSTURA)!;
+      expect(area(naMaior.pecas![0]!.contorno)).toBeCloseTo(45000 + 3000, 6);
+      expect(area(naMaior.pecas![1]!.contorno)).toBeCloseTo(15000, 6);
+      expect(naMaior.recado).toBe('“Frente” cortada em duas: 480,0 cm² continuam nela e 150,0 cm² são a peça nova “Frente (2)”. A borda do corte ganhou 10,0 mm de costura na parte que continua sendo “Frente” (a clicada).');
+      const naMenor = cliqueNaParteDoCorte([peca], peca, DOIS_PONTOS, ponto(20, 150), ids(), COSTURA)!;
+      expect(area(naMenor.pecas![1]!.contorno)).toBeCloseTo(18000, 6);
+      expect(naMenor.recado).toMatch(/de costura na peça nova \(a clicada\)\.$/);
+    });
+
+    it('sem linha indicada, sem costura ou com a costura nas duas, o clique não é o da parte', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!.estado;
+
+      expect(cliqueNaParteDoCorte([peca], peca, SEM_TRECHO, NA_MAIOR, ids(), COSTURA)).toBeNull();
+      expect(cliqueNaParteDoCorte([peca], peca, { ...SEM_TRECHO, inicio: na(0, 50, 0) }, NA_MAIOR, ids(), COSTURA)).toBeNull();
+      expect(cliqueNaParteDoCorte([peca], peca, indicado, NA_MAIOR, ids(), NAS_DUAS)).toBeNull();
+      expect(cliqueNaParteDoCorte([peca], peca, DOIS_PONTOS, NA_MAIOR, ids(), SEM)).toBeNull();
+      // Elementos indicados no contorno manual, ainda sem o Enter: o clique também não é o da parte.
+      expect(cliqueNaParteDoCorte([peca], peca, { ...SEM_TRECHO, livres: [ponto(50, 125)] }, NA_MAIOR, ids(), COSTURA)).toBeNull();
+    });
+
+    it('contorno manual: o Enter confirma a linha do corte, e o clique seguinte é o da parte', () => {
+      const peca = comLinhas([ESQUERDA, DIREITA]);
+      const um = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, true, ids(), COSTURA)!.estado;
+      const dois = cliqueNoElementoDoCorte([peca], peca, um, 1, true, ids(), COSTURA)!.estado;
+      const confirmado = confirmarCortePelosElementos([peca], peca, dois, ids(), COSTURA)!;
+
+      expect(confirmado.pecas).toBeUndefined();
+      expect(confirmado.estado).toEqual({ ...SEM_TRECHO, grupos: [dois.livres] });
+      const feito = cliqueNaParteDoCorte([peca], peca, confirmado.estado, NA_MAIOR, ids(), COSTURA)!;
+      expect(feito.pecas).toHaveLength(2);
+      expect(feito.recado).toMatch(/pelos 2 elementos indicados: .* de costura na parte que continua sendo “Frente” \(a clicada\)\./);
+      // O que não dá uma linha de corte: o Enter não confirma, e o elemento continua indicado.
+      const fechada = comLinhas([[ponto(50, 50), ponto(150, 50), ponto(100, 120), ponto(50, 50)]]);
+      const comAFechada = cliqueNoElementoDoCorte([fechada], fechada, SEM_TRECHO, 0, true, ids(), COSTURA)!.estado;
+      const naoConfirmado = confirmarCortePelosElementos([fechada], fechada, comAFechada, ids(), COSTURA)!;
+      expect(naoConfirmado.estado).toBe(comAFechada);
+      expect(naoConfirmado.recado).toMatch(/fecham uma volta/);
+      // Sem costura, o Enter corta na hora.
+      expect(confirmarCortePelosElementos([peca], peca, dois, ids(), SEM)!.pecas).toHaveLength(2);
+    });
+
+    it('a prévia mostra a linha do corte e, em destaque, a parte sob o mouse', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!.estado;
+
+      const sobreAMaior = previaDaParteDoCorte(peca, indicado, NA_MAIOR, COSTURA)!;
+      expect(sobreAMaior.novo).toEqual(QUEBRADA);
+      expect(area(sobreAMaior.substituido!.slice(0, -1))).toBeCloseTo(35000, 6);
+      expect(area(previaDaParteDoCorte(peca, indicado, NA_MENOR, COSTURA)!.substituido!.slice(0, -1))).toBeCloseTo(25000, 6);
+      // Fora da peça, ou sem o mouse: só a linha.
+      expect(previaDaParteDoCorte(peca, indicado, ponto(300, 150), COSTURA)).toEqual({ novo: QUEBRADA, marcas: [ponto(0, 100), ponto(200, 100)] });
+      expect(previaDaParteDoCorte(peca, indicado, null, COSTURA)!.substituido).toBeUndefined();
+      // Pelos dois pontos do contorno.
+      const pelosPontos = previaDaParteDoCorte(frente(), DOIS_PONTOS, ponto(120, 150), COSTURA)!;
+      expect(pelosPontos.novo).toEqual([ponto(50, 0), ponto(50, 300)]);
+      expect(area(pelosPontos.substituido!.slice(0, -1))).toBeCloseTo(45000, 6);
+      // Quando a ferramenta não está à espera da parte, a prévia é a de sempre.
+      expect(previaDaParteDoCorte(peca, SEM_TRECHO, NA_MAIOR, COSTURA)).toBeNull();
+      expect(previaDaParteDoCorte(peca, indicado, NA_MAIOR, NAS_DUAS)).toBeNull();
+    });
+
+    it('a instrução e a janela dizem o que o clique faz', () => {
+      const peca = comLinhas([QUEBRADA]);
+      const indicado = cliqueNoElementoDoCorte([peca], peca, SEM_TRECHO, 0, false, ids(), COSTURA)!.estado;
+      const esperada = 'Cortar: a linha do corte está indicada. Clique na parte que deve ganhar a costura — a que está sob o mouse fica em destaque; a outra fica sem. Esc sai.';
+
+      expect(instrucaoDaReta('cortar', indicado)).toBe(esperada);
+      expect(instrucaoDaReta('cortar', DOIS_PONTOS)).toBe(esperada);
+      expect(instrucaoDaReta('cortar', { ...SEM_TRECHO, inicio: na(0, 50, 0) })).toMatch(/onde o corte termina/);
+      expect(dialogoDeCortar(COSTURA).campos.find((c) => c.id === 'costuraNasDuas')!.rotulo).toBe('Costura 2 moldes: nas duas partes (sem isso, só na parte que for clicada depois de indicado o corte)');
+      expect(dialogoDeCortar(COSTURA).nota).toMatch(/Com costura e sem “2 moldes”, indicada a linha do corte o programa espera um clique na parte que deve ganhar a costura \(ela fica em destaque\): é o que o manual da referência descreve — o lado selecionado decide para onde vai a costura\. O manual não diz como os elementos se juntam nem o que se faz com o que não chega à borda: é a nossa leitura\.$/);
+    });
   });
 
   it('a linha que não serve deixa tudo como está e diz por quê', () => {

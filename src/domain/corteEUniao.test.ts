@@ -7,6 +7,8 @@ import {
   conferirOpcoesDeCorte,
   cortarMolde,
   cortarMoldeComOpcoes,
+  cortePedeAParte,
+  CORTE_SEM_COSTURA,
   cruzamentosDaReta,
   desdobraComAMetadeGuardada,
   desdobrarMolde,
@@ -704,6 +706,34 @@ describe('cortarMoldeComOpcoes', () => {
     for (const [x, y] of [[50, 0], [60, 0], [60, 300], [50, 300]] as const) expect(contem(menor.contorno, x, y)).toBe(true);
     // Sem "2 moldes", a parte maior fica como o corte a deixou.
     expect(area(maior.contorno)).toBeCloseTo(45000, 6);
+  });
+
+  it('sem “2 moldes”, a costura vai para a parte que tem o ponto indicado dentro dela', () => {
+    // Indicada a parte maior (x de 50 a 200): é ela que ganha a costura, para o lado de fora dela.
+    const [maior, menor] = cortarMoldeComOpcoes(molde(), a, b, ids(), COSTURA, [], ponto(120, 150));
+    expect(area(maior.contorno)).toBeCloseTo(45000 + 3000, 6);
+    expect(contem(maior.contorno, 40, 0)).toBe(true);
+    expect(area(menor.contorno)).toBeCloseTo(15000, 6);
+    expect(maior.id).toBe('m1');
+
+    // Indicada a menor: como sem indicação nenhuma.
+    const [aMaior, aMenor] = cortarMoldeComOpcoes(molde(), a, b, ids(), COSTURA, [], ponto(20, 150));
+    expect(area(aMaior.contorno)).toBeCloseTo(45000, 6);
+    expect(area(aMenor.contorno)).toBeCloseTo(18000, 6);
+    expect(aMenor.contorno).toEqual(cortarMoldeComOpcoes(molde(), a, b, ids(), COSTURA)[1].contorno);
+  });
+
+  it('o ponto fora da peça é recusado; e, sem costura ou com “2 moldes”, o ponto não conta', () => {
+    expect(() => cortarMoldeComOpcoes(molde(), a, b, ids(), COSTURA, [], ponto(250, 150))).toThrow('Clique dentro da peça, na parte que deve ganhar a costura.');
+    const [semCosturaMaior, semCosturaMenor] = cortarMoldeComOpcoes(molde(), a, b, ids(), CORTE_SEM_COSTURA, [], ponto(250, 150));
+    expect([area(semCosturaMaior.contorno), area(semCosturaMenor.contorno)]).toEqual([45000, 15000]);
+    const [nasDuasMaior, nasDuasMenor] = cortarMoldeComOpcoes(molde(), a, b, ids(), { ...COSTURA, costuraNasDuas: true }, [], ponto(120, 150));
+    expect(area(nasDuasMaior.contorno)).toBeCloseTo(48000, 6);
+    expect(area(nasDuasMenor.contorno)).toBeCloseTo(18000, 6);
+    // Só com costura, e numa parte só, falta dizer qual.
+    expect(cortePedeAParte(COSTURA)).toBe(true);
+    expect(cortePedeAParte({ ...COSTURA, costuraNasDuas: true })).toBe(false);
+    expect(cortePedeAParte(CORTE_SEM_COSTURA)).toBe(false);
   });
 
   it('com “2 moldes”, as duas partes ganham a costura, cada uma para o seu lado de fora', () => {

@@ -168,10 +168,11 @@ export function cortarMoldePelosElementos(
   indices: readonly number[],
   novoId: () => string,
   opcoes: OpcoesDeCorte = CORTE_SEM_COSTURA,
+  parteDaCostura: Ponto2D | null = null,
 ): readonly [Molde, Molde] {
   const { a, b, miolo } = linhaDeCortePelosElementos(molde, indices);
   const semOsElementos: Molde = { ...molde, linhasInternas: molde.linhasInternas.filter((_, i) => !indices.includes(i)) };
-  return cortarMoldeComOpcoes(semOsElementos, a, b, novoId, opcoes, miolo);
+  return cortarMoldeComOpcoes(semOsElementos, a, b, novoId, opcoes, miolo, parteDaCostura);
 }
 
 /**

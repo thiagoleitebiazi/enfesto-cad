@@ -41,8 +41,10 @@ import {
   lerDialogoDeRemoverRegiao,
   cliqueNoElementoDeRemover,
   confirmarElementosDeRemover,
+  cliqueNaParteDoCorte,
   cliqueNoElementoDoCorte,
   confirmarCortePelosElementos,
+  previaDaParteDoCorte,
   previaDoCortePelosElementos,
   previaDoRemoverPelosElementos,
   REMOVER_REGIAO_SIMPLES,
@@ -212,7 +214,7 @@ import {
   type OpcoesDeElemento,
 } from './ui/ferramentasDeElemento';
 import { conferirOpcoesDeBainha, MAXIMO_DE_DOBRAS_DA_BAINHA, type OpcoesDeBainha } from './domain/bainha';
-import { CORTE_SEM_COSTURA, UNIAO_PADRAO, type OpcoesDeCorte, type OpcoesDeUniao } from './domain/corteEUniao';
+import { cortePedeAParte, CORTE_SEM_COSTURA, UNIAO_PADRAO, type OpcoesDeCorte, type OpcoesDeUniao } from './domain/corteEUniao';
 import {
   curvaDoTrecho,
   CURVAS_DE_FABRICA,
@@ -2428,6 +2430,14 @@ export default function App(): React.JSX.Element {
         const noContorno = posicaoNoContornoPerto(semCaptura, peca.contorno, raioMm);
         // No "Cortar", o clique numa linha interna (reta ou curva), fora do contorno, corta por ela — ou, no contorno manual, indica o elemento.
         if (modo === 'cortar') {
+          // Com a linha do corte indicada e a costura numa parte só, o clique é o da parte que a ganha.
+          const naParte = cliqueNaParteDoCorte(pecas, peca, trecho, semCaptura, proximoId, opcoesDeCorte);
+          if (naParte) {
+            setTrecho(naParte.estado);
+            if (naParte.pecas) aplicarMudanca([...naParte.pecas]);
+            setRecadoDaFerramenta(naParte.recado);
+            return;
+          }
           const noElemento = noContorno
             ? null
             : cliqueNoElementoDoCorte(pecas, peca, trecho, linhaInternaPerto(peca, semCaptura, raioMm)?.linha ?? null, corteManual, proximoId, opcoesDeCorte);
@@ -2472,7 +2482,8 @@ export default function App(): React.JSX.Element {
           return;
         }
         const novo = peloElemento ? peloElemento.estado : cliqueDeReta(modo, trecho, { noContorno, livre: semCaptura }, segundaReta);
-        if (!retaCompleta(modo, novo, segundaReta)) {
+        // No "Cortar" com a costura numa parte só, os dois pontos não bastam: falta o clique na parte.
+        if (!retaCompleta(modo, novo, segundaReta, modo === 'cortar' && cortePedeAParte(opcoesDeCorte))) {
           setTrecho(novo);
           return;
         }
@@ -3200,6 +3211,9 @@ export default function App(): React.JSX.Element {
       }
       const mouse = cursorMundo ? { noContorno: posicaoNoContornoPerto(cursorMundo, contorno, raioMm), livre: cursorMundo } : null;
       if (modo === 'cortar') {
+        // Com a linha do corte indicada, a parte sob o mouse: é a que ganha a costura.
+        const daParte = previaDaParteDoCorte(pecaSelecionada, trecho, cursorMundo, opcoesDeCorte);
+        if (daParte) return daParte;
         // O elemento sob o mouse (fora do contorno) e os já indicados: a linha do corte que eles dão.
         const sobOMouse = cursorMundo && !mouse?.noContorno ? (linhaInternaPerto(pecaSelecionada, cursorMundo, raioMm)?.linha ?? null) : null;
         const pelosElementos = previaDoCortePelosElementos(pecaSelecionada, trecho, sobOMouse, corteManual);
@@ -3229,6 +3243,7 @@ export default function App(): React.JSX.Element {
   }, [
     modo,
     corteManual,
+    opcoesDeCorte,
     opcoesDeRemover.unir,
     pecas,
     pecaSelecionada,
