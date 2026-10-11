@@ -340,6 +340,7 @@ import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { validarProjeto } from './domain/validacao';
+import { semLinhasQueSaem, semLinhasSoltas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
 import type { ResultadoDeNesting } from './domain/nesting';
 import type { MensagemParaWorker } from './nesting.worker';
@@ -812,6 +813,21 @@ export default function App(): React.JSX.Element {
     setPassado((p) => [...p, pecas]);
     setPecas(proximo);
   }, [pecas, futuro, cerca, piquesCadastrados, levarCadastroPara]);
+
+  /**
+   * Tira da peça, num passo do Ctrl+Z, as linhas internas que a validação apontou: as soltas (inteiras fora dela,
+   * longe do contorno) ou as que saem dela para bem longe (cada uma sai inteira).
+   */
+  const tirarLinhasDeFora = useCallback(
+    (id: string | undefined, quais: 'soltas' | 'que-saem') => {
+      const peca = pecas.find((p) => p.id === id);
+      if (!peca) return;
+      const limpa = quais === 'soltas' ? semLinhasSoltas(peca) : semLinhasQueSaem(peca);
+      if (limpa === peca) return;
+      aplicarMudanca(pecas.map((p) => (p.id === peca.id ? limpa : p)));
+    },
+    [pecas, aplicarMudanca],
+  );
 
   // Seleção única "de verdade" (limpa qualquer seleção em lote ativa) — usada
   // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
@@ -4943,6 +4959,25 @@ export default function App(): React.JSX.Element {
                   onClick={() => p.pecasEnvolvidasIds[0] && setSelecionadoId(p.pecasEnvolvidasIds[0])}
                 >
                   [{p.severidade === 'erro' ? 'ERRO' : 'aviso'}] {p.mensagem}
+                  {(p.tipo === 'linha-solta' || p.tipo === 'linha-que-sai') && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        title={
+                          p.tipo === 'linha-solta'
+                            ? 'Tira da peça as linhas internas que estão soltas, fora dela. Ctrl+Z desfaz.'
+                            : 'Tira da peça, inteiras, as linhas internas que saem dela para longe. Ctrl+Z desfaz.'
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          tirarLinhasDeFora(p.pecasEnvolvidasIds[0], p.tipo === 'linha-solta' ? 'soltas' : 'que-saem');
+                        }}
+                      >
+                        Tirar
+                      </button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
