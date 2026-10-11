@@ -695,13 +695,36 @@ describe('pence com acabamento: desenhada, com o bico no contorno', () => {
     expect(Math.abs(daDobra.x - cantoAlto.x)).toBeLessThan(Math.abs(aOutra.x - cantoAlto.x));
   });
 
-  it('dobrada para o lado em que a borda foge da pence, não há encontro: o contorno passa reto', () => {
-    // À direita (x = 120) a borda desce para longe da pence; à esquerda, é reta.
+  it('dobrada para o lado em que a borda se afasta da pence, o bico entra: fica para dentro da reta das pontas', () => {
+    // No x = 120 a borda desce para longe da pence (vem de (200, 100)); no x = 80, é reta.
     const fugindo = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(200, 100), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
     const comRegistro = comPenceReconhecida(fugindo, penceSemRegistroPerto(fugindo, ponto(100, 200), 6, 'do-contorno', 'r1')!);
+    const peca = comAcabamento(comRegistro, 'r1', 'esquerda');
+    const bico = aDela(peca).bico!;
+
+    // O bico está na linha do meio da pence, entre o vértice e a reta das pontas.
+    expect(bico.x).toBeCloseTo(100, 9);
+    expect(bico.y).toBeGreaterThan(200);
+    expect(bico.y).toBeLessThan(300);
+    // É o espelho da borda na perna: da ponta (120, 300), o bico e o ponto vizinho da borda fazem o mesmo ângulo com a perna.
+    const angulo = (p: Ponto2D): number => {
+      const [perna, ate] = [ponto(100 - 120, 200 - 300), ponto(p.x - 120, p.y - 300)];
+      return Math.acos((perna.x * ate.x + perna.y * ate.y) / (Math.hypot(perna.x, perna.y) * Math.hypot(ate.x, ate.y)));
+    };
+    expect(angulo(bico)).toBeCloseTo(angulo(ponto(200, 100)), 9);
+    // A peça fica menor que a da pence dobrada para o outro lado, em que o bico sai para fora.
+    expect(area(peca.contorno)).toBeLessThan(area(comAcabamento(comRegistro, 'r1', 'direita').contorno));
+    // Dobrada para o outro lado, o bico é o da borda reta; sem lado, o encontro para dentro não conta, e fica o da borda reta.
+    expect(aDela(comAcabamento(comRegistro, 'r1', 'direita')).bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
+    expect(aDela(comAcabamento(comRegistro, 'r1')).bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
+  });
+
+  it('dobrada para o lado em que a borda continua a perna, não há encontro: o contorno passa reto', () => {
+    // No x = 120 a borda segue em linha com a perna da pence, de (140, 400) a (120, 300).
+    const emLinha = molde({ contorno: [ponto(0, 0), ponto(200, 0), ponto(140, 400), ponto(120, 300), ponto(100, 200), ponto(80, 300), ponto(0, 300)] });
+    const comRegistro = comPenceReconhecida(emLinha, penceSemRegistroPerto(emLinha, ponto(100, 200), 6, 'do-contorno', 'r1')!);
 
     expect(aDela(comAcabamento(comRegistro, 'r1', 'esquerda')).bico).toEqual(ponto(100, 300));
-    expect(aDela(comAcabamento(comRegistro, 'r1', 'direita')).bico!.y).toBeCloseTo(300 + ALTURA_DO_BICO, 9);
   });
 
   it('com as bordas fugindo da pence, não há encontro: o contorno passa reto pelo meio das pontas', () => {

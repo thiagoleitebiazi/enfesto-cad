@@ -43,8 +43,11 @@ escolhe um lado, e nós ficávamos no meio.
 - O registro guarda a ponta do lado da dobra. A pence mudada continua dobrada
   para o mesmo lado; na peça espelhada, a esquerda e a direita trocam, e a
   borda é a mesma.
-- Se a borda do lado escolhido foge da pence, não há encontro, e o contorno
-  passa reto pelo meio das pontas (como já era).
+- Com o lado escolhido, **o bico pode ficar para dentro da reta das pontas**:
+  é o que a dobra dá quando a borda desse lado se afasta da pence. Sem lado,
+  só conta o encontro para fora, como era.
+- Se a borda espelhada não chega à linha do meio (ela continua a perna, por
+  exemplo), o contorno passa reto pelo meio das pontas.
 
 ### O rodapé das janelas
 
@@ -68,9 +71,9 @@ escolhe um lado, e nós ficávamos no meio.
 
 ## Verificação (Electron real, build de produção)
 
-- **Testes:** 1646/1646 em 78 arquivos (eram 1640).
+- **Testes:** 1647/1647 em 78 arquivos (eram 1640).
   - Typecheck limpo. Lint com 1 aviso antigo, não relacionado.
-  - 11 mutações guardadas, uma por vez, todas pegas. Os arquivos foram
+  - 13 mutações guardadas, uma por vez, todas pegas. Os arquivos foram
     conferidos por hash depois.
 - **Roteiro automático**, numa peça desenhada com a borda reta de um lado da
   pence e inclinada do outro, conferido no arquivo salvo:
@@ -80,4 +83,17 @@ escolhe um lado, e nós ficávamos no meio.
   - **a janela:** antes do rodapé fixo, o botão acabava a 878 px numa tela de
     863; depois, a 785 px, à vista.
   - Validação sem problemas no fim.
+- **Os moldes reais, pela tela, de novo** (como manda o ADR 0057 para toda
+  mudança de geometria): nas 4 peças, a pence com acabamento foi feita sem
+  lado, dobrada para a esquerda e dobrada para a direita. 20 operações ao
+  todo, com a pence recortada e a prega; todas desfeitas de volta ao original.
+  - Em duas peças os três bicos coincidem: as bordas chegam iguais dos dois
+    lados.
+  - Nas outras duas, o bico dobrado para a direita fica a 25,0 e a 11,3 mm do
+    "sem lado", para dentro da reta das pontas.
+  - **Foi este teste que mostrou a falta:** na primeira versão, o bico
+    dobrado para o lado em que a borda se afasta saía reto. O bico para dentro
+    entrou por causa disso.
+  - A folha de revisão (`revisao-local/`, fora do git) foi refeita com as
+    fotos dos dois lados da dobra.
 - **Biblioteca de projetos do usuário:** intacta (5 arquivos, mesmo MD5).

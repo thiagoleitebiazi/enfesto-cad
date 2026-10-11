@@ -698,7 +698,9 @@ function bicoNoContorno(contorno: Contorno, pence: PenceDaPeca): number {
  * Com `lado`, a pence é dobrada para esse lado (o do ponto anterior ou o do
  * seguinte ao vértice, no contorno), e vale o traçado de ofício: a borda
  * desse lado, espelhada na perna, até a linha do meio — a outra metade do
- * bico é o espelho dessa na linha do meio.
+ * bico é o espelho dessa na linha do meio. Aí o bico pode ficar para dentro
+ * da reta das pontas: é o que a dobra dá quando a borda desse lado se afasta
+ * da pence. Sem lado, só conta o encontro para fora.
  */
 function bicoDaPence(contorno: Contorno, i: number, lado: 'antes' | 'depois' | null = null): Ponto2D {
   const n = contorno.length;
@@ -709,6 +711,8 @@ function bicoDaPence(contorno: Contorno, i: number, lado: 'antes' | 'depois' | n
   const ateOMeio = distancia(v, meio);
   if (ateOMeio < MESMO_PONTO_MM) return meio;
   const eixo = ponto((meio.x - v.x) / ateOMeio, (meio.y - v.y) / ateOMeio);
+  // Com o lado da dobra escolhido, o encontro vale também entre o vértice e a reta das pontas.
+  const aPartirDe = lado === null ? ateOMeio - MESMO_PONTO_MM : MESMO_PONTO_MM;
   /** A que distância do vértice, na linha do meio, chega a borda vizinha da ponta, espelhada na perna dela. */
   const encontro = (ponta: Ponto2D, vizinho: Ponto2D): number | null => {
     const perna = distancia(ponta, v);
@@ -726,7 +730,7 @@ function bicoDaPence(contorno: Contorno, i: number, lado: 'antes' | 'depois' | n
     const dy = v.y - ponta.y;
     const s = (dx * -eixo.y + eixo.x * dy) / det;
     const t = (r.x * dy - r.y * dx) / det;
-    return s > 0 && t >= ateOMeio - MESMO_PONTO_MM ? t : null;
+    return s > 0 && t >= aPartirDe ? t : null;
   };
   const [doAnterior, doSeguinte] = [encontro(a, contorno[(i - 2 + n) % n]!), encontro(b, contorno[(i + 2) % n]!)];
   const daDobra = lado === 'antes' ? [doAnterior] : lado === 'depois' ? [doSeguinte] : [doAnterior, doSeguinte];
