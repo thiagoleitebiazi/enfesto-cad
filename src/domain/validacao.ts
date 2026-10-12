@@ -1,7 +1,7 @@
 import type { Molde } from './molde';
 import { rotacaoEhPermitida } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
-import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas } from './linhasSoltas';
+import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
   area,
   bboxesSeSobrepoem,
@@ -278,11 +278,22 @@ function emMilimetros(mm: number): string {
   return mm < 10 ? mm.toFixed(1) : mm.toFixed(0);
 }
 
+/** No aviso de uma linha só: diz que ela é da metade que a dobra guarda — a que não aparece no desenho. */
+function daDobra(linhas: readonly LinhaDeFora[]): string {
+  return linhas.every((linha) => linha.naMetadeGuardada) ? ' da metade guardada pela dobra' : '';
+}
+
+/** No aviso de várias linhas: diz quantas delas são da metade que a dobra guarda. */
+function quantasNaDobra(linhas: readonly LinhaDeFora[]): string {
+  const quantas = linhas.filter((linha) => linha.naMetadeGuardada).length;
+  return quantas === 0 ? '' : `; ${quantas} na metade guardada pela dobra`;
+}
+
 /**
  * As peças com linha interna fora delas, para lá da folga: a que sai da peça
  * (tem parte dentro) e a solta (não tem: está fora, ou corre pela borda e
  * sai). É aviso, e a faixa da validação oferece tirá-las — ou, da que sai,
- * tirar só o que está fora.
+ * tirar só o que está fora. Entram as linhas da metade que a dobra guarda.
  */
 function validarLinhasSoltas(pecas: readonly Molde[], folgaMm: number): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
@@ -296,8 +307,8 @@ function validarLinhasSoltas(pecas: readonly Molde[], folgaMm: number): Problema
         severidade: 'aviso',
         mensagem:
           saem.length === 1
-            ? `Peça "${peca.nome}": uma linha interna sai da peça e vai até ${emMilimetros(ateOnde)} mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).`
-            : `Peça "${peca.nome}": ${saem.length} linhas internas saem da peça (a que vai mais longe, até ${emMilimetros(ateOnde)} mm para fora da borda) — podem ser sobra de desenho ou de importação.`,
+            ? `Peça "${peca.nome}": uma linha interna${daDobra(saem)} sai da peça e vai até ${emMilimetros(ateOnde)} mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).`
+            : `Peça "${peca.nome}": ${saem.length} linhas internas saem da peça (a que vai mais longe, até ${emMilimetros(ateOnde)} mm para fora da borda${quantasNaDobra(saem)}) — podem ser sobra de desenho ou de importação.`,
         pecasEnvolvidasIds: [peca.id],
       });
     }
@@ -309,8 +320,8 @@ function validarLinhasSoltas(pecas: readonly Molde[], folgaMm: number): Problema
       severidade: 'aviso',
       mensagem:
         soltas.length === 1
-          ? `Peça "${peca.nome}": uma linha interna está fora da peça, até ${emMilimetros(maisLonge)} mm da borda — sobra de desenho ou de importação.`
-          : `Peça "${peca.nome}": ${soltas.length} linhas internas estão fora da peça (a mais afastada, até ${emMilimetros(maisLonge)} mm da borda) — sobra de desenho ou de importação.`,
+          ? `Peça "${peca.nome}": uma linha interna${daDobra(soltas)} está fora da peça, até ${emMilimetros(maisLonge)} mm da borda — sobra de desenho ou de importação.`
+          : `Peça "${peca.nome}": ${soltas.length} linhas internas estão fora da peça (a mais afastada, até ${emMilimetros(maisLonge)} mm da borda${quantasNaDobra(soltas)}) — sobra de desenho ou de importação.`,
       pecasEnvolvidasIds: [peca.id],
     });
   }

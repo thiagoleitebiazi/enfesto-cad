@@ -8,7 +8,8 @@ import {
   type Contorno,
   type Ponto2D,
 } from '../core/geometria';
-import { elementosLevados } from './linhasAuxiliares';
+import { desdobraComAMetadeGuardada, desdobrarMolde } from './corteEUniao';
+import { elementosLevados, elementosLevadosNaMetadeGuardada } from './linhasAuxiliares';
 import { contornoDeCorte, type Molde } from './molde';
 
 /**
@@ -23,6 +24,12 @@ import { contornoDeCorte, type Molde } from './molde';
  * A linha **solta** tem parte fora e nenhuma dentro — está inteira fora, ou
  * corre pela borda e sai; a que **sai** tem parte dentro e parte fora.
  * Na peça graduada, a conta é no tamanho base.
+ *
+ * A peça dobrada que guarda a outra metade ("Manter dobra do molde") é
+ * conferida **inteira**: a borda é a da peça com a metade de volta no lugar,
+ * e entram na conta as linhas das duas metades. A linha de uma metade que
+ * entra na outra não saiu da peça. Se a metade não encaixa mais na dobra,
+ * cada uma é conferida contra o contorno dela.
  */
 
 /**
@@ -41,6 +48,8 @@ const PRECISAO_DA_DISTANCIA_MM = 0.01;
 export interface LinhaDeFora {
   readonly indice: number;
   readonly distanciaMm: number;
+  /** A linha está na metade guardada pela dobra (o número é o dela lá), e não no desenho da peça. */
+  readonly naMetadeGuardada?: true;
 }
 
 /** Um pedaço de um lado da linha, entre dois cruzamentos com a borda da peça. */
@@ -200,29 +209,68 @@ function analisar(linha: Contorno, borda: Contorno, folgaMm: number): Analise | 
   };
 }
 
+/** As contas de uma peça: as das linhas do desenho e as das linhas da metade guardada pela dobra. */
+interface ContasDaPeca {
+  readonly doDesenho: readonly (Analise | null)[];
+  readonly daGuardada: readonly (Analise | null)[];
+}
+
+/**
+ * A peça inteira, com a metade que a dobra guarda de volta no lugar; `null`
+ * se ela não guarda metade, ou se a metade não encaixa mais na dobra.
+ */
+function pecaInteira(molde: Molde): Molde | null {
+  if (!molde.dobraMantida) return null;
+  const aresta = molde.contorno.findIndex((_, i) => desdobraComAMetadeGuardada(molde, i));
+  if (aresta < 0) return null;
+  try {
+    return desdobrarMolde(molde, aresta, () => 'inteira');
+  } catch {
+    return null;
+  }
+}
+
+/** A linha de corte de um contorno, com a margem de costura da peça; `null` no contorno sem área. */
+function bordaDe(contorno: Contorno, molde: Molde): Contorno | null {
+  return contorno.length < 3 ? null : contornoDeCorte({ ...molde, contorno });
+}
+
 /**
  * A conta de cada peça fica guardada: a peça não muda (cada mudança faz
  * outra), e a validação pergunta por ela a cada passo do trabalho.
  */
-const contasGuardadas = new WeakMap<Molde, Map<number, readonly (Analise | null)[]>>();
+const contasGuardadas = new WeakMap<Molde, Map<number, ContasDaPeca>>();
 
-function analisesDaPeca(molde: Molde, folgaMm: number): readonly (Analise | null)[] {
+function contasDaPeca(molde: Molde, folgaMm: number): ContasDaPeca {
   let daPeca = contasGuardadas.get(molde);
   if (!daPeca) {
     daPeca = new Map();
     contasGuardadas.set(molde, daPeca);
   }
-  let analises = daPeca.get(folgaMm);
-  if (!analises) {
-    const borda = molde.contorno.length < 3 ? null : contornoDeCorte(molde);
-    analises = molde.linhasInternas.map((linha) => (borda ? analisar(linha, borda, folgaMm) : null));
-    daPeca.set(folgaMm, analises);
+  let contas = daPeca.get(folgaMm);
+  if (!contas) {
+    const guardada = molde.dobraMantida;
+    // Com a metade guardada no lugar, a peça é a inteira: a linha de uma metade que entra na outra não saiu da peça.
+    const inteira = pecaInteira(molde);
+    const bordaDoDesenho = bordaDe((inteira ?? molde).contorno, molde);
+    // A metade que não encaixa mais na dobra é conferida contra o contorno dela mesma.
+    const bordaDaGuardada = guardada ? (inteira ? bordaDoDesenho : bordaDe(guardada.contorno, molde)) : null;
+    contas = {
+      doDesenho: molde.linhasInternas.map((linha) => (bordaDoDesenho ? analisar(linha, bordaDoDesenho, folgaMm) : null)),
+      daGuardada: (guardada?.linhasInternas ?? []).map((linha) => (bordaDaGuardada ? analisar(linha, bordaDaGuardada, folgaMm) : null)),
+    };
+    daPeca.set(folgaMm, contas);
   }
-  return analises;
+  return contas;
 }
 
 function linhasDeFora(molde: Molde, folgaMm: number, soltas: boolean): LinhaDeFora[] {
-  return analisesDaPeca(molde, folgaMm).flatMap((analise, indice) => (analise && (analise.partes.length === 0) === soltas ? [{ indice, distanciaMm: analise.distanciaMm }] : []));
+  const contas = contasDaPeca(molde, folgaMm);
+  const quais = (analises: readonly (Analise | null)[], naGuardada: boolean): LinhaDeFora[] =>
+    analises.flatMap((analise, indice) =>
+      analise && (analise.partes.length === 0) === soltas ? [{ indice, distanciaMm: analise.distanciaMm, ...(naGuardada ? { naMetadeGuardada: true as const } : {}) }] : [],
+    );
+  return [...quais(contas.doDesenho, false), ...quais(contas.daGuardada, true)];
 }
 
 /** As linhas internas soltas: com parte fora da peça, para lá da folga, e sem parte nenhuma dentro dela. */
@@ -236,35 +284,52 @@ export function linhasQueSaem(molde: Molde, folgaMm = FOLGA_FORA_DA_PECA_MM): Li
 }
 
 /**
- * A peça com cada linha interna trocada pelo que `troca` dá para ela: nada
- * (a linha sai), outras linhas (ficam no lugar dela), ou `null` (fica como
- * está). A linha só de construção continua de construção, e as partes dela
- * também. A mesma peça, se nada mudou.
+ * As linhas com cada uma trocada pelo que `troca` dá para ela — nada (a linha
+ * sai), outras linhas (ficam no lugar dela), ou `null` (fica como está) —, e
+ * em que números cada uma foi parar.
  */
-function comAsLinhasTrocadas(molde: Molde, troca: (indice: number) => readonly Contorno[] | null): Molde {
-  const linhasInternas: Contorno[] = [];
+function trocadas(linhas: readonly Contorno[], troca: (indice: number) => readonly Contorno[] | null): { readonly linhas: Contorno[]; readonly destinos: number[][]; readonly mudou: boolean } {
+  const novas: Contorno[] = [];
   const destinos: number[][] = [];
   let mudou = false;
-  molde.linhasInternas.forEach((linha, indice) => {
-    const novas = troca(indice);
-    if (novas !== null) mudou = true;
-    const ficam = novas ?? [linha];
-    destinos.push(ficam.map((_, k) => linhasInternas.length + k));
-    linhasInternas.push(...ficam);
+  linhas.forEach((linha, indice) => {
+    const postas = troca(indice);
+    if (postas !== null) mudou = true;
+    const ficam = postas ?? [linha];
+    destinos.push(ficam.map((_, k) => novas.length + k));
+    novas.push(...ficam);
   });
-  return mudou ? elementosLevados(molde, { ...molde, linhasInternas }, (indice) => destinos[indice] ?? []) : molde;
+  return { linhas: novas, destinos, mudou };
+}
+
+/**
+ * A peça com as linhas internas — as do desenho e as da metade guardada pela
+ * dobra — trocadas pelo que `troca` dá para a conta de cada uma. A linha só
+ * de construção continua de construção, e as partes dela também. A mesma
+ * peça, se nada mudou.
+ */
+function comAsLinhasTrocadas(molde: Molde, folgaMm: number, troca: (analise: Analise | null) => readonly Contorno[] | null): Molde {
+  const contas = contasDaPeca(molde, folgaMm);
+  const guardada = molde.dobraMantida;
+  const doDesenho = trocadas(molde.linhasInternas, (indice) => troca(contas.doDesenho[indice] ?? null));
+  const daGuardada = trocadas(guardada?.linhasInternas ?? [], (indice) => troca(contas.daGuardada[indice] ?? null));
+  if (!doDesenho.mudou && !daGuardada.mudou) return molde;
+  const depois: Molde = { ...molde, linhasInternas: doDesenho.linhas, ...(guardada ? { dobraMantida: { ...guardada, linhasInternas: daGuardada.linhas } } : {}) };
+  return elementosLevadosNaMetadeGuardada(
+    molde,
+    elementosLevados(molde, depois, (indice) => doDesenho.destinos[indice] ?? []),
+    (indice) => daGuardada.destinos[indice] ?? [],
+  );
 }
 
 /** A peça sem as linhas internas soltas. A mesma peça, se não há nenhuma. */
 export function semLinhasSoltas(molde: Molde, folgaMm = FOLGA_FORA_DA_PECA_MM): Molde {
-  const analises = analisesDaPeca(molde, folgaMm);
-  return comAsLinhasTrocadas(molde, (indice) => (analises[indice]?.partes.length === 0 ? [] : null));
+  return comAsLinhasTrocadas(molde, folgaMm, (analise) => (analise?.partes.length === 0 ? [] : null));
 }
 
 /** A peça sem as linhas internas que saem dela (cada uma sai inteira). A mesma peça, se não há nenhuma. */
 export function semLinhasQueSaem(molde: Molde, folgaMm = FOLGA_FORA_DA_PECA_MM): Molde {
-  const analises = analisesDaPeca(molde, folgaMm);
-  return comAsLinhasTrocadas(molde, (indice) => ((analises[indice]?.partes.length ?? 0) > 0 ? [] : null));
+  return comAsLinhasTrocadas(molde, folgaMm, (analise) => ((analise?.partes.length ?? 0) > 0 ? [] : null));
 }
 
 /**
@@ -273,9 +338,8 @@ export function semLinhasQueSaem(molde: Molde, folgaMm = FOLGA_FORA_DA_PECA_MM):
  * A mesma peça, se nenhuma linha sai.
  */
 export function semOQueSaiDasLinhas(molde: Molde, folgaMm = FOLGA_FORA_DA_PECA_MM): Molde {
-  const analises = analisesDaPeca(molde, folgaMm);
-  return comAsLinhasTrocadas(molde, (indice) => {
-    const partes = analises[indice]?.partes ?? [];
+  return comAsLinhasTrocadas(molde, folgaMm, (analise) => {
+    const partes = analise?.partes ?? [];
     return partes.length > 0 ? partes : null;
   });
 }

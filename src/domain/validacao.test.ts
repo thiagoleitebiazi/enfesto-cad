@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ponto } from '../core/geometria';
+import { dobrarMolde } from './corteEUniao';
 import { criarMolde, rotacionarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { FUNDURA_MINIMA_DA_SOBREPOSICAO_MM, interioresSeSobrepoem, validarProjeto, projetoTemErrosCriticos, TOLERANCIAS_PADRAO } from './validacao';
@@ -417,5 +418,41 @@ describe('interioresSeSobrepoem — a conta é exata', () => {
     expect(interioresSeSobrepoem(ESQUERDA, cortaOCanto(0.0502))).toBe(true);
     expect(interioresSeSobrepoem(cortaOCanto(0.0499), ESQUERDA)).toBe(false);
     expect(interioresSeSobrepoem(cortaOCanto(0.0502), ESQUERDA)).toBe(true);
+  });
+});
+
+describe('validarProjeto — as linhas da metade guardada pela dobra', () => {
+  // Um retângulo de 200 × 300 mm em (50, 50), dobrado ao meio na vertical: fica a metade da direita, e a da esquerda é guardada.
+  const dobrada = (linhasInternas: Molde['linhasInternas']): Molde =>
+    dobrarMolde({ ...pecaRetangular('Frente', 50, 50, 200, 300), linhasInternas }, { indiceAresta: 0, ponto: ponto(150, 50) }, { indiceAresta: 2, ponto: ponto(150, 350) }, ponto(200, 100), {
+      manter: true,
+      fioNoCentro: false,
+    });
+  const SAI_PELA_DIREITA = [ponto(200, 300), ponto(310, 300)];
+  const SAI_PELA_ESQUERDA = [ponto(100, 250), ponto(-10, 250)];
+  const FORA_A_DIREITA = [ponto(450, 100), ponto(450, 300)];
+  const FORA_A_ESQUERDA = [ponto(-250, 100), ponto(-200, 100)];
+  const mensagens = (linhasInternas: Molde['linhasInternas']): string[] => validarProjeto([dobrada(linhasInternas)], null).map((p) => p.mensagem);
+
+  it('o aviso diz quando a linha é da metade guardada, que não aparece no desenho', () => {
+    expect(mensagens([SAI_PELA_ESQUERDA])).toEqual([
+      'Peça "Frente": uma linha interna da metade guardada pela dobra sai da peça e vai até 60 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
+    ]);
+    expect(mensagens([FORA_A_ESQUERDA])).toEqual(['Peça "Frente": uma linha interna da metade guardada pela dobra está fora da peça, até 300 mm da borda — sobra de desenho ou de importação.']);
+    // A do desenho continua dita como antes.
+    expect(mensagens([SAI_PELA_DIREITA])).toEqual([
+      'Peça "Frente": uma linha interna sai da peça e vai até 60 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
+    ]);
+  });
+
+  it('com várias, diz quantas são da metade guardada', () => {
+    expect(mensagens([SAI_PELA_DIREITA, SAI_PELA_ESQUERDA, FORA_A_DIREITA, FORA_A_ESQUERDA])).toEqual([
+      'Peça "Frente": 2 linhas internas saem da peça (a que vai mais longe, até 60 mm para fora da borda; 1 na metade guardada pela dobra) — podem ser sobra de desenho ou de importação.',
+      'Peça "Frente": 2 linhas internas estão fora da peça (a mais afastada, até 300 mm da borda; 1 na metade guardada pela dobra) — sobra de desenho ou de importação.',
+    ]);
+  });
+
+  it('a linha que passa de uma metade para a outra não gera aviso', () => {
+    expect(mensagens([[ponto(200, 100), ponto(100, 100)], [ponto(100, 200), ponto(200, 200)]])).toEqual([]);
   });
 });

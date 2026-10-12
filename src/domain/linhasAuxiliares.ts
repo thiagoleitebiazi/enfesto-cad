@@ -72,6 +72,22 @@ export function elementosLevados(antes: Molde, depois: Molde, destinos: (indice:
   return comRegistro(depois, [...levados, ...antes.elementos]);
 }
 
+/**
+ * O mesmo, para as linhas da metade guardada pela dobra: `destinos(j)` diz em
+ * que números ficou, na metade guardada de `depois`, a linha que na de
+ * `antes` era a de número `j`.
+ */
+export function elementosLevadosNaMetadeGuardada(antes: Molde, depois: Molde, destinos: (indice: number) => readonly number[]): Molde {
+  const registro = antes.elementos;
+  if (!registro || !antes.dobraMantida) return depois;
+  const novas = depois.dobraMantida?.linhasInternas ?? [];
+  const levados = antes.dobraMantida.linhasInternas
+    .flatMap((linha, j) => (registro.some((elemento) => mesmaLinha(elemento, linha)) ? destinos(j) : []))
+    .map((k) => novas[k])
+    .filter((linha): linha is Contorno => linha !== undefined);
+  return comRegistro(depois, [...levados, ...(depois.elementos ?? [])]);
+}
+
 /** "Remover": as linhas auxiliares de número dado voltam a ser elementos, só de construção. */
 export function tornarElementos(molde: Molde, indices: readonly number[]): Molde {
   const novas = indices.map((i) => molde.linhasInternas[i]).filter((linha): linha is Contorno => linha !== undefined);

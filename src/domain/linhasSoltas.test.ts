@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ponto, type Ponto2D } from '../core/geometria';
+import { dobrarMolde } from './corteEUniao';
 import { tornarElementos, elementosDaPeca } from './linhasAuxiliares';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './linhasSoltas';
 import { criarMolde, type Molde } from './molde';
@@ -377,5 +378,106 @@ describe('tirar só o que está fora', () => {
 
     expect(semOQueSaiDasLinhas(peca)).toBe(peca);
     expect(semLinhasSoltas(peca).linhasInternas).toEqual([DENTRO]);
+  });
+});
+
+describe('a peça dobrada que guarda a outra metade', () => {
+  // Um retângulo de 200 × 300 mm, dobrado em x = 100: fica no desenho a metade da direita, e a da esquerda fica guardada.
+  const RETANGULO = [ponto(0, 0), ponto(200, 0), ponto(200, 300), ponto(0, 300)];
+  const NA_DIREITA = [ponto(120, 50), ponto(180, 50)];
+  const NA_ESQUERDA = [ponto(20, 50), ponto(80, 50)];
+  // Começa na direita e entra na esquerda; e o contrário. Cada uma fica com a metade em que começa.
+  const DA_DIREITA_PARA_A_ESQUERDA = [ponto(150, 100), ponto(50, 100)];
+  const DA_ESQUERDA_PARA_A_DIREITA = [ponto(50, 150), ponto(150, 150)];
+  const SAI_PELA_DIREITA = [ponto(150, 250), ponto(260, 250)];
+  const SAI_PELA_ESQUERDA = [ponto(50, 200), ponto(-60, 200)];
+  const FORA_A_ESQUERDA = [ponto(-300, 50), ponto(-250, 50)];
+  const TODAS = [NA_DIREITA, NA_ESQUERDA, DA_DIREITA_PARA_A_ESQUERDA, DA_ESQUERDA_PARA_A_DIREITA, SAI_PELA_DIREITA, SAI_PELA_ESQUERDA, FORA_A_ESQUERDA];
+  const inteira = (linhasInternas: readonly Linha[]): Molde =>
+    criarMolde({ nome: 'Frente', referencia: 'R', tamanho: 'M', contorno: RETANGULO, linhasInternas, linhaDeFio: { inicio: ponto(150, 20), fim: ponto(150, 280) } }, 'f');
+  const dobrada = (linhasInternas: readonly Linha[] = TODAS, manter = true): Molde =>
+    dobrarMolde(inteira(linhasInternas), { indiceAresta: 0, ponto: ponto(100, 0) }, { indiceAresta: 2, ponto: ponto(100, 300) }, ponto(150, 100), { manter, fioNoCentro: false });
+
+  it('a dobra reparte as linhas pela metade em que cada uma começa', () => {
+    const peca = dobrada();
+
+    expect(peca.linhasInternas).toEqual([NA_DIREITA, DA_DIREITA_PARA_A_ESQUERDA, SAI_PELA_DIREITA]);
+    expect(peca.dobraMantida!.linhasInternas).toEqual([NA_ESQUERDA, DA_ESQUERDA_PARA_A_DIREITA, SAI_PELA_ESQUERDA, FORA_A_ESQUERDA]);
+  });
+
+  it('é conferida inteira: a linha de uma metade que entra na outra não saiu da peça', () => {
+    const peca = dobrada();
+
+    expect(linhasQueSaem(peca)).toEqual([
+      { indice: 2, distanciaMm: 60 },
+      { indice: 2, distanciaMm: 60, naMetadeGuardada: true },
+    ]);
+    expect(linhasSoltas(peca)).toEqual([{ indice: 3, distanciaMm: 300, naMetadeGuardada: true }]);
+  });
+
+  it('sem a metade guardada, a borda é a da metade que ficou: a linha que passa da dobra sai da peça', () => {
+    const saem = linhasQueSaem(dobrada(TODAS, false));
+
+    expect(indices(saem)).toEqual([1, 2]);
+    expect(saem[0]!.distanciaMm).toBeCloseTo(50, 6);
+    expect(saem.some((linha) => linha.naMetadeGuardada)).toBe(false);
+  });
+
+  it('a metade que não encaixa mais na dobra é conferida contra o contorno dela, e a do desenho contra o dela', () => {
+    const peca = dobrada();
+    const desencaixada: Molde = { ...peca, dobraMantida: { ...peca.dobraMantida!, de: ponto(999, 999) } };
+
+    expect(linhasQueSaem(desencaixada)).toEqual([
+      { indice: 1, distanciaMm: 50 },
+      { indice: 2, distanciaMm: 60 },
+      { indice: 1, distanciaMm: 50, naMetadeGuardada: true },
+      { indice: 2, distanciaMm: 60, naMetadeGuardada: true },
+    ]);
+    expect(linhasSoltas(desencaixada)).toEqual([{ indice: 3, distanciaMm: 300, naMetadeGuardada: true }]);
+  });
+
+  it('tirar só o de fora corta nas duas metades, na borda da peça inteira; o resto da metade guardada fica como estava', () => {
+    const peca = dobrada();
+    const limpa = semOQueSaiDasLinhas(peca);
+
+    expect(emMilesimos(limpa.linhasInternas)).toEqual(
+      emMilesimos([NA_DIREITA, DA_DIREITA_PARA_A_ESQUERDA, [ponto(150, 250), ponto(200, 250)]]),
+    );
+    expect(emMilesimos(limpa.dobraMantida!.linhasInternas)).toEqual(
+      emMilesimos([NA_ESQUERDA, DA_ESQUERDA_PARA_A_DIREITA, [ponto(50, 200), ponto(0, 200)], FORA_A_ESQUERDA]),
+    );
+    expect(limpa.dobraMantida!.contorno).toBe(peca.dobraMantida!.contorno);
+    expect(limpa.dobraMantida!.de).toBe(peca.dobraMantida!.de);
+    expect(linhasQueSaem(limpa)).toEqual([]);
+  });
+
+  it('tirar as que saem e tirar as soltas alcançam a metade guardada', () => {
+    const peca = dobrada();
+
+    const semAsQueSaem = semLinhasQueSaem(peca);
+    expect(semAsQueSaem.linhasInternas).toEqual([NA_DIREITA, DA_DIREITA_PARA_A_ESQUERDA]);
+    expect(semAsQueSaem.dobraMantida!.linhasInternas).toEqual([NA_ESQUERDA, DA_ESQUERDA_PARA_A_DIREITA, FORA_A_ESQUERDA]);
+
+    const semAsSoltas = semLinhasSoltas(peca);
+    expect(semAsSoltas.linhasInternas).toEqual(peca.linhasInternas);
+    expect(semAsSoltas.dobraMantida!.linhasInternas).toEqual([NA_ESQUERDA, DA_ESQUERDA_PARA_A_DIREITA, SAI_PELA_ESQUERDA]);
+    // E a peça dobrada sem nada de fora é devolvida como veio.
+    const limpa = dobrada([NA_DIREITA, NA_ESQUERDA, DA_DIREITA_PARA_A_ESQUERDA]);
+    expect(semLinhasSoltas(limpa)).toBe(limpa);
+    expect(semOQueSaiDasLinhas(limpa)).toBe(limpa);
+  });
+
+  it('a linha só de construção da metade guardada continua de construção depois de cortada', () => {
+    // Marcadas como de construção antes de dobrar: a que sai pela esquerda (vai para a metade guardada) e a da direita.
+    const peca = dobrarMolde(tornarElementos(inteira(TODAS), [0, 5]), { indiceAresta: 0, ponto: ponto(100, 0) }, { indiceAresta: 2, ponto: ponto(100, 300) }, ponto(150, 100), {
+      manter: true,
+      fioNoCentro: false,
+    });
+    expect(emMilesimos(peca.elementos ?? [])).toEqual(emMilesimos([NA_DIREITA, SAI_PELA_ESQUERDA]));
+
+    const limpa = semOQueSaiDasLinhas(peca);
+
+    expect(elementosDaPeca(limpa)).toEqual([0]);
+    expect(emMilesimos(limpa.elementos ?? [])).toEqual(emMilesimos([[ponto(50, 200), ponto(0, 200)], NA_DIREITA]));
   });
 });

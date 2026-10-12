@@ -197,6 +197,7 @@ import {
 } from './ui/ferramentasDeMarcacao';
 import { cadastroAoDesfazer, cadastroAoRefazer, registrarMudancaDoCadastro } from './ui/historicoDoCadastro';
 import { gravarPiquesCadastrados, lerPiquesCadastrados } from './ui/piquesCadastrados';
+import { folgaDigitada, folgaEscrita, gravarFolgaForaDaPeca, lerFolgaForaDaPeca } from './ui/folgaDaValidacao';
 import { comFiguraRegistrada, figuraDaEspiral, figuraDoCirculo } from './domain/figuras';
 import type { FiguraDaPeca, PregaDaPeca } from './domain/molde';
 import { aplicarDialogoDaFigura, avisoDasFiguras, centrosDasFiguras, dialogoDaFigura, figuraSobOClique } from './ui/ferramentasDeFigura';
@@ -339,7 +340,7 @@ import {
 import { criarTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
-import { validarProjeto } from './domain/validacao';
+import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
 import type { ResultadoDeNesting } from './domain/nesting';
@@ -683,6 +684,9 @@ export default function App(): React.JSX.Element {
   const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(enfestoDeDemonstracao);
   const [painelAberto, setPainelAberto] = useState<'tecido' | 'enfesto' | null>(null);
   const [mostrarValidacao, setMostrarValidacao] = useState(false);
+  // A folga das linhas internas na validação: escolhida no campo da faixa, e guardada neste computador.
+  const [folgaForaDaPecaMm, setFolgaForaDaPecaMm] = useState(() => lerFolgaForaDaPeca(window.localStorage));
+  const [folgaNoCampo, setFolgaNoCampo] = useState(() => folgaEscrita(lerFolgaForaDaPeca(window.localStorage)));
 
   const workerDeNestingRef = useRef<Worker | null>(null);
   const [nestingExecutando, setNestingExecutando] = useState(false);
@@ -724,7 +728,7 @@ export default function App(): React.JSX.Element {
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
-  const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto), [pecas, enfesto]);
+  const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }), [pecas, enfesto, folgaForaDaPecaMm]);
   const aproveitamentoAtualDaMesa = useMemo(() => aproveitamentoDaMesa(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
     () =>
@@ -822,12 +826,22 @@ export default function App(): React.JSX.Element {
     (id: string | undefined, oQue: 'soltas' | 'que-saem' | 'so-o-de-fora') => {
       const peca = pecas.find((p) => p.id === id);
       if (!peca) return;
-      const limpa = oQue === 'soltas' ? semLinhasSoltas(peca) : oQue === 'que-saem' ? semLinhasQueSaem(peca) : semOQueSaiDasLinhas(peca);
+      const limpa =
+        oQue === 'soltas' ? semLinhasSoltas(peca, folgaForaDaPecaMm) : oQue === 'que-saem' ? semLinhasQueSaem(peca, folgaForaDaPecaMm) : semOQueSaiDasLinhas(peca, folgaForaDaPecaMm);
       if (limpa === peca) return;
       aplicarMudanca(pecas.map((p) => (p.id === peca.id ? limpa : p)));
     },
-    [pecas, aplicarMudanca],
+    [pecas, aplicarMudanca, folgaForaDaPecaMm],
   );
+
+  /** O campo da folga: o que está escrito fica no campo; quando é um número que serve, passa a valer e é guardado. */
+  const mudarFolgaDaValidacao = useCallback((texto: string) => {
+    setFolgaNoCampo(texto);
+    const valor = folgaDigitada(texto);
+    if (valor === null) return;
+    setFolgaForaDaPecaMm(valor);
+    gravarFolgaForaDaPeca(window.localStorage, valor);
+  }, []);
 
   // Seleção única "de verdade" (limpa qualquer seleção em lote ativa) — usada
   // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
@@ -4948,6 +4962,28 @@ export default function App(): React.JSX.Element {
       {mostrarValidacao && (
         <div className="faixa-de-validacao" role="alert">
           <strong>Validação do projeto:</strong>
+          <label
+            className="folga-da-validacao"
+            title="Quanto uma linha interna pode passar da borda da peça (a linha de corte) sem ser apontada. Vale de 0 a 100 mm, e fica guardado neste computador."
+          >
+            Linhas internas: apontar o que passa de{' '}
+            <input
+              type="text"
+              inputMode="decimal"
+              size={4}
+              aria-label="Folga das linhas internas fora da peça, em milímetros"
+              aria-invalid={folgaDigitada(folgaNoCampo) === null}
+              value={folgaNoCampo}
+              onChange={(e) => mudarFolgaDaValidacao(e.target.value)}
+              onBlur={() => setFolgaNoCampo(folgaEscrita(folgaForaDaPecaMm))}
+              // Enter e Esc saem do campo, e o foco volta para o programa: é nele que os atalhos (o Ctrl+Z, por
+              // exemplo) são ouvidos — com o foco solto na página, eles não valeriam até o próximo clique.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') appShellRef.current?.focus();
+              }}
+            />{' '}
+            mm da borda da peça
+          </label>
           {problemasDeValidacao.length === 0 ? (
             <p>Nenhum problema encontrado.</p>
           ) : (

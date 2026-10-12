@@ -849,6 +849,23 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+.folga-da-validacao {
+  float: right;
+  color: #374151;
+}
+
+.folga-da-validacao input {
+  width: 44px;
+  padding: 1px 4px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.folga-da-validacao input[aria-invalid="true"] {
+  border-color: #b91c1c;
+  outline-color: #b91c1c;
+}
+
 .faixa-de-validacao ul {
   margin: 4px 0 0;
   padding-left: 0;
