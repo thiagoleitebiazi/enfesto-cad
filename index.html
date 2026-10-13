@@ -6,7 +6,34 @@
     <title>Enfesto CAD</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Aparece enquanto a interface carrega; o programa põe a tela de verdade no lugar. -->
+      <div
+        id="abrindo"
+        style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font: 16px 'Segoe UI', system-ui, sans-serif; color: #4b5563; background: #e8e9eb"
+      >
+        Abrindo o Enfesto CAD…
+      </div>
+    </div>
+    <script>
+      // Se a interface não entrar no lugar do aviso, a página diz o que houve, em vez de ficar parada.
+      (function () {
+        function dizer(texto) {
+          var aviso = document.getElementById('abrindo');
+          if (aviso) aviso.textContent = texto;
+        }
+        window.addEventListener(
+          'error',
+          function (evento) {
+            dizer('O Enfesto CAD não conseguiu montar a tela (' + (evento.message || 'um arquivo do programa não carregou') + '). Feche e abra de novo; se continuar, instale o programa de novo.');
+          },
+          true,
+        );
+        setTimeout(function () {
+          dizer('O Enfesto CAD está demorando para montar a tela neste computador. Aguarde mais um pouco; se ela não aparecer, feche e abra de novo.');
+        }, 20000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

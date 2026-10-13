@@ -13,3 +13,6 @@ createRoot(elemento).render(
     <App />
   </StrictMode>,
 );
+
+// Montada a interface e desenhados os primeiros quadros, avisa o processo principal: fica no diagnóstico da abertura.
+requestAnimationFrame(() => requestAnimationFrame(() => window.enfestoCad?.avisarInterfacePronta()));

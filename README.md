@@ -28,13 +28,31 @@ Para instalar mesmo assim: clique em **"Mais informações"** e depois em
 **"Executar assim mesmo"**. O arquivo é seguro — o código-fonte completo
 deste repositório é público e pode ser auditado.
 
-Se o instalador abrir mas o próprio aplicativo não iniciar depois de
-instalado, o motivo mais provável é a falta do **Microsoft Visual C++
-Redistributable** no computador (um componente comum do Windows, exigido
-por muitos programas, nem sempre pré-instalado em máquinas novas/limpas):
-baixe e instale o
-[vc_redist.x64.exe oficial da Microsoft](https://aka.ms/vs/17/release/vc_redist.x64.exe)
-e tente abrir o Enfesto CAD de novo.
+### Se a janela demorar a aparecer, ou não aparecer
+
+O programa só mostra a janela depois de conferir que a tela foi desenhada —
+ele não fica numa janela preta à espera.
+
+- Se a abertura demorar (uns 8 segundos), aparece o aviso **"Abrindo o
+  Enfesto CAD…"**. É só aguardar.
+- Se a tela não vier no modo normal, o programa **reabre sozinho em outro
+  modo de abertura** (até três outros), e guarda o que funcionou: nas vezes
+  seguintes ele já abre direto nesse modo.
+- Se nenhum modo funcionar, aparece uma mensagem dizendo o que fazer, com o
+  botão **"Copiar o diagnóstico"**. Cole o que ele copiar numa mensagem para
+  quem lhe passou o programa: ali está o que aconteceu no computador.
+
+O que mais impede a tela de aparecer é um antivírus ou outro programa de
+segurança: ponha o Enfesto CAD nas exceções dele e abra de novo.
+
+Para abrir sempre no modo mais compatível, acrescente
+`--modo-de-compatibilidade` no fim do campo "Destino" do atalho do programa
+(depois das aspas, com um espaço antes). `--modo-padrao`, no mesmo lugar,
+volta ao modo normal. O diagnóstico fica em
+`%APPDATA%\enfesto-cad\diagnostico.log`.
+
+O programa não precisa do Microsoft Visual C++ Redistributable nem de nenhum
+outro componente instalado à parte: o instalador leva tudo.
 
 ## Instalar para desenvolvimento
 

@@ -49,6 +49,10 @@ const api = {
   async abrirPrograma(id: string): Promise<string | null> {
     return ipcRenderer.invoke('programas-abrir', id) as Promise<string | null>;
   },
+  /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
+  avisarInterfacePronta(): void {
+    ipcRenderer.send('interface-pronta');
+  },
 };
 
 export type EnfestoCadApi = typeof api;
