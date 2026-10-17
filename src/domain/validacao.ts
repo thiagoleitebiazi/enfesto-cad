@@ -1,5 +1,5 @@
 import type { Molde } from './molde';
-import { rotacaoEhPermitida } from './molde';
+import { linhaDeCorteDaPeca, rotacaoEhPermitida } from './molde';
 import { enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
 import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
@@ -180,10 +180,11 @@ function validarSobreposicaoEEspacamento(
   distanciaMinimaMm: number,
 ): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
+  const cortes = pecas.map(linhaDeCorteDaPeca);
   for (let i = 0; i < pecas.length; i++) {
     for (let j = i + 1; j < pecas.length; j++) {
-      const a = pecas[i]!;
-      const b = pecas[j]!;
+      const a = { ...pecas[i]!, contorno: cortes[i]! };
+      const b = { ...pecas[j]!, contorno: cortes[j]! };
       // As bordas se tocam ou se cruzam. Só é sobreposição se os interiores têm parte em comum: duas peças borda com
       // borda — as duas partes de um corte, por exemplo — estão encostadas, a 0 mm uma da outra, e não sobrepostas.
       const seTocam = contornosSeSobrepoem(a.contorno, b.contorno);
@@ -223,7 +224,7 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
 
   for (const peca of pecas) {
     if (peca.contorno.length === 0) continue;
-    const bbox = retanguloEnvolvente(peca.contorno);
+    const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
     if (bbox.minX < minX - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < minY - folgaMm || bbox.maxY > maxY + folgaMm) {
       problemas.push({
         tipo: 'fora-dos-limites',
@@ -254,7 +255,7 @@ function validarTecido(
   const problemas: ProblemaDeValidacao[] = [];
   if (enfesto && enfesto.larguraUtilMm > tecido.larguraUtilMm + 1e-9) {
     // O X do mundo é a largura do tecido, a partir de 0.
-    const fora = pecas.filter((p) => p.contorno.length > 0 && retanguloEnvolvente(p.contorno).maxX > tecido.larguraUtilMm + folgaMm);
+    const fora = pecas.filter((p) => p.contorno.length > 0 && retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxX > tecido.larguraUtilMm + folgaMm);
     const larguras = `A mesa (o enfesto) tem ${mm(enfesto.larguraUtilMm)} de largura útil, e o tecido "${tecido.nome}", ${mm(tecido.larguraUtilMm)}`;
     problemas.push({
       tipo: 'mais-largo-que-o-tecido',

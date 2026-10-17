@@ -669,6 +669,21 @@ export function contornoDeCorte(molde: Molde): Contorno {
   return deslocarContornoParaFora(molde.contorno, molde.margemDeCosturaMm);
 }
 
+/**
+ * O que a peça ocupa no tecido: a linha de corte (com a costura, ela fica fora do contorno). É por ela que se mede
+ * a distância entre as peças, a sobreposição e os limites — antes era pelo contorno, e duas peças com costura a
+ * 3 mm uma da outra tinham as linhas de corte sobrepostas sem aviso. O contorno que não dá linha de corte (o
+ * inválido, que já tem o seu aviso) vale como está.
+ */
+export function linhaDeCorteDaPeca(peca: Molde): Contorno {
+  if (peca.margemDeCosturaMm <= 0 || peca.contorno.length < 3) return peca.contorno;
+  try {
+    return contornoDeCorte(peca);
+  } catch {
+    return peca.contorno;
+  }
+}
+
 /** Translada um molde inteiro (contorno, furos, linhas internas, piques, marcas e linha de fio) por `deslocamento`. */
 export function transladarMolde(molde: Molde, deslocamento: Ponto2D, novoId: string): Molde {
   return {

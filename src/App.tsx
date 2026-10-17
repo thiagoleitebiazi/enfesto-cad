@@ -341,7 +341,7 @@ import {
 } from './core/geometria';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
+import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -393,7 +393,7 @@ function enfestoDeDemonstracao(): ConfiguracaoDeEnfesto {
     quantidadeDeCamadas: 1,
     margemLateralMm: 0,
     margemDeExtremidadeMm: 0,
-    distanciaMinimaEntrePecasMm: 5,
+    distanciaMinimaEntrePecasMm: DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   } as ConfiguracaoDeEnfesto);
 }
 
@@ -999,7 +999,7 @@ export default function App(): React.JSX.Element {
       quantidadeDeCamadas: 1,
       margemLateralMm: 0,
       margemDeExtremidadeMm: 0,
-      distanciaMinimaEntrePecasMm: 5,
+      distanciaMinimaEntrePecasMm: DISTANCIA_PADRAO_ENTRE_PECAS_MM,
     } as ConfiguracaoDeEnfesto);
     const tecidoInicial = criarTecido(
       {
@@ -2133,8 +2133,26 @@ export default function App(): React.JSX.Element {
       aproveitamentoDesejadoPercentual?: number;
       todosOsTamanhos?: boolean;
       abrirSimetrias?: boolean;
+      distanciaEntreMoldesMm?: number;
     }) => {
       if (!enfesto || pecas.length === 0) return;
+      // A distância entre os moldes pedida na janela do encaixe passa a ser a do enfesto: a validação mede com ela.
+      let enfestoDoEncaixe = enfesto;
+      const distancia = opcoesAvancadas.distanciaEntreMoldesMm;
+      if (distancia !== undefined && distancia !== enfesto.distanciaMinimaEntrePecasMm) {
+        try {
+          enfestoDoEncaixe = criarConfiguracaoDeEnfesto({ ...enfesto, distanciaMinimaEntrePecasMm: distancia });
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : String(e));
+          return;
+        }
+        setEnfesto(enfestoDoEncaixe);
+        registrarEventoEPersistir(
+          'mudanca-de-configuracao',
+          { pecas, tecido, enfesto: enfestoDoEncaixe },
+          `Distância entre os moldes: ${String(distancia).replace('.', ',')} mm`,
+        );
+      }
       // Com todos os tamanhos, cada peça graduada entra como uma peça comum por tamanho.
       let paraEncaixar: readonly Molde[] = pecas;
       if (opcoesAvancadas.todosOsTamanhos) {
@@ -2181,7 +2199,7 @@ export default function App(): React.JSX.Element {
       const mensagemIniciar: MensagemParaWorker = {
         tipo: 'iniciar',
         pecas: paraEncaixar,
-        enfesto,
+        enfesto: enfestoDoEncaixe,
         ...(opcoesAvancadas.limiteDeTempoMinutos !== undefined
           ? { limiteDeTempoMs: opcoesAvancadas.limiteDeTempoMinutos * 60_000 }
           : {}),
@@ -2193,7 +2211,7 @@ export default function App(): React.JSX.Element {
       };
       worker.postMessage(mensagemIniciar);
     },
-    [pecas, enfesto, tecido],
+    [pecas, enfesto, tecido, registrarEventoEPersistir],
   );
 
   const cancelarNestingAutomatico = useCallback(() => {
@@ -3879,6 +3897,7 @@ export default function App(): React.JSX.Element {
       {mostrarPainelDeNesting && (
         <PainelDeNesting
           pecas={pecas}
+          distanciaEntreMoldesMm={enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM}
           sentidoDoTecido={sentidoUnicoDoTecido(tecido) ? { nome: tecido?.nome ?? '', sentido: sentidoUnicoDoTecido(tecido)! } : null}
           executando={nestingExecutando}
           progresso={progressoNesting}

@@ -12,6 +12,9 @@
 
 export type TipoDeEnfesto = 'par' | 'impar' | 'zigue-zague' | 'tubular' | 'ramado';
 
+/** A distância entre os moldes, de linha de corte a linha de corte, de um projeto novo (mm). */
+export const DISTANCIA_PADRAO_ENTRE_PECAS_MM = 3;
+
 export interface ConfiguracaoBase {
   readonly larguraUtilMm: number;
   readonly comprimentoMm: number;

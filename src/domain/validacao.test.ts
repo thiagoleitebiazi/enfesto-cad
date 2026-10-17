@@ -510,3 +510,30 @@ describe('validarProjeto — o tecido (as opções do diálogo Tecido passam a v
     expect(problemas[0]!.mensagem).toContain('tem estampa direcional: 2 peças estão viradas (180° ou 270°), com o desenho ao contrário');
   });
 });
+
+describe('validarProjeto — pela linha de corte (com a costura)', () => {
+  it('duas peças com 10 mm de costura a 15 mm uma da outra: as linhas de corte se sobrepõem', () => {
+    const a = pecaRetangular('a', 50, 50, 100, 100, { margemDeCosturaMm: 10 });
+    const b = pecaRetangular('b', 165, 50, 100, 100, { margemDeCosturaMm: 10 });
+    const problemas = validarProjeto([a, b], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }));
+    expect(problemas.map((p) => p.tipo)).toContain('sobreposicao');
+    // Sem costura, as mesmas peças estão bem.
+    const semCostura = validarProjeto([{ ...a, margemDeCosturaMm: 0 }, { ...b, margemDeCosturaMm: 0 }], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }));
+    expect(semCostura).toEqual([]);
+  });
+
+  it('a 25 mm, as linhas de corte ficam a 5 mm: com 3 mm pedidos, bem; com 6, a distância é a das linhas de corte', () => {
+    const a = pecaRetangular('a', 50, 50, 100, 100, { margemDeCosturaMm: 10 });
+    const b = pecaRetangular('b', 175, 50, 100, 100, { margemDeCosturaMm: 10 });
+    expect(validarProjeto([a, b], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }))).toEqual([]);
+    const [problema] = validarProjeto([a, b], enfestoBase({ distanciaMinimaEntrePecasMm: 6 }));
+    expect(problema).toMatchObject({ tipo: 'espacamento-insuficiente' });
+    expect(problema!.mensagem).toContain('a 5.0 mm uma da outra');
+  });
+
+  it('a costura que passa da borda da mesa deixa a peça fora dos limites', () => {
+    const naBorda = pecaRetangular('a', 15, 50, 100, 100, { margemDeCosturaMm: 10 });
+    expect(validarProjeto([naBorda], enfestoBase()).map((p) => p.tipo)).toEqual(['fora-dos-limites']);
+    expect(validarProjeto([{ ...naBorda, margemDeCosturaMm: 0 }], enfestoBase())).toEqual([]);
+  });
+});

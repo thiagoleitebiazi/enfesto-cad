@@ -1,4 +1,4 @@
-import type { Molde } from './molde';
+import { linhaDeCorteDaPeca, type Molde } from './molde';
 import type { Projeto } from './projeto';
 import { area, retanguloEnvolvente } from '../core/geometria';
 import { ROTULO_DO_TIPO, type ConfiguracaoDeEnfesto } from './enfesto';
@@ -78,8 +78,9 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
   const { pecas, tecido, enfesto } = projeto.estadoAtual;
 
   const comprimentoUtilizadoMm =
-    pecas.length === 0 ? 0 : Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
-  const areaOcupadaMm2 = pecas.reduce((soma, p) => soma + area(p.contorno) * p.quantidade, 0);
+    pecas.length === 0 ? 0 : Math.max(...pecas.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY));
+  // O tecido gasto é o da linha de corte (com a costura), como no encaixe.
+  const areaOcupadaMm2 = pecas.reduce((soma, p) => soma + area(linhaDeCorteDaPeca(p)) * p.quantidade, 0);
 
   const larguraUtilMm = enfesto?.larguraUtilMm ?? null;
   const areaDisponivelMm2 = larguraUtilMm !== null ? larguraUtilMm * comprimentoUtilizadoMm : 0;
@@ -131,9 +132,9 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
  */
 export function aproveitamentoDaMesa(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto | null): number | null {
   if (!enfesto || pecas.length === 0) return null;
-  const comprimentoUsadoMm = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
+  const comprimentoUsadoMm = Math.max(...pecas.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY));
   const areaDisponivelMm2 = enfesto.larguraUtilMm * comprimentoUsadoMm;
   if (!(areaDisponivelMm2 > 0)) return null;
-  const areaDasPecasMm2 = pecas.reduce((soma, p) => soma + area(p.contorno), 0);
+  const areaDasPecasMm2 = pecas.reduce((soma, p) => soma + area(linhaDeCorteDaPeca(p)), 0);
   return (areaDasPecasMm2 / areaDisponivelMm2) * 100;
 }

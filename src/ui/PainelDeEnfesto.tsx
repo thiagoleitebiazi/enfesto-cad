@@ -3,6 +3,7 @@ import { Sobreposicao } from './Sobreposicao';
 import { DiagramaDeEnfesto } from './DiagramaDeEnfesto';
 import {
   criarConfiguracaoDeEnfesto,
+  DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   ROTULO_DO_TIPO,
   type ConfiguracaoDeEnfesto,
   type TipoDeEnfesto,
@@ -35,7 +36,7 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     quantidadeDeCamadas: String(config?.quantidadeDeCamadas ?? 10),
     margemLateralMm: String(config?.margemLateralMm ?? 10),
     margemDeExtremidadeMm: String(config?.margemDeExtremidadeMm ?? 20),
-    distanciaMinimaEntrePecasMm: String(config?.distanciaMinimaEntrePecasMm ?? 3),
+    distanciaMinimaEntrePecasMm: String(config?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM),
     larguraDoTuboMm: String(config?.tipo === 'tubular' ? config.larguraDoTuboMm : 1500),
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
@@ -162,7 +163,7 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
           />
         </label>
         <label>
-          Distância mínima entre peças (mm)
+          Distância entre os moldes (mm), de linha de corte a linha de corte
           <input
             type="number"
             min={0}

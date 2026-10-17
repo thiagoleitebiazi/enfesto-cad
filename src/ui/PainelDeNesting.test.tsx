@@ -17,6 +17,7 @@ function renderizar(pecas: readonly Molde[]) {
   render(
     <PainelDeNesting
       pecas={pecas}
+      distanciaEntreMoldesMm={3}
       executando={false}
       progresso={null}
       resultado={null}
@@ -43,7 +44,7 @@ describe('PainelDeNesting: tamanhos das peças graduadas', () => {
     expect(within(linhaDa('Bolso')).getByText('—')).toBeInTheDocument();
 
     calcular();
-    expect(onCalcular).toHaveBeenCalledWith({});
+    expect(onCalcular).toHaveBeenCalledWith({ distanciaEntreMoldesMm: 3 });
   });
 
   it('com peça graduada, vem marcado para encaixar todos os tamanhos, e a tabela mostra quais', () => {
@@ -55,7 +56,7 @@ describe('PainelDeNesting: tamanhos das peças graduadas', () => {
     expect(screen.getByText(/Cada tamanho entra como uma peça própria/)).toBeInTheDocument();
 
     calcular();
-    expect(onCalcular).toHaveBeenCalledWith({ todosOsTamanhos: true });
+    expect(onCalcular).toHaveBeenCalledWith({ todosOsTamanhos: true, distanciaEntreMoldesMm: 3 });
   });
 
   it('desmarcando, só o tamanho base entra', () => {
@@ -67,7 +68,7 @@ describe('PainelDeNesting: tamanhos das peças graduadas', () => {
     expect(within(linhaDa('Frente')).getByText('M')).toBeInTheDocument();
     expect(screen.getByText(/Só o tamanho base de cada peça graduada entra no encaixe/)).toBeInTheDocument();
     calcular();
-    expect(onCalcular).toHaveBeenCalledWith({ todosOsTamanhos: false });
+    expect(onCalcular).toHaveBeenCalledWith({ todosOsTamanhos: false, distanciaEntreMoldesMm: 3 });
   });
 });
 
@@ -87,7 +88,7 @@ describe('PainelDeNesting: peças com linha de simetria', () => {
     expect(screen.getByText(/entra no encaixe aberta, inteira/)).toBeInTheDocument();
 
     calcular();
-    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: true });
+    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: true, distanciaEntreMoldesMm: 3 });
   });
 
   it('desmarcando, a peça entra como está desenhada', () => {
@@ -97,7 +98,7 @@ describe('PainelDeNesting: peças com linha de simetria', () => {
 
     expect(screen.getByText(/entra como está desenhada: meia peça/)).toBeInTheDocument();
     calcular();
-    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: false });
+    expect(onCalcular).toHaveBeenCalledWith({ abrirSimetrias: false, distanciaEntreMoldesMm: 3 });
   });
 
   it('a marca que deixou de valer (a aresta mudou) não oferece a opção', () => {
@@ -116,6 +117,7 @@ describe('PainelDeNesting: o tecido de sentido único', () => {
     render(
       <PainelDeNesting
         pecas={[livre]}
+        distanciaEntreMoldesMm={3}
         sentidoDoTecido={{ nome: 'Veludo', sentido: 'tem pelo' }}
         executando={false}
         progresso={null}
@@ -134,5 +136,30 @@ describe('PainelDeNesting: o tecido de sentido único', () => {
     renderizar([{ ...molde('Frente', 'f'), restricaoDeRotacao: { permite180: true, permite90e270: true } }]);
     expect(within(linhaDa('Frente')).getByText('0°, 90°, 180°, 270°')).toBeInTheDocument();
     expect(screen.queryByText(/não vira peças/)).toBeNull();
+  });
+});
+
+describe('PainelDeNesting: a distância entre os moldes', () => {
+  afterEach(() => cleanup());
+
+  it('começa com a do enfesto e vai, lida com vírgula, para o cálculo', () => {
+    const { onCalcular } = renderizar([molde('Frente', 'f')]);
+    const campo = screen.getByLabelText('Distância entre os moldes (mm)');
+    expect(campo).toHaveValue('3');
+    fireEvent.change(campo, { target: { value: '2,5' } });
+    calcular();
+    expect(onCalcular).toHaveBeenCalledWith({ distanciaEntreMoldesMm: 2.5 });
+  });
+
+  it('o que não é número, ou é negativo, é recusado: o botão fica desligado', () => {
+    const { onCalcular } = renderizar([molde('Frente', 'f')]);
+    const campo = screen.getByLabelText('Distância entre os moldes (mm)');
+    for (const valor of ['', 'abc', '-1']) {
+      fireEvent.change(campo, { target: { value: valor } });
+      expect(screen.getByRole('alert')).toHaveTextContent('A distância entre os moldes precisa ser um número de 0 mm para cima.');
+      expect(screen.getByRole('button', { name: 'Calcular encaixe' })).toBeDisabled();
+    }
+    calcular();
+    expect(onCalcular).not.toHaveBeenCalled();
   });
 });

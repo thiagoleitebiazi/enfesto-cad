@@ -1,4 +1,4 @@
-import { transladarMolde, type Molde } from './molde';
+import { linhaDeCorteDaPeca, transladarMolde, type Molde } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import {
   contornosSeSobrepoem,
@@ -17,12 +17,61 @@ export interface LimitesDeArea {
 }
 
 /**
+ * Ao encostar a peça nas vizinhas, a distância fica pelo menos isto acima da mínima: as contas com vírgula não
+ * a deixam um fio abaixo dela, e a validação não reclama da peça que o próprio encaixe pôs.
+ */
+export const FOLGA_DO_ENCOSTO_MM = 0.01;
+/** Passos da busca que encosta a peça (dividindo o passo da grade ao meio a cada um): 10 mm / 2¹² ≈ 0,002 mm. */
+const PASSOS_DO_ENCOSTO = 12;
+
+interface Caixa {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+}
+
+function caixaDe(contorno: Contorno): Caixa {
+  const r = retanguloEnvolvente(contorno);
+  return { minX: r.minX, maxX: r.maxX, minY: r.minY, maxY: r.maxY };
+}
+
+/** As caixas estão mais longe que `d` uma da outra: os contornos dentro delas não se tocam nem chegam a `d`. */
+function caixasMaisLongeQue(a: Caixa, b: Caixa, d: number): boolean {
+  return a.minX - b.maxX > d || b.minX - a.maxX > d || a.minY - b.maxY > d || b.minY - a.maxY > d;
+}
+
+/** O contorno não se sobrepõe a nenhum dos existentes e fica a pelo menos `distanciaMinima` (+ `folga`) de cada um. */
+function lugarLivre(
+  contorno: Contorno,
+  existentes: readonly Contorno[],
+  caixasExistentes: readonly Caixa[],
+  distanciaMinima: number,
+  folga: number,
+): boolean {
+  const caixa = caixaDe(contorno);
+  const exigida = distanciaMinima > 0 ? distanciaMinima + folga : 0;
+  return existentes.every((existente, i) => {
+    if (caixasMaisLongeQue(caixa, caixasExistentes[i]!, exigida)) return true;
+    if (contornosSeSobrepoem(contorno, existente)) return false;
+    if (distanciaMinima > 0 && distanciaEntreContornos(contorno, existente) < exigida) return false;
+    return true;
+  });
+}
+
+/**
  * Primitiva compartilhada de "primeiro encaixe" (first-fit): varre os
  * limites informados da esquerda para a direita, de cima para baixo, e
  * devolve o primeiro DESLOCAMENTO (delta a somar ao contorno normalizado
  * recebido) onde ele não se sobrepõe a nenhum dos `contornosExistentes` e
  * respeita `distanciaMinima`. Usada tanto pela sugestão semiautomática de
  * uma peça (Etapa 6) quanto pelo motor de nesting automático (Etapa 7).
+ *
+ * A varredura anda de `passoMm` em `passoMm` (10 mm), e o primeiro lugar
+ * livre ficava até um passo inteiro longe das vizinhas: com 3 mm pedidos, as
+ * peças ficavam a 3 a 13 mm umas das outras. Achado o lugar, a peça é
+ * encostada — no comprimento, na largura e no comprimento de novo — até a
+ * distância pedida (ver `encostar`).
  *
  * Não promete o ótimo — é um "primeiro que couber", reprodutível e barato.
  * `maxTentativas` evita travar a interface em áreas muito grandes/passo
@@ -42,6 +91,7 @@ export function encontrarPrimeiraPosicaoValida(
 
   if (maxXAjustado < limites.minX || maxYAjustado < limites.minY) return null;
 
+  const caixasExistentes = contornosExistentes.map(caixaDe);
   let tentativas = 0;
   for (let y = limites.minY; y <= maxYAjustado; y += passoMm) {
     for (let x = limites.minX; x <= maxXAjustado; x += passoMm) {
@@ -51,18 +101,58 @@ export function encontrarPrimeiraPosicaoValida(
       const delta = { x: x - bbox.minX, y: y - bbox.minY };
       const contornoCandidato = transladarContorno(contorno, delta);
 
-      const valido = contornosExistentes.every((existente) => {
-        if (contornosSeSobrepoem(contornoCandidato, existente)) return false;
-        if (distanciaMinima > 0 && distanciaEntreContornos(contornoCandidato, existente) < distanciaMinima) {
-          return false;
-        }
-        return true;
-      });
-
-      if (valido) return delta;
+      if (lugarLivre(contornoCandidato, contornosExistentes, caixasExistentes, distanciaMinima, 0)) {
+        return encostar(contorno, contornosExistentes, caixasExistentes, limites, distanciaMinima, passoMm, delta);
+      }
     }
   }
   return null;
+}
+
+/**
+ * Leva a peça, a partir de um lugar livre achado na grade, na direção do começo do comprimento (y) e da largura
+ * (x), até ficar à distância mínima das vizinhas (com a `FOLGA_DO_ENCOSTO_MM`) ou no limite da área. Em cada
+ * direção ela anda no máximo um passo da grade: o ponto um passo atrás é o que a varredura achou ocupado (ou o
+ * limite), e o ponto certo entre os dois é achado pela metade, várias vezes. Nunca sai de um lugar livre para um
+ * ocupado: se nada no caminho estiver livre, fica onde a grade a pôs.
+ */
+function encostar(
+  contorno: Contorno,
+  existentes: readonly Contorno[],
+  caixasExistentes: readonly Caixa[],
+  limites: LimitesDeArea,
+  distanciaMinima: number,
+  passoMm: number,
+  delta: Ponto2D,
+): Ponto2D {
+  const caixa = retanguloEnvolvente(contorno);
+  const livre = (d: Ponto2D): boolean =>
+    lugarLivre(transladarContorno(contorno, d), existentes, caixasExistentes, distanciaMinima, FOLGA_DO_ENCOSTO_MM);
+  let atual = delta;
+  for (const eixo of ['y', 'x', 'y'] as const) {
+    const menor = eixo === 'y' ? limites.minY - caixa.minY : limites.minX - caixa.minX;
+    let ocupado = Math.max(menor, atual[eixo] - passoMm);
+    let desocupado = atual[eixo];
+    if (desocupado - ocupado <= 1e-9) continue;
+    const em = (valor: number): Ponto2D => (eixo === 'y' ? { x: atual.x, y: valor } : { x: valor, y: atual.y });
+    if (livre(em(ocupado))) {
+      // Andou na outra direção e o caminho abriu: vai até o fim do passo.
+      atual = em(ocupado);
+      continue;
+    }
+    let achou = false;
+    for (let i = 0; i < PASSOS_DO_ENCOSTO; i++) {
+      const meio = (ocupado + desocupado) / 2;
+      if (livre(em(meio))) {
+        desocupado = meio;
+        achou = true;
+      } else {
+        ocupado = meio;
+      }
+    }
+    if (achou) atual = em(desocupado);
+  }
+  return atual;
 }
 
 /**
@@ -86,9 +176,10 @@ export function sugerirPosicaoSemSobreposicao(
     minY: enfesto.margemDeExtremidadeMm,
     maxY: enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm,
   };
+  // Pela linha de corte: é ela que ocupa o tecido (com a costura, fica fora do contorno).
   return encontrarPrimeiraPosicaoValida(
-    pecaAlvo.contorno,
-    outrasPecas.map((p) => p.contorno),
+    linhaDeCorteDaPeca(pecaAlvo),
+    outrasPecas.map(linhaDeCorteDaPeca),
     limites,
     enfesto.distanciaMinimaEntrePecasMm,
     passoMm,

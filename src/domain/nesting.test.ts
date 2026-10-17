@@ -7,10 +7,11 @@ import {
   distanciaEntreContornos,
   espelharContornoHorizontal,
 } from '../core/geometria';
-import { criarMolde, type Molde } from './molde';
+import { criarMolde, linhaDeCorteDaPeca, type Molde } from './molde';
+import { validarProjeto } from './validacao';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { executarEmFatias, executarNestingAutomatico, passosDoNesting } from './nesting';
-import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
+import { encontrarPrimeiraPosicaoValida, FOLGA_DO_ENCOSTO_MM, type LimitesDeArea } from './posicionamento';
 
 function pecaRetangular(
   id: string,
@@ -435,5 +436,47 @@ describe('executarEmFatias — a pausa a cada fatia, e não a cada peça', () =>
     );
     expect(resultado.pecasColocadas).toHaveLength(6);
     expect(pausas).toBe(2);
+  });
+});
+
+describe('executarNestingAutomatico — a distância entre os moldes é a pedida, e não a da grade de 10 mm', () => {
+  const vao = (a: Molde, b: Molde): number => {
+    const ca = retanguloEnvolvente(linhaDeCorteDaPeca(a));
+    const cb = retanguloEnvolvente(linhaDeCorteDaPeca(b));
+    return Math.max(cb.minX - ca.maxX, ca.minX - cb.maxX, cb.minY - ca.maxY, ca.minY - cb.maxY);
+  };
+
+  it('com 3 mm pedidos, os moldes ficam a 3 mm (mais a folga de 0,01 mm), e não a 10', () => {
+    const resultado = executarNestingAutomatico([pecaRetangular('A', 200, 200, { quantidade: 3 })], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }));
+    const [a, b, c] = resultado.pecasColocadas.map((p) => p.molde);
+    for (const [um, outro] of [[a!, b!], [b!, c!]] as const) {
+      expect(vao(um, outro)).toBeGreaterThanOrEqual(3 + FOLGA_DO_ENCOSTO_MM);
+      expect(vao(um, outro)).toBeLessThan(3.02);
+    }
+    // E a validação não reclama das peças que o encaixe pôs.
+    expect(validarProjeto(resultado.pecasColocadas.map((p) => p.molde), enfestoBase({ distanciaMinimaEntrePecasMm: 3 })).filter((p) => p.tipo === 'espacamento-insuficiente')).toEqual([]);
+  });
+
+  it('com a distância 0, os moldes ficam encostados (a menos de 0,01 mm)', () => {
+    const resultado = executarNestingAutomatico([pecaRetangular('A', 200, 200, { quantidade: 2 })], enfestoBase({ distanciaMinimaEntrePecasMm: 0 }));
+    const [a, b] = resultado.pecasColocadas.map((p) => p.molde);
+    expect(vao(a!, b!)).toBeGreaterThan(0);
+    expect(vao(a!, b!)).toBeLessThan(0.01);
+  });
+
+  it('com costura, a distância é entre as linhas de corte: os contornos ficam a 3 + 2 × 10 mm', () => {
+    const comCostura = pecaRetangular('A', 200, 200, { quantidade: 2, margemDeCosturaMm: 10 });
+    const resultado = executarNestingAutomatico([comCostura], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }));
+    const [a, b] = resultado.pecasColocadas.map((p) => p.molde);
+    expect(vao(a!, b!)).toBeGreaterThanOrEqual(3);
+    expect(vao(a!, b!)).toBeLessThan(3.02);
+    // A primeira fica com a linha de corte (e não o contorno) no começo da mesa.
+    expect(retanguloEnvolvente(linhaDeCorteDaPeca(a!)).minX).toBeCloseTo(0, 6);
+    expect(retanguloEnvolvente(a!.contorno).minX).toBeCloseTo(10, 6);
+    const contornos = Math.max(retanguloEnvolvente(b!.contorno).minX - retanguloEnvolvente(a!.contorno).maxX, retanguloEnvolvente(b!.contorno).minY - retanguloEnvolvente(a!.contorno).maxY);
+    expect(contornos).toBeGreaterThanOrEqual(23);
+    expect(contornos).toBeLessThan(23.02);
+    // O aproveitamento conta o tecido da linha de corte: 2 × 220 × 220 na largura de 1000 e comprimento de 220.
+    expect(resultado.aproveitamentoPercentual).toBeCloseTo(((2 * 220 * 220) / (1000 * 220)) * 100, 6);
   });
 });

@@ -5,7 +5,7 @@ import { registerStdFonts } from 'pdfkit';
 import Helvetica from 'pdfkit/standard-fonts/Helvetica';
 import blobStream from 'blob-stream';
 import type { Molde } from '../domain/molde';
-import { contornoDeCorte } from '../domain/molde';
+import { contornoDeCorte, linhaDeCorteDaPeca } from '../domain/molde';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
@@ -310,7 +310,7 @@ export interface OpcoesDeExportacaoDeEncaixe extends OpcoesDePagina {
 export function comprimentoDoEncaixeAImprimirMm(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): number {
   const comContorno = pecas.filter((p) => p.contorno.length > 0);
   if (comContorno.length === 0) return enfesto.comprimentoMm;
-  return Math.max(...comContorno.map((p) => retanguloEnvolvente(p.contorno).maxY)) + enfesto.margemDeExtremidadeMm;
+  return Math.max(...comContorno.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY)) + enfesto.margemDeExtremidadeMm;
 }
 
 /**
@@ -349,7 +349,7 @@ export async function gerarPdfDeEncaixe(
 
       // Só as peças que caem nesta folha.
       for (const peca of pecas) {
-        const caixa = retanguloEnvolvente(peca.contorno);
+        const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
         const naFolha =
           caixa.maxX >= origem.x && caixa.minX <= origem.x + larguraImprimivel && caixa.maxY >= origem.y && caixa.minY <= origem.y + alturaImprimivel;
         if (naFolha) desenharPeca(doc, peca, origem);
@@ -390,7 +390,8 @@ export async function gerarPdfDeMoldesIndividuais(
 
   let primeiraPagina = true;
   for (const peca of pecas) {
-    const bbox = retanguloEnvolvente(peca.contorno);
+    // A folha enquadra a linha de corte: enquadrando o contorno, a costura (que fica fora dele) saía cortada na beira.
+    const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
     const colunas = Math.max(1, Math.ceil(bbox.largura / larguraImprimivel));
     const linhas = Math.max(1, Math.ceil(bbox.altura / alturaImprimivel));
     const totalDePaginasDaPeca = colunas * linhas;

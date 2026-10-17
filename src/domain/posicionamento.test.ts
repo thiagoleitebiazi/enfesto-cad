@@ -94,8 +94,11 @@ describe('posicionarAsQueChegam: as peças importadas não ficam em cima das que
     const [posta] = posicionarAsQueChegam([chegando], [existente], enfestoBase());
 
     expect(posta!.id).toBe('b');
-    // O primeiro lugar livre, varrendo a largura: logo ao lado da que já existe, à distância mínima do enfesto (5 mm).
-    expect(canto(posta!)).toEqual({ x: 110, y: 0 });
+    // O primeiro lugar livre, varrendo a largura: logo ao lado da que já existe, encostada à distância mínima do
+    // enfesto (5 mm, mais a folga de 0,01 mm) — e não no passo seguinte da grade (110).
+    expect(canto(posta!).x).toBeGreaterThanOrEqual(105.01);
+    expect(canto(posta!).x).toBeLessThan(105.02);
+    expect(canto(posta!).y).toBe(0);
     expect(emCimaDeAlguma([existente, posta!])).toBe(false);
     const bbox = retanguloEnvolvente(posta!.contorno);
     expect(bbox.minX).toBeGreaterThanOrEqual(0);
@@ -130,5 +133,21 @@ describe('posicionarAsQueChegam: as peças importadas não ficam em cima das que
     expect(postas[0]).toEqual(pecaRetangular('b', 5, 5, 100, 100));
     expect(canto(postas[1]!)).toEqual({ x: 5, y: 125 });
     expect(posicionarAsQueChegam([], [pecaRetangular('a', 0, 0, 10, 10)], null)).toEqual([]);
+  });
+});
+
+describe('sugerirPosicaoSemSobreposicao — a peça com costura', () => {
+  it('a linha de corte (10 mm fora do contorno) é que fica à distância das outras, e dentro da mesa', () => {
+    const existente = pecaRetangular('a', 0, 0, 100, 100);
+    const comCostura: Molde = { ...pecaRetangular('b', 0, 0, 100, 100), margemDeCosturaMm: 10 };
+    const delta = sugerirPosicaoSemSobreposicao(comCostura, [existente], enfestoBase());
+    const contorno = retanguloEnvolvente(transladarContorno(comCostura.contorno, delta!));
+    // A linha de corte começa 5 mm (mais a folga) depois da outra peça; o contorno, mais 10 mm.
+    expect(contorno.minX).toBeGreaterThanOrEqual(100 + 5 + 10);
+    expect(contorno.minX).toBeLessThan(100 + 5 + 10 + 0.02);
+    // Sozinha, a linha de corte encosta no começo da mesa: o contorno fica 10 mm para dentro.
+    const sozinha = retanguloEnvolvente(transladarContorno(comCostura.contorno, sugerirPosicaoSemSobreposicao(comCostura, [], enfestoBase())!));
+    expect(sozinha.minX).toBeCloseTo(10, 6);
+    expect(sozinha.minY).toBeCloseTo(10, 6);
   });
 });

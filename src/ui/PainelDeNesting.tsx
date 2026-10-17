@@ -3,6 +3,7 @@ import { Sobreposicao } from './Sobreposicao';
 import type { ResultadoDeNesting } from '../domain/nesting';
 import { arestaDeSimetria } from '../domain/anotacoes';
 import { rotacoesNoEncaixe, type Molde } from '../domain/molde';
+import { lerMedida } from './medidas';
 
 export interface OpcoesAvancadasDeNesting {
   readonly limiteDeTempoMinutos?: number;
@@ -11,10 +12,14 @@ export interface OpcoesAvancadasDeNesting {
   readonly todosOsTamanhos?: boolean;
   /** As peças com linha de simetria entram no encaixe abertas, inteiras (só vem quando há peças assim). */
   readonly abrirSimetrias?: boolean;
+  /** A distância entre os moldes (mm), de linha de corte a linha de corte: passa a ser a do enfesto. */
+  readonly distanciaEntreMoldesMm: number;
 }
 
 interface PainelDeNestingProps {
   readonly pecas: readonly Molde[];
+  /** A distância entre os moldes configurada no enfesto (mm): o campo começa com ela. */
+  readonly distanciaEntreMoldesMm: number;
   /** O tecido de sentido único (pelo, estampa direcional): o encaixe não vira as peças. */
   readonly sentidoDoTecido?: { readonly nome: string; readonly sentido: string } | null;
   readonly executando: boolean;
@@ -29,6 +34,11 @@ interface PainelDeNestingProps {
 export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element {
   const [limiteDeTempoMinutos, setLimiteDeTempoMinutos] = useState('');
   const [aproveitamentoDesejadoPercentual, setAproveitamentoDesejadoPercentual] = useState('');
+  // A distância entre os moldes fica aqui, onde se pede o encaixe (antes, só no diálogo do Enfesto).
+  const [distanciaEntreMoldes, setDistanciaEntreMoldes] = useState(() => String(props.distanciaEntreMoldesMm).replace('.', ','));
+  const distanciaLida = lerMedida(distanciaEntreMoldes);
+  const erroDaDistancia =
+    distanciaEntreMoldes.trim() === '' || distanciaLida === null || distanciaLida < 0 ? 'A distância entre os moldes precisa ser um número de 0 mm para cima.' : null;
   const temGraduadas = props.pecas.some((p) => p.graduacao !== undefined);
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
@@ -40,6 +50,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   };
 
   function aoCalcular(): void {
+    if (erroDaDistancia !== null || distanciaLida === null) return;
     const minutos = Number(limiteDeTempoMinutos);
     const aproveitamento = Number(aproveitamentoDesejadoPercentual);
     props.onCalcular({
@@ -49,6 +60,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
         : {}),
       ...(temGraduadas ? { todosOsTamanhos } : {}),
       ...(temSimetria ? { abrirSimetrias } : {}),
+      distanciaEntreMoldesMm: distanciaLida,
     });
   }
 
@@ -62,6 +74,25 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               onSubmit={(e) => e.preventDefault()}
             >
               <p className="legenda-inline">Parâmetros gerais</p>
+              <label>
+                Distância entre os moldes (mm)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={distanciaEntreMoldes}
+                  aria-invalid={erroDaDistancia !== null}
+                  onChange={(e) => setDistanciaEntreMoldes(e.target.value)}
+                />
+              </label>
+              {erroDaDistancia && (
+                <p className="mensagem-de-erro" role="alert">
+                  {erroDaDistancia}
+                </p>
+              )}
+              <p className="nota-do-formulario">
+                Medida de linha de corte a linha de corte: cada molde é encostado nos vizinhos até essa distância. Fica
+                guardada no enfesto do projeto.
+              </p>
               <label>
                 Limite de tempo (minutos)
                 <input
@@ -156,7 +187,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               <button type="button" onClick={props.onFechar}>
                 Cancelar
               </button>
-              <button type="button" onClick={aoCalcular} className="botao-primario">
+              <button type="button" onClick={aoCalcular} className="botao-primario" disabled={erroDaDistancia !== null}>
                 Calcular encaixe
               </button>
             </div>

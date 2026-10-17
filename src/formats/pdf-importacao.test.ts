@@ -94,12 +94,13 @@ describe('importarPdf — ciclo completo de ida e volta (exportar → importar)'
     const blob = await gerarPdfDeMoldesIndividuais([original], { formato: 'A4', orientacao: 'retrato', margemMm: 10 });
     const resultado = importarPdf(await paraTextoLatin1(blob));
     const importada = resultado.pecas[0]!;
+    // A folha começa na linha de corte, 10 mm (a costura) antes do contorno: na página, tudo fica 10 mm adiante.
     expect(importada.piques).toHaveLength(1);
-    expect(importada.piques[0]!.posicao.x).toBeCloseTo(30, 0);
-    expect(importada.piques[0]!.posicao.y).toBeCloseTo(0, 0);
+    expect(importada.piques[0]!.posicao.x).toBeCloseTo(30 + 10, 0);
+    expect(importada.piques[0]!.posicao.y).toBeCloseTo(0 + 10, 0);
     expect(importada.marcas).toHaveLength(1);
-    expect(importada.marcas[0]!.x).toBeCloseTo(45, 0);
-    expect(importada.marcas[0]!.y).toBeCloseTo(45, 0);
+    expect(importada.marcas[0]!.x).toBeCloseTo(45 + 10, 0);
+    expect(importada.marcas[0]!.y).toBeCloseTo(45 + 10, 0);
   });
 
   it('o pique com formato e o pique interno voltam no lugar em que estavam', async () => {
@@ -168,7 +169,7 @@ describe('importarPdf — ciclo completo de ida e volta (exportar → importar)'
     expect(area(importada.contorno)).toBeCloseTo(500 * 500, 0);
     // A linha que só aparece em outra página (está no fim da peça) também volta.
     expect(importada.linhasInternas).toHaveLength(1);
-    expect(importada.linhasInternas[0]![0]!.y).toBeCloseTo(480, 1);
+    expect(importada.linhasInternas[0]![0]!.y).toBeCloseTo(480 + 10, 1); // + a costura: a folha começa na linha de corte
     expect(importada.quantidade).toBe(3);
   });
 
@@ -182,7 +183,8 @@ describe('importarPdf — ciclo completo de ida e volta (exportar → importar)'
 describe('importarPdf — a peça inteira volta pelo registro que vai na página dela', () => {
   const OPCOES = { formato: 'A4', orientacao: 'retrato', margemMm: 10 } as const;
   // A peça não começa na origem: o registro guarda as posições da página, e a importada volta encostada no canto.
-  const CANTO = ponto(100, 200);
+  // O canto da página é o da linha de corte: o contorno começa em (100, 200), e a costura de 10 mm, 10 mm antes.
+  const CANTO = ponto(90, 190);
   const base = (extras: Partial<Molde> = {}): Molde => ({
     ...criarMolde({ nome: 'Frente', referencia: 'R', tamanho: 'M', contorno: [ponto(100, 200), ponto(160, 200), ponto(160, 280), ponto(100, 280)], linhaDeFio: { inicio: ponto(130, 210), fim: ponto(130, 270) }, margemDeCosturaMm: 10 }, 'f'),
     ...extras,
@@ -231,7 +233,7 @@ describe('importarPdf — a peça inteira volta pelo registro que vai na página
     const semIds = (peca: Molde) => JSON.parse(JSON.stringify(peca, (chave, valor: unknown) => (chave === 'id' ? undefined : valor))) as unknown;
     expect(semIds(molde!)).toEqual(semIds(naPagina(original)));
     expect(molde!.piques.map((q) => q.formato)).toEqual([DO_V, EM_L, undefined]);
-    expect(molde!.marcas[0]!.posicao).toEqual(ponto(20, 50));
+    expect(molde!.marcas[0]!.posicao).toEqual(ponto(30, 60));
     expect(molde!.graduacao!.tamanhos).toEqual(['P', 'M', 'G']);
   });
 

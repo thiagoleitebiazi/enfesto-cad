@@ -1,4 +1,4 @@
-import { rotacionarMolde, espelharMolde, transladarMolde, rotacoesNoEncaixe, type Molde } from './molde';
+import { linhaDeCorteDaPeca, rotacionarMolde, espelharMolde, transladarMolde, rotacoesNoEncaixe, type Molde } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
@@ -86,7 +86,7 @@ function construirInstancias(pecas: readonly Molde[]): InstanciaParaColocar[] {
         idOriginal: peca.id,
         indiceCopia: i,
         moldeNaOrigem,
-        areaMm2: area(peca.contorno),
+        areaMm2: area(linhaDeCorteDaPeca(peca)),
       });
     }
   }
@@ -159,10 +159,11 @@ export function* passosDoNesting(
   let paradaPorTempoLimite = false;
   let paradaPorMetaDeAproveitamento = false;
 
+  // O que ocupa o tecido é a linha de corte (com a costura, fica fora do contorno): é por ela que as peças
+  // guardam a distância umas das outras, ficam dentro da área e entram nas contas.
   function aproveitamentoAtual(): number {
-    const comprimento =
-      colocadas.length === 0 ? 0 : Math.max(...colocadas.map((p) => retanguloEnvolvente(p.molde.contorno).maxY));
-    const areaOcupada = colocadas.reduce((soma, p) => soma + area(p.molde.contorno), 0);
+    const comprimento = contornosColocados.length === 0 ? 0 : Math.max(...contornosColocados.map((c) => retanguloEnvolvente(c).maxY));
+    const areaOcupada = contornosColocados.reduce((soma, c) => soma + area(c), 0);
     const areaDisponivel = enfesto.larguraUtilMm * comprimento;
     return areaDisponivel > 0 ? (areaOcupada / areaDisponivel) * 100 : 0;
   }
@@ -210,7 +211,7 @@ export function* passosDoNesting(
 
     for (const candidato of candidatos) {
       const delta = encontrarPrimeiraPosicaoValida(
-        candidato.contorno,
+        linhaDeCorteDaPeca(candidato),
         contornosColocados,
         limites,
         enfesto.distanciaMinimaEntrePecasMm,
@@ -219,7 +220,7 @@ export function* passosDoNesting(
       );
       if (delta) {
         const moldeFinal = transladarMolde(candidato, delta, `${instancia.idOriginal}#${instancia.indiceCopia}`);
-        contornosColocados.push(moldeFinal.contorno);
+        contornosColocados.push(linhaDeCorteDaPeca(moldeFinal));
         colocadas.push({ idOriginal: instancia.idOriginal, indiceCopia: instancia.indiceCopia, molde: moldeFinal });
         posicionada = true;
         break;
@@ -269,8 +270,8 @@ export function* passosDoNesting(
   }
 
   const comprimentoUtilizadoMm =
-    colocadas.length === 0 ? 0 : Math.max(...colocadas.map((p) => retanguloEnvolvente(p.molde.contorno).maxY));
-  const areaOcupadaMm2 = colocadas.reduce((soma, p) => soma + area(p.molde.contorno), 0);
+    contornosColocados.length === 0 ? 0 : Math.max(...contornosColocados.map((c) => retanguloEnvolvente(c).maxY));
+  const areaOcupadaMm2 = contornosColocados.reduce((soma, c) => soma + area(c), 0);
   const areaDisponivelMm2 = enfesto.larguraUtilMm * comprimentoUtilizadoMm;
   const aproveitamentoPercentual = areaDisponivelMm2 > 0 ? (areaOcupadaMm2 / areaDisponivelMm2) * 100 : 0;
 

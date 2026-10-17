@@ -254,3 +254,15 @@ describe('aproveitamentoDaMesa', () => {
     expect(aproveitamentoDaMesa([pecaRetangular('A', 'M', 100, 200)], null)).toBeNull();
   });
 });
+
+describe('o tecido gasto é o da linha de corte (com a costura)', () => {
+  it('a peça de 100 x 100 com 10 mm de costura ocupa 120 x 120 — no aproveitamento da mesa e no relatório', () => {
+    const comCostura = { ...pecaRetangular('A', 'M', 100, 100), margemDeCosturaMm: 10 };
+    // 120 x 120 = 14400 mm² numa faixa de 1000 de largura por 110 de comprimento (a linha de corte vai de -10 a 110).
+    expect(aproveitamentoDaMesa([comCostura], enfestoDeTeste())).toBeCloseTo((14400 / (1000 * 110)) * 100, 9);
+    const projeto = criarProjeto('P', 'p1', 'ENF-1', '2026-10-17T10:00:00.000Z', { pecas: [comCostura], tecido: tecidoDeTeste(), enfesto: enfestoDeTeste() });
+    const relatorio = gerarRelatorioDeProducao(projeto, '2026-10-17T10:00:00.000Z');
+    expect(relatorio.comprimentoUtilizadoMm).toBeCloseTo(110, 9);
+    expect(relatorio.aproveitamentoPercentual).toBeCloseTo((14400 / (1000 * 110)) * 100, 9);
+  });
+});
