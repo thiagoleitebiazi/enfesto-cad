@@ -9,6 +9,7 @@ import {
   direcaoServeDeTangente,
   espiral,
   FOLGA_ENTRE_VOLTAS_DA_ESPIRAL_MM,
+  MAXIMO_DE_PONTOS_DO_TRECHO,
   normalizarCurva,
   PASSO_DA_CURVA_MM,
   reamostrarLinha,
@@ -246,5 +247,14 @@ describe('curvaPorPontos com a direção pedida nas pontas', () => {
     for (const desvio of [86, -86, 180]) expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, a(desvio))).toBe(false);
     expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[1]!, ponto(0, 0))).toBe(false);
     expect(direcaoServeDeTangente(PONTOS[0]!, PONTOS[0]!, ponto(1, 0))).toBe(false);
+  });
+});
+
+describe('reamostrarLinha — o limite de pontos', () => {
+  it('aceita até o máximo e recusa acima dele, sem tentar montar a linha', () => {
+    const linha = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+    expect(reamostrarLinha(linha, MAXIMO_DE_PONTOS_DO_TRECHO)).toHaveLength(MAXIMO_DE_PONTOS_DO_TRECHO);
+    expect(() => reamostrarLinha(linha, MAXIMO_DE_PONTOS_DO_TRECHO + 1)).toThrow(/até 2000 pontos/);
+    expect(() => reamostrarLinha(linha, 1e9)).toThrow(/até 2000 pontos/);
   });
 });

@@ -8,6 +8,7 @@ import {
   filtrarProjetos,
   ordenarPorMaisRecente,
   gerarCodigoDeProjeto,
+  proximoCodigoDeProjeto,
   criarVariante,
   variantesDoProjeto,
   nomeDaProximaVariante,
@@ -231,5 +232,25 @@ describe('variantes do projeto', () => {
 
   it('sem o original na biblioteca, usa o nome do projeto aberto sem repetir o sufixo, e não repete um número já usado', () => {
     expect(nomeDaProximaVariante([variante2], variante2)).toBe('Camisa — variante 3');
+  });
+});
+
+describe('proximoCodigoDeProjeto', () => {
+  const hoje = '2026-10-17T12:00:00';
+  it('o primeiro do dia é o 001', () => {
+    expect(proximoCodigoDeProjeto(hoje, [])).toBe('ENF-20261017-001');
+  });
+
+  it('o seguinte ao maior do mesmo dia, sem contar os de outros dias', () => {
+    expect(proximoCodigoDeProjeto(hoje, ['ENF-20261017-001', 'ENF-20261017-004', 'ENF-20261016-009'])).toBe('ENF-20261017-005');
+    expect(proximoCodigoDeProjeto(hoje, ['ENF-20261016-009'])).toBe('ENF-20261017-001');
+  });
+
+  it('ignora o que não é um código do programa', () => {
+    expect(proximoCodigoDeProjeto(hoje, ['ENF-20261017-xyz', 'outra coisa', 'ENF-20261017-', 'ENF-20261017-2.5'])).toBe('ENF-20261017-001');
+  });
+
+  it('o maior vale, em qualquer ordem', () => {
+    expect(proximoCodigoDeProjeto(hoje, ['ENF-20261017-004', 'ENF-20261017-002'])).toBe('ENF-20261017-005');
   });
 });

@@ -1,4 +1,4 @@
-import { rotacionarMolde, espelharMolde, transladarMolde, rotacoesPermitidas, type Molde } from './molde';
+import { rotacionarMolde, espelharMolde, transladarMolde, rotacoesNoEncaixe, type Molde } from './molde';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
@@ -62,6 +62,8 @@ export interface OpcoesDeNesting {
   readonly limiteDeTempoMs?: number;
   /** Aproveitamento (%) desejado — atingido ou ultrapassado após colocar uma peça, o cálculo para (não tenta espremer mais peças além da meta pedida). */
   readonly aproveitamentoDesejadoPercentual?: number;
+  /** O tecido tem pelo ou estampa direcional: nenhuma peça é virada 180° nem 270° (ver `rotacoesNoEncaixe`). */
+  readonly tecidoDeSentidoUnico?: boolean;
 }
 
 interface InstanciaParaColocar {
@@ -92,11 +94,52 @@ function construirInstancias(pecas: readonly Molde[]): InstanciaParaColocar[] {
   return instancias.sort((a, b) => b.areaMm2 - a.areaMm2);
 }
 
+/** O encaixe inteiro, de uma vez (sem pausas): ver `passosDoNesting`. */
 export function executarNestingAutomatico(
   pecas: readonly Molde[],
   enfesto: ConfiguracaoDeEnfesto,
   opcoes: OpcoesDeNesting = {},
 ): ResultadoDeNesting {
+  const passos = passosDoNesting(pecas, enfesto, opcoes);
+  for (;;) {
+    const passo = passos.next();
+    if (passo.done) return passo.value;
+  }
+}
+
+/**
+ * Roda os passos do encaixe em fatias de tempo, com uma pausa entre elas. No
+ * Web Worker, a pausa é o que deixa o pedido de cancelar chegar: com o cálculo
+ * de uma vez só, a mensagem "cancelar" ficava na fila até o fim, e o botão
+ * Cancelar não fazia nada.
+ */
+export async function executarEmFatias<T>(
+  passos: Generator<unknown, T, void>,
+  pausar: () => Promise<void>,
+  fatiaMs = 30,
+  agora: () => number = Date.now,
+): Promise<T> {
+  let comecoDaFatia = agora();
+  for (;;) {
+    const passo = passos.next();
+    if (passo.done) return passo.value;
+    if (agora() - comecoDaFatia >= fatiaMs) {
+      await pausar();
+      comecoDaFatia = agora();
+    }
+  }
+}
+
+/**
+ * O encaixe peça por peça: cada `next()` tenta colocar uma peça (o valor é
+ * quantas já foram tentadas) e o último devolve o resultado. `deveContinuar`
+ * é consultado antes de cada peça.
+ */
+export function* passosDoNesting(
+  pecas: readonly Molde[],
+  enfesto: ConfiguracaoDeEnfesto,
+  opcoes: OpcoesDeNesting = {},
+): Generator<number, ResultadoDeNesting, void> {
   const inicio = (opcoes.agora ?? Date.now)();
   const passoMm = opcoes.passoMm ?? 10;
   const maxTentativasPorPeca = opcoes.maxTentativasPorPeca ?? 20000;
@@ -148,7 +191,7 @@ export function executarNestingAutomatico(
       continue;
     }
 
-    const angulos = rotacoesPermitidas(instancia.moldeNaOrigem.restricaoDeRotacao);
+    const angulos = rotacoesNoEncaixe(instancia.moldeNaOrigem.restricaoDeRotacao, opcoes.tecidoDeSentidoUnico ?? false);
     // Para cada ângulo permitido, tenta a orientação normal e, só se o
     // molde autorizar explicitamente (regra crítica da seção 5, nunca
     // presumida), a versão espelhada nesse mesmo ângulo — nunca inventa
@@ -192,6 +235,7 @@ export function executarNestingAutomatico(
     }
 
     opcoes.aoProgredir?.(colocadas.length + naoColocadas.length, instancias.length);
+    yield colocadas.length + naoColocadas.length;
 
     if (
       posicionada &&

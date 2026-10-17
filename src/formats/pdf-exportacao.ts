@@ -62,6 +62,29 @@ export function dimensoesDaPaginaMm(opcoes: OpcoesDePagina): { largura: number; 
     : { largura: base.largura, altura: base.altura };
 }
 
+/** O menor espaço (mm) que a margem pode deixar na folha, em cada direção: a régua de conferência tem 100 mm. */
+export const ESPACO_MINIMO_NA_FOLHA_MM = 110;
+
+/** A maior margem (mm, inteira) que ainda deixa o espaço mínimo na folha escolhida. */
+export function margemMaximaMm(opcoes: Pick<OpcoesDePagina, 'formato' | 'orientacao'>): number {
+  const pagina = dimensoesDaPaginaMm({ ...opcoes, margemMm: 0 });
+  return Math.floor((Math.min(pagina.largura, pagina.altura) - ESPACO_MINIMO_NA_FOLHA_MM) / 2);
+}
+
+/**
+ * A parte da folha que recebe o desenho, sem as margens. Erro se a margem não deixa espaço: antes, uma margem
+ * de metade da folha dava área zero, e o ladrilhamento virava um laço sem fim que travava o programa.
+ */
+export function areaImprimivelMm(opcoes: OpcoesDePagina): { largura: number; altura: number } {
+  if (!Number.isFinite(opcoes.margemMm) || opcoes.margemMm < 0) throw new Error('A margem precisa ser um número de 0 mm para cima.');
+  const maxima = margemMaximaMm(opcoes);
+  if (opcoes.margemMm > maxima) {
+    throw new Error(`A margem de ${opcoes.margemMm} mm não deixa espaço na folha ${opcoes.formato} (${opcoes.orientacao}): ela vai até ${maxima} mm.`);
+  }
+  const pagina = dimensoesDaPaginaMm(opcoes);
+  return { largura: pagina.largura - 2 * opcoes.margemMm, altura: pagina.altura - 2 * opcoes.margemMm };
+}
+
 function novoDocumento(opcoes: OpcoesDePagina): PDFKit.PDFDocument {
   const pagina = dimensoesDaPaginaMm(opcoes);
   return new PDFDocument({
@@ -249,7 +272,9 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, com
   const centroTexto = { x: mmParaPontos(bbox.minX - origem.x + 2), y: mmParaPontos(bbox.minY - origem.y + 2) };
   doc.save();
   doc.fillColor('#000000').fontSize(mmParaPontos(3));
-  doc.text(`${peca.nome} (${peca.referencia || '—'}) ${peca.tamanho}`, centroTexto.x, centroTexto.y);
+  // Sem quebra de linha: com ela, o texto que cai fora da folha (a peça de outra folha do ladrilhado) fazia o
+  // PDFKit abrir folhas novas sozinho — folhas em branco no meio, e a numeração da remontagem errada.
+  doc.text(`${peca.nome} (${peca.referencia || '—'}) ${peca.tamanho}`, centroTexto.x, centroTexto.y, { lineBreak: false });
   doc.restore();
 
   if (comRegistro) doc.addContent(registroDaPeca(peca, origem));
@@ -278,6 +303,17 @@ export interface OpcoesDeExportacaoDeEncaixe extends OpcoesDePagina {
 }
 
 /**
+ * Até onde o PDF do encaixe vai no comprimento: até a ponta da peça mais distante, mais a margem de
+ * extremidade. Antes ia sempre até o fim da mesa — numa mesa de 10 m com um risco de 3 m, mais de cem folhas
+ * em branco. Sem peças, a mesa inteira.
+ */
+export function comprimentoDoEncaixeAImprimirMm(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): number {
+  const comContorno = pecas.filter((p) => p.contorno.length > 0);
+  if (comContorno.length === 0) return enfesto.comprimentoMm;
+  return Math.max(...comContorno.map((p) => retanguloEnvolvente(p.contorno).maxY)) + enfesto.margemDeExtremidadeMm;
+}
+
+/**
  * PDF do encaixe completo (tipo A da seção 8): tecido, moldes posicionados,
  * limites, dimensões, comprimento e quantidade de camadas. Se a área
  * configurada for maior que uma folha, o resultado sai em várias páginas
@@ -288,13 +324,12 @@ export async function gerarPdfDeEncaixe(
   enfesto: ConfiguracaoDeEnfesto,
   opcoes: OpcoesDeExportacaoDeEncaixe,
 ): Promise<Blob> {
+  const { largura: larguraImprimivel, altura: alturaImprimivel } = areaImprimivelMm(opcoes);
   const doc = novoDocumento(opcoes);
   const pagina = dimensoesDaPaginaMm(opcoes);
-  const larguraImprimivel = pagina.largura - 2 * opcoes.margemMm;
-  const alturaImprimivel = pagina.altura - 2 * opcoes.margemMm;
 
   const larguraTotal = enfesto.larguraUtilMm;
-  const alturaTotal = enfesto.comprimentoMm;
+  const alturaTotal = comprimentoDoEncaixeAImprimirMm(pecas, enfesto);
   const colunas = Math.max(1, Math.ceil(larguraTotal / larguraImprimivel));
   const linhas = Math.max(1, Math.ceil(alturaTotal / alturaImprimivel));
   const totalDePaginas = colunas * linhas;
@@ -312,14 +347,20 @@ export async function gerarPdfDeEncaixe(
       doc.clip();
       doc.translate(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm));
 
-      for (const peca of pecas) desenharPeca(doc, peca, origem);
+      // Só as peças que caem nesta folha.
+      for (const peca of pecas) {
+        const caixa = retanguloEnvolvente(peca.contorno);
+        const naFolha =
+          caixa.maxX >= origem.x && caixa.minX <= origem.x + larguraImprimivel && caixa.maxY >= origem.y && caixa.minY <= origem.y + alturaImprimivel;
+        if (naFolha) desenharPeca(doc, peca, origem);
+      }
 
       doc.restore();
 
       doc.save();
       doc.fontSize(mmParaPontos(3)).fillColor('#000000');
       doc.text(
-        `Página ${indicePagina}/${totalDePaginas} (linha ${linha + 1}, coluna ${coluna + 1}) — ${opcoes.tecidoNome ?? 'tecido não identificado'} — largura útil ${larguraTotal} mm, comprimento ${alturaTotal} mm, ${enfesto.quantidadeDeCamadas} camada(s)`,
+        `Página ${indicePagina}/${totalDePaginas} (linha ${linha + 1}, coluna ${coluna + 1}) — ${opcoes.tecidoNome ?? 'tecido não identificado'} — largura útil ${larguraTotal} mm, comprimento usado ${Math.round(alturaTotal)} mm (mesa de ${enfesto.comprimentoMm} mm), ${enfesto.quantidadeDeCamadas} camada(s)`,
         mmParaPontos(2),
         mmParaPontos(2),
         { width: mmParaPontos(pagina.largura - 4) },
@@ -343,10 +384,9 @@ export async function gerarPdfDeMoldesIndividuais(
   pecas: readonly Molde[],
   opcoes: OpcoesDePagina,
 ): Promise<Blob> {
+  const { largura: larguraImprimivel, altura: alturaImprimivel } = areaImprimivelMm(opcoes);
   const doc = novoDocumento(opcoes);
   const pagina = dimensoesDaPaginaMm(opcoes);
-  const larguraImprimivel = pagina.largura - 2 * opcoes.margemMm;
-  const alturaImprimivel = pagina.altura - 2 * opcoes.margemMm;
 
   let primeiraPagina = true;
   for (const peca of pecas) {

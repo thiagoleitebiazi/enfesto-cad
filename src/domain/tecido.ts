@@ -72,6 +72,17 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
   };
 }
 
+/**
+ * O tecido tem um sentido só (pelo, ou estampa direcional): uma peça virada fica com o pelo ou o desenho
+ * ao contrário das outras. Devolve o que dá o sentido ("tem pelo", "tem estampa direcional"), ou `null`.
+ */
+export function sentidoUnicoDoTecido(tecido: Tecido | null | undefined): string | null {
+  if (!tecido) return null;
+  if (tecido.temPelo && tecido.direcional) return 'tem pelo e estampa direcional';
+  if (tecido.temPelo) return 'tem pelo';
+  return tecido.direcional ? 'tem estampa direcional' : null;
+}
+
 /** Verdadeiro se o tecido impõe alguma restrição de orientação (seção 5: direcional, listrado, xadrez ou com pelo). */
 export function tecidoExigeRespeitoDeOrientacao(tecido: Tecido): boolean {
   return tecido.direcional || tecido.temPelo || tecido.padrao !== 'liso';

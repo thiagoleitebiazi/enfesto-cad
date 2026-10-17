@@ -822,6 +822,15 @@ button:focus-visible {
   background: #eef2f7;
 }
 
+.estado-do-salvamento {
+  color: #2e7d32;
+}
+
+.estado-do-salvamento.salvamento-falhou {
+  color: #c62828;
+  font-weight: 600;
+}
+
 .indicador-de-validacao {
   border: none;
   background: none;
@@ -974,6 +983,13 @@ button:focus-visible {
   color: #7b5800;
   max-height: 160px;
   overflow-y: auto;
+}
+
+/* O salvamento que falhou: vermelho, para não passar por um aviso qualquer. */
+.faixa-de-avisos.faixa-de-erro {
+  background: #ffebee;
+  border-bottom-color: #e57373;
+  color: #8e1b1b;
 }
 
 .faixa-de-avisos ul {

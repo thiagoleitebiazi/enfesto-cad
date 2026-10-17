@@ -1,6 +1,7 @@
 import { distancia, anguloEmGraus, type Ponto2D } from '../core/geometria';
 import { valorDaReguaEmUnidade, type TransformacaoDeTela, type UnidadeDeRegua } from './transformacaoDeTela';
 import type { ProblemaDeValidacao } from '../domain/validacao';
+import type { EstadoDoSalvamento } from './salvamento';
 
 interface BarraDeStatusProps {
   readonly cursorMundo: Ponto2D | null;
@@ -16,6 +17,8 @@ interface BarraDeStatusProps {
   readonly aproveitamentoPercentual?: number | null;
   /** Unidade escolhida no canto das réguas: as medidas da barra seguem a mesma. */
   readonly unidade: UnidadeDeRegua;
+  /** O último salvamento; sem nenhum ainda, nada aparece. */
+  readonly salvamento?: EstadoDoSalvamento | null;
 }
 
 /** Medida em mm escrita na unidade das réguas; em cm, duas casas dão a mesma precisão de 0,1 mm. */
@@ -64,6 +67,14 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
         Aproveitamento da mesa:{' '}
         {props.aproveitamentoPercentual != null ? `${props.aproveitamentoPercentual.toFixed(1)}%` : '—'}
       </span>
+      {props.salvamento &&
+        (props.salvamento.ok ? (
+          <span className="estado-do-salvamento">Salvo às {props.salvamento.hora}</span>
+        ) : (
+          <span className="estado-do-salvamento salvamento-falhou" title={props.salvamento.erro}>
+            Não foi salvo
+          </span>
+        ))}
       <button
         className={`indicador-de-validacao ${erros > 0 ? 'tem-erro' : avisos > 0 ? 'tem-aviso' : ''}`}
         onClick={props.onAlternarValidacao}

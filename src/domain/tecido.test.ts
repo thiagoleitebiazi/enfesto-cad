@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { criarTecido, tecidoExigeRespeitoDeOrientacao, type DadosDeNovoTecido } from './tecido';
+import { criarTecido, sentidoUnicoDoTecido, tecidoExigeRespeitoDeOrientacao, type DadosDeNovoTecido } from './tecido';
 
 function dadosBase(sobrescrever: Partial<DadosDeNovoTecido> = {}): DadosDeNovoTecido {
   return {
@@ -84,5 +84,16 @@ describe('tecidoExigeRespeitoDeOrientacao', () => {
   it('verdadeiro quando padrão é listrado ou xadrez', () => {
     expect(tecidoExigeRespeitoDeOrientacao(criarTecido(dadosBase({ padrao: 'listrado' }), 't4'))).toBe(true);
     expect(tecidoExigeRespeitoDeOrientacao(criarTecido(dadosBase({ padrao: 'xadrez' }), 't5'))).toBe(true);
+  });
+});
+
+describe('sentidoUnicoDoTecido', () => {
+  const base: DadosDeNovoTecido = { nome: 'T', referencia: '', larguraTotalMm: 1500, larguraUtilMm: 1500 };
+  it('diz o que dá sentido ao tecido, ou nada', () => {
+    expect(sentidoUnicoDoTecido(null)).toBeNull();
+    expect(sentidoUnicoDoTecido(criarTecido(base, 't'))).toBeNull();
+    expect(sentidoUnicoDoTecido(criarTecido({ ...base, temPelo: true }, 't'))).toBe('tem pelo');
+    expect(sentidoUnicoDoTecido(criarTecido({ ...base, direcional: true }, 't'))).toBe('tem estampa direcional');
+    expect(sentidoUnicoDoTecido(criarTecido({ ...base, direcional: true, temPelo: true }, 't'))).toBe('tem pelo e estampa direcional');
   });
 });

@@ -1,5 +1,5 @@
 import type { Molde, RestricaoDeRotacao } from '../domain/molde';
-import { dimensoesDoMolde, rotacoesPermitidas } from '../domain/molde';
+import { dimensoesDoMolde, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
 import { retanguloEnvolvente, type Contorno } from '../core/geometria';
 
 interface PainelDePecasProps {
@@ -119,11 +119,13 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
           <input
             type="number"
             min={1}
+            max={MAXIMO_DE_COPIAS_DA_PECA}
             step={1}
             value={peca.quantidade}
             onChange={(e) => {
               const valor = Number.parseInt(e.target.value, 10);
-              if (Number.isFinite(valor) && valor >= 1) props.onAlterar({ quantidade: valor });
+              // Sem teto, um número enorme (um zero a mais, digitado sem querer) travava o encaixe automático.
+              if (Number.isFinite(valor) && valor >= 1 && valor <= MAXIMO_DE_COPIAS_DA_PECA) props.onAlterar({ quantidade: valor });
             }}
           />
         </label>

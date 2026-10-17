@@ -25,6 +25,7 @@ import {
   type FalhaDeAbertura,
   type ModoDeAbertura,
 } from '../src/domain/abertura';
+import { criarFilaDeGravacao, gravarSemCorromper, idDeProjetoValido } from './gravacao';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -548,15 +549,21 @@ ipcMain.handle('listar-projetos', async () => {
   return projetos;
 });
 
+// Um salvamento de cada vez por projeto, e cada um gravado sem deixar o arquivo pela metade.
+const filaDeGravacao = criarFilaDeGravacao();
+
 ipcMain.handle('salvar-projeto', async (_evento, projeto: { id: string }) => {
+  if (!idDeProjetoValido(projeto?.id)) throw new Error('Projeto sem um código válido para virar nome de arquivo.');
   const dir = await garantirDiretorioDeProjetos();
-  await writeFile(path.join(dir, `${projeto.id}.json`), JSON.stringify(projeto, null, 2), 'utf-8');
+  const conteudo = JSON.stringify(projeto, null, 2);
+  await filaDeGravacao(projeto.id, () => gravarSemCorromper(path.join(dir, `${projeto.id}.json`), conteudo));
   return true;
 });
 
 ipcMain.handle('excluir-projeto', async (_evento, id: string) => {
+  if (!idDeProjetoValido(id)) throw new Error('Código de projeto inválido.');
   const dir = await garantirDiretorioDeProjetos();
-  await unlink(path.join(dir, `${id}.json`));
+  await filaDeGravacao(id, () => unlink(path.join(dir, `${id}.json`)));
   return true;
 });
 
@@ -582,7 +589,7 @@ async function lerListaDeProgramas(): Promise<Programa[]> {
 
 async function gravarListaDeProgramas(lista: readonly Programa[]): Promise<void> {
   await mkdir(app.getPath('userData'), { recursive: true });
-  await writeFile(arquivoDeProgramas(), JSON.stringify(lista, null, 2), 'utf-8');
+  await gravarSemCorromper(arquivoDeProgramas(), JSON.stringify(lista, null, 2));
 }
 
 function novoIdDePrograma(): string {

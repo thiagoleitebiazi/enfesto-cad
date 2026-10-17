@@ -53,6 +53,16 @@ export function DialogoDeImportacaoDeContornos(props: DialogoDeImportacaoDeConto
     selecionados.length > 0 &&
     selecionados.every((c) => (itens[c.id]?.nome ?? '').trim() !== '' && (itens[c.id]?.direcao ?? '') !== '');
 
+  // O botão desligado dizia nada: agora a janela diz o que falta.
+  const semNome = selecionados.filter((c) => (itens[c.id]?.nome ?? '').trim() === '').length;
+  const semFio = selecionados.filter((c) => (itens[c.id]?.direcao ?? '') === '').length;
+  const oQueFalta =
+    selecionados.length === 0
+      ? 'Marque pelo menos um contorno para importar.'
+      : semNome > 0 || semFio > 0
+        ? `Falta escolher, nos contornos marcados: ${[semNome > 0 ? `o nome (${semNome})` : '', semFio > 0 ? `a direção do fio (${semFio})` : ''].filter(Boolean).join(' e ')}.`
+        : null;
+
   const atualizar = (id: string, parcial: Partial<EstadoDoItem>) =>
     setItens((atual) => ({ ...atual, [id]: { ...atual[id]!, ...parcial } }));
 
@@ -134,6 +144,7 @@ export function DialogoDeImportacaoDeContornos(props: DialogoDeImportacaoDeConto
           );
         })}
 
+        {fatorValido && oQueFalta && <p className="nota-do-formulario">{oQueFalta}</p>}
         <div className="acoes-da-sobreposicao">
           <button onClick={props.onCancelar}>Cancelar</button>
           <button className="botao-primario" onClick={confirmar} disabled={!podeConfirmar}>

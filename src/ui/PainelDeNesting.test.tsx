@@ -107,3 +107,32 @@ describe('PainelDeNesting: peças com linha de simetria', () => {
     expect(screen.queryByLabelText(/Abrir as peças com linha de simetria/)).not.toBeInTheDocument();
   });
 });
+
+describe('PainelDeNesting: o tecido de sentido único', () => {
+  afterEach(() => cleanup());
+
+  it('a tabela mostra as rotações que o encaixe vai usar, e a nota diz por quê', () => {
+    const livre = { ...molde('Frente', 'f'), restricaoDeRotacao: { permite180: true, permite90e270: true } };
+    render(
+      <PainelDeNesting
+        pecas={[livre]}
+        sentidoDoTecido={{ nome: 'Veludo', sentido: 'tem pelo' }}
+        executando={false}
+        progresso={null}
+        resultado={null}
+        onCalcular={() => {}}
+        onCancelar={() => {}}
+        onAplicar={() => {}}
+        onFechar={() => {}}
+      />,
+    );
+    expect(within(linhaDa('Frente')).getByText('0°, 90°')).toBeInTheDocument();
+    expect(screen.getByText(/O tecido “Veludo” tem pelo: o encaixe não vira peças 180° nem 270°/)).toBeInTheDocument();
+  });
+
+  it('sem sentido único, as rotações da peça, todas', () => {
+    renderizar([{ ...molde('Frente', 'f'), restricaoDeRotacao: { permite180: true, permite90e270: true } }]);
+    expect(within(linhaDa('Frente')).getByText('0°, 90°, 180°, 270°')).toBeInTheDocument();
+    expect(screen.queryByText(/não vira peças/)).toBeNull();
+  });
+});

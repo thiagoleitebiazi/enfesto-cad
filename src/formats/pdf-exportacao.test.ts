@@ -10,6 +10,9 @@ import {
   mmParaPontos,
   dimensoesDaPaginaMm,
   PONTOS_POR_MM,
+  areaImprimivelMm,
+  comprimentoDoEncaixeAImprimirMm,
+  margemMaximaMm,
 } from './pdf-exportacao';
 
 // O PDF é gerado com compress:false deliberadamente (ver comentário no
@@ -274,5 +277,52 @@ describe('gerarPdfDeEncaixe — estrutura e escala', () => {
   it('rejeita peças fora do conteúdo sem lançar exceção (não crasha com projeto vazio)', async () => {
     const blob = await gerarPdfDeEncaixe([], enfestoBase(), { formato: 'A4', orientacao: 'retrato', margemMm: 10 });
     expect(blob.size).toBeGreaterThan(0);
+  });
+});
+
+describe('a margem da folha', () => {
+  it('a maior margem deixa 110 mm de folha no lado menor', () => {
+    expect(margemMaximaMm({ formato: 'A4', orientacao: 'retrato' })).toBe(50);
+    expect(margemMaximaMm({ formato: 'A4', orientacao: 'paisagem' })).toBe(50);
+    expect(margemMaximaMm({ formato: 'A3', orientacao: 'retrato' })).toBe(93);
+  });
+
+  it('a área que recebe o desenho é a folha sem as margens', () => {
+    expect(areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: 10 })).toEqual({ largura: 190, altura: 277 });
+    expect(areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: 50 })).toEqual({ largura: 110, altura: 197 });
+  });
+
+  it('a margem que não deixa espaço é recusada, com o motivo', () => {
+    expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: 51 })).toThrow(/vai até 50 mm/);
+    expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: -1 })).toThrow(/de 0 mm para cima/);
+    expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: Number.NaN })).toThrow(/de 0 mm para cima/);
+  });
+
+  it('com a margem de metade da folha, o PDF é recusado na hora — antes o ladrilhamento não acabava', async () => {
+    const opcoes = { formato: 'A4' as const, orientacao: 'retrato' as const, margemMm: 105 };
+    await expect(gerarPdfDeEncaixe([pecaRetangular('A', 100, 100)], enfestoBase(), opcoes)).rejects.toThrow(/vai até 50 mm/);
+    await expect(gerarPdfDeMoldesIndividuais([pecaRetangular('A', 100, 100)], opcoes)).rejects.toThrow(/vai até 50 mm/);
+  });
+});
+
+describe('gerarPdfDeEncaixe — só até onde há peças', () => {
+  const paginas = async (blob: Blob) => ((await paraTexto(blob)).match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+  const opcoes = { formato: 'A4' as const, orientacao: 'retrato' as const, margemMm: 10 };
+  const mesa = enfestoBase({ larguraUtilMm: 1500, comprimentoMm: 3000, margemDeExtremidadeMm: 20 } as Partial<ConfiguracaoDeEnfesto>);
+
+  it('o comprimento impresso vai até a ponta da peça mais distante, mais a margem de extremidade', () => {
+    expect(comprimentoDoEncaixeAImprimirMm([pecaRetangular('P1', 50, 50)], mesa)).toBe(70);
+    expect(comprimentoDoEncaixeAImprimirMm([], mesa)).toBe(3000);
+  });
+
+  it('a mesa de 3 m com uma peça perto do começo: uma faixa de folhas, e não a mesa inteira', async () => {
+    // 1500 mm de largura em folhas de 190 mm: 8 colunas; 70 mm de comprimento: 1 linha.
+    expect(await paginas(await gerarPdfDeEncaixe([pecaRetangular('P1', 50, 50)], mesa, opcoes))).toBe(8);
+  });
+
+  it('a peça lá no fim leva o PDF até ela', async () => {
+    const longe = criarMolde({ nome: 'P2', referencia: '', tamanho: 'M', contorno: [ponto(0, 2850), ponto(50, 2850), ponto(50, 2900), ponto(0, 2900)], linhaDeFio: { inicio: ponto(25, 2855), fim: ponto(25, 2895) } }, 'P2');
+    // 2920 mm em folhas de 277 mm: 11 linhas.
+    expect(await paginas(await gerarPdfDeEncaixe([longe], mesa, opcoes))).toBe(8 * 11);
   });
 });

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
-import type { FormatoDePagina, OrientacaoDePagina } from '../formats/pdf-exportacao';
+import { margemMaximaMm, type FormatoDePagina, type OrientacaoDePagina } from '../formats/pdf-exportacao';
+import { lerMedida } from './medidas';
 
 export type TipoDeExportacaoPdf = 'encaixe-completo' | 'moldes-individuais';
 
@@ -25,6 +26,15 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
   const [formato, setFormato] = useState<FormatoDePagina>('A4');
   const [orientacao, setOrientacao] = useState<OrientacaoDePagina>('retrato');
   const [margemMm, setMargemMm] = useState('10');
+  // A margem que não deixa espaço na folha travava o programa ao gerar; agora é recusada aqui.
+  const margem = lerMedida(margemMm);
+  const maxima = margemMaximaMm({ formato, orientacao });
+  const erroDaMargem =
+    margem === null || margemMm.trim() === '' || margem < 0
+      ? 'A margem precisa ser um número de 0 mm para cima.'
+      : margem > maxima
+        ? `Nesta folha, a margem vai até ${maxima} mm.`
+        : null;
 
   return (
     <Sobreposicao titulo="Exportar PDF vetorial (escala 1:1)" onFechar={props.onFechar}>
@@ -56,8 +66,19 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
         </label>
         <label>
           Margem (mm)
-          <input type="number" min={0} value={margemMm} onChange={(e) => setMargemMm(e.target.value)} />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={margemMm}
+            aria-invalid={erroDaMargem !== null}
+            onChange={(e) => setMargemMm(e.target.value)}
+          />
         </label>
+        {erroDaMargem && (
+          <p className="mensagem-de-erro" role="alert">
+            {erroDaMargem}
+          </p>
+        )}
         <p className="legenda-do-diagrama">
           Escala real 1:1. Áreas maiores que uma folha saem em várias páginas (ladrilhadas, com etiqueta de posição
           para remontagem). Uma régua de referência de 100 mm é incluída para conferir a escala após imprimir.
@@ -69,10 +90,10 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
           <button
             type="button"
             className="botao-primario"
-            disabled={props.gerando}
-            onClick={() =>
-              props.onExportar({ tipo, formato, orientacao, margemMm: Number.parseFloat(margemMm) || 0 })
-            }
+            disabled={props.gerando || erroDaMargem !== null || margem === null}
+            onClick={() => {
+              if (erroDaMargem === null && margem !== null) props.onExportar({ tipo, formato, orientacao, margemMm: margem });
+            }}
           >
             {props.gerando ? 'Gerando...' : 'Exportar'}
           </button>

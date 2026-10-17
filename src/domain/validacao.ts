@@ -1,6 +1,7 @@
 import type { Molde } from './molde';
 import { rotacaoEhPermitida } from './molde';
-import type { ConfiguracaoDeEnfesto } from './enfesto';
+import { enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
+import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
   area,
@@ -30,7 +31,9 @@ export type TipoDeProblema =
   | 'rotacao-proibida'
   | 'escala-suspeita'
   | 'linha-solta'
-  | 'linha-que-sai';
+  | 'linha-que-sai'
+  | 'mais-largo-que-o-tecido'
+  | 'sentido-do-tecido';
 
 export type SeveridadeDoProblema = 'erro' | 'aviso';
 
@@ -233,6 +236,63 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
   return problemas;
 }
 
+function mm(valor: number): string {
+  return `${Number(valor.toFixed(1)).toString().replace('.', ',')} mm`;
+}
+
+/**
+ * O que depende do tecido (as opções do diálogo Tecido; antes nenhuma delas tinha efeito): a mesa mais larga
+ * que o tecido, e o tecido de sentido único (pelo, estampa direcional) com o enfesto que vira o tecido a cada
+ * camada, ou com peças viradas.
+ */
+function validarTecido(
+  pecas: readonly Molde[],
+  enfesto: ConfiguracaoDeEnfesto | null,
+  tecido: Tecido,
+  folgaMm: number,
+): ProblemaDeValidacao[] {
+  const problemas: ProblemaDeValidacao[] = [];
+  if (enfesto && enfesto.larguraUtilMm > tecido.larguraUtilMm + 1e-9) {
+    // O X do mundo é a largura do tecido, a partir de 0.
+    const fora = pecas.filter((p) => p.contorno.length > 0 && retanguloEnvolvente(p.contorno).maxX > tecido.larguraUtilMm + folgaMm);
+    const larguras = `A mesa (o enfesto) tem ${mm(enfesto.larguraUtilMm)} de largura útil, e o tecido "${tecido.nome}", ${mm(tecido.larguraUtilMm)}`;
+    problemas.push({
+      tipo: 'mais-largo-que-o-tecido',
+      severidade: fora.length > 0 ? 'erro' : 'aviso',
+      mensagem:
+        fora.length === 0
+          ? `${larguras}: ajuste a largura em Encaixe > Enfesto (ou o tecido), para nenhuma peça ir além do tecido.`
+          : `${larguras}: ${fora.length === 1 ? `a peça "${fora[0]!.nome}" passa` : `${fora.length} peças passam`} da largura do tecido.`,
+      pecasEnvolvidasIds: fora.map((p) => p.id),
+    });
+  }
+  const sentido = sentidoUnicoDoTecido(tecido);
+  if (sentido) {
+    const oQue = tecido.temPelo ? 'o pelo' : 'o desenho';
+    if (enfesto && enfestoInverteFaceEmAlgumaCamada(enfesto)) {
+      problemas.push({
+        tipo: 'sentido-do-tecido',
+        severidade: 'aviso',
+        mensagem: `O tecido "${tecido.nome}" ${sentido}, e o enfesto zigue-zague vira o tecido a cada camada: nas camadas alternadas ${oQue} fica ao contrário. Use outro tipo de enfesto, ou confirme que isso é o desejado.`,
+        pecasEnvolvidasIds: [],
+      });
+    }
+    const viradas = pecas.filter((p) => {
+      const angulo = ((p.anguloDeRotacaoGraus % 360) + 360) % 360;
+      return Math.abs(angulo - 180) < 1e-6 || Math.abs(angulo - 270) < 1e-6;
+    });
+    if (viradas.length > 0) {
+      problemas.push({
+        tipo: 'sentido-do-tecido',
+        severidade: 'aviso',
+        mensagem: `O tecido "${tecido.nome}" ${sentido}: ${viradas.length === 1 ? `a peça "${viradas[0]!.nome}" está virada` : `${viradas.length} peças estão viradas`} (180° ou 270°), com ${oQue} ao contrário das outras.`,
+        pecasEnvolvidasIds: viradas.map((p) => p.id),
+      });
+    }
+  }
+  return problemas;
+}
+
 function validarRotacoes(pecas: readonly Molde[]): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
   for (const peca of pecas) {
@@ -332,6 +392,7 @@ export function validarProjeto(
   pecas: readonly Molde[],
   enfesto: ConfiguracaoDeEnfesto | null,
   tolerancias: ToleranciasDeValidacao = TOLERANCIAS_PADRAO,
+  tecido: Tecido | null = null,
 ): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [
     ...validarContornosIndividuais(pecas),
@@ -343,6 +404,7 @@ export function validarProjeto(
   if (enfesto) {
     problemas.push(...validarLimitesDoTecido(pecas, enfesto, tolerancias.folgaNosLimitesMm));
   }
+  if (tecido) problemas.push(...validarTecido(pecas, enfesto, tecido, tolerancias.folgaNosLimitesMm));
   return problemas;
 }
 

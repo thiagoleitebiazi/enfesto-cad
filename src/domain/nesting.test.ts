@@ -9,7 +9,7 @@ import {
 } from '../core/geometria';
 import { criarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
-import { executarNestingAutomatico } from './nesting';
+import { executarEmFatias, executarNestingAutomatico, passosDoNesting } from './nesting';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
 
 function pecaRetangular(
@@ -334,5 +334,106 @@ describe('executarNestingAutomatico — meta de aproveitamento', () => {
     const resultado = executarNestingAutomatico(pecas, enfestoBase());
     expect(resultado.paradaPorMetaDeAproveitamento).toBe(false);
     expect(resultado.pecasColocadas).toHaveLength(3);
+  });
+});
+
+describe('passosDoNesting e executarEmFatias — o Cancelar que chega no meio do cálculo', () => {
+  const pecas = () => [pecaRetangular('A', 200, 200, { quantidade: 6 })];
+
+  it('os passos, rodados até o fim, dão o mesmo resultado do cálculo de uma vez', () => {
+    const passos = passosDoNesting(pecas(), enfestoBase(), { agora: () => 0 });
+    let quantos = 0;
+    let passo = passos.next();
+    while (!passo.done) {
+      quantos++;
+      passo = passos.next();
+    }
+    expect(quantos).toBe(6);
+    const deUmaVez = executarNestingAutomatico(pecas(), enfestoBase(), { agora: () => 0 });
+    expect(passo.value).toEqual(deUmaVez);
+  });
+
+  it('em fatias, o pedido de cancelar feito numa pausa para o cálculo: resultado parcial', async () => {
+    let cancelado = false;
+    let pausas = 0;
+    let relogio = 0;
+    const passos = passosDoNesting(pecas(), enfestoBase(), { deveContinuar: () => !cancelado, agora: () => 0 });
+    const resultado = await executarEmFatias(
+      passos,
+      async () => {
+        pausas++;
+        // É aqui, na pausa, que a mensagem cancelar chega ao Worker.
+        if (pausas === 2) cancelado = true;
+      },
+      10,
+      () => (relogio += 10),
+    );
+    expect(resultado.interrompido).toBe(true);
+    expect(resultado.pecasColocadas).toHaveLength(2);
+    expect(resultado.pecasNaoColocadas).toHaveLength(4);
+  });
+
+  it('sem pausa (cálculo curto), termina sem esperar', async () => {
+    let pausas = 0;
+    const resultado = await executarEmFatias(
+      passosDoNesting(pecas(), enfestoBase(), { agora: () => 0 }),
+      async () => {
+        pausas++;
+      },
+      1e9,
+      () => 0,
+    );
+    expect(pausas).toBe(0);
+    expect(resultado.pecasColocadas).toHaveLength(6);
+  });
+});
+
+describe('executarNestingAutomatico — tecido de sentido único (pelo, estampa direcional)', () => {
+  // Dois triângulos retângulos de catetos 100 numa mesa de 110 x 110: o primeiro fica no canto; o segundo
+  // só cabe virado 180° (o ângulo reto no canto oposto), do outro lado da hipotenusa.
+  const triangulo = (id: string, restricaoDeRotacao: Molde['restricaoDeRotacao']): Molde =>
+    criarMolde(
+      {
+        nome: id,
+        referencia: '',
+        tamanho: 'M',
+        contorno: [ponto(0, 0), ponto(100, 0), ponto(0, 100)],
+        linhaDeFio: { inicio: ponto(10, 20), fim: ponto(10, 80) },
+        restricaoDeRotacao,
+      },
+      id,
+    );
+  const mesa = enfestoBase({ larguraUtilMm: 110, comprimentoMm: 110, distanciaMinimaEntrePecasMm: 0 });
+  const pecas = [triangulo('fixa', { permite180: false, permite90e270: false }), triangulo('livre', { permite180: true, permite90e270: true })];
+
+  it('sem sentido único, a peça que permite entra virada 180°', () => {
+    const resultado = executarNestingAutomatico(pecas, mesa);
+    expect(resultado.pecasColocadas.map((p) => [p.idOriginal, p.molde.anguloDeRotacaoGraus])).toEqual([
+      ['fixa', 0],
+      ['livre', 180],
+    ]);
+  });
+
+  it('num tecido de sentido único, ela não é virada: fica de fora', () => {
+    const resultado = executarNestingAutomatico(pecas, mesa, { tecidoDeSentidoUnico: true });
+    expect(resultado.pecasColocadas.map((p) => p.idOriginal)).toEqual(['fixa']);
+    expect(resultado.pecasNaoColocadas.map((p) => p.idOriginal)).toEqual(['livre']);
+  });
+});
+
+describe('executarEmFatias — a pausa a cada fatia, e não a cada peça', () => {
+  it('com o relógio andando 1 por leitura e fatias de 3, seis peças dão duas pausas', async () => {
+    let relogio = 0;
+    let pausas = 0;
+    const resultado = await executarEmFatias(
+      passosDoNesting([pecaRetangular('A', 200, 200, { quantidade: 6 })], enfestoBase(), { agora: () => 0 }),
+      async () => {
+        pausas++;
+      },
+      3,
+      () => ++relogio,
+    );
+    expect(resultado.pecasColocadas).toHaveLength(6);
+    expect(pausas).toBe(2);
   });
 });

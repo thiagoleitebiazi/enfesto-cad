@@ -4,6 +4,8 @@ import { BarraDeFerramentas } from './ui/BarraDeFerramentas';
 import { BarraDeVisualizacao } from './ui/BarraDeVisualizacao';
 import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/PainelLateral';
 import { BarraDeStatus } from './ui/BarraDeStatus';
+import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './ui/salvamento';
+import { ehCampoDeDigitar } from './ui/campoDeDigitar';
 import { Sobreposicao } from './ui/Sobreposicao';
 import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
 import { PainelDeModificar } from './ui/PainelDeModificar';
@@ -337,7 +339,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from './core/geometria';
-import { criarTecido, type Tecido } from './domain/tecido';
+import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
 import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
@@ -361,6 +363,7 @@ import {
   alterarStatus,
   renomearProjeto,
   gerarCodigoDeProjeto,
+  proximoCodigoDeProjeto,
   criarVariante,
   variantesDoProjeto,
   nomeDaProximaVariante,
@@ -518,7 +521,12 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'tabela-do-ponto'; readonly indice: number }
   | { readonly tipo: 'tabela-do-pique'; readonly id: string }
   | { readonly tipo: 'nome-da-regra'; readonly indice: number }
-  | { readonly tipo: 'escolher-regra' };
+  | { readonly tipo: 'escolher-regra' }
+  // Os quatro abaixo pediam o valor pela caixa de texto do navegador, que o Electron não mostra (dá erro).
+  | { readonly tipo: 'salvar-como' }
+  | { readonly tipo: 'arredondar-ou-chanfrar'; readonly indice: number }
+  | { readonly tipo: 'girar-livre' }
+  | { readonly tipo: 'elemento-paralelo' };
 
 /** Número para um campo de diálogo, com vírgula decimal. */
 function paraCampo(valor: number): string {
@@ -536,17 +544,18 @@ function mesmoPonto(a: Ponto2D, b: Ponto2D): boolean {
   return a.x === b.x && a.y === b.y;
 }
 
-function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem título'): Projeto {
+function novoProjetoVazio(estadoInicial: EstadoDoProjeto, nome = 'Projeto sem título', codigo?: string): Projeto {
   const agora = new Date().toISOString();
   const id = `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  return criarProjeto(nome, id, gerarCodigoDeProjeto(agora, 1), agora, estadoInicial);
+  return criarProjeto(nome, id, codigo ?? gerarCodigoDeProjeto(agora, 1), agora, estadoInicial);
 }
 
 export default function App(): React.JSX.Element {
   const [pecas, setPecas] = useState<Molde[]>([]);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [idsSelecionadosEmLote, setIdsSelecionadosEmLote] = useState<ReadonlySet<string>>(new Set());
-  const [clipboard, setClipboard] = useState<Molde | null>(null);
+  // As peças copiadas ou recortadas: a selecionada, ou as do lote marcado na lista (como no Duplicar e no Excluir).
+  const [clipboard, setClipboard] = useState<readonly Molde[] | null>(null);
   const [transform, setTransform] = useState<TransformacaoDeTela>(() =>
     enquadrarRetanguloDoMundo({ minX: 0, minY: 0, maxX: 1500, maxY: 3000 }, TAMANHO_PROVISORIO_DA_TELA),
   );
@@ -707,6 +716,29 @@ export default function App(): React.JSX.Element {
     }),
   );
   const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
+  // Os códigos de projeto já usados (os da biblioteca e os criados agora): o de um projeto novo é o seguinte do dia.
+  const codigosUsadosRef = useRef<Set<string>>(new Set());
+  const novoCodigoDeProjeto = useCallback((): string => {
+    const codigo = proximoCodigoDeProjeto(new Date().toISOString(), codigosUsadosRef.current);
+    codigosUsadosRef.current.add(codigo);
+    return codigo;
+  }, []);
+  // Ao abrir: a biblioteca diz os códigos já usados, e o projeto inicial (ainda não salvo) troca de código
+  // se o dele já é de outro projeto.
+  useEffect(() => {
+    void window.enfestoCad?.listarProjetos().then(
+      (lista) => {
+        for (const p of lista) codigosUsadosRef.current.add(p.codigo);
+        setProjetoAtual((atual) => {
+          const salvo = lista.some((p) => p.id === atual.id);
+          const deOutro = lista.some((p) => p.codigo === atual.codigo && p.id !== atual.id);
+          if (salvo || !deOutro) return atual;
+          return { ...atual, codigo: proximoCodigoDeProjeto(new Date().toISOString(), codigosUsadosRef.current) };
+        });
+      },
+      () => {},
+    );
+  }, []);
   // Imagens do modelo: o painel aberto (pelo "Imagens" ou pelo "Digitalizar"), o
   // erro a mostrar nele e a calibração em curso (os pontos já clicados na imagem).
   const imagens = imagensDoProjeto(projetoAtual);
@@ -728,7 +760,10 @@ export default function App(): React.JSX.Element {
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
-  const problemasDeValidacao = useMemo(() => validarProjeto(pecas, enfesto, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }), [pecas, enfesto, folgaForaDaPecaMm]);
+  const problemasDeValidacao = useMemo(
+    () => validarProjeto(pecas, enfesto, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }, tecido),
+    [pecas, enfesto, folgaForaDaPecaMm, tecido],
+  );
   const aproveitamentoAtualDaMesa = useMemo(() => aproveitamentoDaMesa(pecas, enfesto), [pecas, enfesto]);
   const idsComErro = useMemo(
     () =>
@@ -738,11 +773,18 @@ export default function App(): React.JSX.Element {
     [problemasDeValidacao],
   );
 
-  const persistirProjeto = useCallback((projeto: Projeto) => {
-    void window.enfestoCad?.salvarProjeto(projeto).catch(() => {
-      // Falha ao persistir (ex.: disco cheio) não deve travar a edição —
-      // o usuário ainda tem o estado em memória e pode tentar salvar de novo.
-    });
+  // O último salvamento (o pedido e o automático): a hora em que terminou, ou por que falhou.
+  const [salvamento, setSalvamento] = useState<EstadoDoSalvamento | null>(null);
+  /** Grava o projeto; a promessa termina depois da gravação (deu certo ou não), e nunca falha. */
+  const persistirProjeto = useCallback((projeto: Projeto): Promise<void> => {
+    // Uma falha (disco cheio, pasta bloqueada) não trava a edição — o desenho continua na memória —,
+    // mas aparece: antes ela era engolida, e quem apertou Ctrl+S achava que tinha salvado.
+    const pedido = window.enfestoCad?.salvarProjeto(projeto);
+    if (!pedido) return Promise.resolve();
+    return pedido.then(
+      () => setSalvamento({ ok: true, hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }),
+      (e: unknown) => setSalvamento({ ok: false, erro: motivoDoErroDeSalvar(e), dispensado: false }),
+    );
   }, []);
 
   const registrarEventoEPersistir = useCallback(
@@ -759,7 +801,10 @@ export default function App(): React.JSX.Element {
   const carregarListaDeProjetos = useCallback(() => {
     void window.enfestoCad
       ?.listarProjetos()
-      .then((lista) => setProjetos(lista))
+      .then((lista) => {
+        for (const p of lista) codigosUsadosRef.current.add(p.codigo);
+        setProjetos(lista);
+      })
       .catch(() => setProjetos([]));
   }, []);
 
@@ -905,26 +950,38 @@ export default function App(): React.JSX.Element {
     setSelecionadoId(copia.id);
   }, [pecas, selecionadoId, idsSelecionadosEmLote, aplicarMudanca]);
 
+  /** As peças que a seleção abrange: as do lote marcado na lista ou, sem lote, a selecionada. */
+  const pecasDaSelecao = useCallback(
+    (): Molde[] => (idsSelecionadosEmLote.size > 0 ? pecas.filter((p) => idsSelecionadosEmLote.has(p.id)) : pecas.filter((p) => p.id === selecionadoId)),
+    [pecas, selecionadoId, idsSelecionadosEmLote],
+  );
+
   const copiarSelecionado = useCallback(() => {
-    const original = pecas.find((p) => p.id === selecionadoId);
-    if (!original) return;
-    setClipboard(original);
-  }, [pecas, selecionadoId]);
+    const copiadas = pecasDaSelecao();
+    if (copiadas.length > 0) setClipboard(copiadas);
+  }, [pecasDaSelecao]);
 
   const recortarSelecionado = useCallback(() => {
-    const original = pecas.find((p) => p.id === selecionadoId);
-    if (!original) return;
-    setClipboard(original);
-    aplicarMudanca(pecas.filter((p) => p.id !== selecionadoId));
+    const recortadas = pecasDaSelecao();
+    if (recortadas.length === 0) return;
+    setClipboard(recortadas);
+    const ids = new Set(recortadas.map((p) => p.id));
+    aplicarMudanca(pecas.filter((p) => !ids.has(p.id)));
     setSelecionadoId(null);
-  }, [pecas, selecionadoId, aplicarMudanca]);
+    setIdsSelecionadosEmLote(new Set());
+  }, [pecas, pecasDaSelecao, aplicarMudanca]);
 
   const colar = useCallback(() => {
-    if (!clipboard) return;
-    const copia = transladarMolde(clipboard, ponto(30, 30), proximoId());
-    aplicarMudanca([...pecas, copia]);
-    setSelecionadoId(copia.id);
-    setIdsSelecionadosEmLote(new Set());
+    if (!clipboard || clipboard.length === 0) return;
+    const copias = clipboard.map((p) => transladarMolde(p, ponto(30, 30), proximoId()));
+    aplicarMudanca([...pecas, ...copias]);
+    if (copias.length === 1) {
+      setSelecionadoId(copias[0]!.id);
+      setIdsSelecionadosEmLote(new Set());
+    } else {
+      setSelecionadoId(null);
+      setIdsSelecionadosEmLote(new Set(copias.map((c) => c.id)));
+    }
   }, [pecas, clipboard, aplicarMudanca]);
 
   const novoProjeto = useCallback(() => {
@@ -973,7 +1030,7 @@ export default function App(): React.JSX.Element {
     setAviso(null);
     setCerca(null);
     setMostrarMoverCerca(false);
-    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome));
+    setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: tecidoInicial, enfesto: enfestoInicial }, dados.nome, novoCodigoDeProjeto()));
     setMostrarNovoProjeto(false);
 
     // Enquadra a mesa nova inteira na tela. Eixos trocados na tela (ver
@@ -989,23 +1046,28 @@ export default function App(): React.JSX.Element {
     );
     setVistasAnteriores([]);
     setVistasSeguintes([]);
-  }, [tamanhoDaTela]);
+  }, [tamanhoDaTela, novoCodigoDeProjeto]);
 
   const salvarProjetoAtual = useCallback(() => {
     registrarEventoEPersistir('salvamento', { pecas, tecido, enfesto });
   }, [pecas, tecido, enfesto, registrarEventoEPersistir]);
 
-  const salvarComo = useCallback(() => {
-    const nome = window.prompt('Nome do novo projeto:', `${projetoAtual.nome} (cópia)`);
-    if (!nome) return;
-    const novo = novoProjetoVazio({ pecas, tecido, enfesto });
-    const agora = new Date().toISOString();
-    // A cópia é do mesmo modelo: o autor vai junto.
-    const comAutor = definirAutor(renomearProjeto(novo, nome, agora), projetoAtual.autor ?? '', agora);
-    const renomeado = projetoAtual.imagens ? { ...comAutor, imagens: projetoAtual.imagens } : comAutor;
-    setProjetoAtual(renomeado);
-    persistirProjeto(renomeado);
-  }, [pecas, tecido, enfesto, projetoAtual.nome, projetoAtual.autor, projetoAtual.imagens, persistirProjeto]);
+  /** "Salvar como": o nome é pedido numa janela do programa. */
+  const salvarComo = useCallback(() => setDialogoDeFerramenta({ tipo: 'salvar-como' }), []);
+
+  /** Grava o desenho atual como um projeto novo, com o nome dado, e passa a trabalhar nele. */
+  const salvarComoNovoProjeto = useCallback(
+    (nome: string) => {
+      const novo = novoProjetoVazio({ pecas, tecido, enfesto }, undefined, novoCodigoDeProjeto());
+      const agora = new Date().toISOString();
+      // A cópia é do mesmo modelo: o autor vai junto.
+      const comAutor = definirAutor(renomearProjeto(novo, nome, agora), projetoAtual.autor ?? '', agora);
+      const renomeado = projetoAtual.imagens ? { ...comAutor, imagens: projetoAtual.imagens } : comAutor;
+      setProjetoAtual(renomeado);
+      persistirProjeto(renomeado);
+    },
+    [pecas, tecido, enfesto, projetoAtual.autor, projetoAtual.imagens, persistirProjeto, novoCodigoDeProjeto],
+  );
 
   const abrirBiblioteca = useCallback(() => {
     carregarListaDeProjetos();
@@ -1043,12 +1105,25 @@ export default function App(): React.JSX.Element {
     [tamanhoDaTela],
   );
 
+  /** Salva o projeto aberto como está, para trocar de projeto sem perder o que não foi salvo. */
+  const salvarAntesDeTrocar = useCallback((): Projeto => {
+    const salvo = registrarEvento(projetoAtual, 'salvamento', { pecas, tecido, enfesto }, new Date().toISOString());
+    persistirProjeto(salvo);
+    return salvo;
+  }, [projetoAtual, pecas, tecido, enfesto, persistirProjeto]);
+
   const abrirProjeto = useCallback(
     (id: string) => {
-      const projeto = projetos.find((p) => p.id === id);
+      // O que mudou desde o último salvamento é salvo antes de trocar (como nas Variantes): antes, abrir outro
+      // projeto descartava sem aviso o trabalho do último minuto, que o salvamento automático ainda não tinha pego.
+      const mudou = JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify({ pecas, tecido, enfesto });
+      const atual = mudou ? salvarAntesDeTrocar() : projetoAtual;
+      if (mudou) setProjetos((lista) => [...lista.filter((p) => p.id !== atual.id), atual]);
+      // Reabrir o próprio projeto aberto mostra a versão de agora, e não a da lista (que pode ser mais velha).
+      const projeto = id === atual.id ? atual : projetos.find((p) => p.id === id);
       if (projeto) mostrarProjeto(projeto);
     },
-    [projetos, mostrarProjeto],
+    [projetos, projetoAtual, pecas, tecido, enfesto, salvarAntesDeTrocar, mostrarProjeto],
   );
 
   // Variantes (aba Modelo): cópias do projeto aberto, guardadas na Biblioteca.
@@ -1056,13 +1131,6 @@ export default function App(): React.JSX.Element {
     carregarListaDeProjetos();
     setMostrarVariantes(true);
   }, [carregarListaDeProjetos]);
-
-  /** Salva o projeto aberto como está, para trocar de projeto sem perder o que não foi salvo. */
-  const salvarAntesDeTrocar = useCallback((): Projeto => {
-    const salvo = registrarEvento(projetoAtual, 'salvamento', { pecas, tecido, enfesto }, new Date().toISOString());
-    persistirProjeto(salvo);
-    return salvo;
-  }, [projetoAtual, pecas, tecido, enfesto, persistirProjeto]);
 
   const criarVarianteDoProjeto = useCallback(
     (nome: string): string | null => {
@@ -1072,7 +1140,7 @@ export default function App(): React.JSX.Element {
         salvo,
         nome,
         `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        gerarCodigoDeProjeto(agora, 1),
+        novoCodigoDeProjeto(),
         agora,
         { pecas, tecido, enfesto },
       );
@@ -1082,7 +1150,7 @@ export default function App(): React.JSX.Element {
       mostrarProjeto(variante);
       return null;
     },
-    [pecas, tecido, enfesto, salvarAntesDeTrocar, persistirProjeto, mostrarProjeto],
+    [pecas, tecido, enfesto, salvarAntesDeTrocar, persistirProjeto, mostrarProjeto, novoCodigoDeProjeto],
   );
 
   const abrirVarianteDoProjeto = useCallback(
@@ -1101,11 +1169,13 @@ export default function App(): React.JSX.Element {
       const projeto = projetos.find((p) => p.id === id);
       if (!projeto) return;
       const agora = new Date().toISOString();
-      const copia = criarProjeto(`${projeto.nome} (cópia)`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, gerarCodigoDeProjeto(agora, 1), agora, projeto.estadoAtual);
-      persistirProjeto(copia);
-      carregarListaDeProjetos();
+      const copia = criarProjeto(`${projeto.nome} (cópia)`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, novoCodigoDeProjeto(), agora, projeto.estadoAtual);
+      // A lista muda na hora, e é relida do disco só depois de gravado: lida junto com a gravação, ela
+      // podia chegar antes, e a cópia (o nome novo, o arquivado) não aparecia.
+      setProjetos((lista) => [...lista, copia]);
+      void persistirProjeto(copia).then(carregarListaDeProjetos);
     },
-    [projetos, persistirProjeto, carregarListaDeProjetos],
+    [projetos, persistirProjeto, carregarListaDeProjetos, novoCodigoDeProjeto],
   );
 
   const renomearProjetoDaBiblioteca = useCallback(
@@ -1113,9 +1183,9 @@ export default function App(): React.JSX.Element {
       const projeto = projetos.find((p) => p.id === id);
       if (!projeto || !novoNome.trim()) return;
       const atualizado = renomearProjeto(projeto, novoNome.trim(), new Date().toISOString());
-      persistirProjeto(atualizado);
+      setProjetos((lista) => lista.map((p) => (p.id === id ? atualizado : p)));
       if (id === projetoAtual.id) setProjetoAtual(atualizado);
-      carregarListaDeProjetos();
+      void persistirProjeto(atualizado).then(carregarListaDeProjetos);
     },
     [projetos, projetoAtual.id, persistirProjeto, carregarListaDeProjetos],
   );
@@ -1125,9 +1195,9 @@ export default function App(): React.JSX.Element {
       const projeto = projetos.find((p) => p.id === id);
       if (!projeto) return;
       const atualizado = alterarStatus(projeto, 'arquivado', new Date().toISOString());
-      persistirProjeto(atualizado);
+      setProjetos((lista) => lista.map((p) => (p.id === id ? atualizado : p)));
       if (id === projetoAtual.id) setProjetoAtual(atualizado);
-      carregarListaDeProjetos();
+      void persistirProjeto(atualizado).then(carregarListaDeProjetos);
     },
     [projetos, projetoAtual.id, persistirProjeto, carregarListaDeProjetos],
   );
@@ -1156,17 +1226,25 @@ export default function App(): React.JSX.Element {
             setAviso(null);
             setCerca(null);
             setMostrarMoverCerca(false);
-            setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }));
+            setProjetoAtual(novoProjetoVazio({ pecas: [], tecido: null, enfesto: null }, undefined, novoCodigoDeProjeto()));
           }
         })
         .catch(() => window.alert('Falha ao excluir o projeto.'));
     },
-    [projetos, projetoAtual.id, carregarListaDeProjetos],
+    [projetos, projetoAtual.id, carregarListaDeProjetos, novoCodigoDeProjeto],
   );
 
   const restaurarVersaoDoHistorico = useCallback(
     (idDoEvento: string) => {
-      const atualizado = restaurarVersao(projetoAtual, idDoEvento, new Date().toISOString());
+      const agora = new Date().toISOString();
+      const naTela = { pecas, tecido, enfesto };
+      // O que estava na tela sem salvar vira uma versão do histórico antes de ser trocado: antes ele se perdia
+      // (o restaurar também limpa o Ctrl+Z).
+      const base =
+        JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify(naTela)
+          ? registrarEvento(projetoAtual, 'salvamento', naTela, agora, 'O que estava na tela antes de restaurar')
+          : projetoAtual;
+      const atualizado = restaurarVersao(base, idDoEvento, agora);
       setPecas([...atualizado.estadoAtual.pecas]);
       setTecido(atualizado.estadoAtual.tecido);
       setEnfesto(atualizado.estadoAtual.enfesto);
@@ -1182,7 +1260,7 @@ export default function App(): React.JSX.Element {
       setProjetoAtual(atualizado);
       persistirProjeto(atualizado);
     },
-    [projetoAtual, persistirProjeto],
+    [projetoAtual, pecas, tecido, enfesto, persistirProjeto],
   );
 
   // Histórico de vistas ("Vista anterior"/"Próxima vista"): cada mudança de
@@ -1868,32 +1946,31 @@ export default function App(): React.JSX.Element {
       if (!selecionadoId) return;
       try {
         aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? removerPontoDoMolde(p, indice) : p)));
+        setRecadoDaFerramenta(null);
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : String(e));
+        // O motivo aparece na faixa da ferramenta, como nas outras.
+        setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
       }
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
 
-  /** "Arredondar ou chanfrar" (um único botão, como na referência): pergunta qual das duas operações, depois o valor em mm. */
+  /** "Arredondar ou chanfrar" (um único botão, como na referência): o clique no canto abre a janela que pergunta qual das duas, e o valor. */
   const arredondarOuChanfrarVerticeDaSelecionada = useCallback(
     (indice: number) => {
       if (!selecionadoId) return;
-      const escolha = window.prompt('Arredondar ou chanfrar este canto? Digite "A" para arredondar ou "C" para chanfrar:', 'A');
-      if (escolha === null) return;
-      const normalizado = escolha.trim().toUpperCase();
-      if (normalizado !== 'A' && normalizado !== 'C') {
-        window.alert('Opção inválida — digite "A" (arredondar) ou "C" (chanfrar).');
-        return;
-      }
-      const arredondando = normalizado === 'A';
-      const texto = window.prompt(arredondando ? 'Raio do arredondamento (mm):' : 'Distância do chanfro (mm):', '10');
-      if (texto === null) return;
-      const valorMm = Number.parseFloat(texto);
-      if (!Number.isFinite(valorMm) || valorMm <= 0) {
-        window.alert('Valor inválido — informe um número maior que zero.');
-        return;
-      }
+      setDialogoDeFerramenta({ tipo: 'arredondar-ou-chanfrar', indice });
+    },
+    [selecionadoId],
+  );
+  // A última escolha volta no canto seguinte.
+  const [ultimoCanto, setUltimoCanto] = useState<{ readonly arredondar: boolean; readonly valorMm: number }>({ arredondar: true, valorMm: 10 });
+
+  /** Arredonda ou chanfra o canto da peça selecionada; devolve a mensagem do que impediu, ou `null`. */
+  const aplicarNoCanto = useCallback(
+    (indice: number, arredondando: boolean, valorMm: number): string | null => {
+      if (!selecionadoId) return 'Selecione uma peça primeiro.';
+      if (!(valorMm > 0)) return arredondando ? 'O raio precisa ser maior que zero.' : 'A distância do chanfro precisa ser maior que zero.';
       try {
         aplicarMudanca(
           pecas.map((p) =>
@@ -1905,8 +1982,10 @@ export default function App(): React.JSX.Element {
           ),
         );
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : String(e));
+        return e instanceof Error ? e.message : String(e);
       }
+      setUltimoCanto({ arredondar: arredondando, valorMm });
+      return null;
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
@@ -1943,19 +2022,19 @@ export default function App(): React.JSX.Element {
    */
   const girarLivreSelecionada = useCallback(() => {
     if (!selecionadoId) return;
-    const texto = window.prompt(
-      'Ângulo de rotação livre (graus, sentido anti-horário):\n' +
-        'Isto redefine a orientação de referência desta peça — confira se a linha de fio (seta vermelha) continua alinhada ao sentido correto do tecido depois de girar.',
-      '0',
-    );
-    if (texto === null) return;
-    const anguloGraus = Number.parseFloat(texto);
-    if (!Number.isFinite(anguloGraus) || anguloGraus === 0) {
-      if (texto.trim() !== '' && texto.trim() !== '0') window.alert('Ângulo inválido.');
-      return;
-    }
-    aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? rotacionarMolde(p, anguloGraus) : p)));
-  }, [pecas, selecionadoId, aplicarMudanca]);
+    setDialogoDeFerramenta({ tipo: 'girar-livre' });
+  }, [selecionadoId]);
+
+  /** Gira a peça selecionada pelo ângulo dado (graus); devolve a mensagem do que impediu, ou `null`. */
+  const aplicarGiroLivre = useCallback(
+    (anguloGraus: number): string | null => {
+      if (!selecionadoId) return 'Selecione uma peça primeiro.';
+      if (anguloGraus === 0) return 'Digite um ângulo diferente de zero.';
+      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? rotacionarMolde(p, anguloGraus) : p)));
+      return null;
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
 
   /**
    * Alinha as peças selecionadas em lote pela borda esquerda (mínimo X do
@@ -1985,39 +2064,40 @@ export default function App(): React.JSX.Element {
    * (mesmo cuidado já documentado para `dimensionarMolde`/edição de pontos).
    */
   const criarElementoParaleloDaSelecionada = useCallback(() => {
-    const original = pecas.find((p) => p.id === selecionadoId);
-    if (!original) return;
-    const texto = window.prompt(
-      'Distância do elemento paralelo (mm; positivo = para fora, negativo = para dentro):',
-      '10',
-    );
-    if (texto === null) return;
-    const distanciaMm = Number.parseFloat(texto);
-    if (!Number.isFinite(distanciaMm) || distanciaMm === 0) {
-      window.alert('Distância inválida — informe um número diferente de zero.');
-      return;
-    }
-    try {
-      const novoContorno = deslocarContornoParaFora(original.contorno, distanciaMm);
-      const novaPeca = criarMolde(
-        {
-          nome: `${original.nome} (paralelo)`,
-          referencia: original.referencia,
-          tamanho: original.tamanho,
-          contorno: novoContorno,
-          linhaDeFio: original.linhaDeFio,
-          quantidade: original.quantidade,
-          margemDeCosturaMm: original.margemDeCosturaMm,
-          restricaoDeRotacao: original.restricaoDeRotacao,
-        },
-        proximoId(),
-      );
-      aplicarMudanca([...pecas, novaPeca]);
-      setSelecionadoId(novaPeca.id);
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : String(e));
-    }
-  }, [pecas, selecionadoId, aplicarMudanca]);
+    if (!selecionadoId) return;
+    setDialogoDeFerramenta({ tipo: 'elemento-paralelo' });
+  }, [selecionadoId]);
+
+  /** Cria a peça paralela à selecionada, à distância dada; devolve a mensagem do que impediu, ou `null`. */
+  const aplicarElementoParalelo = useCallback(
+    (distanciaMm: number): string | null => {
+      const original = pecas.find((p) => p.id === selecionadoId);
+      if (!original) return 'Selecione uma peça primeiro.';
+      if (distanciaMm === 0) return 'Digite uma distância diferente de zero.';
+      try {
+        const novoContorno = deslocarContornoParaFora(original.contorno, distanciaMm);
+        const novaPeca = criarMolde(
+          {
+            nome: `${original.nome} (paralelo)`,
+            referencia: original.referencia,
+            tamanho: original.tamanho,
+            contorno: novoContorno,
+            linhaDeFio: original.linhaDeFio,
+            quantidade: original.quantidade,
+            margemDeCosturaMm: original.margemDeCosturaMm,
+            restricaoDeRotacao: original.restricaoDeRotacao,
+          },
+          proximoId(),
+        );
+        aplicarMudanca([...pecas, novaPeca]);
+        setSelecionadoId(novaPeca.id);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [pecas, selecionadoId, aplicarMudanca],
+  );
 
   const moverPeca = useCallback(
     (id: string, deslocamento: Ponto2D) => {
@@ -2082,7 +2162,21 @@ export default function App(): React.JSX.Element {
           setNestingExecutando(false);
           worker.terminate();
           workerDeNestingRef.current = null;
+        } else if (mensagem.tipo === 'erro') {
+          falhou(mensagem.mensagem);
         }
+      };
+      // O erro no cálculo, ou o Worker que nem carregou: a janela sai do "Calculando..." e diz o que houve.
+      const falhou = (motivo: string): void => {
+        worker.terminate();
+        if (workerDeNestingRef.current === worker) workerDeNestingRef.current = null;
+        setNestingExecutando(false);
+        setMostrarPainelDeNesting(false);
+        window.alert(`O encaixe automático parou com um erro: ${motivo}`);
+      };
+      worker.onerror = (evento) => {
+        evento.preventDefault();
+        falhou(evento.message || 'o cálculo não pôde ser iniciado.');
       };
       const mensagemIniciar: MensagemParaWorker = {
         tipo: 'iniciar',
@@ -2094,10 +2188,12 @@ export default function App(): React.JSX.Element {
         ...(opcoesAvancadas.aproveitamentoDesejadoPercentual !== undefined
           ? { aproveitamentoDesejadoPercentual: opcoesAvancadas.aproveitamentoDesejadoPercentual }
           : {}),
+        // Tecido com pelo ou estampa direcional: nenhuma peça sai virada.
+        ...(sentidoUnicoDoTecido(tecido) ? { tecidoDeSentidoUnico: true } : {}),
       };
       worker.postMessage(mensagemIniciar);
     },
-    [pecas, enfesto],
+    [pecas, enfesto, tecido],
   );
 
   const cancelarNestingAutomatico = useCallback(() => {
@@ -2106,6 +2202,10 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const fecharPainelDeNesting = useCallback(() => {
+    // Fechada a janela no meio do cálculo, ele para: antes continuava rodando escondido, até o fim.
+    workerDeNestingRef.current?.terminate();
+    workerDeNestingRef.current = null;
+    setNestingExecutando(false);
     setMostrarPainelDeNesting(false);
     setResultadoNesting(null);
   }, []);
@@ -2162,9 +2262,14 @@ export default function App(): React.JSX.Element {
     [pecas, enfesto, tecido, registrarEventoEPersistir],
   );
 
+  // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
+  // Só é montado com o painel aberto, e a hora é a de quando foi aberto (ou de quando as peças mudaram).
   const relatorioAtual = useMemo(
-    () => gerarRelatorioDeProducao(projetoAtual, new Date().toISOString()),
-    [projetoAtual, mostrarRelatorio],
+    () =>
+      mostrarRelatorio
+        ? gerarRelatorioDeProducao({ ...projetoAtual, estadoAtual: { pecas, tecido, enfesto } }, new Date().toISOString())
+        : null,
+    [mostrarRelatorio, projetoAtual, pecas, tecido, enfesto],
   );
 
   const exportarRelatorio = useCallback(
@@ -2174,6 +2279,7 @@ export default function App(): React.JSX.Element {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
         return;
       }
+      if (!relatorioAtual) return;
       setGerandoRelatorio(true);
       try {
         const blob =
@@ -3057,8 +3163,7 @@ export default function App(): React.JSX.Element {
         return;
       }
 
-      const alvoEhCampoDeTexto = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (alvoEhCampoDeTexto) return;
+      if (ehCampoDeDigitar(e.target)) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -3551,6 +3656,15 @@ export default function App(): React.JSX.Element {
         return 'Modificar: clique num ponto da peça para digitar o deslocamento exato, ou arraste-o. Para vários pontos, use Shift+clique ou um retângulo e depois clique num deles. Esc sai.';
       case 'redefinir-perimetro':
         return 'Redefinir perímetro: clique numa aresta da peça, perto da ponta que deve andar, e digite o novo comprimento. Esc sai.';
+      // As quatro abaixo ficavam sem instrução: o botão ficava apertado, e nada dizia o que fazer.
+      case 'mover-ponto':
+        return 'Mover ponto: arraste um ponto da peça selecionada. Para mover vários juntos, use Shift+clique ou um retângulo em volta deles, e arraste um dos escolhidos. Esc sai.';
+      case 'inserir-ponto':
+        return 'Inserir ponto: clique sobre o contorno da peça selecionada, onde o ponto novo deve ficar. Esc sai.';
+      case 'excluir-ponto':
+        return `${recadoDaFerramenta ? `${recadoDaFerramenta} — ` : ''}Excluir ponto: clique num ponto da peça selecionada para tirá-lo do contorno. Esc sai.`;
+      case 'arredondar-ou-chanfrar':
+        return 'Arredondar ou chanfrar: clique num canto da peça selecionada e escolha, na janela, arredondar ou chanfrar e a medida. Esc sai.';
       case 'medir-distancia': {
         if (pontosEmEdicao.length > 0) return 'Distância: clique no segundo ponto. Esc sai.';
         const medida = medicoesResolvidas[0];
@@ -3765,6 +3879,7 @@ export default function App(): React.JSX.Element {
       {mostrarPainelDeNesting && (
         <PainelDeNesting
           pecas={pecas}
+          sentidoDoTecido={sentidoUnicoDoTecido(tecido) ? { nome: tecido?.nome ?? '', sentido: sentidoUnicoDoTecido(tecido)! } : null}
           executando={nestingExecutando}
           progresso={progressoNesting}
           resultado={resultadoNesting}
@@ -3815,7 +3930,7 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarHistorico(false)}
         />
       )}
-      {mostrarRelatorio && (
+      {relatorioAtual && (
         <PainelDeRelatorio
           relatorio={relatorioAtual}
           gerando={gerandoRelatorio}
@@ -3878,6 +3993,69 @@ export default function App(): React.JSX.Element {
             setCurvaEscolhida({ curva, espelhar });
           }}
           onExcluir={excluirCurvaCadastrada}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'salvar-como' && (
+        <DialogoDeCampos
+          titulo="Salvar como"
+          resumo={[['Projeto atual', projetoAtual.nome]]}
+          campos={[{ tipo: 'texto', id: 'nome', rotulo: 'Nome do novo projeto', inicial: `${projetoAtual.nome} (cópia)` }]}
+          nota="Grava o desenho de agora como um projeto novo, com este nome, e passa a trabalhar nele."
+          rotuloDoBotao="Salvar"
+          onAplicar={(valores) => {
+            salvarComoNovoProjeto(String(valores.nome));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'arredondar-ou-chanfrar' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Arredondar ou chanfrar"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'operacao',
+              rotulo: 'No canto clicado',
+              opcoes: [
+                { valor: 'arredondar', rotulo: 'Arredondar' },
+                { valor: 'chanfrar', rotulo: 'Chanfrar' },
+              ],
+              inicial: ultimoCanto.arredondar ? 'arredondar' : 'chanfrar',
+            },
+            {
+              tipo: 'medida',
+              id: 'valor',
+              rotulo: 'Raio do arredondamento, ou distância do chanfro ao canto (mm)',
+              inicial: String(ultimoCanto.valorMm).replace('.', ','),
+            },
+          ]}
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => aplicarNoCanto(dialogoDeFerramenta.indice, valores.operacao === 'arredondar', Number(valores.valor))}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'girar-livre' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Girar livre"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[{ tipo: 'medida', id: 'angulo', rotulo: 'Ângulo em graus (positivo gira no sentido anti-horário)', inicial: '0' }]}
+          nota="Isto redefine a orientação de referência da peça: depois de girar, confira se a linha de fio continua no sentido certo do tecido."
+          rotuloDoBotao="Girar"
+          onAplicar={(valores) => aplicarGiroLivre(Number(valores.angulo))}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'elemento-paralelo' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Elemento paralelo"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[{ tipo: 'medida', id: 'distancia', rotulo: 'Distância em mm (positivo = para fora, negativo = para dentro)', inicial: '10' }]}
+          nota="Cria uma peça nova com o contorno desta deslocado por igual. Furos, piques e marcas não vão para a peça nova."
+          rotuloDoBotao="Criar"
+          onAplicar={(valores) => aplicarElementoParalelo(Number(valores.distancia))}
           onFechar={() => setDialogoDeFerramenta(null)}
         />
       )}
@@ -4832,6 +5010,13 @@ export default function App(): React.JSX.Element {
           {textoDaFaixa}
         </div>
       )}
+      {salvamento && !salvamento.ok && !salvamento.dispensado && (
+        <div className="faixa-de-avisos faixa-de-erro" role="alert">
+          <strong>O projeto não foi salvo.</strong> {salvamento.erro} O desenho continua aberto: confira se há espaço no disco e se a
+          pasta de dados não está bloqueada (pelo antivírus, por exemplo), e salve de novo com Ctrl+S.{' '}
+          <button onClick={() => setSalvamento({ ...salvamento, dispensado: true })}>Dispensar</button>
+        </div>
+      )}
       {mensagensImportacao && (
         <div className="faixa-de-avisos" role="alert">
           <strong>Avisos da importação:</strong>
@@ -5050,6 +5235,7 @@ export default function App(): React.JSX.Element {
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
         aproveitamentoPercentual={aproveitamentoAtualDaMesa}
         unidade={unidadeDaRegua}
+        salvamento={salvamento}
         pontoReferencia={
           MODOS_COM_PONTO_DE_REFERENCIA.has(modo) && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!

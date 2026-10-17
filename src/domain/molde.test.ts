@@ -16,6 +16,7 @@ import {
   rotacionarMolde,
   espelharMolde,
   moverPontoDoMolde,
+  rotacoesNoEncaixe,
   moverVariosPontosDoMolde,
   modificarPontosDoMolde,
   redefinirComprimentoDaAresta,
@@ -514,6 +515,32 @@ describe('inserirPontoNoMolde', () => {
     // pique estava exatamente na aresta editada (3): não é > 3, então mantém o índice
     expect(editado.piques[0]!.indiceAresta).toBe(3);
   });
+
+  it('o pique da aresta dividida que fica depois do ponto novo passa para a segunda metade', () => {
+    // aresta 3: de (0,300) a (0,0); o pique a 250 mm do começo, o ponto novo a 200
+    const comPique = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(0, 50), 'p1');
+    expect(comPique.piques[0]!.indiceAresta).toBe(3);
+    const editado = inserirPontoNoMolde(comPique, 3, ponto(0, 100));
+    expect(editado.piques[0]!.indiceAresta).toBe(4);
+    // Movido o ponto novo, o pique continua onde estava (a aresta dele, de (0,100) a (0,0), não mudou de lugar na ponta de baixo).
+    const movido = moverPontoDoMolde(editado, 4, ponto(-40, 100));
+    expect(movido.piques[0]!.posicao.y).toBeCloseTo(50, 6);
+    expect(movido.piques[0]!.posicao.x).toBeCloseTo(-20, 6);
+  });
+
+  it('o pique de uma aresta de antes não muda de aresta, mesmo que fique "depois" do ponto novo na direção da dividida', () => {
+    // Aresta 2: de (200,300) a (0,300), para a esquerda. O pique na aresta 0, em (50,0), está mais à esquerda que o ponto novo.
+    const comPique = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(50, 0), 'p1');
+    expect(comPique.piques[0]!.indiceAresta).toBe(0);
+    expect(inserirPontoNoMolde(comPique, 2, ponto(100, 300)).piques[0]!.indiceAresta).toBe(0);
+  });
+
+  it('na última aresta, o pique depois do ponto novo vai para a aresta que fecha o contorno', () => {
+    const comPique = adicionarPique(criarMolde(dadosBase(), 'm1'), ponto(0, 50), 'p1');
+    const editado = inserirPontoNoMolde(comPique, 3, ponto(0, 100));
+    expect(editado.contorno[4]).toEqual(ponto(0, 100));
+    expect(editado.piques[0]!.indiceAresta).toBe(editado.contorno.length - 1);
+  });
 });
 
 describe('removerPontoDoMolde', () => {
@@ -800,5 +827,15 @@ describe('substituirTrechoDoMolde', () => {
     // Levar a base até o terceiro vértice dobra o contorno sobre si mesmo.
     expect(() => substituirTrechoDoMolde(triangulo, base[0], base[1], [ponto(100, 100)])).toThrow('ficaria sem área');
     expect(() => substituirTrechoDoMolde(triangulo, base[0], base[1], [ponto(100, -40)])).not.toThrow();
+  });
+});
+
+describe('rotacoesNoEncaixe', () => {
+  it('num tecido de sentido único, só 0° e 90° — nunca virada', () => {
+    const todas = { permite180: true, permite90e270: true };
+    expect(rotacoesNoEncaixe(todas, false)).toEqual([0, 90, 180, 270]);
+    expect(rotacoesNoEncaixe(todas, true)).toEqual([0, 90]);
+    expect(rotacoesNoEncaixe({ permite180: true, permite90e270: false }, true)).toEqual([0]);
+    expect(rotacoesNoEncaixe({ permite180: false, permite90e270: false }, true)).toEqual([0]);
   });
 });

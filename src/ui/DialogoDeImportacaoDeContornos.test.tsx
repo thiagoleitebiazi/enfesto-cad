@@ -30,6 +30,8 @@ describe('DialogoDeImportacaoDeContornos', () => {
     renderizar();
 
     expect(screen.getByRole('button', { name: /Importar 2 contorno/ })).toBeDisabled();
+    // O botão desligado vem com o motivo.
+    expect(screen.getByText('Falta escolher, nos contornos marcados: o nome (2) e a direção do fio (2).')).toBeInTheDocument();
   });
 
   it('libera a importação só quando cada contorno selecionado tem nome e direção do fio', () => {
@@ -39,8 +41,10 @@ describe('DialogoDeImportacaoDeContornos', () => {
 
     fireEvent.change(nomes[0]!, { target: { value: 'Frente' } });
     fireEvent.change(direcoes[0]!, { target: { value: 'vertical' } });
+    expect(screen.getByText('Falta escolher, nos contornos marcados: o nome (1) e a direção do fio (1).')).toBeInTheDocument();
     fireEvent.change(nomes[1]!, { target: { value: 'Manga' } });
     expect(screen.getByRole('button', { name: /Importar 2 contorno/ })).toBeDisabled();
+    expect(screen.getByText('Falta escolher, nos contornos marcados: a direção do fio (1).')).toBeInTheDocument();
 
     fireEvent.change(direcoes[1]!, { target: { value: 'horizontal' } });
     fireEvent.click(screen.getByRole('button', { name: /Importar 2 contorno/ }));

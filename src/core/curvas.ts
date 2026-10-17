@@ -220,8 +220,12 @@ function pontoNaLinha(pontos: readonly Ponto2D[], alvo: number): Ponto2D {
  * espaçados ao longo dela. Com menos pontos que antes a forma simplifica;
  * com mais, só ganha pontos sobre os mesmos segmentos.
  */
+/** O máximo de pontos de um trecho redividido: um número enorme no campo travava o programa (e a peça ficava pesada demais para desenhar). */
+export const MAXIMO_DE_PONTOS_DO_TRECHO = 2000;
+
 export function reamostrarLinha(pontos: readonly Ponto2D[], quantidade: number): Ponto2D[] {
   if (!Number.isInteger(quantidade) || quantidade < 2) throw new Error('O trecho precisa de pelo menos 2 pontos: as duas pontas.');
+  if (quantidade > MAXIMO_DE_PONTOS_DO_TRECHO) throw new Error(`O trecho pode ter até ${MAXIMO_DE_PONTOS_DO_TRECHO} pontos.`);
   if (pontos.length < 2) throw new Error('O trecho precisa de pelo menos dois pontos para ser redividido.');
   const total = comprimentoDaLinha(pontos);
   return Array.from({ length: quantidade }, (_, i) => {

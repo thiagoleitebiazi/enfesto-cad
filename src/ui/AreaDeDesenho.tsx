@@ -1663,13 +1663,16 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (MODOS_DE_EDICAO_DE_VERTICE.has(modo)) {
       if (!pecaSelecionada) return;
 
+      const raioMm = RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm;
+
       if (modo === 'inserir-ponto') {
+        // Só o clique perto do contorno: longe dele, o ponto iria para a aresta mais próxima, em outro lugar.
+        // E nada de um ponto em cima de outro (o clique fora de um canto cai no próprio canto).
         const maisProximo = pontoMaisProximoNoContorno(mundo, pecaSelecionada.contorno);
-        onInserirPontoNoMolde?.(maisProximo.indiceAresta, maisProximo.ponto);
+        const emCimaDeUmPonto = pecaSelecionada.contorno.some((v) => distancia(v, maisProximo.ponto) < 1e-6);
+        if (maisProximo.distancia <= raioMm && !emCimaDeUmPonto) onInserirPontoNoMolde?.(maisProximo.indiceAresta, maisProximo.ponto);
         return;
       }
-
-      const raioMm = RAIO_DE_CAPTURA_DE_VERTICE_PX / transform.escalaPxPorMm;
 
       if (modo === 'redefinir-perimetro') {
         const aresta = arestaPerto(mundo, pecaSelecionada.contorno, raioMm);

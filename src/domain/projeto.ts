@@ -38,7 +38,8 @@ export const ROTULO_DO_EVENTO: Record<TipoDeEvento, string> = {
   'mudanca-de-configuracao': 'Mudança de tecido/enfesto',
   'mudanca-de-moldes': 'Mudança nos moldes',
   'execucao-de-nesting': 'Execução do nesting automático',
-  'exportacao-de-pdf': 'Exportação de PDF',
+  // O nome do tipo ficou do começo; o relatório também sai em Excel, e a descrição diz qual arquivo foi.
+  'exportacao-de-pdf': 'Exportação de arquivo',
   'envio-para-producao': 'Envio para produção',
   'restauracao-de-versao': 'Restauração de versão anterior',
 };
@@ -96,6 +97,21 @@ export function gerarCodigoDeProjeto(dataIso: string, sequencial: number): strin
   const mes = String(data.getMonth() + 1).padStart(2, '0');
   const dia = String(data.getDate()).padStart(2, '0');
   return `ENF-${ano}${mes}${dia}-${String(sequencial).padStart(3, '0')}`;
+}
+
+/**
+ * O código do próximo projeto do dia: o sequencial seguinte ao maior já usado nesse dia. Antes, todo projeto
+ * saía com o 001 — os projetos do mesmo dia tinham o mesmo código na biblioteca e no nome do relatório.
+ */
+export function proximoCodigoDeProjeto(dataIso: string, codigosUsados: Iterable<string>): string {
+  const prefixo = gerarCodigoDeProjeto(dataIso, 0).slice(0, -3);
+  let maior = 0;
+  for (const codigo of codigosUsados) {
+    if (!codigo.startsWith(prefixo)) continue;
+    const sequencial = Number(codigo.slice(prefixo.length));
+    if (Number.isInteger(sequencial) && sequencial > maior) maior = sequencial;
+  }
+  return gerarCodigoDeProjeto(dataIso, maior + 1);
 }
 
 export function criarProjeto(

@@ -110,24 +110,96 @@ function amostrarSpline(grau: number, nos: readonly number[], ctrl: readonly Pon
   return pontos;
 }
 
-function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
-  const entidades: EntidadeBruta[] = [];
-  let dentroDeEntities = false;
-  let i = 0;
+/** Um INSERT: o bloco `nome` posto no desenho, com o ponto de inserção, a escala e o giro. */
+interface InsercaoDeBloco {
+  readonly nome: string;
+  readonly camada: string;
+  readonly ponto: Ponto2D;
+  readonly escalaX: number;
+  readonly escalaY: number;
+  readonly rotacaoGraus: number;
+}
 
-  while (i < pares.length) {
+/** Um BLOCK da seção BLOCKS: o ponto-base e o que ele desenha (inclusive outros blocos inseridos nele). */
+interface Bloco {
+  readonly base: Ponto2D;
+  readonly entidades: readonly EntidadeBruta[];
+  readonly insercoes: readonly InsercaoDeBloco[];
+}
+
+/** Passo máximo, em graus, entre dois pontos de um arco lido do arquivo. */
+const GRAUS_POR_PONTO_DO_ARCO = 5;
+/** Blocos dentro de blocos: além disto, o arquivo é tratado como circular (um bloco que insere a si mesmo). */
+const PROFUNDIDADE_MAXIMA_DE_BLOCOS = 8;
+
+/** Os pontos de dentro de um arco (sem as duas pontas), de `angulo0` varrendo `varredura` radianos em volta de `centro`. */
+function pontosDoArco(centro: Ponto2D, raio: number, angulo0: number, varredura: number): Ponto2D[] {
+  const passos = Math.max(2, Math.ceil(Math.abs(varredura) / ((GRAUS_POR_PONTO_DO_ARCO * Math.PI) / 180)));
+  const pontos: Ponto2D[] = [];
+  for (let k = 1; k < passos; k++) {
+    const angulo = angulo0 + (varredura * k) / passos;
+    pontos.push(ponto(centro.x + raio * Math.cos(angulo), centro.y + raio * Math.sin(angulo)));
+  }
+  return pontos;
+}
+
+/**
+ * O trecho entre dois vértices de polilinha com "bulge" (código 42) é um arco: o bulge é a tangente de um
+ * quarto do ângulo do arco e, positivo, o arco gira no sentido anti-horário. Devolve os pontos de dentro do
+ * arco. Antes o bulge era ignorado, e o arco (um decote, uma cava) virava a reta entre os dois vértices.
+ */
+function arcoDoBulge(a: Ponto2D, b: Ponto2D, bulge: number): Ponto2D[] {
+  const cx = b.x - a.x;
+  const cy = b.y - a.y;
+  const d = Math.hypot(cx, cy);
+  if (bulge === 0 || !Number.isFinite(bulge) || d === 0) return [];
+  const angulo = 4 * Math.atan(bulge);
+  const raio = d / (2 * Math.abs(Math.sin(angulo / 2)));
+  // O centro fica na perpendicular ao meio da corda, à esquerda dela quando o arco é anti-horário.
+  const h = d / 2 / Math.tan(angulo / 2);
+  const centro = ponto((a.x + b.x) / 2 - (cy / d) * h, (a.y + b.y) / 2 + (cx / d) * h);
+  return pontosDoArco(centro, raio, Math.atan2(a.y - centro.y, a.x - centro.x), angulo);
+}
+
+/** Os vértices de uma polilinha, com os arcos dos bulges entre eles. */
+function comOsArcos(vertices: readonly Ponto2D[], bulges: readonly number[], fechada: boolean): Ponto2D[] {
+  if (!bulges.some((b) => b !== 0)) return [...vertices];
+  const pontos: Ponto2D[] = [];
+  vertices.forEach((v, i) => {
+    pontos.push(v);
+    const proximo = i + 1 < vertices.length ? vertices[i + 1] : fechada ? vertices[0] : undefined;
+    if (proximo) pontos.push(...arcoDoBulge(v, proximo, bulges[i] ?? 0));
+  });
+  return pontos;
+}
+
+/** O começo e o fim (o ENDSEC) de uma seção do arquivo, ou `null` se ela não existe. */
+function secao(pares: readonly ParDeCodigo[], nome: string): readonly [number, number] | null {
+  for (let k = 0; k < pares.length; k++) {
+    const par = pares[k]!;
+    if (par.codigo !== 2 || par.valor !== nome) continue;
+    const anterior = pares[k - 1];
+    if (anterior && !(anterior.codigo === 0 && anterior.valor === 'SECTION')) continue;
+    let fim = k + 1;
+    while (fim < pares.length && !(pares[fim]!.codigo === 0 && pares[fim]!.valor === 'ENDSEC')) fim++;
+    return [k + 1, fim];
+  }
+  return null;
+}
+
+/** As entidades entre `inicio` e `fim`, e os blocos inseridos ali (os INSERT), sem expandir. */
+function lerEntidadesEntre(
+  pares: readonly ParDeCodigo[],
+  inicio: number,
+  fim: number,
+): { entidades: EntidadeBruta[]; insercoes: InsercaoDeBloco[] } {
+  const entidades: EntidadeBruta[] = [];
+  const insercoes: InsercaoDeBloco[] = [];
+  let i = inicio;
+
+  while (i < fim) {
     const par = pares[i]!;
-    if (par.codigo === 2 && par.valor === 'ENTITIES') {
-      dentroDeEntities = true;
-      i++;
-      continue;
-    }
-    if (par.codigo === 0 && par.valor === 'ENDSEC') {
-      dentroDeEntities = false;
-      i++;
-      continue;
-    }
-    if (!dentroDeEntities || par.codigo !== 0) {
+    if (par.codigo !== 0) {
       i++;
       continue;
     }
@@ -136,7 +208,8 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
     if (tipo === 'LWPOLYLINE') {
       let camada = '0';
       let fechada = false;
-      const pontos: Ponto2D[] = [];
+      const vertices: Ponto2D[] = [];
+      const bulges: number[] = [];
       let xPendente: number | null = null;
       i++;
       while (i < pares.length && pares[i]!.codigo !== 0) {
@@ -145,12 +218,13 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
         else if (p.codigo === 70) fechada = (Number.parseInt(p.valor, 10) & 1) === 1;
         else if (p.codigo === 10) xPendente = Number.parseFloat(p.valor);
         else if (p.codigo === 20 && xPendente !== null) {
-          pontos.push(ponto(xPendente, Number.parseFloat(p.valor)));
+          vertices.push(ponto(xPendente, Number.parseFloat(p.valor)));
+          bulges.push(0);
           xPendente = null;
-        }
+        } else if (p.codigo === 42 && vertices.length > 0) bulges[vertices.length - 1] = Number.parseFloat(p.valor);
         i++;
       }
-      entidades.push({ tipo, camada, pontos, fechada });
+      entidades.push({ tipo, camada, pontos: comOsArcos(vertices, bulges, fechada), fechada });
       continue;
     }
 
@@ -198,10 +272,70 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
       continue;
     }
 
+    if (tipo === 'ARC') {
+      // O arco solto (antes ignorado): do ângulo inicial ao final, no sentido anti-horário, em graus.
+      let camada = '0';
+      let cx = 0;
+      let cy = 0;
+      let raio = 0;
+      let de = 0;
+      let ate = 360;
+      i++;
+      while (i < pares.length && pares[i]!.codigo !== 0) {
+        const p = pares[i]!;
+        if (p.codigo === 8) camada = p.valor;
+        else if (p.codigo === 10) cx = Number.parseFloat(p.valor);
+        else if (p.codigo === 20) cy = Number.parseFloat(p.valor);
+        else if (p.codigo === 40) raio = Number.parseFloat(p.valor);
+        else if (p.codigo === 50) de = Number.parseFloat(p.valor);
+        else if (p.codigo === 51) ate = Number.parseFloat(p.valor);
+        i++;
+      }
+      let varredura = (((ate - de) % 360) + 360) % 360;
+      if (varredura === 0) varredura = 360;
+      const inicioRad = (de * Math.PI) / 180;
+      const varreduraRad = (varredura * Math.PI) / 180;
+      const centro = ponto(cx, cy);
+      const naPonta = (a: number): Ponto2D => ponto(cx + raio * Math.cos(a), cy + raio * Math.sin(a));
+      if (raio > 0) {
+        entidades.push({
+          tipo,
+          camada,
+          pontos: [naPonta(inicioRad), ...pontosDoArco(centro, raio, inicioRad, varreduraRad), naPonta(inicioRad + varreduraRad)],
+          fechada: false,
+        });
+      }
+      continue;
+    }
+
+    if (tipo === 'INSERT') {
+      let camada = '0';
+      let nome = '';
+      let x = 0;
+      let y = 0;
+      let escalaX = 1;
+      let escalaY = 1;
+      let rotacaoGraus = 0;
+      i++;
+      while (i < pares.length && pares[i]!.codigo !== 0) {
+        const p = pares[i]!;
+        if (p.codigo === 8) camada = p.valor;
+        else if (p.codigo === 2) nome = p.valor;
+        else if (p.codigo === 10) x = Number.parseFloat(p.valor);
+        else if (p.codigo === 20) y = Number.parseFloat(p.valor);
+        else if (p.codigo === 41) escalaX = Number.parseFloat(p.valor);
+        else if (p.codigo === 42) escalaY = Number.parseFloat(p.valor);
+        else if (p.codigo === 50) rotacaoGraus = Number.parseFloat(p.valor);
+        i++;
+      }
+      insercoes.push({ nome, camada, ponto: ponto(x, y), escalaX, escalaY, rotacaoGraus });
+      continue;
+    }
+
     if (tipo === 'POLYLINE') {
       let camada = '0';
-      let fechada = false;
-      const pontos: Ponto2D[] = [];
+      const vertices: Ponto2D[] = [];
+      const bulges: number[] = [];
       i++;
       // Cabeçalho da POLYLINE: muitos exportadores declaram a camada (código
       // 8) só aqui, sem repeti-la em cada VERTEX — precisa ser lida, não só
@@ -215,21 +349,24 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
         i++;
         let x = 0;
         let y = 0;
+        let bulge = 0;
         while (i < pares.length && pares[i]!.codigo !== 0) {
           const p = pares[i]!;
           if (p.codigo === 8) camada = p.valor;
           else if (p.codigo === 10) x = Number.parseFloat(p.valor);
           else if (p.codigo === 20) y = Number.parseFloat(p.valor);
+          else if (p.codigo === 42) bulge = Number.parseFloat(p.valor);
           i++;
         }
-        pontos.push(ponto(x, y));
+        vertices.push(ponto(x, y));
+        bulges.push(bulge);
       }
       if (i < pares.length && pares[i]!.valor === 'SEQEND') {
         i++;
         while (i < pares.length && pares[i]!.codigo !== 0) i++;
       }
-      fechada = true; // convenção adotada: POLYLINE clássica de molde é sempre fechada
-      entidades.push({ tipo: 'LWPOLYLINE', camada, pontos, fechada });
+      // convenção adotada: POLYLINE clássica de molde é sempre fechada
+      entidades.push({ tipo: 'LWPOLYLINE', camada, pontos: comOsArcos(vertices, bulges, true), fechada: true });
       continue;
     }
 
@@ -265,7 +402,136 @@ function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
     i++;
   }
 
-  return entidades;
+  return { entidades, insercoes };
+}
+
+/** Os blocos da seção BLOCKS, pelo nome (em maiúsculas: o DXF não diferencia). */
+function lerBlocos(pares: readonly ParDeCodigo[]): Map<string, Bloco> {
+  const blocos = new Map<string, Bloco>();
+  const limites = secao(pares, 'BLOCKS');
+  if (!limites) return blocos;
+  const [inicio, fim] = limites;
+  let i = inicio;
+  while (i < fim) {
+    if (!(pares[i]!.codigo === 0 && pares[i]!.valor === 'BLOCK')) {
+      i++;
+      continue;
+    }
+    let nome = '';
+    let bx = 0;
+    let by = 0;
+    i++;
+    while (i < fim && pares[i]!.codigo !== 0) {
+      const p = pares[i]!;
+      if (p.codigo === 2) nome = p.valor;
+      else if (p.codigo === 10) bx = Number.parseFloat(p.valor);
+      else if (p.codigo === 20) by = Number.parseFloat(p.valor);
+      i++;
+    }
+    let fimDoBloco = i;
+    while (fimDoBloco < fim && !(pares[fimDoBloco]!.codigo === 0 && pares[fimDoBloco]!.valor === 'ENDBLK')) fimDoBloco++;
+    const lidas = lerEntidadesEntre(pares, i, fimDoBloco);
+    blocos.set(nome.toUpperCase(), { base: ponto(bx, by), entidades: lidas.entidades, insercoes: lidas.insercoes });
+    i = fimDoBloco + 1;
+  }
+  return blocos;
+}
+
+/**
+ * O que um INSERT desenha: as entidades do bloco levadas pela escala, pelo giro e pelo ponto de inserção (e os
+ * blocos inseridos dentro dele, do mesmo jeito). O que está na camada "0" do bloco fica na camada do INSERT,
+ * como no AutoCAD.
+ */
+function expandirInsercao(insercao: InsercaoDeBloco, blocos: ReadonlyMap<string, Bloco>, profundidade: number): EntidadeBruta[] {
+  const bloco = blocos.get(insercao.nome.toUpperCase());
+  if (!bloco || profundidade > PROFUNDIDADE_MAXIMA_DE_BLOCOS) return [];
+  const angulo = (insercao.rotacaoGraus * Math.PI) / 180;
+  const cos = Math.cos(angulo);
+  const sin = Math.sin(angulo);
+  const levar = (p: Ponto2D): Ponto2D => {
+    const x = (p.x - bloco.base.x) * insercao.escalaX;
+    const y = (p.y - bloco.base.y) * insercao.escalaY;
+    return ponto(insercao.ponto.x + x * cos - y * sin, insercao.ponto.y + x * sin + y * cos);
+  };
+  const doBloco = [...bloco.entidades, ...bloco.insercoes.flatMap((dentro) => expandirInsercao(dentro, blocos, profundidade + 1))];
+  return doBloco.map((e) => ({
+    ...e,
+    camada: e.camada === '0' ? insercao.camada : e.camada,
+    pontos: e.pontos.map(levar),
+    ...(e.raio !== undefined ? { raio: e.raio * Math.abs(insercao.escalaX) } : {}),
+  }));
+}
+
+/**
+ * As entidades do desenho: as da seção ENTITIES e, no lugar de cada INSERT, o que o bloco desenha. É assim
+ * que os arquivos de molde no padrão AAMA/ASTM guardam as peças — cada uma num bloco —, e antes elas não
+ * eram lidas.
+ */
+function lerEntidades(pares: ParDeCodigo[]): EntidadeBruta[] {
+  const limites = secao(pares, 'ENTITIES');
+  if (!limites) return [];
+  const { entidades, insercoes } = lerEntidadesEntre(pares, limites[0], limites[1]);
+  if (insercoes.length === 0) return entidades;
+  const blocos = lerBlocos(pares);
+  return [...entidades, ...insercoes.flatMap((insercao) => expandirInsercao(insercao, blocos, 0))];
+}
+
+/** Pontas a menos disto (mm) são a mesma ponta, ao encadear linhas e arcos soltos. */
+const MESMA_PONTA_MM = 0.01;
+
+/**
+ * Linhas, arcos e polilinhas abertas da mesma camada que se encadeiam ponta com ponta até fechar viram uma
+ * polilinha fechada: o contorno desenhado em pedaços (comum em DXF feito no AutoCAD), que antes não era
+ * reconhecido como peça. Só passa por pontas em que se encontram exatamente dois pedaços: numa
+ * bifurcação não há como saber o caminho, e os pedaços ficam como estão.
+ */
+function encadearPedacosSoltos(entidades: readonly EntidadeBruta[]): { fechadas: EntidadeBruta[]; usadas: Set<EntidadeBruta> } {
+  const chave = (p: Ponto2D): string => `${Math.round(p.x / MESMA_PONTA_MM)},${Math.round(p.y / MESMA_PONTA_MM)}`;
+  const pedacos = entidades.filter((e) => !e.fechada && e.pontos.length >= 2 && (e.tipo === 'LINE' || e.tipo === 'ARC' || e.tipo === 'LWPOLYLINE' || e.tipo === 'SPLINE'));
+  const fechadas: EntidadeBruta[] = [];
+  const usadas = new Set<EntidadeBruta>();
+  const porCamada = new Map<string, EntidadeBruta[]>();
+  for (const e of pedacos) porCamada.set(e.camada, [...(porCamada.get(e.camada) ?? []), e]);
+
+  for (const [camada, daCamada] of porCamada) {
+    const naPonta = new Map<string, EntidadeBruta[]>();
+    for (const e of daCamada) {
+      for (const p of [e.pontos[0]!, e.pontos.at(-1)!]) naPonta.set(chave(p), [...(naPonta.get(chave(p)) ?? []), e]);
+    }
+    const livres = new Set(daCamada);
+    for (const primeiro of daCamada) {
+      if (!livres.has(primeiro)) continue;
+      const inicio = chave(primeiro.pontos[0]!);
+      let ponta = chave(primeiro.pontos.at(-1)!);
+      if (ponta === inicio) continue;
+      const cadeia: (readonly Ponto2D[])[] = [primeiro.pontos];
+      const usadosAqui = [primeiro];
+      let fechou = false;
+      for (;;) {
+        if (ponta === inicio) {
+          fechou = true;
+          break;
+        }
+        const ali = naPonta.get(ponta) ?? [];
+        if (ali.length !== 2) break;
+        const seguinte = ali.find((e) => e !== usadosAqui.at(-1));
+        if (!seguinte || !livres.has(seguinte) || usadosAqui.includes(seguinte)) break;
+        const orientado = chave(seguinte.pontos[0]!) === ponta ? seguinte.pontos : [...seguinte.pontos].reverse();
+        cadeia.push(orientado);
+        usadosAqui.push(seguinte);
+        ponta = chave(orientado.at(-1)!);
+      }
+      if (!fechou || cadeia.length < 2 || (naPonta.get(inicio) ?? []).length !== 2) continue;
+      const pontos = cadeia.flatMap((pedaco) => pedaco.slice(0, -1));
+      if (pontos.length < 3 || area(pontos) <= 0) continue;
+      for (const e of usadosAqui) {
+        livres.delete(e);
+        usadas.add(e);
+      }
+      fechadas.push({ tipo: 'LWPOLYLINE', camada, pontos, fechada: true });
+    }
+  }
+  return { fechadas, usadas };
 }
 
 function lerUnidade(pares: ParDeCodigo[]): { fator: number; rotulo: string; assumida: boolean } {
@@ -352,12 +618,19 @@ function ehBordaDaFolha(entidade: EntidadeBruta, formasFechadas: readonly Entida
 export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): ResultadoImportacaoDxf {
   const pares = tokenizar(conteudo);
   const unidade = lerUnidade(pares);
-  const entidadesMm = lerEntidades(pares).map((e) => ({
+  const lidasMm = lerEntidades(pares).map((e) => ({
     ...e,
     pontos: e.pontos.map((p) => ponto(p.x * unidade.fator, p.y * unidade.fator)),
   }));
 
   const avisos: string[] = [];
+  const { fechadas: encadeadas, usadas } = encadearPedacosSoltos(lidasMm);
+  const entidadesMm = [...lidasMm.filter((e) => !usadas.has(e)), ...encadeadas];
+  if (encadeadas.length > 0) {
+    avisos.push(
+      `${encadeadas.length} contorno(s) desenhado(s) em pedaços (linhas e arcos soltos, ponta com ponta) foi(ram) juntado(s) num contorno fechado.`,
+    );
+  }
 
   const poligonosFechados = entidadesMm.filter((e) => e.tipo !== 'LINE' && e.pontos.length >= 3);
   const formasFechadas = poligonosFechados.filter((e) => e.fechada);
@@ -404,12 +677,15 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
   const linhasDeFioCandidatas = entidadesMm.filter(
     (e) => e.tipo === 'LINE' && nomeDeCamadaContem(e.camada, 'FIO', 'GRAIN'),
   );
-  const outrasLinhas = entidadesMm.filter((e) => e.tipo === 'LINE' && !linhasDeFioCandidatas.includes(e));
-
-  if (outrasLinhas.length > 0) {
-    avisos.push(
-      `${outrasLinhas.length} entidade(s) LINE fora de camadas de fio reconhecidas foram ignoradas (não classificadas como linha interna nem linha de fio).`,
-    );
+  // As retas soltas (LINE, ou polilinha aberta de dois pontos) que não são linha de fio: dentro de uma peça,
+  // são linhas internas dela, como a janela de importação diz. Antes eram todas descartadas — a linha de
+  // posição do bolso, o centro da frente sumiam.
+  const meioDa = (e: EntidadeBruta): Ponto2D =>
+    ponto((e.pontos[0]!.x + e.pontos.at(-1)!.x) / 2, (e.pontos[0]!.y + e.pontos.at(-1)!.y) / 2);
+  const retasSoltas = entidadesMm.filter((e) => !e.fechada && e.pontos.length === 2 && !linhasDeFioCandidatas.includes(e));
+  const retasDeFora = retasSoltas.filter((e) => !contornos.some((c) => pontoDentroDoContorno(meioDa(e), c.pontos)));
+  if (retasDeFora.length > 0) {
+    avisos.push(`${retasDeFora.length} linha(s) reta(s) fora das peças foram ignoradas.`);
   }
 
   const pecas: PecaImportadaDxf[] = contornos.map((contornoEntidade, indice) => {
@@ -417,9 +693,10 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
     const furosDaPeca = furosCandidatos
       .filter((f) => f.pontos.length > 0 && pontoDentroDoContorno(f.pontos[0]!, contorno))
       .map((f) => f.pontos);
-    const internasDaPeca = internasCandidatas
-      .filter((linha) => linha.pontos.length > 0 && pontoDentroDoContorno(linha.pontos[0]!, contorno))
-      .map((linha) => linha.pontos);
+    const internasDaPeca = [
+      ...internasCandidatas.filter((linha) => linha.pontos.length > 0 && pontoDentroDoContorno(linha.pontos[0]!, contorno)),
+      ...retasSoltas.filter((reta) => pontoDentroDoContorno(meioDa(reta), contorno)),
+    ].map((linha) => linha.pontos);
     const fioDaPeca = linhasDeFioCandidatas.find((linha) => {
       const meio = ponto((linha.pontos[0]!.x + linha.pontos[1]!.x) / 2, (linha.pontos[0]!.y + linha.pontos[1]!.y) / 2);
       return pontoDentroDoContorno(meio, contorno);

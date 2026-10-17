@@ -967,12 +967,20 @@ export function redefinirComprimentoDaAresta(
   );
 }
 
-/** Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). */
+/**
+ * Insere um novo vértice na aresta `indiceAresta` (entre esse vértice e o próximo). O pique da aresta
+ * dividida que fica depois do ponto novo passa para a segunda metade: senão, ao mover o ponto novo, ele
+ * seria levado junto com a primeira metade e iria parar em cima do ponto.
+ */
 export function inserirPontoNoMolde(molde: Molde, indiceAresta: number, novoPonto: Ponto2D): Molde {
+  const a = molde.contorno[indiceAresta];
+  const b = molde.contorno[(indiceAresta + 1) % molde.contorno.length];
+  const aoLongo = (p: Ponto2D): number => (a && b ? (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y) : 0);
+  const depoisDoPontoNovo = (p: Pique): boolean => p.indiceAresta === indiceAresta && aoLongo(p.posicao) > aoLongo(novoPonto);
   return {
     ...molde,
     contorno: inserirPontoNoContorno(molde.contorno, indiceAresta, novoPonto),
-    piques: molde.piques.map((p) => (p.indiceAresta > indiceAresta ? { ...p, indiceAresta: p.indiceAresta + 1 } : p)),
+    piques: molde.piques.map((p) => (p.indiceAresta > indiceAresta || depoisDoPontoNovo(p) ? { ...p, indiceAresta: p.indiceAresta + 1 } : p)),
   };
 }
 
@@ -1212,12 +1220,25 @@ function normalizarAngulo(anguloGraus: number): number {
   return normalizado < 0 ? normalizado + 360 : normalizado;
 }
 
+/** O máximo de cópias de uma peça (o campo Quantidade). */
+export const MAXIMO_DE_COPIAS_DA_PECA = 999;
+
 /** Lista as rotações (em graus, relativas à orientação original) que a restrição do molde permite. */
 export function rotacoesPermitidas(restricao: RestricaoDeRotacao): readonly number[] {
   const permitidas = [0];
   if (restricao.permite180) permitidas.push(180);
   if (restricao.permite90e270) permitidas.push(90, 270);
   return permitidas.sort((a, b) => a - b);
+}
+
+/**
+ * As rotações que o encaixe pode usar: as que a peça permite e, num tecido de sentido único (pelo, estampa
+ * direcional), só as que deixam todas as peças com o "alto" para o mesmo lado — 0° e 90°. Virada 180°, a
+ * peça fica com o pelo ao contrário; a 270°, ao contrário das que estão a 90°.
+ */
+export function rotacoesNoEncaixe(restricao: RestricaoDeRotacao, tecidoDeSentidoUnico: boolean): readonly number[] {
+  const permitidas = rotacoesPermitidas(restricao);
+  return tecidoDeSentidoUnico ? permitidas.filter((a) => a === 0 || a === 90) : permitidas;
 }
 
 /** Verdadeiro se `anguloGraus` (rotação proposta, qualquer valor) corresponde a uma das rotações permitidas. */

@@ -3,7 +3,8 @@ import { ponto } from '../core/geometria';
 import { dobrarMolde } from './corteEUniao';
 import { criarMolde, rotacionarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
-import { FUNDURA_MINIMA_DA_SOBREPOSICAO_MM, interioresSeSobrepoem, validarProjeto, projetoTemErrosCriticos, TOLERANCIAS_PADRAO } from './validacao';
+import { FUNDURA_MINIMA_DA_SOBREPOSICAO_MM, interioresSeSobrepoem, validarProjeto, projetoTemErrosCriticos, TOLERANCIAS_PADRAO, type ProblemaDeValidacao } from './validacao';
+import { criarTecido, type DadosDeNovoTecido, type Tecido } from './tecido';
 
 function pecaRetangular(
   id: string,
@@ -454,5 +455,58 @@ describe('validarProjeto — as linhas da metade guardada pela dobra', () => {
 
   it('a linha que passa de uma metade para a outra não gera aviso', () => {
     expect(mensagens([[ponto(200, 100), ponto(100, 100)], [ponto(100, 200), ponto(200, 200)]])).toEqual([]);
+  });
+});
+
+describe('validarProjeto — o tecido (as opções do diálogo Tecido passam a valer)', () => {
+  function tecido(dados: Partial<DadosDeNovoTecido> = {}): Tecido {
+    return criarTecido({ nome: 'Malha', referencia: '', larguraTotalMm: 1500, larguraUtilMm: 1500, ...dados }, 't1');
+  }
+  const doTecido = (problemas: readonly { tipo: string }[]) =>
+    problemas.filter((p) => p.tipo === 'mais-largo-que-o-tecido' || p.tipo === 'sentido-do-tecido');
+
+  it('sem tecido, ou com um tecido que cabe a mesa e não tem sentido, nada muda', () => {
+    const pecas = [pecaRetangular('a', 50, 50, 100, 100)];
+    expect(doTecido(validarProjeto(pecas, enfestoBase()))).toEqual([]);
+    expect(doTecido(validarProjeto(pecas, enfestoBase(), TOLERANCIAS_PADRAO, tecido()))).toEqual([]);
+  });
+
+  it('a mesa mais larga que o tecido: aviso; com peça além da largura do tecido: erro, apontando a peça', () => {
+    const estreito = tecido({ larguraTotalMm: 1200, larguraUtilMm: 1150 });
+    const dentro = [pecaRetangular('a', 50, 50, 100, 100)];
+    const [aviso] = doTecido(validarProjeto(dentro, enfestoBase(), TOLERANCIAS_PADRAO, estreito)) as ProblemaDeValidacao[];
+    expect(aviso).toMatchObject({ tipo: 'mais-largo-que-o-tecido', severidade: 'aviso', pecasEnvolvidasIds: [] });
+    expect(aviso!.mensagem).toContain('1500 mm de largura útil, e o tecido "Malha", 1150 mm');
+
+    const alem = [pecaRetangular('a', 50, 50, 100, 100), pecaRetangular('b', 1100, 50, 100, 100)];
+    const [erro] = doTecido(validarProjeto(alem, enfestoBase(), TOLERANCIAS_PADRAO, estreito)) as ProblemaDeValidacao[];
+    expect(erro).toMatchObject({ tipo: 'mais-largo-que-o-tecido', severidade: 'erro', pecasEnvolvidasIds: ['b'] });
+    expect(erro!.mensagem).toContain('a peça "b" passa da largura do tecido');
+  });
+
+  it('o tecido com pelo e o enfesto zigue-zague com mais de uma camada: aviso', () => {
+    const comPelo = tecido({ temPelo: true });
+    const pecas = [pecaRetangular('a', 50, 50, 100, 100)];
+    const zigue = enfestoBase({ tipo: 'zigue-zague', quantidadeDeCamadas: 4 });
+    const problemas = doTecido(validarProjeto(pecas, zigue, TOLERANCIAS_PADRAO, comPelo)) as ProblemaDeValidacao[];
+    expect(problemas).toHaveLength(1);
+    expect(problemas[0]!.mensagem).toContain('"Malha" tem pelo, e o enfesto zigue-zague vira o tecido a cada camada');
+    // Uma camada só não vira nada; e o tecido sem sentido não se importa.
+    expect(doTecido(validarProjeto(pecas, enfestoBase({ tipo: 'zigue-zague', quantidadeDeCamadas: 1 }), TOLERANCIAS_PADRAO, comPelo))).toEqual([]);
+    expect(doTecido(validarProjeto(pecas, zigue, TOLERANCIAS_PADRAO, tecido()))).toEqual([]);
+  });
+
+  it('a peça virada 180° ou 270° num tecido de estampa direcional: aviso, com as peças', () => {
+    const livre = { restricaoDeRotacao: { permite180: true, permite90e270: true } };
+    const pecas = [
+      pecaRetangular('reta', 50, 50, 100, 100, livre),
+      rotacionarMolde(pecaRetangular('virada', 300, 50, 100, 100, livre), 180),
+      rotacionarMolde(pecaRetangular('deitada', 500, 50, 100, 100, livre), 90),
+      rotacionarMolde(pecaRetangular('do-outro-lado', 700, 50, 100, 100, livre), 270),
+    ];
+    const problemas = doTecido(validarProjeto(pecas, enfestoBase(), TOLERANCIAS_PADRAO, tecido({ direcional: true }))) as ProblemaDeValidacao[];
+    expect(problemas).toHaveLength(1);
+    expect(problemas[0]).toMatchObject({ tipo: 'sentido-do-tecido', severidade: 'aviso', pecasEnvolvidasIds: ['virada', 'do-outro-lado'] });
+    expect(problemas[0]!.mensagem).toContain('tem estampa direcional: 2 peças estão viradas (180° ou 270°), com o desenho ao contrário');
   });
 });

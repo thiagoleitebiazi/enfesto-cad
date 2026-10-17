@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import type { ResultadoDeNesting } from '../domain/nesting';
 import { arestaDeSimetria } from '../domain/anotacoes';
-import { rotacoesPermitidas, type Molde } from '../domain/molde';
+import { rotacoesNoEncaixe, type Molde } from '../domain/molde';
 
 export interface OpcoesAvancadasDeNesting {
   readonly limiteDeTempoMinutos?: number;
@@ -15,6 +15,8 @@ export interface OpcoesAvancadasDeNesting {
 
 interface PainelDeNestingProps {
   readonly pecas: readonly Molde[];
+  /** O tecido de sentido único (pelo, estampa direcional): o encaixe não vira as peças. */
+  readonly sentidoDoTecido?: { readonly nome: string; readonly sentido: string } | null;
   readonly executando: boolean;
   readonly progresso: { readonly colocadas: number; readonly total: number } | null;
   readonly resultado: ResultadoDeNesting | null;
@@ -133,7 +135,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                       <td>{p.nome}</td>
                       <td>{tamanhosDa(p)}</td>
                       <td>{p.quantidade}</td>
-                      <td>{rotacoesPermitidas(p.restricaoDeRotacao).map((r) => `${r}°`).join(', ')}</td>
+                      <td>{rotacoesNoEncaixe(p.restricaoDeRotacao, Boolean(props.sentidoDoTecido)).map((r) => `${r}°`).join(', ')}</td>
                       <td>{p.restricaoDeRotacao.permiteEspelhamento ? 'Sim' : 'Não'}</td>
                     </tr>
                   ))}
@@ -142,6 +144,12 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               <p className="legenda-inline">
                 Só informativo — ajuste pelo painel "Propriedades" antes de calcular, se precisar.
               </p>
+              {props.sentidoDoTecido && (
+                <p className="legenda-inline">
+                  O tecido “{props.sentidoDoTecido.nome}” {props.sentidoDoTecido.sentido}: o encaixe não vira peças 180° nem 270°,
+                  para todas ficarem no mesmo sentido.
+                </p>
+              )}
             </div>
 
             <div className="acoes-da-sobreposicao painel-de-nesting-config-acoes">
