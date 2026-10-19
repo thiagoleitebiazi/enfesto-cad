@@ -2,6 +2,7 @@ import type { Molde } from './molde';
 import type { Tecido } from './tecido';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import type { ImagemDoModelo } from './imagens';
+import type { PlanoDeCorte } from './planoDeCorte';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -30,7 +31,8 @@ export type TipoDeEvento =
   | 'execucao-de-nesting'
   | 'exportacao-de-pdf'
   | 'envio-para-producao'
-  | 'restauracao-de-versao';
+  | 'restauracao-de-versao'
+  | 'plano-de-corte';
 
 export const ROTULO_DO_EVENTO: Record<TipoDeEvento, string> = {
   criacao: 'Criação do projeto',
@@ -42,6 +44,7 @@ export const ROTULO_DO_EVENTO: Record<TipoDeEvento, string> = {
   'exportacao-de-pdf': 'Exportação de arquivo',
   'envio-para-producao': 'Envio para produção',
   'restauracao-de-versao': 'Restauração de versão anterior',
+  'plano-de-corte': 'Plano de corte',
 };
 
 /** Estado completo do trabalho num dado momento — o que entra/sai ao salvar ou restaurar uma versão. */
@@ -77,6 +80,25 @@ export interface Projeto {
    * no estado de cada versão, para o histórico não repetir a imagem a cada evento.
    */
   readonly imagens?: readonly ImagemDoModelo[];
+  /**
+   * Os planos de corte confirmados (aba Encaixe > Planejamento de corte), na ordem em que foram feitos. Um plano
+   * novo nunca substitui um antigo: o anterior da mesma ordem continua aqui, como histórico. Ausente nos projetos
+   * de antes do planejamento, que abrem do mesmo jeito.
+   */
+  readonly planosDeCorte?: readonly PlanoDeCorte[];
+}
+
+/**
+ * Guarda o plano no projeto, depois dos que já existem. Se a mesma ordem já tinha um plano, o novo diz qual ele
+ * substitui — e o anterior fica guardado como estava.
+ */
+export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, agoraIso: string): Projeto {
+  const existentes = projeto.planosDeCorte ?? [];
+  if (existentes.some((p) => p.id === plano.id)) throw new Error('Este plano já está guardado no projeto.');
+  const daOrdem = (p: PlanoDeCorte): string => p.entrada.ordem.codigo.trim().toLocaleLowerCase('pt-BR');
+  const anterior = [...existentes].reverse().find((p) => daOrdem(p) === daOrdem(plano));
+  const guardado: PlanoDeCorte = anterior ? { ...plano, substituiPlanoId: anterior.id } : plano;
+  return { ...projeto, planosDeCorte: [...existentes, guardado], modificadoEmIso: agoraIso };
 }
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;

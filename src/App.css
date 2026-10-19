@@ -1865,3 +1865,187 @@ button:focus-visible {
   background: #f4f6f9;
   border-color: var(--cor-borda-forte);
 }
+
+/* ---- Planejamento de corte (aba Encaixe): os dados à esquerda, a proposta à direita. */
+.painel-de-plano-de-corte {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 18px;
+  width: min(1180px, 84vw);
+  font-size: 12px;
+}
+
+.formulario-do-plano fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grade-do-plano {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px 10px;
+}
+
+.linha-de-campo-com-unidade {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.linha-de-campo-com-unidade label {
+  flex: 1;
+}
+
+.linha-do-rolo {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr auto;
+  align-items: end;
+  gap: 6px;
+}
+
+.acoes-em-linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resultado-do-plano {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.resultado-do-plano h3 {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.resumo-do-plano {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--cor-barra);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  line-height: 1.55;
+}
+
+.proposta-do-plano {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proposta-do-plano .tabela-de-relatorio {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.proposta-do-plano .tabela-de-relatorio th,
+.proposta-do-plano .tabela-de-relatorio td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--cor-borda);
+  text-align: right;
+}
+
+.proposta-do-plano .tabela-de-relatorio th:first-child,
+.proposta-do-plano .tabela-de-relatorio td:first-child {
+  text-align: left;
+}
+
+.alertas-do-plano {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alerta-do-plano {
+  padding: 6px 10px;
+  border-radius: var(--raio-sm);
+  border-left: 4px solid;
+}
+
+.alerta-erro {
+  background: #ffebee;
+  border-color: #c62828;
+  color: #8e1b1b;
+}
+
+.alerta-aviso {
+  background: #fff8e1;
+  border-color: #f9a825;
+  color: #6b4e00;
+}
+
+.alerta-info {
+  background: #e8f1fb;
+  border-color: var(--cor-selecao);
+  color: #0d3a73;
+}
+
+.faltas-do-plano {
+  padding: 10px 12px;
+  background: #fff8e1;
+  border: 1px solid #ffca28;
+  border-radius: var(--raio-md);
+  color: #6b4e00;
+}
+
+.faltas-do-plano p {
+  margin: 0 0 4px;
+}
+
+.premissas-do-plano summary {
+  cursor: pointer;
+  color: var(--cor-texto-secundario);
+}
+
+.confirmacao-do-plano {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--cor-borda);
+}
+
+.confirmacao-do-plano label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.confirmacao-do-plano label.opcao-em-linha {
+  flex-direction: row;
+  align-items: center;
+}
+
+.lista-de-planos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lista-de-planos button {
+  width: 100%;
+  text-align: left;
+}
+
+.plano-salvo {
+  padding: 10px;
+  border: 1px dashed var(--cor-borda-forte);
+  border-radius: var(--raio-md);
+}
+
+@media (max-width: 900px) {
+  .painel-de-plano-de-corte {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

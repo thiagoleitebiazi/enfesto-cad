@@ -80,6 +80,7 @@ function propsBase(): Props {
     onAbrirBiblioteca: vi.fn(),
     onAbrirHistorico: vi.fn(),
     onAbrirRelatorio: vi.fn(),
+    onAbrirPlanoDeCorte: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
     onRestaurar: vi.fn(),

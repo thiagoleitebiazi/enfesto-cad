@@ -6,6 +6,18 @@ import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/Pai
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './ui/salvamento';
 import { ehCampoDeDigitar } from './ui/campoDeDigitar';
+import { PainelDePlanoDeCorte, type PlanoAConfirmar } from './ui/PainelDePlanoDeCorte';
+import { cadastrarMalha, gravarMalhas, lerMalhas, type MalhaCadastrada } from './ui/malhasCadastradas';
+import { gravarConfiguracaoDoPlano, lerConfiguracaoDoPlano } from './ui/configuracaoDoPlano';
+import {
+  ajustesFeitos,
+  calcularPlanoDeCorte,
+  enfestoDoPlano,
+  impressaoDigitalDoMolde,
+  riscoDaMesa,
+  VERSAO_DO_CALCULO,
+  type PlanoDeCorte,
+} from './domain/planoDeCorte';
 import { destinoDaAcaoDoMenu } from './ui/edicaoPeloMenu';
 import { Sobreposicao } from './ui/Sobreposicao';
 import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
@@ -308,6 +320,7 @@ import {
   removerCota,
   converterCosturaEmContorno,
   substituirTrechoDoMolde,
+  linhaDeCorteDaPeca,
   type Molde,
   type PenceDaPeca,
   type PontaDaAresta,
@@ -360,6 +373,7 @@ import { PainelDeDimensionar } from './ui/PainelDeDimensionar';
 import {
   criarProjeto,
   registrarEvento,
+  adicionarPlanoDeCorte,
   restaurarVersao,
   alterarStatus,
   renomearProjeto,
@@ -705,6 +719,15 @@ export default function App(): React.JSX.Element {
   const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
 
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
+  // O planejamento de corte: a janela, o cadastro de malhas e a configuração deste computador.
+  const [mostrarPlanoDeCorte, setMostrarPlanoDeCorte] = useState(false);
+  const [malhasCadastradas, setMalhasCadastradas] = useState<readonly MalhaCadastrada[]>(() => {
+    try {
+      return lerMalhas(window.localStorage);
+    } catch {
+      return [];
+    }
+  });
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
   const [mostrarPropriedadesDaPeca, setMostrarPropriedadesDaPeca] = useState(false);
@@ -1519,6 +1542,102 @@ export default function App(): React.JSX.Element {
   const avisar = useCallback(
     (texto: string, pecasDepois: readonly Molde[] = pecas) => setAviso({ texto, pecas: pecasDepois, selecionadoId }),
     [pecas, selecionadoId],
+  );
+
+  // ---- Planejamento de corte (aba Encaixe): o molde, o risco da mesa e a configuração, lidos ao abrir a janela.
+  const dadosDoPlano = useMemo(() => {
+    if (!mostrarPlanoDeCorte) return null;
+    const tamanhos = [...new Set(pecas.flatMap((p) => [...(p.graduacao?.tamanhos ?? []), p.tamanho.trim()]).filter((t) => t !== ''))];
+    let configuracao = lerConfiguracaoDoPlano({ getItem: () => null });
+    try {
+      configuracao = lerConfiguracaoDoPlano(window.localStorage);
+    } catch {
+      // Sem acesso ao armazenamento: vale a configuração padrão.
+    }
+    return {
+      molde: {
+        projetoId: projetoAtual.id,
+        codigo: projetoAtual.codigo,
+        nome: projetoAtual.nome,
+        revisao: projetoAtual.historico.length,
+        impressaoDigital: impressaoDigitalDoMolde(pecas),
+      },
+      tamanhos,
+      risco: riscoDaMesa(pecas),
+      configuracao,
+    };
+  }, [mostrarPlanoDeCorte, pecas, projetoAtual.id, projetoAtual.codigo, projetoAtual.nome, projetoAtual.historico.length]);
+
+  const cadastrarMalhaDoPlano = useCallback(
+    (malha: Omit<MalhaCadastrada, 'id'>): string | null => {
+      try {
+        const lista = cadastrarMalha(malhasCadastradas, { ...malha, id: `malha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` });
+        let gravou = false;
+        try {
+          gravou = gravarMalhas(window.localStorage, lista);
+        } catch {
+          gravou = false;
+        }
+        if (!gravou) return 'Não deu para gravar o cadastro de malhas neste computador.';
+        setMalhasCadastradas(lista);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [malhasCadastradas],
+  );
+
+  /**
+   * Confirma o plano: calcula de novo com o que veio da janela (a sugestão e o ajustado, para registrar os
+   * ajustes), guarda no projeto — sem tirar os planos anteriores — e, se pedido, ajusta o enfesto ao plano.
+   */
+  const confirmarPlanoDeCorte = useCallback(
+    (pedido: PlanoAConfirmar): string | null => {
+      const final = calcularPlanoDeCorte(pedido.entrada, pedido.configuracao, pedido.ajustes);
+      if (!final.ok) return final.erros[0] ?? 'O plano não pôde ser calculado.';
+      const sugerido = calcularPlanoDeCorte(pedido.entrada, pedido.configuracao);
+      const agora = new Date().toISOString();
+      const plano: PlanoDeCorte = {
+        id: `plano-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        criadoEmIso: agora,
+        responsavel: pedido.responsavel,
+        versaoDoCalculo: VERSAO_DO_CALCULO,
+        entrada: pedido.entrada,
+        configuracao: pedido.configuracao,
+        ajustes: sugerido.ok ? ajustesFeitos(sugerido.resultado, final.resultado, pedido.ajustes) : [],
+        resultado: final.resultado,
+        alertas: final.alertas,
+        premissas: final.premissas,
+      };
+      let enfestoNovo = enfesto;
+      if (pedido.aplicarAoEnfesto) {
+        try {
+          const alcance = pecas.length > 0 ? Math.max(...pecas.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY)) : 0;
+          enfestoNovo = enfestoDoPlano(enfesto, pedido.entrada.tipoDeEnfesto, final.resultado, DISTANCIA_PADRAO_ENTRE_PECAS_MM, alcance);
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+        setEnfesto(enfestoNovo);
+      }
+      try {
+        gravarConfiguracaoDoPlano(window.localStorage, pedido.configuracao);
+      } catch {
+        // Sem gravar neste computador: a configuração fica só no plano.
+      }
+      const r = final.resultado;
+      const descricao = `Ordem ${pedido.entrada.ordem.codigo}: ${r.camadas} camadas em ${r.enfestos.length} enfesto(s), por ${pedido.responsavel}`;
+      const estado = { pecas, tecido, enfesto: enfestoNovo };
+      setProjetoAtual((atual) => {
+        const atualizado = registrarEvento(adicionarPlanoDeCorte(atual, plano, agora), 'plano-de-corte', estado, agora, descricao);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+      setMostrarPlanoDeCorte(false);
+      avisar(`Plano de corte guardado no projeto — ${descricao}.`);
+      return null;
+    },
+    [enfesto, pecas, tecido, persistirProjeto, avisar],
   );
 
   /** "Inverter seleção" (aba Início): passam a estar selecionadas as peças que não estavam. */
@@ -3838,6 +3957,7 @@ export default function App(): React.JSX.Element {
         onAbrirBiblioteca={abrirBiblioteca}
         onAbrirHistorico={() => setMostrarHistorico(true)}
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
+        onAbrirPlanoDeCorte={() => setMostrarPlanoDeCorte(true)}
         onEntrarModoMoverPonto={entrarModoMoverPonto}
         onEntrarModoModificar={entrarModoModificar}
         onEntrarModoRedefinirPerimetro={entrarModoRedefinirPerimetro}
@@ -3972,6 +4092,22 @@ export default function App(): React.JSX.Element {
             setMostrarHistorico(false);
           }}
           onFechar={() => setMostrarHistorico(false)}
+        />
+      )}
+      {dadosDoPlano && (
+        <PainelDePlanoDeCorte
+          molde={dadosDoPlano.molde}
+          tamanhosDoMolde={dadosDoPlano.tamanhos}
+          riscoDaMesa={dadosDoPlano.risco}
+          tecidoDoProjeto={tecido}
+          tipoDoEnfesto={enfesto?.tipo ?? 'impar'}
+          responsavelSugerido={projetoAtual.autor ?? ''}
+          planosSalvos={projetoAtual.planosDeCorte ?? []}
+          malhasCadastradas={malhasCadastradas}
+          configuracaoGuardada={dadosDoPlano.configuracao}
+          onCadastrarMalha={cadastrarMalhaDoPlano}
+          onConfirmar={confirmarPlanoDeCorte}
+          onFechar={() => setMostrarPlanoDeCorte(false)}
         />
       )}
       {relatorioAtual && (

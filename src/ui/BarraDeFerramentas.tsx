@@ -96,6 +96,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirBiblioteca: () => void;
   readonly onAbrirHistorico: () => void;
   readonly onAbrirRelatorio: () => void;
+  /** Encaixe > Planejamento de corte: a mesa, as camadas, os enfestos e o consumo, pelo risco, a ordem e a malha. */
+  readonly onAbrirPlanoDeCorte: () => void;
   readonly onInverterSelecao: () => void;
   readonly onCriarPontoDeRestauracao: () => void;
   readonly onRestaurar: () => void;
@@ -1811,6 +1813,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 <button onClick={props.onAbrirRelatorio} title="Relatório de produção (PDF/Excel)">
                   <Icone nome="relatorio" />
                   <span>Relatórios</span>
+                </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Planejamento">
+                <button
+                  onClick={props.onAbrirPlanoDeCorte}
+                  title="Planejamento de corte: a partir do risco, da ordem de produção e da malha, a mesa, as camadas, os enfestos, o consumo e a sobra"
+                >
+                  <Icone nome="plano-de-corte" />
+                  <span>Planejamento de corte</span>
                 </button>
               </div>
 

@@ -40,6 +40,7 @@ export type NomeDoIcone =
   | 'importar'
   | 'exportar'
   | 'relatorio'
+  | 'plano-de-corte'
   | 'tecido'
   | 'enfesto'
   | 'sugerir-posicao'
@@ -346,6 +347,15 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <line x1="7.5" y1="11" x2="7.5" y2="14.5" />
       <line x1="10" y1="9" x2="10" y2="14.5" />
       <line x1="12.5" y1="12.3" x2="12.5" y2="14.5" />
+    </>
+  ),
+  // A mesa com o risco e as camadas empilhadas ao lado: o plano de corte.
+  'plano-de-corte': (
+    <>
+      <rect x="2.5" y="11" width="15" height="5.5" rx="0.6" />
+      <path d="M2.5 13.7h15" />
+      <path d="M5 3.5h10v5H5z" />
+      <path d="M8 3.5v5M12 3.5v5" />
     </>
   ),
   tecido: (
