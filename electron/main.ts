@@ -26,6 +26,7 @@ import {
   type ModoDeAbertura,
 } from '../src/domain/abertura';
 import { criarFilaDeGravacao, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,18 @@ const TIPOS_DE_ARQUIVO: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 const TEMPO_LIMITE_DE_CARREGAMENTO_MS = 20000;
+const NO_MAC = process.platform === 'darwin';
+/**
+ * O teste de abertura (o da montagem do instalador do Mac, que roda num Mac do GitHub): abre, espera a tela
+ * aparecer conferida, tira a foto dela (se pedida em ENFESTO_CAD_FOTO_DA_ABERTURA) e sai com 0; se a tela não
+ * aparece, sai com 1 — sem reabrir em outro modo, nem perguntar nada, nem mostrar caixa nenhuma.
+ */
+const TESTE_DE_ABERTURA = process.env.ENFESTO_CAD_TESTE_DE_ABERTURA === '1';
+
+/** O sistema, para o diagnóstico e para a caixa que diz que a tela não apareceu. */
+function sistemaDoComputador(): string {
+  return NO_MAC ? `macOS (Darwin ${os.release()})` : `Windows ${os.release()}`;
+}
 const MAXIMO_DE_TENTATIVAS_DE_RECUPERACAO = 2;
 
 function registrarProtocoloDoApp(): void {
@@ -159,7 +172,7 @@ if (instanciaUnica) {
   modoDaSessao = comeco.modo;
   guardarEstado(estadoDaAbertura);
 
-  const opcoes = opcoesDoModo(modoDaSessao);
+  const opcoes = opcoesDoModo(modoDaSessao, process.platform);
   // Desenhar por software: sem isso, em máquinas com driver de vídeo incompatível ou desatualizado, GPU virtualizada
   // (VM) ou área de trabalho remota, o compositor do Chromium pode falhar e a janela abrir preta. É uma aplicação 2D
   // (Canvas, sem WebGL/3D): o custo é baixo. Precisa ser chamado antes de `app.whenReady()`.
@@ -214,7 +227,7 @@ function fimDoDiagnostico(): string {
  */
 async function avisarQueNaoAbriu(motivo: string, tentados: readonly ModoDeAbertura[], janela: BrowserWindow): Promise<void> {
   const antivirus = await antivirusDoComputador();
-  const resumo = `Windows ${os.release()}, ${os.arch()}; antivírus: ${antivirus}; modos tentados: ${tentados.map((m) => NOME_DO_MODO[m]).join(', ')}; último motivo: ${motivo}.`;
+  const resumo = `${sistemaDoComputador()}, ${os.arch()}; antivírus: ${antivirus}; modos tentados: ${tentados.map((m) => NOME_DO_MODO[m]).join(', ')}; último motivo: ${motivo}.`;
   registrarDiagnostico(`nao-abriu ${resumo}`);
   if (!janela.isDestroyed()) janela.show();
   for (;;) {
@@ -242,6 +255,73 @@ async function avisarQueNaoAbriu(motivo: string, tentados: readonly ModoDeAbertu
   app.exit(0);
 }
 
+/** O fim do teste de abertura: a tela apareceu. Tira a foto pedida e sai com 0. */
+async function terminarOTesteDeAbertura(janela: BrowserWindow, conferida: boolean): Promise<void> {
+  await new Promise((resolver) => setTimeout(resolver, 1500));
+  const destino = process.env.ENFESTO_CAD_FOTO_DA_ABERTURA;
+  if (destino && !janela.isDestroyed()) {
+    try {
+      writeFileSync(destino, (await janela.webContents.capturePage()).toPNG());
+    } catch (e) {
+      console.log(`foto da abertura não gravada: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  console.log(`ABERTURA-OK modo=${modoDaSessao} conferida=${conferida} sistema="${sistemaDoComputador()}" arch=${process.arch}`);
+  app.exit(0);
+}
+
+/**
+ * O menu da barra do Mac: o do programa (Sobre, Ocultar, Sair), o Editar e o Janela. No Windows não há menu —
+ * os comandos ficam na faixa de abas. Os itens do Editar não usam os papéis prontos do sistema: com eles, ⌘Z e
+ * ⌘C iriam direto para o texto, e fora de um campo de texto (no desenho) não fariam nada. Eles mandam a ação
+ * para a página, que decide (ver `src/ui/edicaoPeloMenu.ts`).
+ */
+function menuDoMac(): Menu {
+  const editar = (acao: AcaoDeEdicao) => (): void => {
+    BrowserWindow.getFocusedWindow()?.webContents.send('menu-editar', acao);
+  };
+  return Menu.buildFromTemplate([
+    {
+      label: 'Enfesto CAD',
+      submenu: [
+        { role: 'about', label: 'Sobre o Enfesto CAD' },
+        { type: 'separator' },
+        { role: 'hide', label: 'Ocultar o Enfesto CAD' },
+        { role: 'hideOthers', label: 'Ocultar os outros' },
+        { role: 'unhide', label: 'Mostrar todos' },
+        { type: 'separator' },
+        { role: 'quit', label: 'Sair do Enfesto CAD' },
+      ],
+    },
+    {
+      label: 'Editar',
+      submenu: [
+        { label: 'Desfazer', accelerator: 'Command+Z', click: editar('desfazer') },
+        { label: 'Refazer', accelerator: 'Shift+Command+Z', click: editar('refazer') },
+        { type: 'separator' },
+        { label: 'Recortar', accelerator: 'Command+X', click: editar('recortar') },
+        { label: 'Copiar', accelerator: 'Command+C', click: editar('copiar') },
+        { label: 'Colar', accelerator: 'Command+V', click: editar('colar') },
+        { label: 'Selecionar tudo', accelerator: 'Command+A', click: editar('selecionar-tudo') },
+      ],
+    },
+    {
+      label: 'Janela',
+      submenu: [
+        { role: 'minimize', label: 'Minimizar' },
+        { role: 'zoom', label: 'Zoom' },
+        { role: 'togglefullscreen', label: 'Tela cheia' },
+      ],
+    },
+  ]);
+}
+
+// No campo de texto, a ação do menu Editar do Mac é a do próprio texto (a página pede; o motor faz).
+ipcMain.on('editar-texto', (evento, acao: unknown) => {
+  if (!ehAcaoDeEdicao(acao)) return;
+  evento.sender[COMANDO_NO_TEXTO[acao]]();
+});
+
 function criarJanelaPrincipal(): void {
   const janela = new BrowserWindow({
     width: 1400,
@@ -263,7 +343,7 @@ function criarJanelaPrincipal(): void {
   const tentados = pedidoDeAbertura.tentados;
   registrarDiagnostico(
     `inicio versao=${app.getVersion()} modo=${modoDaSessao} tentados=${tentados.join(',') || '-'} guardado=${JSON.stringify(estadoDaAbertura)} ` +
-      `plataforma=${process.platform} windows=${os.release()} arch=${process.arch} cpu="${os.cpus()[0]?.model ?? '?'}" nucleos=${os.cpus().length} ` +
+      `plataforma=${process.platform} sistema="${sistemaDoComputador()}" arch=${process.arch} cpu="${os.cpus()[0]?.model ?? '?'}" nucleos=${os.cpus().length} ` +
       `memoriaMB=${Math.round(os.totalmem() / 1048576)} livreMB=${Math.round(os.freemem() / 1048576)} idioma=${app.getLocale()} ` +
       `exe=${process.execPath} gpu=${JSON.stringify(app.getGPUFeatureStatus())}`,
   );
@@ -290,6 +370,11 @@ function criarJanelaPrincipal(): void {
     pararRelogios();
     aviso.abort();
     registrarDiagnostico(`abertura-falhou modo=${modoDaSessao} lado=${falha} motivo=${motivo}`);
+    if (TESTE_DE_ABERTURA) {
+      console.log(`ABERTURA-FALHOU modo=${modoDaSessao} lado=${falha} motivo=${motivo}`);
+      app.exit(1);
+      return;
+    }
     const resultado = aoFalhar(estadoDaAbertura, modoDaSessao, falha, tentados);
     estadoDaAbertura = resultado.estado;
     guardarEstado(estadoDaAbertura);
@@ -319,6 +404,7 @@ function criarJanelaPrincipal(): void {
     janela.show();
     janela.focus();
     registrarDiagnostico(`tela-mostrada modo=${modoDaSessao} conferida=${conferida}`);
+    if (TESTE_DE_ABERTURA) void terminarOTesteDeAbertura(janela, conferida);
   };
 
   /**
@@ -361,6 +447,11 @@ function criarJanelaPrincipal(): void {
 
   const mostrarAviso = (): void => {
     if (desistiu || mostradaEm !== null) return;
+    // No Mac, a caixa sem janela-mãe roda presa ao processo principal: a abertura pararia até alguém clicar nela.
+    if (NO_MAC || TESTE_DE_ABERTURA) {
+      registrarDiagnostico('aviso-de-demora (sem a caixa)');
+      return;
+    }
     registrarDiagnostico('aviso-de-demora');
     void dialog
       .showMessageBox({
@@ -652,7 +743,7 @@ ipcMain.handle('programas-abrir', async (_evento, id: unknown) => {
  * preta, reabre no modo seguinte. Devolve `true` se o programa vai reabrir.
  */
 async function perguntarSeAbriuDireito(): Promise<boolean> {
-  if (pedidoDeAbertura.modo !== null || !devePerguntarSeAbriuDireito(estadoDaAbertura)) return false;
+  if (TESTE_DE_ABERTURA || pedidoDeAbertura.modo !== null || !devePerguntarSeAbriuDireito(estadoDaAbertura)) return false;
   const resposta = await dialog.showMessageBox({
     type: 'question',
     title: 'Enfesto CAD',
@@ -694,24 +785,16 @@ if (!instanciaUnica) {
   });
 
   app.whenReady().then(async () => {
-    // Sem a barra de menu padrão do Electron (File/Edit/View/Window, em inglês):
-    // os comandos do app ficam todos na faixa de abas. No Windows, copiar/colar
-    // em campos de texto continua funcionando, porque é tratado pelo Chromium.
-    Menu.setApplicationMenu(null);
+    // No Windows, sem a barra de menu padrão do Electron (File/Edit/View/Window, em inglês): os comandos do app
+    // ficam todos na faixa de abas, e copiar/colar em campos de texto é tratado pelo Chromium. No Mac, a barra do
+    // sistema tem de ter o menu do programa (Sair, ⌘Q) e o Editar (sem ele, ⌘C/⌘V não funcionam nem nos campos).
+    Menu.setApplicationMenu(NO_MAC ? menuDoMac() : null);
     registrarProtocoloDoApp();
     if (await perguntarSeAbriuDireito()) return;
     criarJanelaPrincipal();
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        criarJanelaPrincipal();
-      }
-    });
   });
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.quit();
-    }
-  });
+  // Fechada a janela, o programa sai — no Mac também: ele tem uma janela só, e reabri-la pelo Dock refaria a
+  // abertura inteira (a conferência da tela) num programa que já está aberto.
+  app.on('window-all-closed', () => app.quit());
 }

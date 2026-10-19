@@ -40,6 +40,7 @@ import {
 import { capturarComIma, pontosDeCapturaDasPecas, type TipoDeCaptura } from './ima';
 import { formatarMm } from './medidas';
 import type { MedicaoResolvida } from './medicao';
+import { ehMac, gestoDaRoda } from './rodaDoMouse';
 import type { ImagemDoModelo } from '../domain/imagens';
 
 const ESPESSURA_REGUA_PX = 24;
@@ -301,6 +302,8 @@ const TAMANHO_MINIMO_DA_CERCA_PX = 3;
 const TAMANHO_MINIMO_DA_JANELA_DE_ZOOM_PX = 5;
 /** Rolagens da roda separadas por menos que isso são um só gesto: guardam uma vista só no histórico. */
 const PAUSA_ENTRE_GESTOS_DE_ROLAGEM_MS = 500;
+/** No Mac, os dois dedos no trackpad movem a vista (no Windows, a roda continua sendo o zoom). */
+const NO_MAC = ehMac();
 
 /**
  * Retângulo sendo arrastado no canvas, em mm do mundo: seleção de vértices
@@ -1906,9 +1909,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
   function aoRolarMouse(e: React.WheelEvent<HTMLCanvasElement>): void {
     e.preventDefault();
-    const fator = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const nova = aplicarZoom(transform, fator, posicaoDoMouse(e));
-    if (nova.escalaPxPorMm === transform.escalaPxPorMm) return; // já no limite de zoom
+    // A roda do mouse, a pinça e os dois dedos do trackpad (ver `gestoDaRoda`).
+    const gesto = gestoDaRoda(e, NO_MAC);
+    const nova =
+      gesto.tipo === 'zoom'
+        ? aplicarZoom(transform, gesto.fator, posicaoDoMouse(e))
+        : { ...transform, offsetXPx: transform.offsetXPx + gesto.dx, offsetYPx: transform.offsetYPx + gesto.dy };
+    if (nova.escalaPxPorMm === transform.escalaPxPorMm && nova.offsetXPx === transform.offsetXPx && nova.offsetYPx === transform.offsetYPx) return; // nada mudou (no limite do zoom)
     // Uma sequência de rolagens é um gesto só: a vista de antes dela vai uma vez para o histórico.
     if (e.timeStamp - ultimaRolagemRef.current > PAUSA_ENTRE_GESTOS_DE_ROLAGEM_MS) onGuardarVista?.();
     ultimaRolagemRef.current = e.timeStamp;

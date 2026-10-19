@@ -53,11 +53,15 @@ export interface OpcoesDoModo {
  */
 const SEMPRE_DESLIGADO = 'CalculateNativeWinOcclusion';
 
-/** O que cada modo liga e desliga no motor. */
-export function opcoesDoModo(modo: ModoDeAbertura): OpcoesDoModo {
+/**
+ * O que cada modo liga e desliga no motor. `plataforma` é o `process.platform`: no Mac, o modo padrão desenha
+ * pela placa de vídeo — lá não há o problema de driver que deixa a janela preta no Windows, e o desenho por
+ * software fica pesado na tela Retina.
+ */
+export function opcoesDoModo(modo: ModoDeAbertura, plataforma: string = 'win32'): OpcoesDoModo {
   switch (modo) {
     case 'padrao':
-      return { semAceleracao: true, opcoes: [], recursosDesligados: [SEMPRE_DESLIGADO] };
+      return { semAceleracao: plataforma !== 'darwin', opcoes: [], recursosDesligados: [SEMPRE_DESLIGADO] };
     case 'video-no-principal':
       // O vídeo deixa de ser um processo à parte (que pode não subir) e de ser isolado.
       return { semAceleracao: true, opcoes: ['in-process-gpu', 'disable-gpu-sandbox'], recursosDesligados: [SEMPRE_DESLIGADO] };

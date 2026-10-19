@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
+import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 
 /** A lista de atalhos depois de um pedido, e a mensagem do que o impediu (ou `null`). */
 export interface ResultadoDeProgramas {
@@ -52,6 +53,20 @@ const api = {
   /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
   avisarInterfacePronta(): void {
     ipcRenderer.send('interface-pronta');
+  },
+  /** O menu Editar do Mac: a ação escolhida nele (⌘Z, ⌘C…). Devolve a função que para de ouvir. */
+  aoEditarPeloMenu(ouvir: (acao: AcaoDeEdicao) => void): () => void {
+    const ouvinte = (_evento: Electron.IpcRendererEvent, acao: unknown): void => {
+      if (ehAcaoDeEdicao(acao)) ouvir(acao);
+    };
+    ipcRenderer.on('menu-editar', ouvinte);
+    return () => {
+      ipcRenderer.removeListener('menu-editar', ouvinte);
+    };
+  },
+  /** Faz a ação no texto do campo em foco (desfazer, copiar, colar…), pelo próprio motor. */
+  editarTexto(acao: AcaoDeEdicao): void {
+    ipcRenderer.send('editar-texto', acao);
   },
 };
 

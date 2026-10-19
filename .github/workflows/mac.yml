@@ -1,0 +1,81 @@
+# A versão para Mac: montada num Mac do GitHub (o instalador de Mac só se monta num Mac), conferida (os testes, e
+# o programa montado é aberto de verdade — a tela tem de aparecer e ser desenhada) e posta no lançamento v0.1.0
+# ao lado do instalador do Windows. Roda a cada envio (git push) para o master, ou pelo botão "Run workflow".
+name: Mac
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar as dependências
+        run: npm ci
+
+      - name: Testes
+        run: npm test
+
+      - name: Gerar o programa
+        run: npm run build
+
+      - name: Montar o instalador do Mac (Apple Silicon e Intel num arquivo só)
+        run: npx electron-builder --mac --universal --publish never
+
+      - name: Abrir o programa montado (chip Apple)
+        timeout-minutes: 3
+        run: |
+          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-apple.png" \
+            "$APP" --user-data-dir="$RUNNER_TEMP/dados-apple" 2>&1 | tee abertura-apple.txt
+          grep -q "ABERTURA-OK" abertura-apple.txt
+
+      # Informativo: o Mac do GitHub é de chip Apple, e a parte Intel só roda nele pelo Rosetta (que emula o
+      # Intel); uma falha aqui fica registrada, mas não segura o instalador.
+      - name: Abrir o programa montado (Intel, pelo Rosetta)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Este Mac do GitHub não tem o Rosetta: a parte Intel não foi aberta." | tee abertura-intel.txt
+            exit 0
+          fi
+          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel.png" \
+            arch -x86_64 "$APP" --user-data-dir="$RUNNER_TEMP/dados-intel" 2>&1 | tee abertura-intel.txt
+          grep -q "ABERTURA-OK" abertura-intel.txt
+
+      - name: Guardar o instalador e as fotos da abertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enfesto-cad-mac
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            release/*-mac.dmg
+            abertura-*.png
+            abertura-*.txt
+
+      - name: Pôr o instalador no lançamento v0.1.0
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v0.1.0 release/Enfesto-CAD-*-mac.dmg --clobber

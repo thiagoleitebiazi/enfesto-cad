@@ -6,6 +6,7 @@ import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/Pai
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './ui/salvamento';
 import { ehCampoDeDigitar } from './ui/campoDeDigitar';
+import { destinoDaAcaoDoMenu } from './ui/edicaoPeloMenu';
 import { Sobreposicao } from './ui/Sobreposicao';
 import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
 import { PainelDeModificar } from './ui/PainelDeModificar';
@@ -3337,6 +3338,30 @@ export default function App(): React.JSX.Element {
       recortarSelecionado,
       colar,
     ],
+  );
+
+  // O menu Editar do Mac (⌘Z, ⌘C, ⌘V…): lá o menu pega a tecla antes da página, e manda a ação para cá. Num campo
+  // de texto ela é do texto; no desenho, do programa. As funções vão por uma referência: a escuta é feita uma vez só.
+  const acoesDoMenuRef = useRef({ desfazer, refazer, copiarSelecionado, recortarSelecionado, colar, selecionarTudo });
+  useEffect(() => {
+    acoesDoMenuRef.current = { desfazer, refazer, copiarSelecionado, recortarSelecionado, colar, selecionarTudo };
+  }, [desfazer, refazer, copiarSelecionado, recortarSelecionado, colar, selecionarTudo]);
+  useEffect(
+    () =>
+      window.enfestoCad?.aoEditarPeloMenu?.((acao) => {
+        const janelaAberta = document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+        const destino = destinoDaAcaoDoMenu(ehCampoDeDigitar(document.activeElement), janelaAberta);
+        if (destino === 'texto') window.enfestoCad?.editarTexto(acao);
+        if (destino !== 'programa') return;
+        const acoes = acoesDoMenuRef.current;
+        if (acao === 'desfazer') acoes.desfazer();
+        else if (acao === 'refazer') acoes.refazer();
+        else if (acao === 'copiar') acoes.copiarSelecionado();
+        else if (acao === 'recortar') acoes.recortarSelecionado();
+        else if (acao === 'colar') acoes.colar();
+        else acoes.selecionarTudo();
+      }),
+    [],
   );
 
   // Medidas da aba Conferência: só aparecem com uma das ferramentas dela

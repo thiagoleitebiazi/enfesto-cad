@@ -404,3 +404,17 @@ describe('a conferência de que a tela foi desenhada', () => {
     expect(fotoEstaPreta(foto(1000, 1000, (i) => (i < 500000 ? [0, 0, 0] : [240, 240, 240])), 1000, 1000)).toBe(false);
   });
 });
+
+describe('opcoesDoModo — no Mac', () => {
+  it('o modo padrão desenha pela placa de vídeo no Mac, e por software no Windows', () => {
+    expect(opcoesDoModo('padrao', 'darwin').semAceleracao).toBe(false);
+    expect(opcoesDoModo('padrao', 'win32').semAceleracao).toBe(true);
+    expect(opcoesDoModo('padrao').semAceleracao).toBe(true);
+  });
+
+  it('os modos de compatibilidade são os mesmos nas duas plataformas', () => {
+    for (const modo of ['video-no-principal', 'sem-isolamento', 'com-gpu'] as const) {
+      expect(opcoesDoModo(modo, 'darwin')).toEqual(opcoesDoModo(modo, 'win32'));
+    }
+  });
+});

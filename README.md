@@ -1,7 +1,7 @@
 # Enfesto CAD
 
 CAD industrial de enfesto têxtil, encaixe (nesting) e preparação para corte —
-aplicação desktop para Windows. Projeto novo, começado do zero (ver
+aplicação desktop para Windows e Mac. Projeto novo, começado do zero (ver
 [ADR/0001-projeto-novo-e-arquitetura.md](ADR/0001-projeto-novo-e-arquitetura.md)
 para o histórico da decisão e o estado real de cada funcionalidade).
 
@@ -53,6 +53,38 @@ volta ao modo normal. O diagnóstico fica em
 
 O programa não precisa do Microsoft Visual C++ Redistributable nem de nenhum
 outro componente instalado à parte: o instalador leva tudo.
+
+## Baixar e instalar no Mac
+
+Na mesma [página de releases](https://github.com/thiagoleitebiazi/enfesto-cad/releases/tag/v0.1.0):
+**[Enfesto-CAD-0.1.0-mac.dmg](https://github.com/thiagoleitebiazi/enfesto-cad/releases/download/v0.1.0/Enfesto-CAD-0.1.0-mac.dmg)**
+— macOS 12 (Monterey) ou mais novo, em Mac com chip Apple (M1, M2, M3, M4…) ou
+Intel: o mesmo arquivo serve para os dois.
+
+1. Abra o arquivo `.dmg` baixado e arraste o **Enfesto CAD** para a pasta
+   **Aplicativos**.
+2. Abra o Enfesto CAD pela pasta Aplicativos. Na primeira vez o Mac avisa que
+   não pode verificar o programa, porque ele não tem a assinatura paga da Apple
+   (como o instalador do Windows também não tem). Clique em **OK** (ou
+   **Concluído**).
+3. Abra **Ajustes do Sistema → Privacidade e Segurança**, desça até a
+   mensagem sobre o Enfesto CAD e clique em **Abrir Mesmo Assim**; confirme
+   com a senha do Mac. (Num macOS mais antigo, também funciona clicar no
+   programa com o botão direito → **Abrir**.)
+
+Se o Mac disser que o programa **"está danificado"**, abra o Terminal e
+rode `xattr -cr "/Applications/Enfesto CAD.app"`; depois abra de novo.
+
+No Mac, o **⌘ (Command)** faz o mesmo que o **Ctrl** nos atalhos (⌘S salva,
+⌘Z desfaz…); dois dedos no trackpad movem a vista e a pinça dá zoom. A lista
+completa está em Ajuda → Atalhos de teclado. Os projetos ficam em
+`~/Library/Application Support/enfesto-cad/projetos`, e o diagnóstico em
+`~/Library/Application Support/enfesto-cad/diagnostico.log`.
+
+O instalador do Mac é montado e conferido sozinho num Mac do GitHub a cada
+envio para o `master` (ver `.github/workflows/mac.yml`): os testes rodam, o
+programa montado é aberto de verdade e a foto da tela dele fica guardada na
+execução.
 
 ## Instalar para desenvolvimento
 
