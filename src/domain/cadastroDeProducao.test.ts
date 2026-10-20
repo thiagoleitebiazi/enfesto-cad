@@ -1,0 +1,203 @@
+import { describe, expect, it } from 'vitest';
+import {
+  CADASTRO_VAZIO,
+  comprimentoDoRolo,
+  grupoDoRolo,
+  incluirMalhasAntigas,
+  lerCadastroDeProducao,
+  lerGradeColada,
+  removerMalha,
+  removerOrdem,
+  removerRolo,
+  salvarMalha,
+  salvarOrdem,
+  salvarRolo,
+  validarMalha,
+  validarOrdem,
+  validarRolo,
+  VERSAO_DO_CADASTRO,
+  type CadastroDeProducao,
+  type MalhaDoCadastro,
+  type OrdemDeProducao,
+  type RoloDeEstoque,
+} from './cadastroDeProducao';
+
+const MALHA: MalhaDoCadastro = {
+  id: 'm1',
+  descricao: 'Malha algodão 30/1',
+  gramaturaGm2: 160,
+  larguraNominalMm: 1800,
+  larguraUtilMm: 1700,
+  rendimentoMmPorG: 3.6,
+  tubular: false,
+  sentidoUnico: false,
+  padrao: 'liso',
+  encolhimentoCompensadoNoMolde: false,
+};
+
+const ROLO: RoloDeEstoque = {
+  id: 'r1',
+  malhaId: 'm1',
+  identificacao: 'R-001',
+  pesoLiquidoG: 25_000,
+  lote: 'L10',
+  tonalidade: 'A',
+  defeitos: [],
+  unidadeDoPeso: 'kg',
+  unidadeDoComprimento: 'm',
+  indisponivel: false,
+};
+
+const ORDEM: OrdemDeProducao = {
+  id: 'o1',
+  codigo: 'OP-100',
+  quantidadesPorTamanho: { P: 10, M: 20, G: 10 },
+  criadaEmIso: '2026-10-20T10:00:00.000Z',
+  atualizadaEmIso: '2026-10-20T10:00:00.000Z',
+};
+
+function semPeso(r: RoloDeEstoque): RoloDeEstoque {
+  const copia: { -readonly [K in keyof RoloDeEstoque]?: RoloDeEstoque[K] } = { ...r };
+  delete copia.pesoLiquidoG;
+  return copia as RoloDeEstoque;
+}
+
+const COM_MALHA: CadastroDeProducao = salvarMalha(CADASTRO_VAZIO, MALHA);
+
+describe('lerCadastroDeProducao', () => {
+  it('sem arquivo, o cadastro vazio; um cadastro gravado volta igual', () => {
+    expect(lerCadastroDeProducao(null)).toEqual({ cadastro: CADASTRO_VAZIO, descartados: [], maisNovo: false });
+    const cheio = salvarOrdem(salvarRolo(COM_MALHA, ROLO), ORDEM);
+    const lido = lerCadastroDeProducao(JSON.parse(JSON.stringify(cheio)));
+    expect(lido.cadastro).toEqual(cheio);
+    expect(lido.descartados).toEqual([]);
+  });
+
+  it('o registro inválido fica de fora, com o motivo; o resto entra', () => {
+    const lido = lerCadastroDeProducao({
+      versaoDoFormato: 1,
+      malhas: [MALHA, { ...MALHA, id: 'm2', larguraUtilMm: -5 }],
+      rolos: [ROLO, { ...ROLO, id: 'r2', pesoLiquidoG: undefined }],
+      ordens: 'nada',
+    });
+    expect(lido.cadastro.malhas.map((m) => m.id)).toEqual(['m1']);
+    expect(lido.cadastro.rolos.map((r) => r.id)).toEqual(['r1']);
+    expect(lido.cadastro.ordens).toEqual([]);
+    expect(lido.descartados).toEqual([
+      '1 registro(s) de malhas com dados inválidos ficaram de fora.',
+      '1 registro(s) de rolos com dados inválidos ficaram de fora.',
+      'A lista de ordens não pôde ser lida.',
+    ]);
+  });
+
+  it('um arquivo de versão mais nova é lido, e marcado', () => {
+    expect(lerCadastroDeProducao({ versaoDoFormato: VERSAO_DO_CADASTRO + 1, malhas: [MALHA] }).maisNovo).toBe(true);
+  });
+
+  it('o que não é um cadastro não derruba nada', () => {
+    expect(lerCadastroDeProducao([1, 2]).cadastro).toEqual(CADASTRO_VAZIO);
+    expect(lerCadastroDeProducao('texto').descartados).toHaveLength(1);
+  });
+});
+
+describe('malhas', () => {
+  it('a largura útil acima da nominal, valores zerados e encolhimento absurdo são recusados, com o que corrigir', () => {
+    const erros = validarMalha({ ...MALHA, larguraUtilMm: 1900, gramaturaGm2: 0, encolhimentoComprimentoPercentual: 60 }, []);
+    expect(erros).toEqual([
+      'A largura útil não pode passar da largura nominal: confira as duas.',
+      'A gramatura precisa ser maior que zero (g/m²).',
+      'O encolhimento no comprimento precisa ficar entre 0 e 50%.',
+    ]);
+  });
+
+  it('a mesma descrição (sem diferença de maiúsculas) não entra duas vezes; a malha editada troca a antiga', () => {
+    expect(() => salvarMalha(COM_MALHA, { ...MALHA, id: 'm2', descricao: ' MALHA ALGODÃO 30/1 ' })).toThrow('Já há uma malha “MALHA ALGODÃO 30/1”');
+    const editada = salvarMalha(COM_MALHA, { ...MALHA, larguraUtilMm: 1650 });
+    expect(editada.malhas).toHaveLength(1);
+    expect(editada.malhas[0]!.larguraUtilMm).toBe(1650);
+  });
+
+  it('a malha com rolos no estoque não sai do cadastro', () => {
+    const comRolo = salvarRolo(COM_MALHA, ROLO);
+    expect(() => removerMalha(comRolo, 'm1')).toThrow('Há 1 rolo(s) desta malha no estoque');
+    expect(removerMalha(removerRolo(comRolo, 'r1'), 'm1').malhas).toEqual([]);
+  });
+
+  it('as malhas do cadastro antigo entram uma vez, sem a compensação do encolhimento presumida', () => {
+    const antigas = [
+      { id: 'a1', descricao: 'Ribana', larguraUtilMm: 900, tubular: true, sentidoUnico: false, encolhimentoPercentual: 4 },
+      { id: 'a2', descricao: 'malha algodão 30/1', larguraUtilMm: 1600, tubular: false, sentidoUnico: false },
+    ];
+    const depois = incluirMalhasAntigas(COM_MALHA, antigas);
+    expect(depois.malhas.map((m) => m.descricao)).toEqual(['Malha algodão 30/1', 'Ribana']);
+    expect(depois.malhas[1]).toMatchObject({ encolhimentoComprimentoPercentual: 4, encolhimentoCompensadoNoMolde: false, padrao: 'liso' });
+    expect(incluirMalhasAntigas(depois, antigas)).toEqual(depois);
+  });
+});
+
+describe('rolos', () => {
+  it('precisa da malha, da identificação e do peso ou do comprimento', () => {
+    expect(validarRolo({ ...semPeso(ROLO), malhaId: 'x', identificacao: ' ' }, COM_MALHA)).toEqual([
+      'Escolha a malha do rolo (ela precisa estar no cadastro).',
+      'Informe a identificação do rolo (a etiqueta).',
+      'Informe o peso líquido ou o comprimento medido do rolo (pelo menos um, maior que zero).',
+    ]);
+  });
+
+  it('a mesma etiqueta não se repete na mesma malha; defeito sem descrição é recusado', () => {
+    const comRolo = salvarRolo(COM_MALHA, ROLO);
+    expect(() => salvarRolo(comRolo, { ...ROLO, id: 'r2', identificacao: 'r-001' })).toThrow('Já há um rolo “r-001” desta malha');
+    expect(validarRolo({ ...ROLO, defeitos: [{ descricao: '', perdaMm: 300 }] }, COM_MALHA)).toContain(
+      'Cada defeito precisa da descrição e da perda (de 0 mm para cima).',
+    );
+  });
+
+  it('o comprimento: o medido; sem ele, peso × rendimento, como estimativa; sem rendimento, não há como saber', () => {
+    expect(comprimentoDoRolo({ comprimentoMedidoMm: 90_000, pesoLiquidoG: 25_000 }, 3.6)).toEqual({ comprimentoMm: 90_000, origem: 'medido' });
+    // 25 kg × 3,6 m/kg = 90 m.
+    expect(comprimentoDoRolo({ pesoLiquidoG: 25_000 }, 3.6)).toEqual({ comprimentoMm: 90_000, origem: 'pelo peso' });
+    expect(comprimentoDoRolo({ pesoLiquidoG: 25_000 }, null)).toBeNull();
+  });
+
+  it('o grupo é o lote com a tonalidade; sem eles, fica dito', () => {
+    expect(grupoDoRolo(ROLO)).toBe('L10 · A');
+    expect(grupoDoRolo({ lote: ' ', tonalidade: '' })).toBe('(sem lote) · (sem tonalidade)');
+  });
+});
+
+describe('ordens', () => {
+  it('código, quantidades inteiras, ao menos um tamanho, prazo como data', () => {
+    expect(validarOrdem({ ...ORDEM, codigo: '', quantidadesPorTamanho: { P: 0 }, prazo: '20/10/2026' }, [])).toEqual([
+      'Informe o código da ordem de produção.',
+      'Informe a quantidade de pelo menos um tamanho.',
+      'O prazo precisa ser uma data (dia/mês/ano).',
+    ]);
+    expect(validarOrdem({ ...ORDEM, quantidadesPorTamanho: { P: 2.5 } }, [])).toEqual(['As quantidades precisam ser números inteiros de 0 para cima.']);
+  });
+
+  it('o código não se repete; a ordem sai do cadastro', () => {
+    const comOrdem = salvarOrdem(CADASTRO_VAZIO, ORDEM);
+    expect(() => salvarOrdem(comOrdem, { ...ORDEM, id: 'o2', codigo: 'op-100' })).toThrow('Já há uma ordem “op-100”');
+    expect(removerOrdem(comOrdem, 'o1').ordens).toEqual([]);
+  });
+});
+
+describe('lerGradeColada', () => {
+  it('duas linhas: os tamanhos e as quantidades', () => {
+    expect(lerGradeColada('P\tM\tG\n10\t20\t15\n')).toEqual({ quantidades: { P: 10, M: 20, G: 15 }, erros: [] });
+    expect(lerGradeColada('P M\n4 6')).toEqual({ quantidades: { P: 4, M: 6 }, erros: [] });
+    expect(lerGradeColada('36;38;40\n5;10;5')).toEqual({ quantidades: { 36: 5, 38: 10, 40: 5 }, erros: [] });
+  });
+
+  it('um tamanho por linha', () => {
+    expect(lerGradeColada('P;40\nM;80\nG;40')).toEqual({ quantidades: { P: 40, M: 80, G: 40 }, erros: [] });
+    expect(lerGradeColada('36;10\n38;20')).toEqual({ quantidades: { 36: 10, 38: 20 }, erros: [] });
+  });
+
+  it('o ambíguo, o quebrado e o repetido dizem o que houve', () => {
+    expect(lerGradeColada('36 38\n10 20').erros[0]).toContain('a grade fica ambígua');
+    expect(lerGradeColada('P;10,5').erros).toEqual(['A quantidade do tamanho P (“10,5”) não é um número inteiro.']);
+    expect(lerGradeColada('P;1\nP;2').erros).toEqual(['O tamanho P aparece duas vezes.']);
+    expect(lerGradeColada(' ').erros).toEqual(['Nada foi colado.']);
+  });
+});

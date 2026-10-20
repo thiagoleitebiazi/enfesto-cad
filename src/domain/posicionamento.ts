@@ -24,14 +24,14 @@ export const FOLGA_DO_ENCOSTO_MM = 0.01;
 /** Passos da busca que encosta a peça (dividindo o passo da grade ao meio a cada um): 10 mm / 2¹² ≈ 0,002 mm. */
 const PASSOS_DO_ENCOSTO = 12;
 
-interface Caixa {
+export interface Caixa {
   readonly minX: number;
   readonly maxX: number;
   readonly minY: number;
   readonly maxY: number;
 }
 
-function caixaDe(contorno: Contorno): Caixa {
+export function caixaDe(contorno: Contorno): Caixa {
   const r = retanguloEnvolvente(contorno);
   return { minX: r.minX, maxX: r.maxX, minY: r.minY, maxY: r.maxY };
 }
@@ -42,7 +42,7 @@ function caixasMaisLongeQue(a: Caixa, b: Caixa, d: number): boolean {
 }
 
 /** O contorno não se sobrepõe a nenhum dos existentes e fica a pelo menos `distanciaMinima` (+ `folga`) de cada um. */
-function lugarLivre(
+export function lugarLivre(
   contorno: Contorno,
   existentes: readonly Contorno[],
   caixasExistentes: readonly Caixa[],
@@ -116,7 +116,7 @@ export function encontrarPrimeiraPosicaoValida(
  * limite), e o ponto certo entre os dois é achado pela metade, várias vezes. Nunca sai de um lugar livre para um
  * ocupado: se nada no caminho estiver livre, fica onde a grade a pôs.
  */
-function encostar(
+export function encostar(
   contorno: Contorno,
   existentes: readonly Contorno[],
   caixasExistentes: readonly Caixa[],

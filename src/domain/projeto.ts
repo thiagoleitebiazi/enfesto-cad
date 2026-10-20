@@ -3,6 +3,7 @@ import type { Tecido } from './tecido';
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import type { ImagemDoModelo } from './imagens';
 import type { PlanoDeCorte } from './planoDeCorte';
+import type { PlanoGuardado } from './planejamento';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -32,7 +33,8 @@ export type TipoDeEvento =
   | 'exportacao-de-pdf'
   | 'envio-para-producao'
   | 'restauracao-de-versao'
-  | 'plano-de-corte';
+  | 'plano-de-corte'
+  | 'revisao-do-molde';
 
 export const ROTULO_DO_EVENTO: Record<TipoDeEvento, string> = {
   criacao: 'Criação do projeto',
@@ -45,6 +47,7 @@ export const ROTULO_DO_EVENTO: Record<TipoDeEvento, string> = {
   'envio-para-producao': 'Envio para produção',
   'restauracao-de-versao': 'Restauração de versão anterior',
   'plano-de-corte': 'Plano de corte',
+  'revisao-do-molde': 'Revisão do molde',
 };
 
 /** Estado completo do trabalho num dado momento — o que entra/sai ao salvar ou restaurar uma versão. */
@@ -85,7 +88,92 @@ export interface Projeto {
    * novo nunca substitui um antigo: o anterior da mesma ordem continua aqui, como histórico. Ausente nos projetos
    * de antes do planejamento, que abrem do mesmo jeito.
    */
-  readonly planosDeCorte?: readonly PlanoDeCorte[];
+  readonly planosDeCorte?: readonly PlanoGuardado[];
+  /**
+   * A versão do formato do arquivo. Ausente nos projetos gravados antes dela existir (a versão 1). Ver
+   * `lerProjeto`, que traz os antigos para a versão atual sem perder nenhum campo.
+   */
+  readonly versaoDoFormato?: number;
+  /** As revisões do molde registradas (aba Encaixe > Planejamento de corte > Molde), da primeira à última. */
+  readonly revisoesDoMolde?: readonly RevisaoDoMolde[];
+}
+
+/**
+ * Uma revisão do molde: um retrato das peças, com número, data, quem registrou e o que mudou. As peças daquele
+ * momento ficam no evento do histórico que a revisão aponta; a impressão digital diz se as peças de agora ainda são
+ * as daquela revisão.
+ */
+export interface RevisaoDoMolde {
+  readonly numero: number;
+  readonly criadaEmIso: string;
+  /** Digitado por quem registrou (o programa não tem login). */
+  readonly responsavel: string;
+  readonly descricao: string;
+  readonly impressaoDigital: string;
+  readonly eventoId: string;
+}
+
+/** A versão do formato que este programa grava. 2: com a versão no arquivo, as revisões do molde e os planos. */
+export const VERSAO_DO_FORMATO_DO_PROJETO = 2;
+
+export type ProjetoLido =
+  | {
+      readonly ok: true;
+      readonly projeto: Projeto;
+      /** A versão do arquivo como estava no disco (1 quando ele não dizia). */
+      readonly versaoLida: number;
+      /** O projeto foi trazido de uma versão mais antiga (o arquivo no disco continua como estava até ser gravado). */
+      readonly migrado: boolean;
+      /** O arquivo é de uma versão mais nova do programa: abre, mas pode ter campos que este programa não conhece. */
+      readonly maisNovo: boolean;
+    }
+  | { readonly ok: false; readonly erro: string };
+
+const ehObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Lê um projeto vindo do disco e o traz para a versão atual do formato. Nada é tirado: os campos que este
+ * programa não conhece continuam no objeto. O que não é um projeto (sem id, sem estado, sem histórico) é recusado
+ * com o motivo, e não entra na biblioteca.
+ */
+export function lerProjeto(bruto: unknown): ProjetoLido {
+  if (!ehObjeto(bruto)) return { ok: false, erro: 'O arquivo não é um projeto (formato desconhecido).' };
+  if (typeof bruto.arquivoIlegivel === 'string') return { ok: false, erro: `O arquivo "${bruto.arquivoIlegivel}" não pôde ser lido (está quebrado).` };
+  const faltando = (['id', 'nome', 'codigo', 'criadoEmIso', 'modificadoEmIso', 'status'] as const).filter((c) => typeof bruto[c] !== 'string');
+  if (faltando.length > 0) return { ok: false, erro: `O projeto não tem ${faltando.join(', ')}.` };
+  const estado = bruto.estadoAtual;
+  if (!ehObjeto(estado) || !Array.isArray(estado.pecas)) return { ok: false, erro: `O projeto "${String(bruto.nome)}" não tem o estado das peças.` };
+  if (!Array.isArray(bruto.historico)) return { ok: false, erro: `O projeto "${String(bruto.nome)}" não tem o histórico.` };
+  const versaoLida = typeof bruto.versaoDoFormato === 'number' && Number.isInteger(bruto.versaoDoFormato) && bruto.versaoDoFormato >= 1 ? bruto.versaoDoFormato : 1;
+  // Da 1 para a 2 só entra a versão: os campos novos (as revisões, os planos) são opcionais.
+  const projeto = { ...(bruto as unknown as Projeto), versaoDoFormato: Math.max(versaoLida, VERSAO_DO_FORMATO_DO_PROJETO) };
+  return { ok: true, projeto, versaoLida, migrado: versaoLida < VERSAO_DO_FORMATO_DO_PROJETO, maisNovo: versaoLida > VERSAO_DO_FORMATO_DO_PROJETO };
+}
+
+/** A próxima revisão do molde: o número seguinte, presa a um evento novo do histórico com as peças de agora. */
+export function registrarRevisaoDoMolde(
+  projeto: Projeto,
+  dados: { readonly responsavel: string; readonly descricao: string; readonly impressaoDigital: string },
+  agoraIso: string,
+): Projeto {
+  const responsavel = dados.responsavel.trim();
+  const descricao = dados.descricao.trim();
+  if (responsavel === '') throw new Error('Informe quem está registrando a revisão.');
+  if (descricao === '') throw new Error('Descreva a revisão (o que mudou, ou "primeira revisão").');
+  const revisoes = projeto.revisoesDoMolde ?? [];
+  const ultima = revisoes.at(-1);
+  if (ultima && ultima.impressaoDigital === dados.impressaoDigital) {
+    throw new Error(`As peças não mudaram desde a revisão ${ultima.numero}: não há o que registrar.`);
+  }
+  const numero = (ultima?.numero ?? 0) + 1;
+  const comEvento = registrarEvento(projeto, 'revisao-do-molde', projeto.estadoAtual, agoraIso, `Revisão ${numero} do molde, por ${responsavel}: ${descricao}`);
+  const eventoId = comEvento.historico.at(-1)!.id;
+  return { ...comEvento, revisoesDoMolde: [...revisoes, { numero, criadaEmIso: agoraIso, responsavel, descricao, impressaoDigital: dados.impressaoDigital, eventoId }] };
+}
+
+/** A revisão registrada que tem exatamente as peças de agora (pela impressão digital), ou `null`. */
+export function revisaoAtualDoMolde(projeto: Projeto, impressaoDigital: string): RevisaoDoMolde | null {
+  return [...(projeto.revisoesDoMolde ?? [])].reverse().find((r) => r.impressaoDigital === impressaoDigital) ?? null;
 }
 
 /**
@@ -95,7 +183,7 @@ export interface Projeto {
 export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, agoraIso: string): Projeto {
   const existentes = projeto.planosDeCorte ?? [];
   if (existentes.some((p) => p.id === plano.id)) throw new Error('Este plano já está guardado no projeto.');
-  const daOrdem = (p: PlanoDeCorte): string => p.entrada.ordem.codigo.trim().toLocaleLowerCase('pt-BR');
+  const daOrdem = (p: PlanoGuardado): string => p.entrada.ordem.codigo.trim().toLocaleLowerCase('pt-BR');
   const anterior = [...existentes].reverse().find((p) => daOrdem(p) === daOrdem(plano));
   const guardado: PlanoDeCorte = anterior ? { ...plano, substituiPlanoId: anterior.id } : plano;
   return { ...projeto, planosDeCorte: [...existentes, guardado], modificadoEmIso: agoraIso };
@@ -158,6 +246,7 @@ export function criarProjeto(
     status: 'em-edicao',
     estadoAtual: estadoInicial,
     historico: [eventoDeCriacao],
+    versaoDoFormato: VERSAO_DO_FORMATO_DO_PROJETO,
   };
 }
 
@@ -273,4 +362,30 @@ export function nomeDaProximaVariante(projetos: readonly Projeto[], projeto: Pro
   const original = familia.find((p) => p.varianteDe === undefined) ?? projeto;
   const numerosUsados = familia.map((p) => Number(SUFIXO_DE_VARIANTE.exec(p.nome)?.[1] ?? 0));
   return `${original.nome.replace(SUFIXO_DE_VARIANTE, '')} — variante ${Math.max(familia.length, ...numerosUsados) + 1}`;
+}
+
+export interface BibliotecaLida {
+  readonly projetos: Projeto[];
+  /** Os avisos a mostrar na biblioteca: os arquivos que não são projetos, e os de versão mais nova. */
+  readonly avisos: string[];
+}
+
+/** A lista que veio do disco, cada projeto lido e trazido para a versão atual (ver `lerProjeto`). */
+export function lerBiblioteca(lista: readonly unknown[]): BibliotecaLida {
+  const projetos: Projeto[] = [];
+  const recusados: string[] = [];
+  const maisNovos: string[] = [];
+  for (const bruto of lista) {
+    const lido = lerProjeto(bruto);
+    if (!lido.ok) {
+      recusados.push(lido.erro);
+      continue;
+    }
+    projetos.push(lido.projeto);
+    if (lido.maisNovo) maisNovos.push(lido.projeto.nome);
+  }
+  const avisos: string[] = [];
+  if (recusados.length > 0) avisos.push(`${recusados.length} arquivo(s) da pasta de projetos não puderam ser lidos e ficaram de fora (nada foi apagado): ${recusados.join(' ')}`);
+  if (maisNovos.length > 0) avisos.push(`Gravado(s) por uma versão mais nova do programa: ${maisNovos.join(', ')}. Abre, mas o que esta versão não conhece pode não aparecer.`);
+  return { projetos, avisos };
 }

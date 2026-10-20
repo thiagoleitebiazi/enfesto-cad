@@ -21,6 +21,7 @@ import {
   escalarPonto,
   chanfrarCantoDoContorno,
   arredondarCantoDoContorno,
+  perimetro,
 } from '../core/geometria';
 import { transformarCota, type Cota } from './cota';
 import { curvasAcompanhando } from './filaDeCurva';
@@ -421,6 +422,64 @@ export interface Molde {
   readonly elementos?: readonly Contorno[];
   /** A figura que a peça é, quando foi feita inteira por ferramenta (o círculo do "Por raio", a espiral): para mudar as medidas depois. */
   readonly figura?: FiguraDaPeca;
+  /**
+   * A peça é cortada em pares — uma direita e uma esquerda (a manga, o bolso de um lado e do outro): das cópias
+   * dela, metade sai espelhada. A quantidade tem de ser par. Ausente, todas as cópias saem iguais.
+   */
+  readonly emPar?: true;
+  /** De que arquivo a peça veio, e como ela era ao chegar (para dizer se foi mudada depois). */
+  readonly origemDaImportacao?: OrigemDaImportacao;
+}
+
+/**
+ * A peça como chegou de um arquivo. Guarda as medidas que não mudam ao mover, girar ou espelhar a peça (a área, o
+ * perímetro e o número de pontos): se elas mudaram, a forma foi mudada depois da importação. A forma inteira de
+ * quando chegou fica no histórico do projeto (a importação registra uma versão).
+ */
+export interface OrigemDaImportacao {
+  readonly formato: 'dxf' | 'pdf';
+  readonly arquivo: string;
+  readonly importadaEmIso: string;
+  /** A unidade do arquivo ("mm", "polegadas"…), ou o fator de escala do PDF. */
+  readonly unidade: string;
+  /** A unidade não estava no arquivo e foi presumida. */
+  readonly unidadeAssumida: boolean;
+  readonly areaMm2: number;
+  readonly perimetroMm: number;
+  readonly pontos: number;
+}
+
+/** A peça com a marca de "cortar em pares" posta ou tirada. */
+export function comPar(molde: Molde, emPar: boolean): Molde {
+  if (emPar) return molde.emPar ? molde : { ...molde, emPar: true };
+  if (!molde.emPar) return molde;
+  const copia: { -readonly [K in keyof Molde]: Molde[K] } = { ...molde };
+  delete copia.emPar;
+  return copia;
+}
+
+/** A origem da importação de uma peça que acabou de chegar, com as medidas dela. */
+export function origemDaPecaImportada(
+  peca: Molde,
+  dados: { readonly formato: 'dxf' | 'pdf'; readonly arquivo: string; readonly importadaEmIso: string; readonly unidade: string; readonly unidadeAssumida: boolean },
+): OrigemDaImportacao {
+  return { ...dados, areaMm2: area(peca.contorno), perimetroMm: perimetro(peca.contorno), pontos: peca.contorno.length };
+}
+
+/**
+ * A peça mudou de forma depois de importada? Mover, girar e espelhar não contam (a área, o perímetro e o número de
+ * pontos ficam iguais); mudar um ponto, a escala ou cortar contam. `null` se a peça não veio de um arquivo.
+ */
+export function alteradaDesdeAImportacao(peca: Molde): boolean | null {
+  const origem = peca.origemDaImportacao;
+  if (!origem) return null;
+  const areaAgora = area(peca.contorno);
+  const perimetroAgora = perimetro(peca.contorno);
+  return (
+    peca.contorno.length !== origem.pontos ||
+    Math.abs(areaAgora - origem.areaMm2) > Math.max(1, origem.areaMm2 * 1e-6) ||
+    Math.abs(perimetroAgora - origem.perimetroMm) > 0.01
+  );
 }
 
 export interface DadosDeNovoMolde {

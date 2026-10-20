@@ -33,6 +33,9 @@ import {
   converterCosturaEmContorno,
   substituirTrechoDoMolde,
   RESTRICAO_PADRAO,
+  comPar,
+  origemDaPecaImportada,
+  alteradaDesdeAImportacao,
   type DadosDeNovoMolde,
 } from './molde';
 
@@ -837,5 +840,33 @@ describe('rotacoesNoEncaixe', () => {
     expect(rotacoesNoEncaixe(todas, true)).toEqual([0, 90]);
     expect(rotacoesNoEncaixe({ permite180: true, permite90e270: false }, true)).toEqual([0]);
     expect(rotacoesNoEncaixe({ permite180: false, permite90e270: false }, true)).toEqual([0]);
+  });
+});
+
+describe('cortar em pares e a origem da importação', () => {
+  const peca = criarMolde(
+    { nome: 'Manga', referencia: '', tamanho: 'M', contorno: [ponto(0, 0), ponto(300, 0), ponto(250, 400), ponto(0, 380)], linhaDeFio: { inicio: ponto(100, 50), fim: ponto(100, 300) } },
+    'm1',
+  );
+
+  it('a marca de par entra e sai sem mexer no resto', () => {
+    const emPar = comPar(peca, true);
+    expect(emPar.emPar).toBe(true);
+    expect(comPar(emPar, true)).toBe(emPar);
+    const sem = comPar(emPar, false);
+    expect('emPar' in sem).toBe(false);
+    expect(sem).toEqual(peca);
+  });
+
+  it('mover, girar e espelhar não contam como mudança; mexer num ponto conta', () => {
+    const importada = {
+      ...peca,
+      origemDaImportacao: origemDaPecaImportada(peca, { formato: 'dxf', arquivo: 'manga.dxf', importadaEmIso: '2026-10-20T10:00:00.000Z', unidade: 'mm', unidadeAssumida: false }),
+    };
+    expect(importada.origemDaImportacao).toMatchObject({ areaMm2: area(peca.contorno), perimetroMm: perimetro(peca.contorno), pontos: 4 });
+    expect(alteradaDesdeAImportacao(importada)).toBe(false);
+    expect(alteradaDesdeAImportacao(espelharMolde(rotacionarMolde(transladarMolde(importada, ponto(500, 70), 'x'), 90), 'y'))).toBe(false);
+    expect(alteradaDesdeAImportacao(moverPontoDoMolde(importada, 2, ponto(260, 410)))).toBe(true);
+    expect(alteradaDesdeAImportacao(peca)).toBeNull();
   });
 });

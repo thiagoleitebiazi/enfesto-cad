@@ -1,4 +1,6 @@
-import { rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { copiaJaFeita, motivoDaCopiaDeSeguranca, nomeDaCopiaDeSeguranca } from '../src/domain/copiaDeSeguranca';
 
 /**
  * Gravação de arquivo que não deixa o arquivo pela metade. O conteúdo vai
@@ -61,4 +63,33 @@ export function criarFilaDeGravacao(): <T>(chave: string, tarefa: () => Promise<
 /** O id de um projeto vira nome de arquivo: só letras, números, hífen e sublinhado (nada de "..\"). */
 export function idDeProjetoValido(id: unknown): id is string {
   return typeof id === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(id);
+}
+
+/**
+ * Grava o projeto, fazendo antes a cópia de segurança do arquivo que estava no disco quando ele é de uma versão
+ * mais antiga do formato, ou ilegível (ver `copiaDeSeguranca.ts`). A cópia vai para `pastaDasCopias` e nunca é
+ * apagada. Devolve o caminho da cópia feita, ou `null`. Se a cópia falha, nada é gravado (o erro sobe).
+ */
+export async function gravarProjetoComCopia(
+  destino: string,
+  conteudo: string,
+  dados: { readonly idDoProjeto: string; readonly versaoNova: number; readonly pastaDasCopias: string; readonly agoraIso: string },
+): Promise<string | null> {
+  let noDisco: string | null = null;
+  try {
+    noDisco = await readFile(destino, 'utf-8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
+  const motivo = motivoDaCopiaDeSeguranca(noDisco, dados.versaoNova);
+  let copia: string | null = null;
+  if (motivo !== null && noDisco !== null) {
+    await mkdir(dados.pastaDasCopias, { recursive: true });
+    if (!copiaJaFeita(dados.idDoProjeto, motivo, await readdir(dados.pastaDasCopias))) {
+      copia = path.join(dados.pastaDasCopias, nomeDaCopiaDeSeguranca(dados.idDoProjeto, motivo, dados.agoraIso));
+      await gravarSemCorromper(copia, noDisco);
+    }
+  }
+  await gravarSemCorromper(destino, conteudo);
+  return copia;
 }

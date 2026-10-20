@@ -25,7 +25,8 @@ import {
   type FalhaDeAbertura,
   type ModoDeAbertura,
 } from '../src/domain/abertura';
-import { criarFilaDeGravacao, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { criarFilaDeGravacao, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
@@ -633,8 +634,9 @@ ipcMain.handle('listar-projetos', async () => {
       const conteudo = await readFile(path.join(dir, arquivo), 'utf-8');
       projetos.push(JSON.parse(conteudo));
     } catch {
-      // Arquivo corrompido/ilegível: ignora silenciosamente na listagem em
-      // vez de derrubar a biblioteca inteira — mas não apaga nada.
+      // Arquivo corrompido/ilegível: não derruba a biblioteca inteira, nem é apagado — vai para a lista só com o
+      // nome, e a biblioteca diz que ele ficou de fora.
+      projetos.push({ arquivoIlegivel: arquivo });
     }
   }
   return projetos;
@@ -643,11 +645,21 @@ ipcMain.handle('listar-projetos', async () => {
 // Um salvamento de cada vez por projeto, e cada um gravado sem deixar o arquivo pela metade.
 const filaDeGravacao = criarFilaDeGravacao();
 
-ipcMain.handle('salvar-projeto', async (_evento, projeto: { id: string }) => {
+ipcMain.handle('salvar-projeto', async (_evento, projeto: { id: string; versaoDoFormato?: unknown }) => {
   if (!idDeProjetoValido(projeto?.id)) throw new Error('Projeto sem um código válido para virar nome de arquivo.');
   const dir = await garantirDiretorioDeProjetos();
   const conteudo = JSON.stringify(projeto, null, 2);
-  await filaDeGravacao(projeto.id, () => gravarSemCorromper(path.join(dir, `${projeto.id}.json`), conteudo));
+  const versaoNova = typeof projeto.versaoDoFormato === 'number' ? projeto.versaoDoFormato : 1;
+  // O arquivo de uma versão mais antiga do formato (ou ilegível) é copiado para copias-de-seguranca antes de ser trocado.
+  await filaDeGravacao(projeto.id, async () => {
+    const copia = await gravarProjetoComCopia(path.join(dir, `${projeto.id}.json`), conteudo, {
+      idDoProjeto: projeto.id,
+      versaoNova,
+      pastaDasCopias: path.join(dir, PASTA_DAS_COPIAS),
+      agoraIso: new Date().toISOString(),
+    });
+    if (copia) registrarDiagnostico(`copia-de-seguranca ${path.basename(copia)}`);
+  });
   return true;
 });
 

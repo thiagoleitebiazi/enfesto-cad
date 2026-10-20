@@ -11,6 +11,8 @@ import { ROTULO_DO_TIPO } from '../domain/enfesto';
 
 interface PainelDeBibliotecaProps {
   readonly projetos: readonly Projeto[];
+  /** O que dizer da pasta de projetos (arquivos que ficaram de fora, versões mais novas). */
+  readonly avisos?: readonly string[];
   readonly projetoAtualId: string;
   readonly onAbrir: (id: string) => void;
   readonly onDuplicar: (id: string) => void;
@@ -38,6 +40,11 @@ export function PainelDeBiblioteca(props: PainelDeBibliotecaProps): React.JSX.El
 
   return (
     <Sobreposicao titulo="Biblioteca de trabalhos" onFechar={props.onFechar}>
+      {(props.avisos ?? []).map((aviso) => (
+        <p key={aviso} className="nota-do-formulario" role="status">
+          {aviso}
+        </p>
+      ))}
       <div className="painel-de-biblioteca">
         <div className="filtros-da-biblioteca">
           <input

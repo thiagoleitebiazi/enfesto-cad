@@ -6,6 +6,7 @@ import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/Pai
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './ui/salvamento';
 import { ehCampoDeDigitar } from './ui/campoDeDigitar';
+import { ehPlanoV2 } from './domain/planejamento';
 import { PainelDePlanoDeCorte, type PlanoAConfirmar } from './ui/PainelDePlanoDeCorte';
 import { cadastrarMalha, gravarMalhas, lerMalhas, type MalhaCadastrada } from './ui/malhasCadastradas';
 import { gravarConfiguracaoDoPlano, lerConfiguracaoDoPlano } from './ui/configuracaoDoPlano';
@@ -321,6 +322,8 @@ import {
   converterCosturaEmContorno,
   substituirTrechoDoMolde,
   linhaDeCorteDaPeca,
+  comPar,
+  origemDaPecaImportada,
   type Molde,
   type PenceDaPeca,
   type PontaDaAresta,
@@ -379,6 +382,7 @@ import {
   renomearProjeto,
   gerarCodigoDeProjeto,
   proximoCodigoDeProjeto,
+  lerBiblioteca,
   criarVariante,
   variantesDoProjeto,
   nomeDaProximaVariante,
@@ -740,6 +744,8 @@ export default function App(): React.JSX.Element {
     }),
   );
   const [projetos, setProjetos] = useState<readonly Projeto[]>([]);
+  // O que a biblioteca tem a dizer da pasta de projetos (arquivos que não puderam ser lidos, versões mais novas).
+  const [avisosDaBiblioteca, setAvisosDaBiblioteca] = useState<readonly string[]>([]);
   // Os códigos de projeto já usados (os da biblioteca e os criados agora): o de um projeto novo é o seguinte do dia.
   const codigosUsadosRef = useRef<Set<string>>(new Set());
   const novoCodigoDeProjeto = useCallback((): string => {
@@ -751,7 +757,8 @@ export default function App(): React.JSX.Element {
   // se o dele já é de outro projeto.
   useEffect(() => {
     void window.enfestoCad?.listarProjetos().then(
-      (lista) => {
+      (bruta) => {
+        const lista = lerBiblioteca(bruta).projetos;
         for (const p of lista) codigosUsadosRef.current.add(p.codigo);
         setProjetoAtual((atual) => {
           const salvo = lista.some((p) => p.id === atual.id);
@@ -775,6 +782,8 @@ export default function App(): React.JSX.Element {
     readonly contornarDepois: boolean;
   } | null>(null);
   const arquivoDeImagemRef = useRef<HTMLInputElement | null>(null);
+  // O nome do arquivo que está sendo importado (DXF ou PDF): vai na origem de cada peça e no histórico.
+  const arquivoImportadoRef = useRef('');
   // Atalhos para outros programas: a lista (`null` com o painel fechado) e o erro a mostrar nele.
   const [programas, setProgramas] = useState<readonly Programa[] | null>(null);
   const [erroDosProgramas, setErroDosProgramas] = useState<string | null>(null);
@@ -825,9 +834,12 @@ export default function App(): React.JSX.Element {
   const carregarListaDeProjetos = useCallback(() => {
     void window.enfestoCad
       ?.listarProjetos()
-      .then((lista) => {
+      .then((bruta) => {
+        // Cada projeto é trazido para a versão atual do formato (o arquivo só muda quando for gravado, com cópia).
+        const { projetos: lista, avisos } = lerBiblioteca(bruta);
         for (const p of lista) codigosUsadosRef.current.add(p.codigo);
         setProjetos(lista);
+        setAvisosDaBiblioteca(avisos);
       })
       .catch(() => setProjetos([]));
   }, []);
@@ -1533,7 +1545,8 @@ export default function App(): React.JSX.Element {
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
-      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? { ...p, ...patch } : p)));
+      const { emPar, ...resto } = patch;
+      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? comPar({ ...p, ...resto }, emPar ?? p.emPar === true) : p)));
     },
     [pecas, selecionadoId, aplicarMudanca],
   );
@@ -3133,7 +3146,8 @@ export default function App(): React.JSX.Element {
     }
     void api.abrirArquivoDxf().then((arquivo) => {
       if (!arquivo) return;
-      const nomeBase = (arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho).replace(/\.dxf$/i, '');
+      arquivoImportadoRef.current = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
+      const nomeBase = arquivoImportadoRef.current.replace(/\.dxf$/i, '');
       const resultado = importarDxf(arquivo.conteudo, nomeBase);
       const mensagens = [...resultado.avisos];
       if (resultado.unidadeAssumida) {
@@ -3156,16 +3170,29 @@ export default function App(): React.JSX.Element {
     }
     void api.abrirArquivoPdf().then(async (arquivo) => {
       if (!arquivo) return;
+      arquivoImportadoRef.current = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
       const resultado = importarPdf(arquivo.conteudo);
       const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
       const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
 
       // A peça inteira, quando o PDF traz o registro dela; senão, a que o desenho mostra. Cada uma vai para um
       // lugar livre: as posições da página não dizem nada, e deixariam a peça em cima das que já estão no projeto.
-      const novosMoldes = posicionarAsQueChegam(prontas.map((p) => moldeDaPecaImportada(p, proximoId)), pecas, enfesto);
+      const agora = new Date().toISOString();
+      const novosMoldes = posicionarAsQueChegam(prontas.map((p) => moldeDaPecaImportada(p, proximoId)), pecas, enfesto).map((m) => ({
+        ...m,
+        origemDaImportacao: origemDaPecaImportada(m, {
+          formato: 'pdf',
+          arquivo: arquivoImportadoRef.current,
+          importadaEmIso: agora,
+          unidade: 'mm (tamanho real do PDF)',
+          unidadeAssumida: false,
+        }),
+      }));
 
       if (novosMoldes.length > 0) {
-        aplicarMudanca([...pecas, ...novosMoldes]);
+        const depois = [...pecas, ...novosMoldes];
+        aplicarMudanca(depois);
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do PDF “${arquivoImportadoRef.current}”: ${novosMoldes.length} peça(s)`);
       }
 
       const mensagens = [...resultado.avisos];
@@ -3194,7 +3221,7 @@ export default function App(): React.JSX.Element {
       }
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
     });
-  }, [pecas, enfesto, aplicarMudanca]);
+  }, [pecas, enfesto, tecido, aplicarMudanca, registrarEventoEPersistir]);
 
   const confirmarImportacaoDxf = useCallback(
     (itens: readonly ItemConfirmadoDeContorno[]) => {
@@ -3234,8 +3261,22 @@ export default function App(): React.JSX.Element {
           (enfesto?.margemLateralMm ?? 0) - Math.min(...todos.map((p) => p.x)),
           (enfesto?.margemDeExtremidadeMm ?? 0) - Math.min(...todos.map((p) => p.y)),
         );
-        const posicionados = novosMoldes.map((m) => transladarMolde(m, delta, m.id));
-        aplicarMudanca([...pecas, ...posicionados]);
+        const agora = new Date().toISOString();
+        const origem = {
+          formato: 'dxf' as const,
+          arquivo: arquivoImportadoRef.current,
+          importadaEmIso: agora,
+          unidade: pendente.unidadeDetectada,
+          unidadeAssumida: pendente.unidadeAssumida,
+        };
+        const posicionados = novosMoldes.map((m) => {
+          const levada = transladarMolde(m, delta, m.id);
+          return { ...levada, origemDaImportacao: origemDaPecaImportada(levada, origem) };
+        });
+        const depois = [...pecas, ...posicionados];
+        aplicarMudanca(depois);
+        // A importação fica como uma versão no histórico: a forma das peças como chegaram do arquivo.
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do DXF “${origem.arquivo}”: ${posicionados.length} peça(s), em ${origem.unidade}`);
         setImportacaoDxfPendente(null);
         setMensagensImportacao([
           `${posicionados.length} peça(s) importada(s) do DXF, em ${pendente.unidadeDetectada}. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
@@ -3245,7 +3286,7 @@ export default function App(): React.JSX.Element {
         setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
       }
     },
-    [importacaoDxfPendente, pecas, aplicarMudanca, enfesto],
+    [importacaoDxfPendente, pecas, aplicarMudanca, enfesto, tecido, registrarEventoEPersistir],
   );
 
   const confirmarImportacaoPdf = useCallback(
@@ -3268,7 +3309,20 @@ export default function App(): React.JSX.Element {
             proximoId(),
           );
         });
-        aplicarMudanca([...pecas, ...novosMoldes]);
+        const agora = new Date().toISOString();
+        const comOrigem = novosMoldes.map((m, i) => ({
+          ...m,
+          origemDaImportacao: origemDaPecaImportada(m, {
+            formato: 'pdf',
+            arquivo: arquivoImportadoRef.current,
+            importadaEmIso: agora,
+            unidade: `fator de escala ${String(itens[i]!.fatorDeEscala).replace('.', ',')} (1 = tamanho do papel)`,
+            unidadeAssumida: false,
+          }),
+        }));
+        const depois = [...pecas, ...comOrigem];
+        aplicarMudanca(depois);
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do PDF “${arquivoImportadoRef.current}”: ${comOrigem.length} peça(s)`);
         setImportacaoPdfPendente(null);
         setMensagensImportacao([
           `${novosMoldes.length} peça(s) importada(s) do PDF. Medidas no fator de escala escolhido (1 = tamanho do papel, em mm).`,
@@ -3278,7 +3332,7 @@ export default function App(): React.JSX.Element {
         setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
       }
     },
-    [importacaoPdfPendente, pecas, aplicarMudanca],
+    [importacaoPdfPendente, pecas, aplicarMudanca, tecido, enfesto, registrarEventoEPersistir],
   );
 
   // Ao abrir o programa o foco fica no corpo da página, fora da janela do
@@ -4075,6 +4129,7 @@ export default function App(): React.JSX.Element {
       {mostrarBiblioteca && (
         <PainelDeBiblioteca
           projetos={projetos}
+          avisos={avisosDaBiblioteca}
           projetoAtualId={projetoAtual.id}
           onAbrir={abrirProjeto}
           onDuplicar={duplicarProjetoDaBiblioteca}
@@ -4102,7 +4157,7 @@ export default function App(): React.JSX.Element {
           tecidoDoProjeto={tecido}
           tipoDoEnfesto={enfesto?.tipo ?? 'impar'}
           responsavelSugerido={projetoAtual.autor ?? ''}
-          planosSalvos={projetoAtual.planosDeCorte ?? []}
+          planosSalvos={(projetoAtual.planosDeCorte ?? []).filter((p): p is PlanoDeCorte => !ehPlanoV2(p))}
           malhasCadastradas={malhasCadastradas}
           configuracaoGuardada={dadosDoPlano.configuracao}
           onCadastrarMalha={cadastrarMalhaDoPlano}

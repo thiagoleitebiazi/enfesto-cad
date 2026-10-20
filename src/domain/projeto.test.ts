@@ -14,6 +14,11 @@ import {
   nomeDaProximaVariante,
   definirAutor,
   TAMANHO_MAXIMO_DO_AUTOR,
+  lerProjeto,
+  lerBiblioteca,
+  registrarRevisaoDoMolde,
+  revisaoAtualDoMolde,
+  VERSAO_DO_FORMATO_DO_PROJETO,
   type EstadoDoProjeto,
   type Projeto,
 } from './projeto';
@@ -252,5 +257,84 @@ describe('proximoCodigoDeProjeto', () => {
 
   it('o maior vale, em qualquer ordem', () => {
     expect(proximoCodigoDeProjeto(hoje, ['ENF-20261017-004', 'ENF-20261017-002'])).toBe('ENF-20261017-005');
+  });
+});
+
+describe('formato do projeto: versão, migração e projetos antigos', () => {
+  // Um projeto como os gravados antes da versão do formato (o de 2026-09-30, por exemplo), com um campo que esta
+  // versão não conhece.
+  const ANTIGO = {
+    id: 'projeto-antigo',
+    nome: 'Camiseta',
+    codigo: 'ENF-20260930-001',
+    criadoEmIso: '2026-09-30T10:00:00.000Z',
+    modificadoEmIso: '2026-09-30T11:00:00.000Z',
+    status: 'em-edicao',
+    estadoAtual: ESTADO_VAZIO,
+    historico: [{ id: 'projeto-antigo-hist-0', tipo: 'criacao', dataHoraIso: '2026-09-30T10:00:00.000Z', estado: ESTADO_VAZIO }],
+    campoQueEstaVersaoNaoConhece: { a: 1 },
+  };
+
+  it('o projeto novo já sai na versão atual', () => {
+    expect(criarProjeto('P', 'p1', 'ENF-1', '2026-10-20T10:00:00.000Z', ESTADO_VAZIO).versaoDoFormato).toBe(VERSAO_DO_FORMATO_DO_PROJETO);
+  });
+
+  it('o antigo abre: ganha a versão, e nada some (nem o campo desconhecido)', () => {
+    const lido = lerProjeto(JSON.parse(JSON.stringify(ANTIGO)));
+    if (!lido.ok) throw new Error(lido.erro);
+    expect(lido).toMatchObject({ versaoLida: 1, migrado: true, maisNovo: false });
+    expect(lido.projeto).toEqual({ ...ANTIGO, versaoDoFormato: 2 });
+  });
+
+  it('o da versão atual não é migrado; o de uma versão mais nova abre, marcado', () => {
+    const atual = lerProjeto({ ...ANTIGO, versaoDoFormato: 2 });
+    expect(atual.ok && atual.migrado).toBe(false);
+    const novo = lerProjeto({ ...ANTIGO, versaoDoFormato: 3 });
+    expect(novo.ok && novo.maisNovo && novo.projeto.versaoDoFormato).toBe(3);
+  });
+
+  it('o que não é projeto é recusado com o motivo', () => {
+    expect(lerProjeto([1])).toEqual({ ok: false, erro: 'O arquivo não é um projeto (formato desconhecido).' });
+    expect(lerProjeto({ ...ANTIGO, id: 7 })).toEqual({ ok: false, erro: 'O projeto não tem id.' });
+    expect(lerProjeto({ ...ANTIGO, historico: null })).toEqual({ ok: false, erro: 'O projeto "Camiseta" não tem o histórico.' });
+    expect(lerProjeto({ arquivoIlegivel: 'x.json' })).toEqual({ ok: false, erro: 'O arquivo "x.json" não pôde ser lido (está quebrado).' });
+  });
+
+  it('a biblioteca lê todos, diz o que ficou de fora e o que é de versão mais nova', () => {
+    const lida = lerBiblioteca([ANTIGO, { arquivoIlegivel: 'quebrado.json' }, { ...ANTIGO, id: 'p2', nome: 'Calça', versaoDoFormato: 9 }]);
+    expect(lida.projetos.map((p) => p.id)).toEqual(['projeto-antigo', 'p2']);
+    expect(lida.avisos).toEqual([
+      '1 arquivo(s) da pasta de projetos não puderam ser lidos e ficaram de fora (nada foi apagado): O arquivo "quebrado.json" não pôde ser lido (está quebrado).',
+      'Gravado(s) por uma versão mais nova do programa: Calça. Abre, mas o que esta versão não conhece pode não aparecer.',
+    ]);
+  });
+});
+
+describe('revisões do molde', () => {
+  const base = criarProjeto('Camiseta', 'p1', 'ENF-1', '2026-10-20T10:00:00.000Z', ESTADO_VAZIO);
+
+  it('a primeira revisão é a 1, presa a um evento do histórico com as peças de então', () => {
+    const r1 = registrarRevisaoDoMolde(base, { responsavel: ' Ana ', descricao: 'Primeira revisão', impressaoDigital: 'aaaa' }, '2026-10-20T11:00:00.000Z');
+    expect(r1.revisoesDoMolde).toEqual([
+      { numero: 1, criadaEmIso: '2026-10-20T11:00:00.000Z', responsavel: 'Ana', descricao: 'Primeira revisão', impressaoDigital: 'aaaa', eventoId: 'p1-hist-1' },
+    ]);
+    expect(r1.historico.at(-1)).toMatchObject({ id: 'p1-hist-1', tipo: 'revisao-do-molde', descricao: 'Revisão 1 do molde, por Ana: Primeira revisão' });
+  });
+
+  it('sem mudança nas peças não há revisão nova; com mudança, a seguinte', () => {
+    const r1 = registrarRevisaoDoMolde(base, { responsavel: 'Ana', descricao: 'Primeira', impressaoDigital: 'aaaa' }, '2026-10-20T11:00:00.000Z');
+    expect(() => registrarRevisaoDoMolde(r1, { responsavel: 'Ana', descricao: 'De novo', impressaoDigital: 'aaaa' }, '2026-10-20T12:00:00.000Z')).toThrow(
+      'As peças não mudaram desde a revisão 1',
+    );
+    const r2 = registrarRevisaoDoMolde(r1, { responsavel: 'Bruno', descricao: 'Manga mais longa', impressaoDigital: 'bbbb' }, '2026-10-20T12:00:00.000Z');
+    expect(r2.revisoesDoMolde!.map((r) => r.numero)).toEqual([1, 2]);
+    expect(revisaoAtualDoMolde(r2, 'bbbb')?.numero).toBe(2);
+    expect(revisaoAtualDoMolde(r2, 'aaaa')?.numero).toBe(1);
+    expect(revisaoAtualDoMolde(r2, 'cccc')).toBeNull();
+  });
+
+  it('sem responsável ou sem descrição, recusa', () => {
+    expect(() => registrarRevisaoDoMolde(base, { responsavel: ' ', descricao: 'x', impressaoDigital: 'a' }, '2026-10-20T11:00:00.000Z')).toThrow('Informe quem');
+    expect(() => registrarRevisaoDoMolde(base, { responsavel: 'Ana', descricao: '', impressaoDigital: 'a' }, '2026-10-20T11:00:00.000Z')).toThrow('Descreva a revisão');
   });
 });

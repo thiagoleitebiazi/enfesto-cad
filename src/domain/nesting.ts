@@ -78,10 +78,9 @@ function construirInstancias(pecas: readonly Molde[]): InstanciaParaColocar[] {
   for (const peca of pecas) {
     const bbox = retanguloEnvolvente(peca.contorno);
     for (let i = 0; i < peca.quantidade; i++) {
-      const moldeNaOrigem = {
-        ...transladarMolde(peca, { x: -bbox.minX, y: -bbox.minY }, `${peca.id}#${i}`),
-        quantidade: 1,
-      };
+      const naOrigem = { ...transladarMolde(peca, { x: -bbox.minX, y: -bbox.minY }, `${peca.id}#${i}`), quantidade: 1 };
+      // A peça em par: uma direita e uma esquerda — as cópias ímpares saem espelhadas (na mesma caixa).
+      const moldeNaOrigem = peca.emPar && i % 2 === 1 ? espelharMolde(naOrigem, naOrigem.id) : naOrigem;
       instancias.push({
         idOriginal: peca.id,
         indiceCopia: i,
@@ -202,7 +201,8 @@ export function* passosDoNesting(
     for (const angulo of angulos) {
       const base = angulo === 0 ? instancia.moldeNaOrigem : rotacionarMolde(instancia.moldeNaOrigem, angulo);
       candidatos.push(base);
-      if (instancia.moldeNaOrigem.restricaoDeRotacao.permiteEspelhamento) {
+      // Na peça em par, o lado de cada cópia já está dado: espelhar trocaria a direita pela esquerda.
+      if (instancia.moldeNaOrigem.restricaoDeRotacao.permiteEspelhamento && !instancia.moldeNaOrigem.emPar) {
         candidatos.push(espelharMolde(base, `${base.id}-espelhado`));
       }
     }

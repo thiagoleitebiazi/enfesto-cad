@@ -6,6 +6,7 @@ import {
   contornosSeSobrepoem,
   distanciaEntreContornos,
   espelharContornoHorizontal,
+  areaAssinada,
 } from '../core/geometria';
 import { criarMolde, linhaDeCorteDaPeca, type Molde } from './molde';
 import { validarProjeto } from './validacao';
@@ -478,5 +479,18 @@ describe('executarNestingAutomatico — a distância entre os moldes é a pedida
     expect(contornos).toBeLessThan(23.02);
     // O aproveitamento conta o tecido da linha de corte: 2 × 220 × 220 na largura de 1000 e comprimento de 220.
     expect(resultado.aproveitamentoPercentual).toBeCloseTo(((2 * 220 * 220) / (1000 * 220)) * 100, 6);
+  });
+});
+
+describe('executarNestingAutomatico — peça em par (direita e esquerda)', () => {
+  // Um L: a imagem de espelho dele não coincide com ele girado (o sentido do contorno troca).
+  const L = [ponto(0, 0), ponto(200, 0), ponto(200, 60), ponto(60, 60), ponto(60, 300), ponto(0, 300)];
+  it('das cópias, metade sai espelhada — mesmo sem permitir espelhamento; sem o par, nenhuma', () => {
+    const emPar = { ...pecaRetangular('manga', 10, 10, { contorno: L, quantidade: 4 }), emPar: true as const };
+    const sentidos = (pecas: readonly Molde[]) =>
+      executarNestingAutomatico(pecas, enfestoBase()).pecasColocadas.map((p) => Math.sign(areaAssinada(p.molde.contorno)));
+    const original = Math.sign(areaAssinada(L));
+    expect(sentidos([emPar])).toEqual([original, -original, original, -original]);
+    expect(sentidos([pecaRetangular('manga', 10, 10, { contorno: L, quantidade: 4 })])).toEqual([original, original, original, original]);
   });
 });

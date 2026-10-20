@@ -4,7 +4,7 @@ import { rename } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarFilaDeGravacao, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { criarFilaDeGravacao, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido } from './gravacao';
 
 let pasta = '';
 beforeEach(() => {
@@ -141,5 +141,34 @@ describe('idDeProjetoValido', () => {
     expect(idDeProjetoValido('')).toBe(false);
     expect(idDeProjetoValido(42)).toBe(false);
     expect(idDeProjetoValido(undefined)).toBe(false);
+  });
+});
+
+describe('gravarProjetoComCopia', () => {
+  const dados = (agoraIso = '2026-10-20T10:00:00.000Z') => ({ idDoProjeto: 'p1', versaoNova: 2, pastaDasCopias: path.join(pasta, 'copias-de-seguranca'), agoraIso });
+
+  it('projeto novo: grava, sem cópia', async () => {
+    const destino = path.join(pasta, 'p1.json');
+    expect(await gravarProjetoComCopia(destino, '{"versaoDoFormato":2}', dados())).toBeNull();
+    expect(readdirSync(pasta)).toEqual(['p1.json']);
+  });
+
+  it('o arquivo antigo é copiado inteiro antes da primeira gravação no formato novo, e uma vez só', async () => {
+    const destino = path.join(pasta, 'p1.json');
+    writeFileSync(destino, '{"id":"p1","antigo":true}');
+    const copia = await gravarProjetoComCopia(destino, '{"id":"p1","versaoDoFormato":2}', dados());
+    expect(copia).toBe(path.join(pasta, 'copias-de-seguranca', 'p1.v1.2026-10-20T10-00-00-000Z.json'));
+    expect(readFileSync(copia!, 'utf-8')).toBe('{"id":"p1","antigo":true}');
+    expect(readFileSync(destino, 'utf-8')).toBe('{"id":"p1","versaoDoFormato":2}');
+    // Já no formato novo: as próximas gravações não copiam.
+    expect(await gravarProjetoComCopia(destino, '{"id":"p1","versaoDoFormato":2,"x":1}', dados('2026-10-20T11:00:00.000Z'))).toBeNull();
+    expect(readdirSync(path.join(pasta, 'copias-de-seguranca'))).toHaveLength(1);
+  });
+
+  it('o arquivo ilegível é copiado antes de ser trocado', async () => {
+    const destino = path.join(pasta, 'p1.json');
+    writeFileSync(destino, '{ cortado');
+    const copia = await gravarProjetoComCopia(destino, '{}', dados());
+    expect(readFileSync(copia!, 'utf-8')).toBe('{ cortado');
   });
 });

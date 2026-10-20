@@ -24,8 +24,9 @@ const api = {
   async salvarArquivo(sugestaoDeNome: string, conteudo: ArrayBuffer): Promise<string | null> {
     return ipcRenderer.invoke('salvar-arquivo', { sugestaoDeNome, conteudo }) as Promise<string | null>;
   },
-  async listarProjetos(): Promise<Projeto[]> {
-    return ipcRenderer.invoke('listar-projetos') as Promise<Projeto[]>;
+  /** O conteúdo de cada arquivo da pasta de projetos, como está no disco: ler com `lerBiblioteca`. */
+  async listarProjetos(): Promise<unknown[]> {
+    return ipcRenderer.invoke('listar-projetos') as Promise<unknown[]>;
   },
   async salvarProjeto(projeto: Projeto): Promise<boolean> {
     return ipcRenderer.invoke('salvar-projeto', projeto) as Promise<boolean>;

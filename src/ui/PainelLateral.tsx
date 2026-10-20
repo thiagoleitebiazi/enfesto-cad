@@ -78,6 +78,8 @@ export interface PatchDeMolde {
   readonly quantidade?: number;
   readonly margemDeCosturaMm?: number;
   readonly restricaoDeRotacao?: RestricaoDeRotacao;
+  /** Cortar em pares (direita e esquerda); `false` tira a marca. */
+  readonly emPar?: boolean;
 }
 
 interface PainelDePropriedadesProps {
@@ -129,6 +131,15 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             }}
           />
         </label>
+        <label className="opcao-em-linha" title="Das cópias da peça, metade sai espelhada: uma direita e uma esquerda (a manga, o bolso de cada lado).">
+          <input type="checkbox" checked={peca.emPar === true} onChange={(e) => props.onAlterar({ emPar: e.target.checked })} />
+          Cortar em pares (direita e esquerda)
+        </label>
+        {peca.emPar && peca.quantidade % 2 === 1 && (
+          <p className="nota-do-formulario" role="status">
+            Em pares, a quantidade precisa ser par (2 para um par, 4 para dois pares).
+          </p>
+        )}
         <label>
           Margem de costura (mm)
           <input
