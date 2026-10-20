@@ -27,6 +27,7 @@ import {
 } from '../src/domain/abertura';
 import { criarFilaDeGravacao, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido } from './gravacao';
 import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
+import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
@@ -712,6 +713,46 @@ async function mudarProgramas(mudar: (lista: Programa[]) => Programa[]): Promise
 }
 
 ipcMain.handle('programas-listar', () => lerListaDeProgramas());
+
+/**
+ * O cadastro de produção do planejamento de corte (malhas, rolos, ordens), em <userData>/cadastro-de-producao.json.
+ * A leitura devolve o conteúdo como está (ou `null`, sem arquivo; ou `{ arquivoIlegivel }`, se quebrado: a
+ * interface diz, e não grava por cima sem fazer a cópia). A gravação confere o conteúdo antes e faz a cópia de
+ * segurança do arquivo antigo de versão mais velha ou ilegível.
+ */
+function arquivoDoCadastro(): string {
+  return path.join(app.getPath('userData'), 'cadastro-de-producao.json');
+}
+
+ipcMain.handle('cadastro-ler', async () => {
+  let conteudo: string;
+  try {
+    conteudo = await readFile(arquivoDoCadastro(), 'utf-8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+  try {
+    return JSON.parse(conteudo) as unknown;
+  } catch {
+    return { arquivoIlegivel: path.basename(arquivoDoCadastro()) };
+  }
+});
+
+ipcMain.handle('cadastro-gravar', async (_evento, bruto: unknown) => {
+  const lido = lerCadastroDeProducao(bruto);
+  if (lido.descartados.length > 0) throw new Error(`O cadastro não foi gravado: ${lido.descartados.join(' ')}`);
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await filaDeGravacao('cadastro-de-producao', () =>
+    gravarProjetoComCopia(arquivoDoCadastro(), JSON.stringify(lido.cadastro, null, 2), {
+      idDoProjeto: 'cadastro-de-producao',
+      versaoNova: VERSAO_DO_CADASTRO,
+      pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
+      agoraIso: new Date().toISOString(),
+    }),
+  );
+  return true;
+});
 
 ipcMain.handle('programas-adicionar-arquivo', async (_evento, nome: unknown) => {
   const resultado = await dialog.showOpenDialog({

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { area, areaAssinada, contornosSeSobrepoem, distanciaEntreContornos, ponto, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { criarMolde, type Molde, type RestricaoDeRotacao } from './molde';
 import { modeloDoPlano } from './modeloDoPlano';
-import { chaveDaGrade, escreverGrade, fazerRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
+import { chaveDaGrade, escreverGrade, fazerRisco, orientacoesDoRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
 
 function retangulo(id: string, nome: string, largura: number, comprimento: number, extras: Partial<Parameters<typeof criarMolde>[0]> = {}): Molde {
   return criarMolde(
@@ -156,5 +156,67 @@ describe('pecasDaGrade', () => {
   it('escreve e identifica a grade', () => {
     expect(escreverGrade({ P: 1, M: 2, G: 0 })).toBe('1 P + 2 M');
     expect(chaveDaGrade({ M: 2, P: 1 }, ['P', 'M', 'G'])).toBe('P:1|M:2|G:0');
+  });
+});
+
+describe('orientacoesDoRisco', () => {
+  const livre = { permite180: true, permite90e270: true, permiteEspelhamento: true };
+  const p = retangulo('a', 'Manga', 100, 200, { restricaoDeRotacao: livre });
+
+  it('com tudo permitido, os 4 ângulos, cada um também espelhado', () => {
+    expect(orientacoesDoRisco(copia(p), false)).toHaveLength(8);
+  });
+
+  it('a peça em par não ganha o espelho (o lado de cada cópia já está dado), mesmo podendo espelhar', () => {
+    const par = { ...p, emPar: true as const };
+    expect(orientacoesDoRisco(copia(par), false).every((o) => !o.espelhada)).toBe(true);
+    expect(orientacoesDoRisco(copia(par, { espelhada: true }), false).every((o) => o.espelhada)).toBe(true);
+  });
+
+  it('tecido com sentido único: nenhuma orientação de 180° nem de 270°', () => {
+    expect(new Set(orientacoesDoRisco(copia(p), true).map((o) => o.anguloGraus))).toEqual(new Set([0, 90]));
+  });
+});
+
+describe('fazerRisco — a escolha entre as ordens de entrada', () => {
+  function curva(cx: number, cy: number, rx: number, ry: number, de: number, ate: number, n: number) {
+    return Array.from({ length: n + 1 }, (_, i) => {
+      const a = de + ((ate - de) * i) / n;
+      return ponto(cx + rx * Math.cos(a), cy + ry * Math.sin(a));
+    });
+  }
+  // Uma camiseta (frente e costas com cava e decote, manga em par, gola): as ordens dão comprimentos diferentes.
+  const corpo: Contorno = [ponto(0, 0), ponto(520, 0), ponto(520, 520), ...curva(520, 720, 80, 200, -Math.PI / 2, -Math.PI, 12).slice(1), ...curva(260, 720, 120, 90, 0, -Math.PI, 16).slice(1), ...curva(0, 720, 80, 200, 0, -Math.PI / 2, 12).slice(1, -1)];
+  const manga: Contorno = [ponto(0, 0), ponto(420, 0), ...curva(210, 260, 210, 160, 0, Math.PI, 20)];
+  const com = (id: string, nome: string, contorno: Contorno) => retangulo(id, nome, 1, 1, { contorno, margemDeCosturaMm: 10 });
+  const mangaEmPar = { ...com('m', 'Manga', manga), emPar: true as const };
+  const pecas: PecaDoRisco[] = [];
+  for (let roupa = 0; roupa < 6; roupa++) {
+    pecas.push(copia(com('f', 'Frente', corpo)), copia(com('c', 'Costas', corpo)), copia(mangaEmPar), copia(mangaEmPar, { espelhada: true }), copia(com('g', 'Gola', [ponto(0, 0), ponto(480, 0), ponto(480, 60), ponto(0, 60)])));
+  }
+  const grandes = { ...opcoes, larguraMm: 1600, comprimentoMaximoMm: 12_000 };
+
+  it('fica o risco mais curto entre as ordens tentadas (e diz qual foi)', () => {
+    const nomes = ['maior área primeiro', 'mais compridas primeiro', 'mais largas primeiro'];
+    const porOrdem = nomes.map((ordem) => gerado(fazerRisco(pecas, { M: 6 }, { ...grandes, ordens: [ordem] })).comprimentoMm);
+    expect(new Set(porOrdem.map((c) => c.toFixed(1))).size, porOrdem.join(' / ')).toBeGreaterThan(1);
+    const todas = gerado(fazerRisco(pecas, { M: 6 }, grandes));
+    expect(todas.comprimentoMm).toBeCloseTo(Math.min(...porOrdem), 6);
+    expect(todas.ordemEscolhida).toBe(nomes[porOrdem.indexOf(Math.min(...porOrdem))]);
+    conferirGeometria(todas, 3);
+  });
+});
+
+describe('fazerRisco — curvas simplificadas para as contas', () => {
+  it('a diferença da simplificação entra na distância: com curvas, as peças ficam a pelo menos a pedida + 0,4 mm', () => {
+    const circulo = Array.from({ length: 400 }, (_, i) => ponto(100 + 100 * Math.cos((2 * Math.PI * i) / 400), 100 + 100 * Math.sin((2 * Math.PI * i) / 400)));
+    const disco = retangulo('d', 'Disco', 1, 1, { contorno: circulo, linhaDeFio: { inicio: ponto(100, 20), fim: ponto(100, 180) } });
+    const r = gerado(fazerRisco(Array.from({ length: 8 }, () => copia(disco)), { M: 8 }, { ...opcoes, larguraMm: 700 }));
+    // Os contornos guardados são os simplificados (bem menos que 400 pontos).
+    expect(r.pecas[0]!.contorno.length).toBeLessThan(80);
+    let menor = Infinity;
+    for (let i = 0; i < r.pecas.length; i++) for (let j = i + 1; j < r.pecas.length; j++) menor = Math.min(menor, distanciaEntreContornos(r.pecas[i]!.contorno, r.pecas[j]!.contorno));
+    expect(menor).toBeGreaterThanOrEqual(3 + 0.4 - 0.02);
+    expect(menor).toBeLessThan(3 + 0.4 + 1);
   });
 });

@@ -1867,12 +1867,133 @@ button:focus-visible {
 }
 
 /* ---- Planejamento de corte (aba Encaixe): os dados à esquerda, a proposta à direita. */
-.painel-de-plano-de-corte {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 18px;
-  width: min(1180px, 84vw);
+.painel-de-planejamento {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(1180px, 92vw);
   font-size: 12px;
+}
+
+.painel-de-planejamento section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.painel-de-planejamento label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.painel-de-planejamento label.opcao-em-linha {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.etapas-do-planejamento {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.etapas-do-planejamento button.etapa-atual {
+  background: var(--cor-selecao);
+  border-color: var(--cor-selecao);
+  color: #fff;
+}
+
+.mensagem-do-planejamento {
+  margin: 0;
+  padding: 8px 12px;
+  background: #e8f1fb;
+  border-left: 4px solid var(--cor-selecao);
+  border-radius: var(--raio-sm);
+}
+
+.resumo-do-planejamento {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.painel-de-planejamento .tabela-de-relatorio {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.painel-de-planejamento .tabela-de-relatorio caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.painel-de-planejamento .tabela-de-relatorio th,
+.painel-de-planejamento .tabela-de-relatorio td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--cor-borda);
+  text-align: left;
+  vertical-align: top;
+}
+
+.desenho-do-risco {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  background: #fff;
+}
+
+.desenho-do-risco svg {
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+}
+
+.desenho-do-risco figcaption {
+  font-size: 11px;
+  color: var(--cor-texto-secundario);
+}
+
+.malha-do-risco {
+  fill: #f6f6f2;
+  stroke: #9a9a90;
+  stroke-width: 2;
+  stroke-dasharray: 12 8;
+}
+
+.peca-do-risco polygon {
+  stroke: #33415c;
+  stroke-width: 2;
+}
+
+.peca-do-risco polygon.peca-espelhada {
+  stroke-dasharray: 10 5;
+}
+
+.fio-do-risco {
+  stroke: #33415c;
+  stroke-width: 2;
+}
+
+.seta-do-fio {
+  fill: #33415c;
+}
+
+.rotulo-do-risco,
+.medida-do-risco {
+  fill: #1d2433;
+}
+
+.regua-do-risco {
+  stroke: #1d2433;
+  stroke-width: 6;
 }
 
 .formulario-do-plano fieldset {
@@ -2033,8 +2154,7 @@ button:focus-visible {
   gap: 4px;
 }
 
-.lista-de-planos button {
-  width: 100%;
+.lista-de-planos > li > button:first-child {
   text-align: left;
 }
 
@@ -2045,7 +2165,7 @@ button:focus-visible {
 }
 
 @media (max-width: 900px) {
-  .painel-de-plano-de-corte {
-    grid-template-columns: minmax(0, 1fr);
+  .painel-de-planejamento {
+    width: 96vw;
   }
 }

@@ -258,7 +258,8 @@ export function repartir(camadas: number, quantos: number): number[] {
   return Array.from({ length: quantos }, (_, i) => base + (i < resto ? 1 : 0));
 }
 
-function validarConfiguracao(c: ConfiguracaoDoPlanejamento): string[] {
+/** O que está fora do lugar na configuração (as mensagens dizem como corrigir). */
+export function validarConfiguracaoDoPlanejamento(c: ConfiguracaoDoPlanejamento): string[] {
   const erros: string[] = [];
   if (!(c.margemInicialDaMesaMm >= 0 && c.margemFinalDaMesaMm >= 0 && c.sobraPorCamadaMm >= 0 && c.perdaPorRoloMm >= 0)) {
     erros.push('As margens da mesa, a sobra por camada e a perda por rolo precisam ser de 0 para cima.');
@@ -287,7 +288,7 @@ export function calcularPlanejamento(
   ajustes: AjustesDoPlanejamento = {},
 ): CalculoDoPlanejamento {
   const alertas: AlertaDoPlanejamento[] = [];
-  const erros: string[] = [...validarConfiguracao(configuracao)];
+  const erros: string[] = [...validarConfiguracaoDoPlanejamento(configuracao)];
   const { malha, ordem } = entrada;
   const c = configuracao;
 

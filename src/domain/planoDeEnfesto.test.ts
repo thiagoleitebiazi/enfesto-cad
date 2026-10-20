@@ -310,3 +310,32 @@ describe('escolherAlternativas e repartir', () => {
     expect(repartir(0, 2)).toEqual([]);
   });
 });
+
+describe('calcularPlanejamento — os limites contam folhas (no par, 2 por camada)', () => {
+  const estreito = { ...RISCO, larguraMm: 780, larguraDoRiscoMm: 800 };
+  const par = entrada({ tipoDeEnfesto: 'par', larguraDoRiscoMm: 800 });
+
+  it('30 folhas por enfesto no par são 15 camadas: 26 camadas em 2 enfestos', () => {
+    const r = ok(calcularPlanejamento(par, [estreito], [{ chave: RISCO.chave, camadas: 26 }], { ...CONFIG, folhasPorEnfestoMax: 30 })).resultado;
+    expect(r.riscos[0]!.camadasPorEnfestoMax).toBe(15);
+    expect(r.enfestos.map((e) => [e.camadas, e.folhas])).toEqual([
+      [13, 26],
+      [13, 26],
+    ]);
+  });
+
+  it('a altura também conta as 2 folhas: 50 mm com 2 mm por folha são 12 camadas no par', () => {
+    const grossa = entrada({ tipoDeEnfesto: 'par', larguraDoRiscoMm: 800, malha: { ...MALHA, espessuraDaFolhaMm: 2 } });
+    const r = ok(calcularPlanejamento(grossa, [estreito], [{ chave: RISCO.chave, camadas: 26 }], { ...CONFIG, alturaMaximaDoEnfestoMm: 50 })).resultado;
+    expect(r.riscos[0]!.camadasPorEnfestoMax).toBe(12);
+    expect(r.enfestos.map((e) => e.camadas)).toEqual([9, 9, 8]);
+    expect(r.enfestos[0]!.alturaMm).toBe(36);
+  });
+
+  it('as camadas por enfesto ajustadas: até o limite passa; uma a mais, não', () => {
+    expect(calcularPlanejamento(entrada(), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG, { camadasPorEnfesto: 100 }).ok).toBe(true);
+    expect(erros(calcularPlanejamento(entrada(), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG, { camadasPorEnfesto: 101 }))).toEqual([
+      'O limite é de 100 camadas por enfesto no risco 1 P + 2 M + 1 G: as 101 ajustadas passam dele.',
+    ]);
+  });
+});

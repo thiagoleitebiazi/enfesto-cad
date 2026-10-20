@@ -631,7 +631,7 @@ export function ajustesFeitos(sugerido: ResultadoDoPlano, final: ResultadoDoPlan
 export function enfestoDoPlano(
   anterior: ConfiguracaoDeEnfesto | null,
   tipo: TipoDeEnfesto,
-  resultado: ResultadoDoPlano,
+  resultado: Pick<ResultadoDoPlano, 'larguraDaMesaMm' | 'comprimentoDaMesaMm' | 'enfestos'>,
   distanciaPadraoMm: number,
   alcanceDasPecasMm = 0,
 ): ConfiguracaoDeEnfesto {

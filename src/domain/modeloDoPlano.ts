@@ -1,4 +1,4 @@
-import { area, retanguloEnvolvente, segmentosSeIntersectam, transladarContorno, type Contorno } from '../core/geometria';
+import { area, retanguloEnvolvente, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
 import { abrirSimetrias } from './anotacoes';
 import { alteradaDesdeAImportacao, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, semGraduacao, transladarMolde, type Molde, type OrigemDaImportacao, type RestricaoDeRotacao } from './molde';
 import { moldeDoTamanho } from './tamanhosGraduados';
@@ -68,16 +68,28 @@ export interface ModeloDoPlano {
 
 const COPIA_DO_ENCAIXE = /^(.*)#(\d+)$/;
 
-/** O contorno se cruza (duas arestas que não são vizinhas se tocam)? */
+/**
+ * O contorno se cruza (duas arestas que não são vizinhas se atravessam)? Só conta a travessia de verdade (uma aresta
+ * passando de um lado para o outro da outra). Encostar não conta, nem os pontos repetidos seguidos — como o último
+ * ponto igual ao primeiro, comum nos contornos importados: a aresta de comprimento zero que eles fazem não
+ * atravessa nada.
+ */
 export function contornoSeCruza(contorno: Contorno): boolean {
-  const n = contorno.length;
+  const pontos = contorno;
+  const n = pontos.length;
   if (n < 4) return false;
+  const lado = (a: Ponto2D, b: Ponto2D, c: Ponto2D): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const atravessa = (p1: Ponto2D, q1: Ponto2D, p2: Ponto2D, q2: Ponto2D): boolean => {
+    const d1 = lado(p1, q1, p2);
+    const d2 = lado(p1, q1, q2);
+    const d3 = lado(p2, q2, p1);
+    const d4 = lado(p2, q2, q1);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  };
   for (let i = 0; i < n; i++) {
-    const a1 = contorno[i]!;
-    const a2 = contorno[(i + 1) % n]!;
     for (let j = i + 2; j < n; j++) {
       if (i === 0 && j === n - 1) continue;
-      if (segmentosSeIntersectam(a1, a2, contorno[j]!, contorno[(j + 1) % n]!)) return true;
+      if (atravessa(pontos[i]!, pontos[(i + 1) % n]!, pontos[j]!, pontos[(j + 1) % n]!)) return true;
     }
   }
   return false;

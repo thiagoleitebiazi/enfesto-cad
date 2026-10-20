@@ -658,3 +658,45 @@ export function trechosLongeDaBorda(p: Ponto2D, q: Ponto2D, contorno: Contorno, 
   if (1 - coberto > menorVao) vaos.push([coberto, 1]);
   return vaos;
 }
+
+/**
+ * O contorno com menos pontos (Douglas-Peucker), sem que nenhum ponto do original fique a mais de `toleranciaMm`
+ * do simplificado: os pontos que ficam são do original, e os tirados estão todos perto das arestas novas. Os pontos
+ * repetidos seguidos (como o último igual ao primeiro) saem antes.
+ */
+export function simplificarContorno(contorno: Contorno, toleranciaMm: number): Contorno {
+  const pontos = contorno.filter((p, i) => distancia(p, contorno[(i + 1) % contorno.length]!) > 1e-9);
+  const n = pontos.length;
+  if (n <= 4 || !(toleranciaMm > 0)) return pontos;
+  // Dois pontos do contorno longe um do outro dividem o fechado em duas cadeias abertas.
+  let longe = 0;
+  for (let i = 1; i < n; i++) if (distancia(pontos[0]!, pontos[i]!) > distancia(pontos[0]!, pontos[longe]!)) longe = i;
+  const manter = new Array<boolean>(n).fill(false);
+  manter[0] = true;
+  manter[longe] = true;
+  const cadeia = (de: number, ate: number): void => {
+    // De `de` até `ate` andando para a frente (com a volta pelo fim).
+    const passos = (ate - de + n) % n;
+    if (passos < 2) return;
+    const a = pontos[de]!;
+    const b = pontos[ate]!;
+    let pior = -1;
+    let maior = -1;
+    for (let k = 1; k < passos; k++) {
+      const i = (de + k) % n;
+      const d = distancia(pontos[i]!, pontoMaisProximoNoSegmento(pontos[i]!, a, b));
+      if (d > maior) {
+        maior = d;
+        pior = i;
+      }
+    }
+    if (maior > toleranciaMm) {
+      manter[pior] = true;
+      cadeia(de, pior);
+      cadeia(pior, ate);
+    }
+  };
+  cadeia(0, longe);
+  cadeia(longe, 0);
+  return pontos.filter((_, i) => manter[i]);
+}

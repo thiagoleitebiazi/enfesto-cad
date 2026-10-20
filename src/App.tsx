@@ -6,19 +6,14 @@ import { PainelDePecas, PainelDePropriedades, type PatchDeMolde } from './ui/Pai
 import { BarraDeStatus } from './ui/BarraDeStatus';
 import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './ui/salvamento';
 import { ehCampoDeDigitar } from './ui/campoDeDigitar';
-import { ehPlanoV2 } from './domain/planejamento';
-import { PainelDePlanoDeCorte, type PlanoAConfirmar } from './ui/PainelDePlanoDeCorte';
-import { cadastrarMalha, gravarMalhas, lerMalhas, type MalhaCadastrada } from './ui/malhasCadastradas';
-import { gravarConfiguracaoDoPlano, lerConfiguracaoDoPlano } from './ui/configuracaoDoPlano';
-import {
-  ajustesFeitos,
-  calcularPlanoDeCorte,
-  enfestoDoPlano,
-  impressaoDigitalDoMolde,
-  riscoDaMesa,
-  VERSAO_DO_CALCULO,
-  type PlanoDeCorte,
-} from './domain/planoDeCorte';
+import { confirmarPlano, guardarRascunho, removerRascunho, type PlanoDeCorteV2 } from './domain/planejamento';
+import { PainelDePlanejamento, type BuscarRiscos } from './ui/PainelDePlanejamento';
+import { carregarCadastro, gravarCadastro, type CadastroCarregado } from './ui/cadastroNoDisco';
+import { gravarConfiguracaoDoPlanejamento, lerConfiguracaoDoPlanejamento } from './ui/configuracaoDoPlanejamento';
+import { executarBusca } from './domain/buscaDeRiscos';
+import { escreverM as escreverEmMetros, enfestoDoPlano } from './domain/planoDeCorte';
+import type { CadastroDeProducao } from './domain/cadastroDeProducao';
+import type { MensagemParaABusca } from './planejamento.worker';
 import { destinoDaAcaoDoMenu } from './ui/edicaoPeloMenu';
 import { Sobreposicao } from './ui/Sobreposicao';
 import { PainelDeMoverCerca } from './ui/PainelDeMoverCerca';
@@ -376,7 +371,7 @@ import { PainelDeDimensionar } from './ui/PainelDeDimensionar';
 import {
   criarProjeto,
   registrarEvento,
-  adicionarPlanoDeCorte,
+  registrarRevisaoDoMolde,
   restaurarVersao,
   alterarStatus,
   renomearProjeto,
@@ -723,15 +718,9 @@ export default function App(): React.JSX.Element {
   const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
 
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
-  // O planejamento de corte: a janela, o cadastro de malhas e a configuração deste computador.
+  // O planejamento de corte: a janela e o cadastro de produção (lido ao abrir a janela).
   const [mostrarPlanoDeCorte, setMostrarPlanoDeCorte] = useState(false);
-  const [malhasCadastradas, setMalhasCadastradas] = useState<readonly MalhaCadastrada[]>(() => {
-    try {
-      return lerMalhas(window.localStorage);
-    } catch {
-      return [];
-    }
-  });
+  const [cadastroDeProducao, setCadastroDeProducao] = useState<CadastroCarregado | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
   const [mostrarPropriedadesDaPeca, setMostrarPropriedadesDaPeca] = useState(false);
@@ -1557,100 +1546,198 @@ export default function App(): React.JSX.Element {
     [pecas, selecionadoId],
   );
 
-  // ---- Planejamento de corte (aba Encaixe): o molde, o risco da mesa e a configuração, lidos ao abrir a janela.
-  const dadosDoPlano = useMemo(() => {
-    if (!mostrarPlanoDeCorte) return null;
-    const tamanhos = [...new Set(pecas.flatMap((p) => [...(p.graduacao?.tamanhos ?? []), p.tamanho.trim()]).filter((t) => t !== ''))];
-    let configuracao = lerConfiguracaoDoPlano({ getItem: () => null });
+  // ---- Planejamento de corte (aba Encaixe > Planejamento de corte). O cadastro de produção é lido ao abrir.
+  const abrirPlanejamento = useCallback(() => {
+    setMostrarPlanoDeCorte(true);
+    let armazenamento: Storage | null = null;
     try {
-      configuracao = lerConfiguracaoDoPlano(window.localStorage);
+      armazenamento = window.localStorage;
     } catch {
-      // Sem acesso ao armazenamento: vale a configuração padrão.
+      armazenamento = null;
     }
-    return {
-      molde: {
-        projetoId: projetoAtual.id,
-        codigo: projetoAtual.codigo,
-        nome: projetoAtual.nome,
-        revisao: projetoAtual.historico.length,
-        impressaoDigital: impressaoDigitalDoMolde(pecas),
-      },
-      tamanhos,
-      risco: riscoDaMesa(pecas),
-      configuracao,
-    };
-  }, [mostrarPlanoDeCorte, pecas, projetoAtual.id, projetoAtual.codigo, projetoAtual.nome, projetoAtual.historico.length]);
+    void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
+  }, []);
 
-  const cadastrarMalhaDoPlano = useCallback(
-    (malha: Omit<MalhaCadastrada, 'id'>): string | null => {
-      try {
-        const lista = cadastrarMalha(malhasCadastradas, { ...malha, id: `malha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` });
-        let gravou = false;
-        try {
-          gravou = gravarMalhas(window.localStorage, lista);
-        } catch {
-          gravou = false;
+  const configuracaoDoPlanejamento = useMemo(() => {
+    if (!mostrarPlanoDeCorte) return null;
+    try {
+      return lerConfiguracaoDoPlanejamento(window.localStorage);
+    } catch {
+      return lerConfiguracaoDoPlanejamento({ getItem: () => null });
+    }
+  }, [mostrarPlanoDeCorte]);
+
+  const mudarCadastroDeProducao = useCallback(async (novo: CadastroDeProducao): Promise<string | null> => {
+    let armazenamento: Storage | null = null;
+    try {
+      armazenamento = window.localStorage;
+    } catch {
+      armazenamento = null;
+    }
+    const erro = await gravarCadastro(window.enfestoCad, armazenamento, novo);
+    if (!erro) setCadastroDeProducao((atual) => (atual ? { ...atual, cadastro: novo } : atual));
+    return erro;
+  }, []);
+
+  /** Os riscos são feitos num Web Worker (a tela não trava); sem ele, aqui mesmo, com pausas. */
+  const buscarRiscos = useCallback<BuscarRiscos>((pedidos, opcoes, aoProgredir) => {
+    let worker: Worker | null = null;
+    try {
+      worker = new Worker(new URL('./planejamento.worker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      worker = null;
+    }
+    if (!worker) {
+      let parar = false;
+      return {
+        promessa: executarBusca(pedidos, opcoes, { aoProgredir, deveParar: () => parar, pausar: () => new Promise((r) => setTimeout(r, 0)) }),
+        cancelar: () => {
+          parar = true;
+        },
+      };
+    }
+    const w = worker;
+    const promessa = new Promise<Awaited<ReturnType<typeof executarBusca>>>((resolver, rejeitar) => {
+      w.onmessage = (evento: MessageEvent) => {
+        const m = evento.data;
+        if (m.tipo === 'progresso') aoProgredir(m.feitos, m.total);
+        else if (m.tipo === 'concluido') {
+          w.terminate();
+          resolver(m.resultado);
+        } else if (m.tipo === 'erro') {
+          w.terminate();
+          rejeitar(new Error(m.mensagem));
         }
-        if (!gravou) return 'Não deu para gravar o cadastro de malhas neste computador.';
-        setMalhasCadastradas(lista);
-        return null;
+      };
+      w.onerror = (evento) => {
+        evento.preventDefault();
+        w.terminate();
+        rejeitar(new Error(evento.message || 'a busca não pôde ser iniciada.'));
+      };
+    });
+    const iniciar: MensagemParaABusca = { tipo: 'iniciar', pedidos, opcoes };
+    w.postMessage(iniciar);
+    const cancelar: MensagemParaABusca = { tipo: 'cancelar' };
+    return { promessa, cancelar: () => w.postMessage(cancelar) };
+  }, []);
+
+  /** A revisão do molde fica com as peças de agora (e o projeto é salvo com ela). */
+  const registrarRevisao = useCallback(
+    (dados: { readonly responsavel: string; readonly descricao: string; readonly impressaoDigital: string }): string | null => {
+      const agora = new Date().toISOString();
+      const comAsPecasDeAgora = (p: Projeto): Projeto => ({ ...p, estadoAtual: { pecas, tecido, enfesto } });
+      try {
+        registrarRevisaoDoMolde(comAsPecasDeAgora(projetoAtual), dados, agora);
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
       }
+      setProjetoAtual((atual) => {
+        const atualizado = registrarRevisaoDoMolde(comAsPecasDeAgora(atual), dados, agora);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+      return null;
     },
-    [malhasCadastradas],
+    [projetoAtual, pecas, tecido, enfesto, persistirProjeto],
+  );
+
+  const guardarRascunhoDoPlano = useCallback(
+    (plano: PlanoDeCorteV2): string | null => {
+      const agora = new Date().toISOString();
+      try {
+        guardarRascunho(projetoAtual, plano, agora);
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      setProjetoAtual((atual) => {
+        const atualizado = guardarRascunho(atual, plano, agora);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+      return null;
+    },
+    [projetoAtual, persistirProjeto],
+  );
+
+  const removerRascunhoDoPlano = useCallback(
+    (id: string): string | null => {
+      const agora = new Date().toISOString();
+      try {
+        removerRascunho(projetoAtual, id, agora);
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      setProjetoAtual((atual) => {
+        const atualizado = removerRascunho(atual, id, agora);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+      return null;
+    },
+    [projetoAtual, persistirProjeto],
   );
 
   /**
-   * Confirma o plano: calcula de novo com o que veio da janela (a sugestão e o ajustado, para registrar os
-   * ajustes), guarda no projeto — sem tirar os planos anteriores — e, se pedido, ajusta o enfesto ao plano.
+   * Confirma o plano: ele fica no projeto como foi calculado (sem tirar os anteriores), o histórico registra, e, se
+   * pedido, o enfesto do projeto passa a ser o do plano.
    */
   const confirmarPlanoDeCorte = useCallback(
-    (pedido: PlanoAConfirmar): string | null => {
-      const final = calcularPlanoDeCorte(pedido.entrada, pedido.configuracao, pedido.ajustes);
-      if (!final.ok) return final.erros[0] ?? 'O plano não pôde ser calculado.';
-      const sugerido = calcularPlanoDeCorte(pedido.entrada, pedido.configuracao);
+    (plano: PlanoDeCorteV2, aplicarAoEnfesto: boolean): string | null => {
       const agora = new Date().toISOString();
-      const plano: PlanoDeCorte = {
-        id: `plano-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        criadoEmIso: agora,
-        responsavel: pedido.responsavel,
-        versaoDoCalculo: VERSAO_DO_CALCULO,
-        entrada: pedido.entrada,
-        configuracao: pedido.configuracao,
-        ajustes: sugerido.ok ? ajustesFeitos(sugerido.resultado, final.resultado, pedido.ajustes) : [],
-        resultado: final.resultado,
-        alertas: final.alertas,
-        premissas: final.premissas,
-      };
+      try {
+        confirmarPlano(projetoAtual, plano, agora);
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      const r = plano.resultado;
       let enfestoNovo = enfesto;
-      if (pedido.aplicarAoEnfesto) {
+      if (aplicarAoEnfesto) {
         try {
           const alcance = pecas.length > 0 ? Math.max(...pecas.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY)) : 0;
-          enfestoNovo = enfestoDoPlano(enfesto, pedido.entrada.tipoDeEnfesto, final.resultado, DISTANCIA_PADRAO_ENTRE_PECAS_MM, alcance);
+          enfestoNovo = enfestoDoPlano(
+            enfesto,
+            plano.entrada.tipoDeEnfesto,
+            { larguraDaMesaMm: r.mesa.larguraDoTecidoMm, comprimentoDaMesaMm: r.mesa.comprimentoMm, enfestos: r.enfestos.map((e) => e.camadas) },
+            DISTANCIA_PADRAO_ENTRE_PECAS_MM,
+            alcance,
+          );
         } catch (e) {
           return e instanceof Error ? e.message : String(e);
         }
         setEnfesto(enfestoNovo);
       }
-      try {
-        gravarConfiguracaoDoPlano(window.localStorage, pedido.configuracao);
-      } catch {
-        // Sem gravar neste computador: a configuração fica só no plano.
-      }
-      const r = final.resultado;
-      const descricao = `Ordem ${pedido.entrada.ordem.codigo}: ${r.camadas} camadas em ${r.enfestos.length} enfesto(s), por ${pedido.responsavel}`;
+      const descricao = `Ordem ${plano.entrada.ordem.codigo}: ${r.riscos.length} risco(s), ${r.camadas} camadas em ${r.enfestos.length} enfesto(s), ${escreverEmMetros(r.consumoMm)} de malha — por ${plano.responsavel} (informado)`;
       const estado = { pecas, tecido, enfesto: enfestoNovo };
       setProjetoAtual((atual) => {
-        const atualizado = registrarEvento(adicionarPlanoDeCorte(atual, plano, agora), 'plano-de-corte', estado, agora, descricao);
+        const atualizado = registrarEvento(confirmarPlano(atual, plano, agora), 'plano-de-corte', estado, agora, descricao);
         persistirProjeto(atualizado);
         return atualizado;
       });
       setMostrarPlanoDeCorte(false);
-      avisar(`Plano de corte guardado no projeto — ${descricao}.`);
+      avisar(`Plano de corte confirmado e guardado no projeto — ${descricao}.`);
       return null;
     },
-    [enfesto, pecas, tecido, persistirProjeto, avisar],
+    [projetoAtual, enfesto, pecas, tecido, persistirProjeto, avisar],
+  );
+
+  const guardarConfiguracaoNoComputador = useCallback((configuracao: Parameters<typeof gravarConfiguracaoDoPlanejamento>[1]) => {
+    try {
+      gravarConfiguracaoDoPlanejamento(window.localStorage, configuracao);
+    } catch {
+      // Sem gravar neste computador: a configuração fica só no plano.
+    }
+  }, []);
+
+  /** "Abrir a peça", do planejamento: fecha a janela e abre as propriedades da peça (para corrigir o que falta). */
+  const abrirPecaDoPlanejamento = useCallback(
+    (pecaId: string) => {
+      setMostrarPlanoDeCorte(false);
+      if (pecas.some((p) => p.id === pecaId)) {
+        setSelecionadoId(pecaId);
+        abrirPropriedadesDaPeca(pecaId);
+      }
+    },
+    [pecas, abrirPropriedadesDaPeca],
   );
 
   /** "Inverter seleção" (aba Início): passam a estar selecionadas as peças que não estavam. */
@@ -4011,7 +4098,7 @@ export default function App(): React.JSX.Element {
         onAbrirBiblioteca={abrirBiblioteca}
         onAbrirHistorico={() => setMostrarHistorico(true)}
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
-        onAbrirPlanoDeCorte={() => setMostrarPlanoDeCorte(true)}
+        onAbrirPlanoDeCorte={abrirPlanejamento}
         onEntrarModoMoverPonto={entrarModoMoverPonto}
         onEntrarModoModificar={entrarModoModificar}
         onEntrarModoRedefinirPerimetro={entrarModoRedefinirPerimetro}
@@ -4149,19 +4236,26 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarHistorico(false)}
         />
       )}
-      {dadosDoPlano && (
-        <PainelDePlanoDeCorte
-          molde={dadosDoPlano.molde}
-          tamanhosDoMolde={dadosDoPlano.tamanhos}
-          riscoDaMesa={dadosDoPlano.risco}
+      {mostrarPlanoDeCorte && cadastroDeProducao && configuracaoDoPlanejamento && (
+        <PainelDePlanejamento
+          projeto={projetoAtual}
+          pecas={pecas}
           tecidoDoProjeto={tecido}
           tipoDoEnfesto={enfesto?.tipo ?? 'impar'}
-          responsavelSugerido={projetoAtual.autor ?? ''}
-          planosSalvos={(projetoAtual.planosDeCorte ?? []).filter((p): p is PlanoDeCorte => !ehPlanoV2(p))}
-          malhasCadastradas={malhasCadastradas}
-          configuracaoGuardada={dadosDoPlano.configuracao}
-          onCadastrarMalha={cadastrarMalhaDoPlano}
+          cadastro={cadastroDeProducao.cadastro}
+          cadastroSomenteLeitura={cadastroDeProducao.somenteLeitura}
+          avisosDoCadastro={cadastroDeProducao.avisos}
+          configuracaoGuardada={configuracaoDoPlanejamento}
+          buscarRiscos={buscarRiscos}
+          agoraIso={() => new Date().toISOString()}
+          novoId={(prefixo) => `${prefixo}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          onMudarCadastro={mudarCadastroDeProducao}
+          onRegistrarRevisao={registrarRevisao}
+          onGuardarRascunho={guardarRascunhoDoPlano}
           onConfirmar={confirmarPlanoDeCorte}
+          onRemoverRascunho={removerRascunhoDoPlano}
+          onGuardarConfiguracao={guardarConfiguracaoNoComputador}
+          onAbrirPeca={abrirPecaDoPlanejamento}
           onFechar={() => setMostrarPlanoDeCorte(false)}
         />
       )}

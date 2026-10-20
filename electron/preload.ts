@@ -51,6 +51,14 @@ const api = {
   async abrirPrograma(id: string): Promise<string | null> {
     return ipcRenderer.invoke('programas-abrir', id) as Promise<string | null>;
   },
+  /** O cadastro de produção como está no disco (`null`: ainda não existe). Ler com `lerCadastroDeProducao`. */
+  async lerCadastroDeProducao(): Promise<unknown> {
+    return ipcRenderer.invoke('cadastro-ler') as Promise<unknown>;
+  },
+  /** Grava o cadastro de produção inteiro (o processo principal confere antes). */
+  async gravarCadastroDeProducao(cadastro: unknown): Promise<boolean> {
+    return ipcRenderer.invoke('cadastro-gravar', cadastro) as Promise<boolean>;
+  },
   /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
   avisarInterfacePronta(): void {
     ipcRenderer.send('interface-pronta');

@@ -36,6 +36,7 @@ import {
   trechoMaisCurto,
   substituirTrechoDoContorno,
   arredondarCantoDoContorno,
+  simplificarContorno,
 } from './geometria';
 
 describe('operações vetoriais', () => {
@@ -648,5 +649,22 @@ describe('trechosLongeDaBorda', () => {
       [0, 0.5],
       [0.5, 1],
     ]);
+  });
+});
+
+describe('simplificarContorno', () => {
+  it('o retângulo fica como está; o ponto de fechamento repetido sai', () => {
+    const r = [ponto(0, 0), ponto(100, 0), ponto(100, 50), ponto(0, 50)];
+    expect(simplificarContorno(r, 0.2)).toEqual(r);
+    expect(simplificarContorno([...r, ponto(0, 0)], 0.2)).toEqual(r);
+  });
+
+  it('o círculo de 400 pontos fica com bem menos, e nenhum ponto do original passa da tolerância', () => {
+    const circulo = Array.from({ length: 400 }, (_, i) => ponto(100 * Math.cos((2 * Math.PI * i) / 400), 100 * Math.sin((2 * Math.PI * i) / 400)));
+    const s = simplificarContorno(circulo, 0.2);
+    expect(s.length).toBeLessThan(80);
+    expect(s.length).toBeGreaterThan(8);
+    for (const p of s) expect(circulo).toContainEqual(p);
+    for (const p of circulo) expect(pontoMaisProximoNoContorno(p, s).distancia).toBeLessThanOrEqual(0.2 + 1e-9);
   });
 });

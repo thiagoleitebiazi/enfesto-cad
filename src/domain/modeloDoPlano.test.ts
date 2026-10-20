@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ponto, retanguloEnvolvente } from '../core/geometria';
+import { areaAssinada, ponto, retanguloEnvolvente } from '../core/geometria';
 import { criarMolde, rotacionarMolde, type Molde } from './molde';
 import { definirRegra } from './graduacao';
 import { definirTamanhosDoMolde } from './tamanhosGraduados';
@@ -146,5 +146,38 @@ describe('quantidadesPorRoupa', () => {
     expect(quantidadesPorRoupa(modelo, { m: 3 }).erros).toEqual(['“Manga” é cortada em pares (direita e esquerda): a quantidade por roupa precisa ser par, e está 3.']);
     expect(quantidadesPorRoupa(modelo, { a: 0, m: 0 }).erros).toEqual(['Nenhuma peça entra no plano: a quantidade por roupa de todas está 0.']);
     expect(quantidadesPorRoupa(modelo, { a: 1.5 }).erros).toEqual(['A quantidade de “Frente” por roupa precisa ser um número inteiro de 0 para cima.']);
+  });
+});
+
+describe('modeloDoPlano — casos de borda', () => {
+  const L = [ponto(0, 0), ponto(200, 0), ponto(200, 60), ponto(60, 60), ponto(60, 300), ponto(0, 300)];
+
+  it('do par já na mesa, sem a cópia 0, a de número ímpar (a esquerda) volta a ser a direita no modelo', () => {
+    const manga = { ...peca('m', 'Manga', 10, 10, { contorno: L, quantidade: 2, tamanho: 'M' }), emPar: true as const };
+    const enfesto = criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 2000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 3 });
+    const naMesa = executarNestingAutomatico([manga], enfesto).pecasColocadas.map((p) => p.molde);
+    const soAEsquerda = naMesa.filter((p) => p.id === 'm#1');
+    expect(Math.sign(areaAssinada(soAEsquerda[0]!.contorno))).toBe(-Math.sign(areaAssinada(L)));
+    const modelo = modeloDoPlano(soAEsquerda);
+    expect(Math.sign(areaAssinada(modelo.pecasPorTamanho['M']![0]!.molde.contorno))).toBe(Math.sign(areaAssinada(L)));
+  });
+
+  it('peças de mesmo nome e formas diferentes não são avisadas como repetidas', () => {
+    const modelo = modeloDoPlano([peca('a', 'Bolso', 150, 150), peca('b', 'Bolso', 150, 300)]);
+    expect(modelo.problemas).toEqual([]);
+  });
+});
+
+describe('contornoSeCruza — contornos importados', () => {
+  it('o último ponto igual ao primeiro, ou um ponto repetido no meio, não é cruzamento; a travessia de verdade é', () => {
+    const quadrado = [ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(0, 100)];
+    expect(contornoSeCruza([...quadrado, ponto(0, 0)])).toBe(false);
+    expect(contornoSeCruza([ponto(0, 0), ponto(100, 0), ponto(100, 0), ponto(100, 100), ponto(0, 100)])).toBe(false);
+    expect(contornoSeCruza([ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(150, 50), ponto(0, 50), ponto(0, 0)])).toBe(true);
+  });
+
+  it('a peça importada com o ponto de fechamento repetido entra no modelo, sem erro', () => {
+    const fechada = peca('f', 'Frente', 10, 10, { contorno: [ponto(0, 0), ponto(300, 0), ponto(300, 500), ponto(0, 500), ponto(0, 0)] });
+    expect(modeloDoPlano([fechada]).problemas).toEqual([]);
   });
 });

@@ -57,3 +57,18 @@ describe('gerarComposicoes', () => {
     expect(new Set(grades.map((g) => g.chave)).size).toBe(grades.length);
   });
 });
+
+describe('gerarComposicoes — limites e excedente', () => {
+  it('os múltiplos da grade proporcional entram até o limite exato de roupas por risco', () => {
+    const lista = gerarComposicoes({ P: 10, M: 10 }, TAMANHOS, 1, 4);
+    const vezesDois = lista.find((c) => c.origem === 'grade proporcional à ordem × 2');
+    expect(vezesDois && resumo(vezesDois)).toEqual(['2/2/0/0×5']);
+  });
+
+  it('com 1 folha por camada, as gulosas fecham a ordem sem excedente nenhum', () => {
+    const pedido = { P: 37, M: 81, G: 42, GG: 19 };
+    for (const c of gerarComposicoes(pedido, TAMANHOS, 1, 5).filter((x) => x.origem.startsWith('gulosa'))) {
+      expect(producaoDaComposicao(c.riscos, TAMANHOS, 1)).toEqual(pedido);
+    }
+  });
+});

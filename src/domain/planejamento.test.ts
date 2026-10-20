@@ -227,3 +227,34 @@ describe('ajustesRegistrados', () => {
     ]);
   });
 });
+
+describe('o plano no projeto — o que é substituído', () => {
+  const base = criarProjeto('Camiseta', 'p1', 'ENF-1', '2026-10-20T09:00:00.000Z', ESTADO);
+
+  it('um rascunho da mesma ordem não conta como plano substituído: só o confirmado', () => {
+    const comRascunho = guardarRascunho(base, plano('r'), '2026-10-20T10:00:00.000Z');
+    const conf = confirmarPlano(comRascunho, plano('c'), '2026-10-20T10:05:00.000Z');
+    expect((conf.planosDeCorte!.find((p) => p.id === 'c') as PlanoDeCorteV2).substituiPlanoId).toBeUndefined();
+  });
+
+  it('o erro de uma composição não vira erro comum quando outra calcula', () => {
+    const largo: RiscoDoPlanejamento = { ...RISCO, chave: 'M:1', grade: { M: 1 }, larguraMm: 1700 };
+    const feitos = new Map([
+      [RISCO.chave, RISCO],
+      ['M:1', largo],
+    ]);
+    const montadas = montarAlternativas(
+      ENTRADA,
+      [
+        { origem: 'boa', riscos: [{ chave: RISCO.chave, grade: RISCO.grade, camadas: 40 }] },
+        { origem: 'larga demais', riscos: [{ chave: 'M:1', grade: { M: 1 }, camadas: 80 }] },
+      ],
+      feitos,
+      new Map(),
+      CONFIGURACAO_PADRAO_DO_PLANEJAMENTO,
+    );
+    expect(montadas.alternativas).toHaveLength(1);
+    expect(montadas.errosComuns).toEqual([]);
+    expect(montadas.descartadas[0]!.motivo).toContain('é mais largo que a malha na mesa');
+  });
+});

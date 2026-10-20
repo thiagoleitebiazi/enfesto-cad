@@ -1,4 +1,4 @@
-import { area, retanguloEnvolvente, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
+import { area, distancia, retanguloEnvolvente, simplificarContorno, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
 import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, type Molde } from './molde';
 import type { ModeloDoPlano } from './modeloDoPlano';
 import { caixaDe, encostar, FOLGA_DO_ENCOSTO_MM, lugarLivre, type Caixa, type LimitesDeArea } from './posicionamento';
@@ -51,6 +51,8 @@ export interface OpcoesDoRisco {
   /** Tempo para tentar outras ordens depois da primeira (ms). */
   readonly tempoLimiteMs?: number;
   readonly agora?: () => number;
+  /** Só estas ordens de entrada (pelo nome); sem isto, todas. */
+  readonly ordens?: readonly string[];
 }
 
 export interface RiscoGerado {
@@ -76,7 +78,7 @@ export interface RiscoQueNaoSai {
 }
 
 export const METODO_DO_RISCO =
-  'Heurística de pontos de canto com encosto (cada peça no primeiro lugar livre junto das já postas, na orientação que termina mais perto do começo da mesa), tentando várias ordens de entrada e ficando com o risco mais curto. Não é garantido que seja o menor risco possível.';
+  'Heurística de pontos de canto com encosto (cada peça no primeiro lugar livre junto das já postas, na orientação que termina mais perto do começo da mesa), tentando várias ordens de entrada e ficando com o risco mais curto. As curvas são simplificadas para as contas (até 0,2 mm da linha de corte verdadeira) e essa diferença é somada à distância entre as peças: a distância verdadeira nunca fica abaixo da pedida (com curvas, fica até 0,4 mm acima). Não é garantido que seja o menor risco possível.';
 
 /** A grade escrita: "1 P + 2 M + 1 G". */
 export function escreverGrade(grade: GradeDoRisco): string {
@@ -113,11 +115,21 @@ interface Orientacao {
   readonly fio: { readonly inicio: Ponto2D; readonly fim: Ponto2D };
   readonly anguloGraus: number;
   readonly espelhada: boolean;
+  /** Quanto a linha de corte simplificada pode se afastar da verdadeira (0 se nada foi simplificado). */
+  readonly desvioMm: number;
 }
+
+/**
+ * As curvas da linha de corte são simplificadas para as contas de colisão (até esta distância do original); a
+ * diferença é somada à distância exigida entre as peças, para a distância verdadeira nunca ficar abaixo da pedida.
+ */
+export const TOLERANCIA_DA_SIMPLIFICACAO_MM = 0.2;
 
 /** A peça com o canto da linha de corte em (0, 0): a linha de corte e o fio. */
 function normalizada(molde: Molde, anguloGraus: number, espelhada: boolean): Orientacao {
-  const corte = linhaDeCorteDaPeca(molde);
+  const original = linhaDeCorteDaPeca(molde);
+  const corte = simplificarContorno(original, TOLERANCIA_DA_SIMPLIFICACAO_MM);
+  const semRepetidos = original.filter((p, i) => distancia(p, original[(i + 1) % original.length]!) > 1e-9).length;
   const r = retanguloEnvolvente(corte);
   const d = { x: -r.minX, y: -r.minY };
   const noLugar = transladarContorno(corte, d);
@@ -127,7 +139,13 @@ function normalizada(molde: Molde, anguloGraus: number, espelhada: boolean): Ori
     fio: { inicio: { x: molde.linhaDeFio.inicio.x + d.x, y: molde.linhaDeFio.inicio.y + d.y }, fim: { x: molde.linhaDeFio.fim.x + d.x, y: molde.linhaDeFio.fim.y + d.y } },
     anguloGraus,
     espelhada,
+    desvioMm: corte.length < semRepetidos ? TOLERANCIA_DA_SIMPLIFICACAO_MM : 0,
   };
+}
+
+/** As orientações que a cópia pode ter no risco (o ângulo e se sai espelhada), na ordem em que são tentadas. */
+export function orientacoesDoRisco(peca: PecaDoRisco, sentidoUnico: boolean): Array<{ readonly anguloGraus: number; readonly espelhada: boolean }> {
+  return orientacoesDa(peca, sentidoUnico).map((o) => ({ anguloGraus: o.anguloGraus, espelhada: o.espelhada }));
 }
 
 /** As orientações que a cópia pode ter: os ângulos permitidos e, se a peça deixa (e não é de um par), o espelho. */
@@ -156,10 +174,11 @@ function porNaOrdem(
   ordem: readonly PecaDoRisco[],
   orientacoes: Map<PecaDoRisco, Orientacao[]>,
   opcoes: OpcoesDoRisco,
+  folgaDaSimplificacaoMm: number,
 ): { readonly postas: Posta[] } | { readonly naoCoube: PecaDoRisco } {
   // Sem distância pedida, as peças ainda ficam a um centésimo de milímetro: o contorno guardado é arredondado no
   // centésimo, e peças coladas passariam a se sobrepor nele.
-  const d = Math.max(opcoes.distanciaMm, FOLGA_DO_ENCOSTO_MM);
+  const d = Math.max(opcoes.distanciaMm, FOLGA_DO_ENCOSTO_MM) + folgaDaSimplificacaoMm;
   // Os pontos de canto ficam à distância pedida mais a folga do encosto: exatamente na distância, as contas com
   // vírgula podiam dar um fio a menos e o lugar seria recusado. Sem distância, a folga também: bordas que se
   // tocam contam como sobrepostas.
@@ -233,16 +252,18 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
       };
     }
   }
+  // As duas peças vizinhas podem estar simplificadas: a diferença das duas entra na distância.
+  const folgaDaSimplificacao = 2 * Math.max(0, ...[...orientacoes.values()].flat().map((o) => o.desvioMm));
   let melhor: { postas: Posta[]; ordem: string } | null = null;
   let naoCoube: PecaDoRisco | null = null;
   const tentadas: string[] = [];
-  for (const [nome, medida] of ORDENS) {
+  for (const [nome, medida] of ORDENS.filter(([n]) => !opcoes.ordens || opcoes.ordens.includes(n))) {
     if (tentadas.length > 0 && opcoes.tempoLimiteMs !== undefined && agora() - inicio > opcoes.tempoLimiteMs) break;
     tentadas.push(nome);
     const chave = (p: PecaDoRisco): number => Math.max(...orientacoes.get(p)!.map(medida));
     // Estável: as cópias da mesma peça ficam juntas, na ordem em que vieram.
     const ordem = pecas.map((p, i) => ({ p, i, v: chave(p) })).sort((a, b) => b.v - a.v || a.i - b.i).map((x) => x.p);
-    const passada = porNaOrdem(ordem, orientacoes, opcoes);
+    const passada = porNaOrdem(ordem, orientacoes, opcoes, folgaDaSimplificacao);
     if ('naoCoube' in passada) {
       naoCoube = passada.naoCoube;
       continue;
@@ -257,8 +278,10 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
       motivo: `As peças da grade não cabem num risco de até ${(opcoes.comprimentoMaximoMm / 1000).toFixed(2).replace('.', ',')} m (a mesa menos as margens)${naoCoube ? `: “${naoCoube.nome}” (${naoCoube.tamanho}) ficou de fora` : ''}. Use uma grade com menos roupas por risco, ou uma mesa mais comprida.`,
     };
   }
-  const comprimentoMm = Math.max(...melhor.postas.map((x) => x.caixa.maxY));
-  const larguraOcupadaMm = Math.max(...melhor.postas.map((x) => x.caixa.maxX));
+  // As medidas são arredondadas no centésimo, como o contorno guardado: assim ele nunca passa delas.
+  const noCentesimo = (v: number): number => Math.round(v * 100) / 100;
+  const comprimentoMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxY)));
+  const larguraOcupadaMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxX)));
   const areaDasPecasMm2 = melhor.postas.reduce((s, x) => s + area(x.corte), 0);
   return {
     ok: true,
