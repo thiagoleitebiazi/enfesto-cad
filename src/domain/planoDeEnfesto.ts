@@ -1,5 +1,7 @@
 import { comprimentoDoRolo, grupoDoRolo, type MalhaDoCadastro, type RoloDeEstoque } from './cadastroDeProducao';
 import { camadasParaFechar } from './composicaoDeRiscos';
+import { alocarCamadas, linhasDeEmendaDoRisco } from './alocacaoDosRolos';
+import { fatoresDeCompensacao, ROTULO_DA_FONTE_DO_ENCOLHIMENTO, type FatoresDeCompensacao } from './encolhimento';
 import { espessurasFisicasPorCamada, ROTULO_DO_TIPO, type TipoDeEnfesto } from './enfesto';
 import { escreverKg, escreverM, escreverM2, escreverRendimento, rendimentoPelaGramatura } from './planoDeCorte';
 import type { RestricaoDeRotacao } from './molde';
@@ -51,6 +53,10 @@ export interface ConfiguracaoDoPlanejamento {
   readonly toleranciaDeRendimentoPercentual: number;
   /** O tempo da busca dos riscos (s). */
   readonly tempoDeBuscaS: number;
+  /** A enfestadeira/o processo permite emendar uma camada (um rolo que acaba no meio dela continua no seguinte). */
+  readonly permitirEmendas?: boolean;
+  /** Quanto o rolo novo passa por cima do anterior na emenda (mm). */
+  readonly sobreposicaoDaEmendaMm?: number;
 }
 
 export const CONFIGURACAO_PADRAO_DO_PLANEJAMENTO: ConfiguracaoDoPlanejamento = {
@@ -64,6 +70,8 @@ export const CONFIGURACAO_PADRAO_DO_PLANEJAMENTO: ConfiguracaoDoPlanejamento = {
   distanciaEntrePecasMm: 3,
   toleranciaDeRendimentoPercentual: 5,
   tempoDeBuscaS: 30,
+  permitirEmendas: false,
+  sobreposicaoDaEmendaMm: 100,
 };
 
 export type RendimentoPrincipal = 'informado' | 'calculado';
@@ -112,6 +120,12 @@ export interface EntradaDoPlanejamento {
   readonly tipoDeEnfesto: TipoDeEnfesto;
   /** A largura em que os riscos são feitos (a largura útil da malha, ou a do rolo mais estreito). */
   readonly larguraDoRiscoMm: number;
+  /** Decisão de quem planeja: usar rolos com defeito sem posição (o plano não tem como evitá-lo). */
+  readonly aceitarDefeitosSemPosicao?: boolean;
+  /** Decisão de quem planeja: compensar o encolhimento da malha no risco (as peças cortadas maiores). */
+  readonly compensarEncolhimento?: boolean;
+  /** Do estoque: quanto de cada rolo (pelo id) já está consumido ou reservado por outros planos (mm). */
+  readonly usoAnteriorDosRolosMm?: Readonly<Record<string, number>>;
 }
 
 export type OrigemDoRisco = 'gerado' | 'mesa' | 'informado';
@@ -128,6 +142,10 @@ export interface RiscoDoPlanejamento {
   readonly eficienciaPercentual: number | null;
   /** As peças no lugar (para o desenho); vazio no risco informado à mão. */
   readonly pecas: readonly PecaPostaNoRisco[];
+  /** O casamento de listras/xadrez feito no risco, e se a conferência achou todas as peças na fase. */
+  readonly casamento?: { readonly rapportComprimentoMm?: number; readonly rapportLarguraMm?: number; readonly faseComprimentoMm: number; readonly faseLarguraMm: number; readonly conferido: boolean };
+  /** O risco foi aumentado para compensar o encolhimento (os fatores usados). */
+  readonly compensado?: { readonly comprimento: number; readonly largura: number };
 }
 
 export interface CamadasDoRisco {
@@ -173,10 +191,24 @@ export interface RoloNoResultado {
   readonly serveParaRiscos: readonly string[];
   readonly perdasMm: number;
   readonly defeitosMm: number;
+  /** O que já estava consumido ou reservado por outros planos (mm). */
+  readonly jaUsadoMm?: number;
+  /** O que se pulou por causa dos defeitos com posição (mm). */
+  readonly perdaPorDefeitoMm?: number;
+  readonly emendas?: number;
   readonly camadasPorRisco: Readonly<Record<string, number>>;
   readonly usadoMm: number;
   /** O que sobra do rolo (a ponta que não dá outra camada). */
   readonly sobraMm: number;
+}
+
+export interface EmendaNoResultado {
+  readonly chave: string;
+  readonly roloDe: string;
+  readonly roloPara: string;
+  /** Onde a emenda fica, medida do começo do risco (mm). */
+  readonly posicaoNoRiscoMm: number;
+  readonly sobreposicaoMm: number;
 }
 
 export interface EnfestoNoResultado {
@@ -230,6 +262,12 @@ export interface ResultadoDoPlanejamento {
   /** Com o material que há (quando ele não dá o plano inteiro), ou `null`. */
   readonly possivelPorTamanho: Readonly<Record<string, number>> | null;
   readonly rolos: readonly RoloNoResultado[] | null;
+  /** As camadas com emenda (ausente nos planos de antes das emendas). */
+  readonly emendas?: readonly EmendaNoResultado[];
+  /** O que se pulou por causa dos defeitos com posição (mm). */
+  readonly perdaPorDefeitosMm?: number;
+  /** As sobreposições das emendas (mm). */
+  readonly sobreposicoesMm?: number;
   readonly materialSuficiente: boolean;
   readonly atendeAOrdem: boolean;
   readonly eficienciaMediaPercentual: number | null;
@@ -273,6 +311,7 @@ export function validarConfiguracaoDoPlanejamento(c: ConfiguracaoDoPlanejamento)
   if (!(c.distanciaEntrePecasMm >= 0)) erros.push('A distância entre as peças precisa ser de 0 para cima.');
   if (!(c.toleranciaDeRendimentoPercentual >= 0)) erros.push('A tolerância de rendimento precisa ser de 0 para cima.');
   if (!positivo(c.tempoDeBuscaS)) erros.push('O tempo de busca dos riscos precisa ser maior que zero.');
+  if (c.sobreposicaoDaEmendaMm !== undefined && !(c.sobreposicaoDaEmendaMm >= 0)) erros.push('A sobreposição da emenda precisa ser de 0 para cima (mm).');
   return erros;
 }
 
@@ -306,11 +345,34 @@ export function calcularPlanejamento(
     erros.push(`A malha (${escreverM(malha.larguraNominalMm ?? malha.larguraUtilMm)}) é mais larga que a mesa (${escreverM(c.larguraDaMesaMm)}).`);
   }
   if (malha.padrao !== 'liso') {
-    const texto = `A malha é ${malha.padrao}: o programa não casa ${malha.padrao === 'listrado' ? 'as listras' : 'o xadrez'} entre as peças. O risco precisa ser conferido (ou feito) à mão antes do corte.`;
-    if (entrada.aceitarPadraoSemCasamento) alertas.push({ nivel: 'aviso', texto });
-    else erros.push(`${texto} Para planejar assim mesmo, marque que o casamento será feito à parte.`);
+    const doDesenho = malha.padrao === 'listrado' ? 'das listras' : 'do xadrez';
+    const casados = riscos.length > 0 && riscos.every((r) => r.casamento?.conferido === true);
+    if (casados) {
+      const c0 = riscos[0]!.casamento!;
+      alertas.push({
+        nivel: 'info',
+        texto: `Casamento automático ${doDesenho}, conferido em todas as peças: o ponto "casamento" de cada uma cai na repetição (${[c0.rapportComprimentoMm ? `${escreverM(c0.rapportComprimentoMm, 3)} no comprimento` : '', c0.rapportLarguraMm ? `${escreverM(c0.rapportLarguraMm, 3)} na largura` : ''].filter(Boolean).join(' e ')}). As camadas precisam ser estendidas com o desenho alinhado ao começo do risco e à borda (mesa de agulhas).`,
+      });
+    } else {
+      const texto = `A malha é ${malha.padrao}, e o risco não tem o casamento automático ${doDesenho} conferido (falta a repetição e a fase no cadastro da malha, ou a marca "casamento" nas peças, ou o risco é da mesa ou informado). O risco precisa ser conferido (ou feito) à mão antes do corte.`;
+      if (entrada.aceitarPadraoSemCasamento) alertas.push({ nivel: 'aviso', texto });
+      else erros.push(`${texto} Para planejar assim mesmo, marque que o casamento será feito à parte.`);
+    }
   }
   if (riscos.length === 0 || camadasDosRiscos.length === 0) erros.push('Não há risco no plano: gere os riscos, use o da mesa ou informe um.');
+  // A compensação de encolhimento: só com a decisão, nunca duas vezes, e os riscos têm de estar compensados (ou não) de acordo.
+  let fatores: FatoresDeCompensacao | null = null;
+  if (entrada.compensarEncolhimento) {
+    const f = fatoresDeCompensacao(malha);
+    if ('erro' in f) erros.push(f.erro);
+    else fatores = f;
+    if (riscos.some((r) => r.origem === 'informado')) erros.push('O risco informado à mão já é a medida do corte: a compensação de encolhimento não se aplica a ele (desmarque a compensação, ou gere os riscos).');
+    else if (fatores && riscos.some((r) => !r.compensado || Math.abs(r.compensado.comprimento - fatores!.comprimento) > 1e-9 || Math.abs(r.compensado.largura - fatores!.largura) > 1e-9)) {
+      erros.push('Os riscos não foram compensados com o encolhimento da malha: calcule as alternativas de novo.');
+    }
+  } else if (riscos.some((r) => r.compensado)) {
+    erros.push('Os riscos foram compensados, e o plano não pede a compensação: calcule as alternativas de novo.');
+  }
   const porChave = new Map(riscos.map((r) => [r.chave, r]));
   for (const cr of camadasDosRiscos) {
     const r = porChave.get(cr.chave);
@@ -398,14 +460,16 @@ export function calcularPlanejamento(
   }
   const larguraDoTecidoMm = larguraNaMesa(malha.larguraUtilMm, entrada.tipoDeEnfesto, malha.tubular);
 
-  // ---- O material: os rolos (por lote e tonalidade), ou o peso.
+  // ---- O material: os rolos (por lote e tonalidade, ao longo do comprimento de cada um), ou o peso.
   let disponivelMm = 0;
   let perdaDosRolosMm = 0;
   let defeitosMm = 0;
+  let perdaPorDefeitosMm = 0;
   let comprimentoEstimado = false;
-  // Para cada camada de cada risco, o grupo do rolo de onde ela sai (ou `null`, se o material não deu).
-  const gruposDasCamadas = new Map<string, (string | null)[]>();
+  // Para cada camada de cada risco, os grupos dos rolos de onde ela sai (vazio, se o material não deu).
+  const gruposDasCamadas = new Map<string, string[][]>();
   let rolosNoResultado: RoloNoResultado[] | null = null;
+  const emendas: EmendaNoResultado[] = [];
   const ordemDosRiscos = [...linhas].sort((a, b) => b.consumo - a.consumo);
   if (entrada.rolos && entrada.rolos.length > 0) {
     const grupos = [...new Set(entrada.rolos.map(grupoDoRolo))];
@@ -419,7 +483,16 @@ export function calcularPlanejamento(
       };
     }
     if (grupos.length > 1) alertas.push({ nivel: 'aviso', texto: `Lotes/tonalidades misturados neste plano, por decisão de quem planeja: ${grupos.join('; ')}. Os enfestos que juntam lotes estão marcados.` });
-    // Os rolos de cada grupo juntos (o grupo com mais malha primeiro), para os enfestos saírem de um grupo só.
+    const semPosicao = entrada.rolos.filter((r) => r.defeitos.some((d) => d.posicaoMm === undefined));
+    if (semPosicao.length > 0 && !entrada.aceitarDefeitosSemPosicao) {
+      return {
+        ok: false,
+        erros: [
+          `Os rolos ${semPosicao.map((r) => r.identificacao).join(', ')} têm defeito sem a posição: o plano não tem como evitá-lo, e ele pode cair numa camada. Informe a posição do defeito (no cadastro do rolo), tire o rolo, ou marque que o defeito será tratado no enfesto (o comprimento dele sai do rolo, sem garantia de que a camada não passe por ele).`,
+        ],
+        alertas,
+      };
+    }
     const comprimentos = new Map<RoloDeEstoque, { comprimentoMm: number; origem: 'medido' | 'pelo peso' }>();
     const errosDosRolos: string[] = [];
     for (const rolo of entrada.rolos) {
@@ -428,18 +501,19 @@ export function calcularPlanejamento(
       else comprimentos.set(rolo, comp);
     }
     if (errosDosRolos.length > 0) return { ok: false, erros: errosDosRolos, alertas };
+    // Os rolos de cada grupo juntos (o grupo com mais malha primeiro), para os enfestos saírem de um grupo só.
     const totalDoGrupo = (g: string): number => entrada.rolos!.filter((r) => grupoDoRolo(r) === g).reduce((s, r) => s + comprimentos.get(r)!.comprimentoMm, 0);
     const rolosEmOrdem = [...entrada.rolos].sort(
       (a, b) => totalDoGrupo(grupoDoRolo(b)) - totalDoGrupo(grupoDoRolo(a)) || grupoDoRolo(a).localeCompare(grupoDoRolo(b)) || comprimentos.get(b)!.comprimentoMm - comprimentos.get(a)!.comprimentoMm,
     );
-    const estado = rolosEmOrdem.map((rolo) => {
+    const dados = rolosEmOrdem.map((rolo) => {
       const comp = comprimentos.get(rolo)!;
-      const defeitos = rolo.defeitos.reduce((s, d) => s + d.perdaMm, 0);
       const largura = larguraNaMesa(rolo.larguraUtilMedidaMm ?? malha.larguraUtilMm, entrada.tipoDeEnfesto, malha.tubular);
       const serve = linhas.filter((l) => largura + 0.5 >= l.r.larguraMm).map((l) => l.r.chave);
-      return { rolo, comp, defeitos, largura, serve, restante: Math.max(0, comp.comprimentoMm - c.perdaPorRoloMm - defeitos), camadasPorRisco: {} as Record<string, number> };
+      const jaUsadoMm = Math.min(comp.comprimentoMm, Math.max(0, entrada.usoAnteriorDosRolosMm?.[rolo.id] ?? 0));
+      return { rolo, comp, largura, serve, jaUsadoMm };
     });
-    const inuteis = estado.filter((e) => e.serve.length === 0);
+    const inuteis = dados.filter((e) => e.serve.length === 0);
     if (inuteis.length > 0) {
       return {
         ok: false,
@@ -450,48 +524,88 @@ export function calcularPlanejamento(
         alertas,
       };
     }
-    for (const e of estado) {
+    const esgotados = dados.filter((e) => e.jaUsadoMm >= e.comp.comprimentoMm - 0.5);
+    if (esgotados.length > 0) {
+      return { ok: false, erros: esgotados.map((e) => `O rolo “${e.rolo.identificacao}” já está todo consumido ou reservado por outros planos: tire-o da seleção.`), alertas };
+    }
+    for (const e of dados) {
       if (e.serve.length < linhas.length) {
         alertas.push({
           nivel: 'aviso',
           texto: `O rolo “${e.rolo.identificacao}” (${escreverM(e.largura)} de largura na mesa) serve só para ${e.serve.length} dos ${linhas.length} riscos: os mais largos não saem dele.`,
         });
       }
+      if (e.jaUsadoMm > 0) alertas.push({ nivel: 'info', texto: `Do rolo “${e.rolo.identificacao}”, ${escreverM(e.jaUsadoMm)} já estão consumidos ou reservados por outros planos: o plano usa o resto.` });
       if (e.comp.origem === 'pelo peso') comprimentoEstimado = true;
-      disponivelMm += e.comp.comprimentoMm;
-      perdaDosRolosMm += Math.min(e.comp.comprimentoMm, c.perdaPorRoloMm);
-      defeitosMm += e.defeitos;
+      disponivelMm += e.comp.comprimentoMm - e.jaUsadoMm;
+      perdaDosRolosMm += Math.min(e.comp.comprimentoMm - e.jaUsadoMm, c.perdaPorRoloMm);
+      defeitosMm += e.rolo.defeitos.reduce((s, d) => s + d.perdaMm, 0);
     }
+    if (semPosicao.length > 0) {
+      alertas.push({
+        nivel: 'aviso',
+        texto: `Defeitos sem posição (rolos ${semPosicao.map((r) => r.identificacao).join(', ')}): o comprimento deles sai do rolo, mas eles NÃO são evitados — confira as camadas no enfesto, por decisão de quem planeja.`,
+      });
+    }
+    // As linhas de emenda de cada risco, na camada (as pontas da camada são metade antes e metade depois do risco).
+    const linhasDe = (r: RiscoDoPlanejamento): number[] | null =>
+      r.pecas.length > 0 ? linhasDeEmendaDoRisco(r.pecas, r.comprimentoMm).map((y) => y + c.sobraPorCamadaMm / 2) : null;
+    const alocacao = alocarCamadas(
+      dados.map((e) => ({
+        id: e.rolo.id,
+        identificacao: e.rolo.identificacao,
+        grupo: grupoDoRolo(e.rolo),
+        comprimentoMm: e.comp.comprimentoMm,
+        jaUsadoMm: e.jaUsadoMm,
+        perdaPorRoloMm: c.perdaPorRoloMm,
+        defeitosComPosicao: e.rolo.defeitos.filter((d) => d.posicaoMm !== undefined).map((d) => [d.posicaoMm!, d.posicaoMm! + d.perdaMm] as const),
+        defeitosSemPosicaoMm: e.rolo.defeitos.filter((d) => d.posicaoMm === undefined).reduce((s, d) => s + d.perdaMm, 0),
+        serveParaRiscos: e.serve,
+      })),
+      ordemDosRiscos.map((l) => ({ chave: l.r.chave, camadas: l.camadas, consumoMm: l.consumo, linhasDeEmenda: linhasDe(l.r) })),
+      { permitirEmendas: c.permitirEmendas === true, sobreposicaoDaEmendaMm: c.sobreposicaoDaEmendaMm ?? 0 },
+    );
+    const grupoDe = new Map(dados.map((e) => [e.rolo.id, grupoDoRolo(e.rolo)]));
     for (const l of ordemDosRiscos) {
-      const camadas: (string | null)[] = [];
-      for (const e of estado) {
-        if (camadas.length >= l.camadas) break;
-        if (!e.serve.includes(l.r.chave)) continue;
-        const cabem = Math.min(l.camadas - camadas.length, Math.floor(e.restante / l.consumo + 1e-9));
-        if (cabem <= 0) continue;
-        e.restante -= cabem * l.consumo;
-        e.camadasPorRisco[l.r.chave] = (e.camadasPorRisco[l.r.chave] ?? 0) + cabem;
-        for (let i = 0; i < cabem; i++) camadas.push(grupoDoRolo(e.rolo));
-      }
-      while (camadas.length < l.camadas) camadas.push(null);
+      const camadas = alocacao.camadas.filter((x) => x.chave === l.r.chave).map((x) => [...new Set(x.trechos.map((t) => grupoDe.get(t.roloId)!))]);
+      while (camadas.length < l.camadas) camadas.push([]);
       gruposDasCamadas.set(l.r.chave, camadas);
     }
-    rolosNoResultado = estado.map((e) => ({
-      id: e.rolo.id,
-      identificacao: e.rolo.identificacao,
-      grupo: grupoDoRolo(e.rolo),
-      comprimentoMm: e.comp.comprimentoMm,
-      origemDoComprimento: e.comp.origem,
-      larguraMm: e.largura,
-      serveParaRiscos: e.serve,
-      perdasMm: Math.min(e.comp.comprimentoMm, c.perdaPorRoloMm),
-      defeitosMm: e.defeitos,
-      camadasPorRisco: e.camadasPorRisco,
-      usadoMm: Object.entries(e.camadasPorRisco).reduce((s, [chave, n]) => s + n * linhas.find((l) => l.r.chave === chave)!.consumo, 0),
-      sobraMm: e.restante,
-    }));
+    for (const camada of alocacao.camadas) {
+      if (!camada.emenda) continue;
+      const de = dados.find((e) => e.rolo.id === camada.emenda!.roloDe)!.rolo.identificacao;
+      const para = dados.find((e) => e.rolo.id === camada.emenda!.roloPara)!.rolo.identificacao;
+      emendas.push({ chave: camada.chave, roloDe: de, roloPara: para, posicaoNoRiscoMm: camada.emenda.posicaoNaCamadaMm - c.sobraPorCamadaMm / 2, sobreposicaoMm: camada.emenda.sobreposicaoMm });
+    }
+    rolosNoResultado = dados.map((e) => {
+      const uso = alocacao.porRolo.find((u) => u.roloId === e.rolo.id)!;
+      perdaPorDefeitosMm += uso.perdaPorDefeitoMm;
+      return {
+        id: e.rolo.id,
+        identificacao: e.rolo.identificacao,
+        grupo: grupoDoRolo(e.rolo),
+        comprimentoMm: e.comp.comprimentoMm,
+        origemDoComprimento: e.comp.origem,
+        larguraMm: e.largura,
+        serveParaRiscos: e.serve,
+        jaUsadoMm: e.jaUsadoMm,
+        perdasMm: Math.min(e.comp.comprimentoMm - e.jaUsadoMm, c.perdaPorRoloMm),
+        defeitosMm: e.rolo.defeitos.reduce((s, d) => s + d.perdaMm, 0),
+        perdaPorDefeitoMm: uso.perdaPorDefeitoMm,
+        emendas: uso.emendas,
+        camadasPorRisco: uso.camadasPorRisco,
+        usadoMm: uso.usadoMm,
+        sobraMm: uso.pontaMm,
+      };
+    });
     if (comprimentoEstimado) alertas.push({ nivel: 'info', texto: 'O comprimento de algum rolo saiu do peso (peso × rendimento): é uma estimativa, não uma medida.' });
-    if (defeitosMm > 0) alertas.push({ nivel: 'info', texto: `Os defeitos dos rolos tiram ${escreverM(defeitosMm)} do comprimento (a posição deles não é considerada).` });
+    if (perdaPorDefeitosMm > 0) alertas.push({ nivel: 'info', texto: `Os defeitos com posição foram evitados: as camadas começam depois deles (${escreverM(perdaPorDefeitosMm)} de malha pulados).` });
+    if (emendas.length > 0) {
+      alertas.push({
+        nivel: 'aviso',
+        texto: `${emendas.length} camada(s) com emenda (rolo que acaba no meio da camada, continuado no seguinte numa linha do risco sem peça cortada, com ${escreverM(c.sobreposicaoDaEmendaMm ?? 0, 3)} de sobreposição): confira as emendas no enfesto.`,
+      });
+    }
   } else {
     if (!positivo(entrada.pesoDisponivelG)) return { ok: false, erros: ['Falta o material: escolha os rolos, ou informe o peso disponível da malha (kg).'], alertas };
     if (usado === null) return { ok: false, erros: ['Falta o rendimento para converter o peso em metros: informe o rendimento (m/kg) ou a gramatura (g/m²) da malha.'], alertas };
@@ -501,7 +615,7 @@ export function calcularPlanejamento(
     for (const l of ordemDosRiscos) {
       const cabem = Math.min(l.camadas, Math.floor(restante / l.consumo + 1e-9));
       restante -= cabem * l.consumo;
-      gruposDasCamadas.set(l.r.chave, [...Array<string | null>(cabem).fill('peso'), ...Array<string | null>(l.camadas - cabem).fill(null)]);
+      gruposDasCamadas.set(l.r.chave, [...Array.from({ length: cabem }, () => ['peso']), ...Array.from({ length: l.camadas - cabem }, (): string[] => [])]);
     }
     alertas.push({ nivel: 'info', texto: `O comprimento disponível saiu do peso (${escreverKg(entrada.pesoDisponivelG)} × ${escreverRendimento(usado)}): é uma estimativa.` });
   }
@@ -521,7 +635,7 @@ export function calcularPlanejamento(
     for (const n of reparticao) {
       const dele = grupos.slice(inicio, inicio + n);
       inicio += n;
-      const gruposDoEnfesto = [...new Set(dele.filter((g): g is string => g !== null && g !== 'peso'))];
+      const gruposDoEnfesto = [...new Set(dele.flat().filter((g) => g !== 'peso'))];
       enfestos.push({
         numero: numero++,
         chave: l.r.chave,
@@ -532,7 +646,7 @@ export function calcularPlanejamento(
         pesoG: usado !== null ? (n * l.consumo) / usado : null,
       });
     }
-    const alocadas = grupos.filter((g) => g !== null).length;
+    const alocadas = grupos.filter((g) => g.length > 0).length;
     if (alocadas < l.camadas) faltouMaterial = true;
     for (const t of tamanhos) {
       producao[t] = producao[t]! + l.camadas * folhasPorCamada * (l.r.grade[t] ?? 0);
@@ -569,8 +683,9 @@ export function calcularPlanejamento(
 
   const consumoMm = linhas.reduce((s, l) => s + l.camadas * l.consumo, 0);
   const pontasMm = linhas.reduce((s, l) => s + l.camadas * c.sobraPorCamadaMm, 0);
-  const necessarioMm = consumoMm + perdaDosRolosMm + defeitosMm;
-  const deficitMm = faltouMaterial ? linhas.reduce((s, l) => s + (l.camadas - gruposDasCamadas.get(l.r.chave)!.filter((g) => g !== null).length) * l.consumo, 0) : 0;
+  const sobreposicoesMm = emendas.reduce((s, e) => s + e.sobreposicaoMm, 0);
+  const necessarioMm = consumoMm + sobreposicoesMm + perdaDosRolosMm + (rolosNoResultado ? perdaPorDefeitosMm + defeitosSemPosicaoTotal(entrada) : defeitosMm);
+  const deficitMm = faltouMaterial ? linhas.reduce((s, l) => s + (l.camadas - gruposDasCamadas.get(l.r.chave)!.filter((g) => g.length > 0).length) * l.consumo, 0) : 0;
   const sobraMm = Math.max(0, disponivelMm - necessarioMm);
   if (faltouMaterial) {
     alertas.push({
@@ -595,12 +710,17 @@ export function calcularPlanejamento(
     [malha.encolhimentoComprimentoPercentual, 'no comprimento'],
     [malha.encolhimentoLarguraPercentual, 'na largura'],
   ].filter(([v]) => typeof v === 'number' && v > 0) as [number, string][];
-  if (encolhimentos.length > 0) {
+  if (fatores) {
+    alertas.push({
+      nivel: 'info',
+      texto: `Encolhimento compensado no risco, por decisão de quem planeja${malha.fonteDoEncolhimento ? ` (valor: ${ROTULO_DA_FONTE_DO_ENCOLHIMENTO[malha.fonteDoEncolhimento].toLowerCase()})` : ''}: comprimento × ${fatores.comprimento.toFixed(4).replace('.', ',')} (${um(fatores.encolhimentoComprimentoPercentual)}%), largura × ${fatores.largura.toFixed(4).replace('.', ',')} (${um(fatores.encolhimentoLarguraPercentual)}%). As peças são cortadas maiores para ficarem na medida depois de encolher.`,
+    });
+  } else if (encolhimentos.length > 0) {
     const texto = encolhimentos.map(([v, onde]) => `${um(v)}% ${onde}`).join(' e ');
     alertas.push(
       malha.encolhimentoCompensadoNoMolde
         ? { nivel: 'info', texto: `Encolhimento da malha: ${texto} — já compensado no molde (cadastro da malha). O plano não aplica nada a mais.` }
-        : { nivel: 'aviso', texto: `Encolhimento da malha: ${texto} — NÃO compensado no molde, e o plano não o aplica. As peças cortadas vão encolher.` },
+        : { nivel: 'aviso', texto: `Encolhimento da malha: ${texto} — NÃO compensado no molde, e o plano não o aplica (a compensação no risco não foi pedida). As peças cortadas vão encolher.` },
     );
   }
   if (ajustes.comprimentoDaMesaMm !== undefined && comprimentoDaMesaMm > comprimentoSugeridoMm + 0.5) {
@@ -628,7 +748,9 @@ export function calcularPlanejamento(
       ? `Cada rolo dá só camadas inteiras: o fim de um rolo não se emenda no próximo (sem emendas). Cada rolo perde ${escreverM(c.perdaPorRoloMm, 3)} (configuração) e o comprimento dos defeitos informados.`
       : 'O material é um peso só (sem rolos): as perdas de rolo e os defeitos não entram.',
     'O comprimento que sai do peso é peso × rendimento — uma estimativa; o medido vale quando há.',
-    'O encolhimento nunca é aplicado pelo plano: o cadastro da malha diz se ele já está compensado no molde.',
+    fatores
+      ? `O encolhimento foi compensado no risco (comprimento × ${fatores.comprimento.toFixed(4).replace('.', ',')}, largura × ${fatores.largura.toFixed(4).replace('.', ',')}): o risco foi feito na largura da malha ÷ ${fatores.largura.toFixed(4).replace('.', ',')} e aumentado, para caber nela.`
+      : 'O encolhimento só é compensado no risco por decisão de quem planeja, e nunca quando o molde já está compensado (cadastro da malha).',
     'A ordem de produção nunca é mudada: falta e excedente são mostrados.',
   ];
 
@@ -674,6 +796,9 @@ export function calcularPlanejamento(
       faltaPorTamanho,
       possivelPorTamanho: faltouMaterial ? possivel : null,
       rolos: rolosNoResultado,
+      emendas,
+      perdaPorDefeitosMm,
+      sobreposicoesMm,
       materialSuficiente: !faltouMaterial,
       atendeAOrdem: faltam.length === 0 && !faltouMaterial,
       eficienciaMediaPercentual,
@@ -724,4 +849,9 @@ export function escolherAlternativas(avaliadas: readonly Avaliada[]): Readonly<R
     'menos-enfestos': melhor((a, b) => a.enfestos - b.enfestos || a.consumoMm - b.consumoMm),
     equilibrada: melhor((a, b) => nota(a) - nota(b) || a.consumoMm - b.consumoMm),
   };
+}
+
+/** O comprimento dos defeitos sem posição dos rolos do plano (mm). */
+function defeitosSemPosicaoTotal(entrada: EntradaDoPlanejamento): number {
+  return (entrada.rolos ?? []).reduce((s, r) => s + r.defeitos.filter((d) => d.posicaoMm === undefined).reduce((t, d) => t + d.perdaMm, 0), 0);
 }

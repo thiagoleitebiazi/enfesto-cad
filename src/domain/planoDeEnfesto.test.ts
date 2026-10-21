@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MalhaDoCadastro, RoloDeEstoque } from './cadastroDeProducao';
 import { RESTRICAO_PADRAO } from './molde';
+import { riscoCompensado } from './encolhimento';
 import {
   calcularPlanejamento,
   camadasDeUmRisco,
@@ -142,7 +143,10 @@ describe('calcularPlanejamento — rolos', () => {
     // R1: 50 m medidos − 1 m = 49 m → 16 camadas de 3,02 m. R2: 10 kg × 4 = 40 m (estimado) − 1 m → 12.
     // R3: 35 m − 1 m − 2 m de defeito = 32 m → 10. Ao todo, 38 das 40 camadas.
     const rolos = [rolo('R1', { comprimentoMedidoMm: 50_000 }), rolo('R2', { pesoLiquidoG: 10_000 }), rolo('R3', { comprimentoMedidoMm: 35_000, defeitos: [{ descricao: 'furo', perdaMm: 2000 }] })];
-    const c = ok(calcularPlanejamento(entrada({ rolos }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], config));
+    // O defeito de R3 não tem posição: sem a decisão, o plano não sai.
+    expect(erros(calcularPlanejamento(entrada({ rolos }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], config))[0]).toContain('Os rolos R3 têm defeito sem a posição');
+    const c = ok(calcularPlanejamento(entrada({ rolos, aceitarDefeitosSemPosicao: true }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], config));
+    expect(textos(c)).toContain('Defeitos sem posição (rolos R3)');
     const r = c.resultado;
     expect(r.rolos!.map((x) => [x.identificacao, x.camadasPorRisco[RISCO.chave], x.origemDoComprimento])).toEqual([
       ['R1', 16, 'medido'],
@@ -252,9 +256,13 @@ describe('calcularPlanejamento — ordem, ajustes e avisos da malha', () => {
     expect(textos(c)).toContain('O rendimento informado (4,00 m/kg) e o calculado pela largura e gramatura (2,02 m/kg) diferem 98,4%');
   });
 
-  it('listrado ou xadrez: o casamento não é feito — só planeja com a decisão marcada, e avisa', () => {
+  it('listrado ou xadrez sem o casamento conferido no risco: só planeja com a decisão marcada, e avisa; com ele, sai', () => {
     const listrada = { ...MALHA, padrao: 'listrado' as const };
-    expect(erros(calcularPlanejamento(entrada({ malha: listrada }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))[0]).toContain('o programa não casa as listras');
+    expect(erros(calcularPlanejamento(entrada({ malha: listrada }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))[0]).toContain('o risco não tem o casamento automático das listras conferido');
+    const casado = { ...RISCO, casamento: { rapportComprimentoMm: 100, faseComprimentoMm: 0, faseLarguraMm: 0, conferido: true } };
+    expect(textos(ok(calcularPlanejamento(entrada({ malha: listrada }), [casado], [{ chave: RISCO.chave, camadas: 40 }], CONFIG)))).toContain('Casamento automático das listras, conferido em todas as peças');
+    const naoConferido = { ...casado, casamento: { ...casado.casamento, conferido: false } };
+    expect(calcularPlanejamento(entrada({ malha: listrada }), [naoConferido], [{ chave: RISCO.chave, camadas: 40 }], CONFIG).ok).toBe(false);
     const aceita = calcularPlanejamento(entrada({ malha: listrada, aceitarPadraoSemCasamento: true }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG);
     expect(textos(aceita)).toContain('O risco precisa ser conferido (ou feito) à mão antes do corte.');
   });
@@ -263,7 +271,7 @@ describe('calcularPlanejamento — ordem, ajustes e avisos da malha', () => {
     const compensado = calcularPlanejamento(entrada({ malha: { ...MALHA, encolhimentoComprimentoPercentual: 3, encolhimentoCompensadoNoMolde: true } }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG);
     expect(compensado.alertas).toContainEqual({ nivel: 'info', texto: 'Encolhimento da malha: 3,0% no comprimento — já compensado no molde (cadastro da malha). O plano não aplica nada a mais.' });
     const nao = calcularPlanejamento(entrada({ malha: { ...MALHA, encolhimentoLarguraPercentual: 2 } }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG);
-    expect(nao.alertas).toContainEqual({ nivel: 'aviso', texto: 'Encolhimento da malha: 2,0% na largura — NÃO compensado no molde, e o plano não o aplica. As peças cortadas vão encolher.' });
+    expect(nao.alertas).toContainEqual({ nivel: 'aviso', texto: 'Encolhimento da malha: 2,0% na largura — NÃO compensado no molde, e o plano não o aplica (a compensação no risco não foi pedida). As peças cortadas vão encolher.' });
     expect(ok(nao).resultado.consumoMm).toBe(120_800);
   });
 
@@ -336,6 +344,81 @@ describe('calcularPlanejamento — os limites contam folhas (no par, 2 por camad
     expect(calcularPlanejamento(entrada(), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG, { camadasPorEnfesto: 100 }).ok).toBe(true);
     expect(erros(calcularPlanejamento(entrada(), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG, { camadasPorEnfesto: 101 }))).toEqual([
       'O limite é de 100 camadas por enfesto no risco 1 P + 2 M + 1 G: as 101 ajustadas passam dele.',
+    ]);
+  });
+});
+
+describe('calcularPlanejamento — defeitos com posição, emendas e o que já foi usado', () => {
+  it('o defeito com posição é evitado: as camadas começam depois dele, e o pulo é dito', () => {
+    // 3,02 m por camada no rolo de 9,2 m: sem defeito, 3 camadas (até 9,06 m). Com o defeito de 3,02 a 3,5 m, a 2ª
+    // camada começa em 3,5 m, e a 3ª iria até 9,54 m — não cabe: 2 camadas.
+    expect(ok(calcularPlanejamento(entrada({ rolos: [rolo('R1', { comprimentoMedidoMm: 9200 })] }), [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIG)).resultado.materialSuficiente).toBe(true);
+    const r = ok(
+      calcularPlanejamento(entrada({ rolos: [rolo('R1', { comprimentoMedidoMm: 9200, defeitos: [{ descricao: 'mancha', perdaMm: 480, posicaoMm: 3020, tipo: 'mancha' }] })] }), [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIG),
+    ).resultado;
+    expect(r.rolos![0]).toMatchObject({ perdaPorDefeitoMm: 480, camadasPorRisco: { [RISCO.chave]: 2 } });
+    expect(r.perdaPorDefeitosMm).toBe(480);
+    expect(r.materialSuficiente).toBe(false);
+  });
+
+  it('com emenda permitida, o rolo que acaba no meio da camada continua no seguinte, na linha do risco sem peça cortada', () => {
+    // Risco de 3 m com duas peças (0–1,4 m e 1,5–3 m): a linha de emenda fica a 1,4 m do começo do risco.
+    const comPecas: RiscoDoPlanejamento = {
+      ...RISCO,
+      pecas: [
+        { pecaId: 'a', nome: 'A', tamanho: 'M', contorno: [{ x: 0, y: 0 }, { x: 500, y: 0 }, { x: 500, y: 1400 }, { x: 0, y: 1400 }], fio: { inicio: { x: 1, y: 1 }, fim: { x: 1, y: 2 } }, anguloGraus: 0, espelhada: false },
+        { pecaId: 'b', nome: 'B', tamanho: 'M', contorno: [{ x: 0, y: 1500 }, { x: 500, y: 1500 }, { x: 500, y: 3000 }, { x: 0, y: 3000 }], fio: { inicio: { x: 1, y: 1 }, fim: { x: 1, y: 2 } }, anguloGraus: 0, espelhada: false },
+      ],
+    };
+    const rolos = [rolo('A', { comprimentoMedidoMm: 7500 }), rolo('B', { comprimentoMedidoMm: 3000 })];
+    const sem = ok(calcularPlanejamento(entrada({ rolos }), [comPecas], [{ chave: RISCO.chave, camadas: 3 }], CONFIG)).resultado;
+    expect(sem.possivelPorTamanho).toEqual({ P: 2, M: 4, G: 2 });
+    const com = calcularPlanejamento(entrada({ rolos }), [comPecas], [{ chave: RISCO.chave, camadas: 3 }], { ...CONFIG, permitirEmendas: true, sobreposicaoDaEmendaMm: 100 });
+    const r = ok(com).resultado;
+    expect(r.materialSuficiente).toBe(true);
+    expect(r.emendas).toEqual([{ chave: RISCO.chave, roloDe: 'A', roloPara: 'B', posicaoNoRiscoMm: 1400, sobreposicaoMm: 100 }]);
+    expect(r.sobreposicoesMm).toBe(100);
+    expect(r.rolos!.map((x) => [x.identificacao, x.usadoMm, x.emendas])).toEqual([
+      ['A', 2 * 3020 + 1410, 1],
+      ['B', 3020 - 1410 + 100, 0],
+    ]);
+    expect(textos(com)).toContain('1 camada(s) com emenda');
+  });
+
+  it('o que já foi consumido ou reservado por outros planos sai do começo do rolo; o rolo todo usado é recusado', () => {
+    const r = ok(calcularPlanejamento(entrada({ rolos: [rolo('R1', { comprimentoMedidoMm: 10_000 })], usoAnteriorDosRolosMm: { R1: 4000 } }), [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIG)).resultado;
+    expect(r.rolos![0]).toMatchObject({ jaUsadoMm: 4000, camadasPorRisco: { [RISCO.chave]: 1 } });
+    expect(r.disponivelMm).toBe(6000);
+    expect(erros(calcularPlanejamento(entrada({ rolos: [rolo('R1', { comprimentoMedidoMm: 10_000 })], usoAnteriorDosRolosMm: { R1: 10_000 } }), [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIG))).toEqual([
+      'O rolo “R1” já está todo consumido ou reservado por outros planos: tire-o da seleção.',
+    ]);
+  });
+});
+
+describe('calcularPlanejamento — compensação de encolhimento', () => {
+  const comEncolhimento = { ...MALHA, encolhimentoComprimentoPercentual: 3, encolhimentoLarguraPercentual: 2, fonteDoEncolhimento: 'ensaio-de-lavagem' as const };
+  const fatores = { comprimento: 1 / 0.97, largura: 1 / 0.98, encolhimentoComprimentoPercentual: 3, encolhimentoLarguraPercentual: 2 };
+  const base = { ...RISCO, larguraMm: 1500 };
+  const compensado = riscoCompensado(base, fatores, 1600);
+
+  it('com a decisão e o risco compensado: o consumo cresce pelo fator do comprimento, e o plano diz os fatores e a fonte', () => {
+    const c = ok(calcularPlanejamento(entrada({ malha: comEncolhimento, compensarEncolhimento: true }), [compensado], [{ chave: RISCO.chave, camadas: 40 }], CONFIG));
+    expect(c.resultado.riscos[0]!.comprimentoMm).toBeCloseTo(3000 / 0.97, 1);
+    expect(c.resultado.consumoMm).toBeCloseTo(40 * (3000 / 0.97 + 20), 0);
+    expect(textos(c)).toContain('Encolhimento compensado no risco, por decisão de quem planeja (valor: ensaio de lavagem): comprimento × 1,0309 (3,0%), largura × 1,0204 (2,0%)');
+    expect(textos(c)).not.toContain('NÃO compensado');
+  });
+
+  it('nunca duas vezes, nem num risco informado, nem com o risco que não foi compensado', () => {
+    expect(erros(calcularPlanejamento(entrada({ malha: { ...comEncolhimento, encolhimentoCompensadoNoMolde: true }, compensarEncolhimento: true }), [compensado], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))).toContain(
+      'O encolhimento desta malha já está compensado no molde (cadastro da malha): compensar no risco também o aplicaria duas vezes.',
+    );
+    expect(erros(calcularPlanejamento(entrada({ malha: comEncolhimento, compensarEncolhimento: true }), [{ ...base, origem: 'informado' }], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))[0]).toContain('O risco informado à mão já é a medida do corte');
+    expect(erros(calcularPlanejamento(entrada({ malha: comEncolhimento, compensarEncolhimento: true }), [base], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))).toEqual([
+      'Os riscos não foram compensados com o encolhimento da malha: calcule as alternativas de novo.',
+    ]);
+    expect(erros(calcularPlanejamento(entrada({ malha: comEncolhimento }), [compensado], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))).toEqual([
+      'Os riscos foram compensados, e o plano não pede a compensação: calcule as alternativas de novo.',
     ]);
   });
 });

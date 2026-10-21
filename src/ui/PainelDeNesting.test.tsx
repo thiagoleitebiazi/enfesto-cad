@@ -163,3 +163,16 @@ describe('PainelDeNesting: a distância entre os moldes', () => {
     expect(onCalcular).not.toHaveBeenCalled();
   });
 });
+
+describe('PainelDeNesting — o método do encaixe', () => {
+  it('o de sempre (a busca em grade) não muda nada; o dos pontos de canto vai junto, e a janela explica cada um', () => {
+    const { onCalcular } = renderizar([molde('Frente', 'f', 'M')]);
+    expect(screen.getByText(/até 20 000 posições por peça/)).toBeInTheDocument();
+    calcular();
+    expect(onCalcular).toHaveBeenLastCalledWith({ distanciaEntreMoldesMm: 3 });
+    fireEvent.change(screen.getByLabelText('Método do encaixe'), { target: { value: 'pontos-de-canto' } });
+    expect(screen.getByText(/A meta de aproveitamento não vale neste método/)).toBeInTheDocument();
+    calcular();
+    expect(onCalcular).toHaveBeenLastCalledWith({ distanciaEntreMoldesMm: 3, metodo: 'pontos-de-canto' });
+  });
+});

@@ -2,6 +2,7 @@ import { linhaDeCorteDaPeca, rotacionarMolde, espelharMolde, transladarMolde, ro
 import type { ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
+import { fazerRisco, moldeOrientado, type PecaDoRisco } from './risco';
 
 /**
  * Motor de NESTING automático (seção 6 do escopo). Usa os contornos reais
@@ -285,5 +286,81 @@ export function* passosDoNesting(
     interrompido,
     paradaPorTempoLimite,
     paradaPorMetaDeAproveitamento,
+  };
+}
+
+/** O método do encaixe automático na mesa: a busca em grade (o de sempre) ou os pontos de canto (o do planejamento). */
+export type MetodoDoNesting = 'grade' | 'pontos-de-canto';
+
+/**
+ * O encaixe na mesa do projeto pelo motor do planejamento de corte (pontos de canto com encosto, várias ordens de
+ * entrada, curvas simplificadas com a diferença somada à distância — ver risco.ts). Entrega o mesmo resultado do
+ * encaixe em grade (as peças postas, as que ficaram de fora, o comprimento e o aproveitamento), para a janela e o
+ * "Aplicar" serem os mesmos. A meta de aproveitamento não vale neste método (ele põe todas as que couberem).
+ */
+export function executarNestingPorPontosDeCanto(
+  pecas: readonly Molde[],
+  enfesto: ConfiguracaoDeEnfesto,
+  opcoes: Pick<OpcoesDeNesting, 'deveContinuar' | 'aoProgredir' | 'agora' | 'limiteDeTempoMs' | 'tecidoDeSentidoUnico'> = {},
+): ResultadoDeNesting {
+  const agora = opcoes.agora ?? Date.now;
+  const inicio = agora();
+  const copias: PecaDoRisco[] = [];
+  for (const peca of pecas) {
+    for (let i = 0; i < peca.quantidade; i++) {
+      copias.push({ pecaId: peca.id, nome: peca.nome, tamanho: peca.tamanho, molde: { ...peca, quantidade: 1 }, espelhada: peca.emPar === true && i % 2 === 1, copia: i });
+    }
+  }
+  const largura = enfesto.larguraUtilMm - 2 * enfesto.margemLateralMm;
+  const comprimento = enfesto.comprimentoMm - 2 * enfesto.margemDeExtremidadeMm;
+  const vazio = (motivoDeFora: readonly PecaDoRisco[], interrompido: boolean): ResultadoDeNesting => ({
+    pecasColocadas: [],
+    pecasNaoColocadas: motivoDeFora.map((p) => ({ idOriginal: p.pecaId, indiceCopia: p.copia ?? 0, nome: p.nome })),
+    comprimentoUtilizadoMm: 0,
+    areaOcupadaMm2: 0,
+    aproveitamentoPercentual: 0,
+    tempoDeProcessamentoMs: agora() - inicio,
+    interrompido,
+    paradaPorTempoLimite: false,
+    paradaPorMetaDeAproveitamento: false,
+  });
+  if (copias.length === 0 || !(largura > 0) || !(comprimento > 0)) return vazio(copias, false);
+  const risco = fazerRisco(copias, {}, {
+    larguraMm: largura,
+    comprimentoMaximoMm: comprimento,
+    distanciaMm: enfesto.distanciaMinimaEntrePecasMm,
+    sentidoUnico: opcoes.tecidoDeSentidoUnico ?? false,
+    deixarDeFora: true,
+    agora,
+    ...(opcoes.limiteDeTempoMs !== undefined ? { tempoLimiteMs: opcoes.limiteDeTempoMs } : {}),
+    ...(opcoes.deveContinuar ? { deveParar: () => !opcoes.deveContinuar!() } : {}),
+    ...(opcoes.aoProgredir ? { aoProgredir: opcoes.aoProgredir } : {}),
+  });
+  if (!risco.ok) return vazio(copias, risco.cancelado === true);
+  const margem = { x: enfesto.margemLateralMm, y: enfesto.margemDeExtremidadeMm };
+  const colocadas: PecaColocada[] = risco.pecas.map((posta) => {
+    const copia = copias.find((c) => c.pecaId === posta.pecaId && c.copia === posta.copia)!;
+    const orientada = moldeOrientado(copia, posta);
+    const d = posta.deslocamentoMm!;
+    return {
+      idOriginal: copia.pecaId,
+      indiceCopia: copia.copia ?? 0,
+      molde: transladarMolde(orientada, { x: d.x + margem.x, y: d.y + margem.y }, `${copia.pecaId}#${copia.copia ?? 0}`),
+    };
+  });
+  const cortes = colocadas.map((c) => linhaDeCorteDaPeca(c.molde));
+  const comprimentoUtilizadoMm = cortes.length === 0 ? 0 : Math.max(...cortes.map((c) => retanguloEnvolvente(c).maxY));
+  const areaOcupadaMm2 = cortes.reduce((soma, c) => soma + area(c), 0);
+  const areaDisponivel = enfesto.larguraUtilMm * comprimentoUtilizadoMm;
+  return {
+    pecasColocadas: colocadas,
+    pecasNaoColocadas: (risco.deFora ?? []).map((p) => ({ idOriginal: p.pecaId, indiceCopia: p.copia ?? 0, nome: p.nome })),
+    comprimentoUtilizadoMm,
+    areaOcupadaMm2,
+    aproveitamentoPercentual: areaDisponivel > 0 ? (areaOcupadaMm2 / areaDisponivel) * 100 : 0,
+    tempoDeProcessamentoMs: agora() - inicio,
+    interrompido: false,
+    paradaPorTempoLimite: false,
+    paradaPorMetaDeAproveitamento: false,
   };
 }

@@ -31,6 +31,13 @@ export async function carregarCadastro(api: ApiDoCadastro | undefined, armazenam
     avisos.push('O cadastro de produção não pôde ser lido. Ao gravar, o arquivo antigo é copiado para a pasta de cópias de segurança antes.');
     bruto = null;
   }
+  if (typeof bruto === 'object' && bruto !== null && typeof (bruto as Record<string, unknown>).recuperadoDaVersaoAnterior === 'string') {
+    const motivo = (bruto as Record<string, unknown>).recuperadoDaVersaoAnterior;
+    avisos.push(
+      `O arquivo do cadastro de produção ${motivo === 'ausente' ? 'não foi encontrado' : 'estava quebrado'}: o programa abriu a versão anterior dele (a da gravação de antes). Confira os últimos movimentos e cadastros; ao gravar, ${motivo === 'ausente' ? 'o arquivo volta a existir' : 'o arquivo quebrado é copiado para a pasta de cópias de segurança antes'}.`,
+    );
+    bruto = (bruto as Record<string, unknown>).conteudo;
+  }
   if (typeof bruto === 'object' && bruto !== null && typeof (bruto as Record<string, unknown>).arquivoIlegivel === 'string') {
     avisos.push(
       `O arquivo do cadastro de produção (${String((bruto as Record<string, unknown>).arquivoIlegivel)}) está quebrado: o programa começou um cadastro vazio. Ao gravar, o arquivo quebrado é copiado para a pasta de cópias de segurança antes.`,

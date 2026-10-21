@@ -93,3 +93,61 @@ export async function gravarProjetoComCopia(
   await gravarSemCorromper(destino, conteudo);
   return copia;
 }
+
+/**
+ * Grava guardando a versão anterior ao lado (`<destino>.anterior`), além das cópias de segurança de versão antiga
+ * ou de arquivo ilegível (`gravarProjetoComCopia`). Se a gravação for interrompida, o arquivo continua o de antes
+ * (a troca é atômica); se o arquivo se perder ou quebrar depois, `lerComRecuperacao` volta para a versão anterior.
+ */
+export async function gravarComAnterior(
+  destino: string,
+  conteudo: string,
+  dados: { readonly idDoArquivo: string; readonly versaoNova: number; readonly pastaDasCopias: string; readonly agoraIso: string },
+): Promise<void> {
+  try {
+    const atual = await readFile(destino, 'utf-8');
+    JSON.parse(atual);
+    await gravarSemCorromper(`${destino}.anterior`, atual);
+  } catch {
+    // Sem arquivo ainda, ou ilegível (este vai para as cópias de segurança abaixo, e a versão anterior boa fica).
+  }
+  await gravarProjetoComCopia(destino, conteudo, { idDoProjeto: dados.idDoArquivo, versaoNova: dados.versaoNova, pastaDasCopias: dados.pastaDasCopias, agoraIso: dados.agoraIso });
+}
+
+export type ArquivoLido =
+  | { readonly situacao: 'ausente' }
+  | { readonly situacao: 'lido'; readonly conteudo: unknown }
+  | { readonly situacao: 'recuperado'; readonly conteudo: unknown; readonly motivo: 'ausente' | 'ilegivel' }
+  | { readonly situacao: 'ilegivel' };
+
+/** Lê o arquivo; se ele sumiu ou quebrou e há a versão anterior boa, devolve ela (dizendo que foi recuperada). */
+export async function lerComRecuperacao(destino: string): Promise<ArquivoLido> {
+  let motivo: 'ausente' | 'ilegivel';
+  try {
+    return { situacao: 'lido', conteudo: JSON.parse(await readFile(destino, 'utf-8')) as unknown };
+  } catch (e) {
+    motivo = (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'ausente' : 'ilegivel';
+  }
+  try {
+    return { situacao: 'recuperado', conteudo: JSON.parse(await readFile(`${destino}.anterior`, 'utf-8')) as unknown, motivo };
+  } catch {
+    return motivo === 'ausente' ? { situacao: 'ausente' } : { situacao: 'ilegivel' };
+  }
+}
+
+/** Uma cópia do conteúdo, uma vez por conteúdo (o nome leva uma marca dele), na pasta das cópias. */
+export async function copiaUnica(pasta: string, prefixo: string, conteudo: string): Promise<string> {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < conteudo.length; i++) {
+    h ^= conteudo.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const destino = path.join(pasta, `${prefixo}.${h.toString(16).padStart(8, '0')}.json`);
+  await mkdir(pasta, { recursive: true });
+  try {
+    await readFile(destino);
+  } catch {
+    await gravarSemCorromper(destino, conteudo);
+  }
+  return destino;
+}

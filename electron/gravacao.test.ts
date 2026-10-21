@@ -4,7 +4,7 @@ import { rename } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarFilaDeGravacao, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { copiaUnica, criarFilaDeGravacao, gravarComAnterior, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido, lerComRecuperacao } from './gravacao';
 
 let pasta = '';
 beforeEach(() => {
@@ -170,5 +170,59 @@ describe('gravarProjetoComCopia', () => {
     writeFileSync(destino, '{ cortado');
     const copia = await gravarProjetoComCopia(destino, '{}', dados());
     expect(readFileSync(copia!, 'utf-8')).toBe('{ cortado');
+  });
+});
+
+describe('gravarComAnterior e lerComRecuperacao (o cadastro de produção)', () => {
+  const dados = { idDoArquivo: 'cadastro', versaoNova: 2, pastaDasCopias: '', agoraIso: '2026-10-21T10:00:00.000Z' };
+  const com = () => ({ ...dados, pastaDasCopias: path.join(pasta, 'copias') });
+
+  it('cada gravação guarda a versão anterior ao lado', async () => {
+    const destino = path.join(pasta, 'cadastro.json');
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":1}', com());
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":2}', com());
+    expect(readFileSync(destino, 'utf-8')).toBe('{"versaoDoFormato":2,"n":2}');
+    expect(readFileSync(destino + '.anterior', 'utf-8')).toBe('{"versaoDoFormato":2,"n":1}');
+  });
+
+  it('gravação interrompida (a troca falha): o arquivo continua o de antes, inteiro, e é lido assim', async () => {
+    const destino = path.join(pasta, 'cadastro.json');
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":1}', com());
+    await expect(gravarSemCorromper(destino, '{"versaoDoFormato":2,"n":2}', { trocar: async () => Promise.reject(erroDeCodigo('ENOSPC')) })).rejects.toThrow('ENOSPC');
+    expect(await lerComRecuperacao(destino)).toEqual({ situacao: 'lido', conteudo: { versaoDoFormato: 2, n: 1 } });
+  });
+
+  it('o arquivo quebrado (ou apagado) volta da versão anterior, dizendo que foi recuperado; sem anterior, é dito', async () => {
+    const destino = path.join(pasta, 'cadastro.json');
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":1}', com());
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":2}', com());
+    writeFileSync(destino, '{ cortado');
+    expect(await lerComRecuperacao(destino)).toEqual({ situacao: 'recuperado', motivo: 'ilegivel', conteudo: { versaoDoFormato: 2, n: 1 } });
+    rmSync(destino);
+    expect(await lerComRecuperacao(destino)).toEqual({ situacao: 'recuperado', motivo: 'ausente', conteudo: { versaoDoFormato: 2, n: 1 } });
+    rmSync(destino + '.anterior');
+    expect(await lerComRecuperacao(destino)).toEqual({ situacao: 'ausente' });
+    writeFileSync(destino, '{ cortado');
+    expect(await lerComRecuperacao(destino)).toEqual({ situacao: 'ilegivel' });
+  });
+
+  it('gravar por cima do quebrado copia o quebrado antes, e a versão anterior boa não é trocada por ele', async () => {
+    const destino = path.join(pasta, 'cadastro.json');
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":1}', com());
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":2}', com());
+    writeFileSync(destino, '{ cortado');
+    await gravarComAnterior(destino, '{"versaoDoFormato":2,"n":3}', com());
+    expect(readFileSync(destino + '.anterior', 'utf-8')).toBe('{"versaoDoFormato":2,"n":1}');
+    const copias = readdirSync(path.join(pasta, 'copias'));
+    expect(copias.some((n) => n.startsWith('cadastro.ilegivel.') && readFileSync(path.join(pasta, 'copias', n), 'utf-8') === '{ cortado')).toBe(true);
+  });
+
+  it('a cópia única: o mesmo conteúdo, uma cópia só', async () => {
+    const a = await copiaUnica(path.join(pasta, 'copias'), 'cadastro.descartados', 'x');
+    const b = await copiaUnica(path.join(pasta, 'copias'), 'cadastro.descartados', 'x');
+    const c = await copiaUnica(path.join(pasta, 'copias'), 'cadastro.descartados', 'y');
+    expect(a).toBe(b);
+    expect(c).not.toBe(a);
+    expect(readdirSync(path.join(pasta, 'copias'))).toHaveLength(2);
   });
 });

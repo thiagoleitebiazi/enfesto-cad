@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   CADASTRO_VAZIO,
   comprimentoDoRolo,
+  darBaixaDoPlano,
+  estadoDoRolo,
+  estornarMovimento,
+  movimentosDoPlano,
+  reservarPlano,
   grupoDoRolo,
   incluirMalhasAntigas,
   lerCadastroDeProducao,
@@ -199,5 +204,87 @@ describe('lerGradeColada', () => {
     expect(lerGradeColada('P;10,5').erros).toEqual(['A quantidade do tamanho P (“10,5”) não é um número inteiro.']);
     expect(lerGradeColada('P;1\nP;2').erros).toEqual(['O tamanho P aparece duas vezes.']);
     expect(lerGradeColada(' ').erros).toEqual(['Nada foi colado.']);
+  });
+});
+
+describe('estoque: reserva, baixa e estorno (cada um, um movimento; nada é apagado)', () => {
+  // Malha a 4 m/kg; R1 com 50 m medidos; R2 só com o peso (10 kg → 40 m, estimado).
+  const malha = { ...MALHA, rendimentoMmPorG: 4 };
+  const base = salvarRolo(
+    salvarRolo(salvarMalha(CADASTRO_VAZIO, malha), { ...ROLO, id: 'r1', identificacao: 'R1', comprimentoMedidoMm: 50_000 }),
+    { ...ROLO, id: 'r2', identificacao: 'R2', pesoLiquidoG: 10_000 },
+  );
+  let n = 0;
+  const dados = (planoId: string) => ({ planoId, projetoId: 'p1', responsavel: 'Ana', agoraIso: '2026-10-21T10:00:00.000Z', novoId: () => `mov-${++n}` });
+
+  it('o estado do rolo: inicial (medido ou estimado), reservado, consumido, saldo e disponível', () => {
+    expect(estadoDoRolo(base, base.rolos[1]!)).toMatchObject({ inicialMm: 40_000, origem: 'pelo peso', consumidoMm: 0, reservadoMm: 0, saldoFisicoMm: 40_000, disponivelMm: 40_000 });
+  });
+
+  it('reservar: sai do disponível e fica no saldo; repetir não reserva de novo', () => {
+    const r = reservarPlano(base, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A'));
+    expect(r.feitos).toEqual(['R1']);
+    expect(r.cadastro.movimentos[0]).toMatchObject({ tipo: 'reserva', roloId: 'r1', planoId: 'A', comprimentoMm: 30_000, pesoG: 7500, responsavel: 'Ana' });
+    expect(estadoDoRolo(r.cadastro, r.cadastro.rolos[0]!)).toMatchObject({ reservadoMm: 30_000, saldoFisicoMm: 50_000, disponivelMm: 20_000 });
+    const denovo = reservarPlano(r.cadastro, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A'));
+    expect(denovo).toMatchObject({ feitos: [], jaFeitos: ['R1'] });
+    expect(denovo.cadastro.movimentos).toHaveLength(1);
+  });
+
+  it('a reserva de outro plano conta: o que passa do disponível é recusado, e nada entra (tudo ou nada)', () => {
+    const a = reservarPlano(base, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A')).cadastro;
+    expect(estadoDoRolo(a, a.rolos[0]!, 'A').disponivelMm).toBe(50_000);
+    expect(() => reservarPlano(a, [{ roloId: 'r2', comprimentoMm: 1000 }, { roloId: 'r1', comprimentoMm: 25_000 }], dados('B'))).toThrow(
+      'O rolo R1 tem 20,00 m disponíveis, menos que os 25,00 m do plano.',
+    );
+  });
+
+  it('a baixa tira do saldo e a reserva do mesmo plano deixa de valer; repetir não baixa duas vezes', () => {
+    const reservado = reservarPlano(base, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A')).cadastro;
+    const baixado = darBaixaDoPlano(reservado, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A'));
+    expect(estadoDoRolo(baixado.cadastro, baixado.cadastro.rolos[0]!)).toMatchObject({ consumidoMm: 30_000, reservadoMm: 0, saldoFisicoMm: 20_000, disponivelMm: 20_000 });
+    const denovo = darBaixaDoPlano(baixado.cadastro, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A'));
+    expect(denovo.jaFeitos).toEqual(['R1']);
+    expect(estadoDoRolo(denovo.cadastro, denovo.cadastro.rolos[0]!).consumidoMm).toBe(30_000);
+    // Depois da baixa, reservar o mesmo plano de novo não faz nada.
+    expect(reservarPlano(denovo.cadastro, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A')).jaFeitos).toEqual(['R1']);
+  });
+
+  it('o estorno desfaz com outro movimento (o histórico fica); não se estorna duas vezes; pede motivo', () => {
+    const baixado = darBaixaDoPlano(base, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A')).cadastro;
+    const baixa = baixado.movimentos[0]!;
+    expect(() => estornarMovimento(baixado, baixa.id, { responsavel: 'Ana', motivo: ' ', agoraIso: 'x', novoId: () => 'e' })).toThrow('Diga o motivo do estorno.');
+    const estornado = estornarMovimento(baixado, baixa.id, { responsavel: 'Bruno', motivo: 'corte cancelado', agoraIso: '2026-10-21T11:00:00.000Z', novoId: () => 'e1' });
+    expect(estornado.movimentos).toHaveLength(2);
+    expect(estornado.movimentos[1]).toMatchObject({ tipo: 'estorno', estornaId: baixa.id, comprimentoMm: 30_000, responsavel: 'Bruno', motivo: 'corte cancelado' });
+    expect(estadoDoRolo(estornado, estornado.rolos[0]!)).toMatchObject({ consumidoMm: 0, saldoFisicoMm: 50_000 });
+    expect(() => estornarMovimento(estornado, baixa.id, { responsavel: 'Ana', motivo: 'x', agoraIso: 'x', novoId: () => 'e2' })).toThrow('já foi estornado');
+    expect(() => estornarMovimento(estornado, 'e1', { responsavel: 'Ana', motivo: 'x', agoraIso: 'x', novoId: () => 'e3' })).toThrow('Um estorno não se estorna');
+    expect(movimentosDoPlano(estornado, 'A').map((m) => [m.tipo, m.ativo, m.estornado])).toEqual([
+      ['baixa', false, true],
+      ['estorno', false, false],
+    ]);
+    // Estornada a baixa, a operação pode ser feita de novo.
+    expect(darBaixaDoPlano(estornado, [{ roloId: 'r1', comprimentoMm: 30_000 }], dados('A')).feitos).toEqual(['R1']);
+  });
+
+  it('sem responsável, nenhum movimento', () => {
+    expect(() => reservarPlano(base, [{ roloId: 'r1', comprimentoMm: 1 }], { ...dados('A'), responsavel: ' ' })).toThrow('Informe quem está fazendo o movimento de estoque.');
+  });
+
+  it('o cadastro da versão 1 abre com o histórico vazio; o movimento inválido fica de fora, dito', () => {
+    const v1 = { versaoDoFormato: 1, malhas: [MALHA], rolos: [], ordens: [] };
+    expect(lerCadastroDeProducao(v1).cadastro.movimentos).toEqual([]);
+    const ruim = lerCadastroDeProducao({ ...v1, movimentos: [{ id: 'm', tipo: 'estorno', roloId: 'r', planoId: 'p', projetoId: 'x', comprimentoMm: 1, dataIso: 'x', responsavel: 'a' }] });
+    expect(ruim.descartados).toEqual(['1 registro(s) de movimentos de estoque com dados inválidos ficaram de fora.']);
+  });
+
+  it('defeito com posição: fora do rolo e largura zero são recusados', () => {
+    const comMedida = { ...ROLO, comprimentoMedidoMm: 10_000 };
+    expect(validarRolo({ ...comMedida, defeitos: [{ descricao: 'furo', perdaMm: 500, posicaoMm: 9800 }] }, COM_MALHA)).toContain(
+      'Um defeito passa do fim do rolo (posição + extensão maior que o comprimento medido): confira.',
+    );
+    expect(validarRolo({ ...comMedida, defeitos: [{ descricao: 'furo', perdaMm: 100, posicaoMm: 2000, larguraAfetadaMm: 0 }] }, COM_MALHA)).toContain('A largura afetada de um defeito precisa ser maior que zero.');
+    expect(validarRolo({ ...comMedida, defeitos: [{ descricao: 'furo', perdaMm: 100, posicaoMm: 2000, larguraAfetadaMm: 30, tipo: 'furo' }] }, COM_MALHA)).toEqual([]);
   });
 });

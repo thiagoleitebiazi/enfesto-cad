@@ -27,6 +27,8 @@ export interface PecaDoRisco {
   readonly molde: Molde;
   /** A cópia esquerda de um par (sai espelhada). */
   readonly espelhada: boolean;
+  /** O número da cópia (para quem precisa saber qual cópia ficou onde, como o encaixe na mesa). */
+  readonly copia?: number;
 }
 
 export interface PecaPostaNoRisco {
@@ -39,7 +41,31 @@ export interface PecaPostaNoRisco {
   readonly fio: { readonly inicio: Ponto2D; readonly fim: Ponto2D };
   readonly anguloGraus: number;
   readonly espelhada: boolean;
+  /**
+   * Quanto a peça (na orientação dela: o par espelhado, o giro e o espelho) andou até o lugar: a linha de corte
+   * verdadeira (sem simplificar) fica em `linhaDeCorteVerdadeira`. Ausente nos planos guardados antes dele.
+   */
+  readonly deslocamentoMm?: Ponto2D;
+  /** O ponto de casamento da peça (a marca "casamento"), no lugar — quando o risco casa listras ou xadrez. */
+  readonly pontoDeCasamento?: Ponto2D;
+  readonly copia?: number;
 }
+
+/**
+ * O casamento de listras e xadrez: a repetição do desenho (o rapport) no comprimento e/ou na largura, e onde a linha
+ * de referência dele cai (a fase), medida do começo do risco e da borda da malha. Cada peça precisa da marca
+ * "casamento" (um ponto que tem de cair numa linha do desenho); com o casamento, ela só vai para os lugares em que
+ * esse ponto fica na fase, e só gira 0° ou 180° (90° viraria as listras).
+ */
+export interface Casamento {
+  readonly rapportComprimentoMm?: number;
+  readonly rapportLarguraMm?: number;
+  readonly faseComprimentoMm: number;
+  readonly faseLarguraMm: number;
+}
+
+/** A marca que diz o ponto de casamento da peça: a que tem "casamento" no rótulo. */
+export const ROTULO_DO_PONTO_DE_CASAMENTO = 'casamento';
 
 export interface OpcoesDoRisco {
   readonly larguraMm: number;
@@ -53,6 +79,14 @@ export interface OpcoesDoRisco {
   readonly agora?: () => number;
   /** Só estas ordens de entrada (pelo nome); sem isto, todas. */
   readonly ordens?: readonly string[];
+  /** Casar listras/xadrez (ver `Casamento`). */
+  readonly casamento?: Casamento;
+  /** Consultado antes de cada peça: `true` cancela o risco. */
+  readonly deveParar?: () => boolean;
+  /** O que não couber fica de fora (e é dito), em vez de o risco não sair — para o encaixe na mesa do projeto. */
+  readonly deixarDeFora?: boolean;
+  /** Chamado a cada peça posta (na primeira ordem de entrada), para mostrar o andamento. */
+  readonly aoProgredir?: (postas: number, total: number) => void;
 }
 
 export interface RiscoGerado {
@@ -69,12 +103,18 @@ export interface RiscoGerado {
   readonly ordensTentadas: readonly string[];
   readonly ordemEscolhida: string;
   readonly tempoMs: number;
+  /** Com `deixarDeFora`: as cópias que não couberam. */
+  readonly deFora?: ReadonlyArray<{ readonly pecaId: string; readonly nome: string; readonly tamanho: string; readonly copia?: number }>;
+  /** O casamento usado, e se a conferência depois de posto achou todas as peças na fase. */
+  readonly casamento?: Casamento & { readonly conferido: boolean };
 }
 
 export interface RiscoQueNaoSai {
   readonly ok: false;
   readonly grade: GradeDoRisco;
   readonly motivo: string;
+  /** O risco não saiu porque a busca foi cancelada (não por não caber). */
+  readonly cancelado?: true;
 }
 
 export const METODO_DO_RISCO =
@@ -117,6 +157,10 @@ interface Orientacao {
   readonly espelhada: boolean;
   /** Quanto a linha de corte simplificada pode se afastar da verdadeira (0 se nada foi simplificado). */
   readonly desvioMm: number;
+  /** O quanto a peça orientada andou para ter o canto em (0, 0). */
+  readonly deslocamento: Ponto2D;
+  /** O ponto de casamento (a marca "casamento"), com a peça no canto; `null` sem a marca. */
+  readonly ref: Ponto2D | null;
 }
 
 /**
@@ -140,7 +184,21 @@ function normalizada(molde: Molde, anguloGraus: number, espelhada: boolean): Ori
     anguloGraus,
     espelhada,
     desvioMm: corte.length < semRepetidos ? TOLERANCIA_DA_SIMPLIFICACAO_MM : 0,
+    deslocamento: d,
+    ref: marcaDeCasamento(molde, d),
   };
+}
+
+function marcaDeCasamento(molde: Molde, d: Ponto2D): Ponto2D | null {
+  const marca = molde.marcas.find((m) => (m.rotulo ?? '').toLocaleLowerCase('pt-BR').includes(ROTULO_DO_PONTO_DE_CASAMENTO));
+  return marca ? { x: marca.posicao.x + d.x, y: marca.posicao.y + d.y } : null;
+}
+
+/** A primeira posição `v` ou adiante em que o ponto `ref` (da peça no canto) cai na fase da repetição. */
+function naFase(v: number, ref: number, rapport: number | undefined, fase: number): number {
+  if (!rapport || !(rapport > 0)) return v;
+  const resto = (((fase - (v + ref)) % rapport) + rapport) % rapport;
+  return v + (resto < 1e-9 || rapport - resto < 1e-9 ? 0 : resto);
 }
 
 /** As orientações que a cópia pode ter no risco (o ângulo e se sai espelhada), na ordem em que são tentadas. */
@@ -149,11 +207,12 @@ export function orientacoesDoRisco(peca: PecaDoRisco, sentidoUnico: boolean): Ar
 }
 
 /** As orientações que a cópia pode ter: os ângulos permitidos e, se a peça deixa (e não é de um par), o espelho. */
-function orientacoesDa(peca: PecaDoRisco, sentidoUnico: boolean): Orientacao[] {
+function orientacoesDa(peca: PecaDoRisco, sentidoUnico: boolean, comCasamento = false): Orientacao[] {
   const base = peca.espelhada ? espelharMolde(peca.molde, peca.molde.id) : peca.molde;
   const restricao = peca.molde.restricaoDeRotacao;
   const lista: Orientacao[] = [];
-  for (const angulo of rotacoesNoEncaixe(restricao, sentidoUnico)) {
+  // Com casamento, só 0° e 180°: deitada, a peça teria as listras no outro sentido.
+  for (const angulo of rotacoesNoEncaixe(restricao, sentidoUnico).filter((a) => !comCasamento || a === 0 || a === 180)) {
     const girada = angulo === 0 ? base : rotacionarMolde(base, angulo);
     lista.push(normalizada(girada, angulo, peca.espelhada));
     if (restricao.permiteEspelhamento && !peca.molde.emPar) lista.push(normalizada(espelharMolde(girada, girada.id), angulo, !peca.espelhada));
@@ -175,7 +234,8 @@ function porNaOrdem(
   orientacoes: Map<PecaDoRisco, Orientacao[]>,
   opcoes: OpcoesDoRisco,
   folgaDaSimplificacaoMm: number,
-): { readonly postas: Posta[] } | { readonly naoCoube: PecaDoRisco } {
+  primeira = false,
+): { readonly postas: Posta[]; readonly deFora: PecaDoRisco[] } | { readonly naoCoube: PecaDoRisco } | { readonly cancelado: true } {
   // Sem distância pedida, as peças ainda ficam a um centésimo de milímetro: o contorno guardado é arredondado no
   // centésimo, e peças coladas passariam a se sobrepor nele.
   const d = Math.max(opcoes.distanciaMm, FOLGA_DO_ENCOSTO_MM) + folgaDaSimplificacaoMm;
@@ -189,7 +249,10 @@ function porNaOrdem(
   const caixas: Caixa[] = [];
   let pontos: Ponto2D[] = [{ x: 0, y: 0 }];
   let fimDoComprimento = 0;
+  const casar = opcoes.casamento;
+  const deFora: PecaDoRisco[] = [];
   for (const peca of ordem) {
+    if (opcoes.deveParar?.()) return { cancelado: true };
     let melhor: Posta | null = null;
     for (const o of orientacoes.get(peca)!) {
       const largura = o.caixa.maxX;
@@ -199,9 +262,25 @@ function porNaOrdem(
       const candidatos = [...pontos, { x: 0, y: postas.length === 0 ? 0 : fimDoComprimento + afastamento }];
       for (const p of candidatos) {
         if (p.x + largura > opcoes.larguraMm + 1e-9 || p.y + comprimento > opcoes.comprimentoMaximoMm + 1e-9) continue;
-        const naPosicao = transladarContorno(o.corte, p);
-        if (!lugarLivre(naPosicao, cortes, caixas, d, 0)) continue;
-        const delta = encostar(o.corte, cortes, caixas, limites, d, Math.max(10, d * 4), p);
+        let delta: Ponto2D | null = null;
+        if (casar && o.ref) {
+          // Com casamento: só as posições em que o ponto da peça cai na fase; sem encostar (andaria para fora dela).
+          let x = naFase(p.x, o.ref.x, casar.rapportLarguraMm, casar.faseLarguraMm);
+          if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, o.ref.x, casar.rapportLarguraMm, casar.faseLarguraMm);
+          if (x + largura > opcoes.larguraMm + 1e-9) continue;
+          const y0 = naFase(p.y, o.ref.y, casar.rapportComprimentoMm, casar.faseComprimentoMm);
+          for (let k = 0; k < 4 && !delta; k++) {
+            const y = y0 + k * (casar.rapportComprimentoMm ?? 0);
+            if (y + comprimento > opcoes.comprimentoMaximoMm + 1e-9) break;
+            if (lugarLivre(transladarContorno(o.corte, { x, y }), cortes, caixas, d, FOLGA_DO_ENCOSTO_MM)) delta = { x, y };
+            if (!casar.rapportComprimentoMm) break;
+          }
+          if (!delta) continue;
+        } else {
+          const naPosicao = transladarContorno(o.corte, p);
+          if (!lugarLivre(naPosicao, cortes, caixas, d, 0)) continue;
+          delta = encostar(o.corte, cortes, caixas, limites, d, Math.max(10, d * 4), p);
+        }
         const fim = delta.y + comprimento;
         if (!melhor || fim < melhor.caixa.maxY - 1e-9 || (Math.abs(fim - melhor.caixa.maxY) <= 1e-9 && delta.x < melhor.delta.x)) {
           const corte = transladarContorno(o.corte, delta);
@@ -210,8 +289,13 @@ function porNaOrdem(
         break;
       }
     }
-    if (!melhor) return { naoCoube: peca };
+    if (!melhor) {
+      if (!opcoes.deixarDeFora) return { naoCoube: peca };
+      deFora.push(peca);
+      continue;
+    }
     postas.push(melhor);
+    if (primeira) opcoes.aoProgredir?.(postas.length + deFora.length, ordem.length);
     cortes.push(melhor.corte);
     caixas.push(melhor.caixa);
     fimDoComprimento = Math.max(fimDoComprimento, melhor.caixa.maxY);
@@ -220,7 +304,7 @@ function porNaOrdem(
       .filter((p) => p.x < opcoes.larguraMm && p.y < opcoes.comprimentoMaximoMm)
       .sort((a, b) => a.y - b.y || a.x - b.x);
   }
-  return { postas };
+  return { postas, deFora };
 }
 
 const ORDENS: ReadonlyArray<readonly [string, (o: Orientacao) => number]> = [
@@ -229,7 +313,8 @@ const ORDENS: ReadonlyArray<readonly [string, (o: Orientacao) => number]> = [
   ['mais largas primeiro', (o) => o.caixa.maxX],
 ];
 
-export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, opcoes: OpcoesDoRisco): RiscoGerado | RiscoQueNaoSai {
+export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoRisco, opcoes: OpcoesDoRisco): RiscoGerado | RiscoQueNaoSai {
+  let pecas = todasAsPecas;
   const agora = opcoes.agora ?? Date.now;
   const inicio = agora();
   if (!(opcoes.larguraMm > 0)) return { ok: false, grade, motivo: 'Falta a largura do risco (a largura útil da malha).' };
@@ -239,10 +324,23 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
   const orientacoes = new Map<PecaDoRisco, Orientacao[]>();
   for (const p of pecas) {
     const chave = `${p.pecaId}|${p.tamanho}|${p.espelhada}`;
-    if (!porTipo.has(chave)) porTipo.set(chave, orientacoesDa(p, opcoes.sentidoUnico));
+    if (!porTipo.has(chave)) porTipo.set(chave, orientacoesDa(p, opcoes.sentidoUnico, opcoes.casamento !== undefined));
     orientacoes.set(p, porTipo.get(chave)!);
   }
-  for (const p of pecas) {
+  if (opcoes.casamento) {
+    const semMarca = [...new Set(pecas.filter((p) => orientacoes.get(p)!.some((o) => o.ref === null)).map((p) => p.nome))];
+    if (semMarca.length > 0) {
+      return {
+        ok: false,
+        grade,
+        motivo: `Para casar as listras/xadrez, cada peça precisa da marca "${ROTULO_DO_PONTO_DE_CASAMENTO}" (o ponto que cai numa linha do desenho). Faltam em: ${semMarca.join(', ')}. Ponha a marca (aba Marcações), ou planeje com o casamento feito à parte.`,
+      };
+    }
+    if (!casamentoValido(opcoes.casamento)) return { ok: false, grade, motivo: 'O casamento precisa da repetição do desenho (rapport) no comprimento ou na largura, maior que zero.' };
+  }
+  const largasDemais = pecas.filter((p) => !orientacoes.get(p)!.some((o) => o.caixa.maxX <= opcoes.larguraMm + 1e-9));
+  if (opcoes.deixarDeFora && largasDemais.length > 0) pecas = pecas.filter((p) => !largasDemais.includes(p));
+  for (const p of opcoes.deixarDeFora ? [] : pecas) {
     if (!orientacoes.get(p)!.some((o) => o.caixa.maxX <= opcoes.larguraMm + 1e-9)) {
       const menor = Math.min(...orientacoes.get(p)!.map((o) => o.caixa.maxX));
       return {
@@ -254,7 +352,7 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
   }
   // As duas peças vizinhas podem estar simplificadas: a diferença das duas entra na distância.
   const folgaDaSimplificacao = 2 * Math.max(0, ...[...orientacoes.values()].flat().map((o) => o.desvioMm));
-  let melhor: { postas: Posta[]; ordem: string } | null = null;
+  let melhor: { postas: Posta[]; deFora: PecaDoRisco[]; ordem: string } | null = null;
   let naoCoube: PecaDoRisco | null = null;
   const tentadas: string[] = [];
   for (const [nome, medida] of ORDENS.filter(([n]) => !opcoes.ordens || opcoes.ordens.includes(n))) {
@@ -263,13 +361,22 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
     const chave = (p: PecaDoRisco): number => Math.max(...orientacoes.get(p)!.map(medida));
     // Estável: as cópias da mesma peça ficam juntas, na ordem em que vieram.
     const ordem = pecas.map((p, i) => ({ p, i, v: chave(p) })).sort((a, b) => b.v - a.v || a.i - b.i).map((x) => x.p);
-    const passada = porNaOrdem(ordem, orientacoes, opcoes, folgaDaSimplificacao);
+    const passada = porNaOrdem(ordem, orientacoes, opcoes, folgaDaSimplificacao, tentadas.length === 1);
+    if ('cancelado' in passada) return { ok: false, grade, motivo: 'A busca foi cancelada.', cancelado: true };
     if ('naoCoube' in passada) {
       naoCoube = passada.naoCoube;
       continue;
     }
+    if (passada.postas.length === 0) continue;
     const comprimento = Math.max(...passada.postas.map((x) => x.caixa.maxY));
-    if (!melhor || comprimento < Math.max(...melhor.postas.map((x) => x.caixa.maxY)) - 1e-6) melhor = { postas: passada.postas, ordem: nome };
+    // Fica a que deixa menos de fora e, entre essas, a mais curta.
+    if (
+      !melhor ||
+      passada.deFora.length < melhor.deFora.length ||
+      (passada.deFora.length === melhor.deFora.length && comprimento < Math.max(...melhor.postas.map((x) => x.caixa.maxY)) - 1e-6)
+    ) {
+      melhor = { postas: passada.postas, deFora: passada.deFora, ordem: nome };
+    }
   }
   if (!melhor) {
     return {
@@ -283,10 +390,7 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
   const comprimentoMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxY)));
   const larguraOcupadaMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxX)));
   const areaDasPecasMm2 = melhor.postas.reduce((s, x) => s + area(x.corte), 0);
-  return {
-    ok: true,
-    grade,
-    pecas: melhor.postas.map((x) => ({
+  const saida: PecaPostaNoRisco[] = melhor.postas.map((x) => ({
       pecaId: x.peca.pecaId,
       nome: x.peca.nome,
       tamanho: x.peca.tamanho,
@@ -297,7 +401,14 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
       },
       anguloGraus: x.orientacao.anguloGraus,
       espelhada: x.orientacao.espelhada,
-    })),
+      deslocamentoMm: { x: x.orientacao.deslocamento.x + x.delta.x, y: x.orientacao.deslocamento.y + x.delta.y },
+      ...(x.peca.copia !== undefined ? { copia: x.peca.copia } : {}),
+      ...(opcoes.casamento && x.orientacao.ref ? { pontoDeCasamento: { x: x.orientacao.ref.x + x.delta.x, y: x.orientacao.ref.y + x.delta.y } } : {}),
+  }));
+  return {
+    ok: true,
+    grade,
+    pecas: saida,
     comprimentoMm,
     larguraOcupadaMm,
     larguraDoRiscoMm: opcoes.larguraMm,
@@ -307,5 +418,43 @@ export function fazerRisco(pecas: readonly PecaDoRisco[], grade: GradeDoRisco, o
     ordensTentadas: tentadas,
     ordemEscolhida: melhor.ordem,
     tempoMs: agora() - inicio,
+    ...(opcoes.casamento ? { casamento: { ...opcoes.casamento, conferido: conferirCasamento(saida, opcoes.casamento).length === 0 } } : {}),
+    ...(opcoes.deixarDeFora
+      ? { deFora: [...largasDemais, ...melhor.deFora].map((p) => ({ pecaId: p.pecaId, nome: p.nome, tamanho: p.tamanho, ...(p.copia !== undefined ? { copia: p.copia } : {}) })) }
+      : {}),
   };
+}
+
+function casamentoValido(c: Casamento): boolean {
+  const ok = (v: number | undefined): boolean => v === undefined || v > 0;
+  return ok(c.rapportComprimentoMm) && ok(c.rapportLarguraMm) && (c.rapportComprimentoMm !== undefined || c.rapportLarguraMm !== undefined);
+}
+
+/** As peças fora da fase (o ponto de casamento fora das linhas do desenho): o nome de cada uma. Vazio: tudo casado. */
+export function conferirCasamento(pecas: readonly PecaPostaNoRisco[], c: Casamento): string[] {
+  const fora = (v: number, rapport: number | undefined, fase: number): boolean => {
+    if (!rapport) return false;
+    const resto = (((v - fase) % rapport) + rapport) % rapport;
+    return Math.min(resto, rapport - resto) > 0.01;
+  };
+  return pecas
+    .filter((p) => !p.pontoDeCasamento || fora(p.pontoDeCasamento.y, c.rapportComprimentoMm, c.faseComprimentoMm) || fora(p.pontoDeCasamento.x, c.rapportLarguraMm, c.faseLarguraMm))
+    .map((p) => `${p.nome} (${p.tamanho})`);
+}
+
+/**
+ * A linha de corte verdadeira (sem simplificar) de uma peça posta no risco: a peça como veio, levada à orientação
+ * dela (o par espelhado, o giro, o espelho) e ao lugar. Serve para conferir a distância de verdade entre as peças.
+ */
+export function linhaDeCorteVerdadeira(peca: PecaDoRisco, posta: PecaPostaNoRisco): Contorno {
+  const orientada = moldeOrientado(peca, posta);
+  if (!posta.deslocamentoMm) throw new Error('Esta peça foi guardada antes do deslocamento ser registrado.');
+  return transladarContorno(linhaDeCorteDaPeca(orientada), posta.deslocamentoMm);
+}
+
+/** A peça na orientação em que ficou no risco (o par espelhado, o giro, o espelho), ainda sem ir para o lugar. */
+export function moldeOrientado(peca: PecaDoRisco, posta: Pick<PecaPostaNoRisco, 'anguloGraus' | 'espelhada'>): Molde {
+  const base = peca.espelhada ? espelharMolde(peca.molde, peca.molde.id) : peca.molde;
+  const girada = posta.anguloGraus === 0 ? base : rotacionarMolde(base, posta.anguloGraus);
+  return posta.espelhada !== peca.espelhada ? espelharMolde(girada, girada.id) : girada;
 }

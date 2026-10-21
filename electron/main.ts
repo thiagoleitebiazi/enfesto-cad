@@ -25,7 +25,7 @@ import {
   type FalhaDeAbertura,
   type ModoDeAbertura,
 } from '../src/domain/abertura';
-import { criarFilaDeGravacao, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido } from './gravacao';
+import { copiaUnica, criarFilaDeGravacao, gravarComAnterior, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido, lerComRecuperacao } from './gravacao';
 import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
@@ -725,27 +725,29 @@ function arquivoDoCadastro(): string {
 }
 
 ipcMain.handle('cadastro-ler', async () => {
-  let conteudo: string;
-  try {
-    conteudo = await readFile(arquivoDoCadastro(), 'utf-8');
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw e;
+  const pastaDasCopias = path.join(app.getPath('userData'), PASTA_DAS_COPIAS);
+  const lido = await lerComRecuperacao(arquivoDoCadastro());
+  if (lido.situacao === 'ausente') return null;
+  if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivoDoCadastro()) };
+  // O que a leitura vai deixar de fora (registros inválidos) não se perde: o arquivo como estava vai para as cópias.
+  if (lerCadastroDeProducao(lido.conteudo).descartados.length > 0) {
+    await copiaUnica(pastaDasCopias, 'cadastro-de-producao.com-registros-descartados', JSON.stringify(lido.conteudo, null, 2));
   }
-  try {
-    return JSON.parse(conteudo) as unknown;
-  } catch {
-    return { arquivoIlegivel: path.basename(arquivoDoCadastro()) };
+  if (lido.situacao === 'recuperado') {
+    registrarDiagnostico(`cadastro-recuperado-da-versao-anterior motivo=${lido.motivo}`);
+    return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
   }
+  return lido.conteudo;
 });
 
 ipcMain.handle('cadastro-gravar', async (_evento, bruto: unknown) => {
   const lido = lerCadastroDeProducao(bruto);
   if (lido.descartados.length > 0) throw new Error(`O cadastro não foi gravado: ${lido.descartados.join(' ')}`);
   await mkdir(app.getPath('userData'), { recursive: true });
+  // A versão anterior fica ao lado (para recuperar), e a de formato antigo ou ilegível vai para as cópias de segurança.
   await filaDeGravacao('cadastro-de-producao', () =>
-    gravarProjetoComCopia(arquivoDoCadastro(), JSON.stringify(lido.cadastro, null, 2), {
-      idDoProjeto: 'cadastro-de-producao',
+    gravarComAnterior(arquivoDoCadastro(), JSON.stringify(lido.cadastro, null, 2), {
+      idDoArquivo: 'cadastro-de-producao',
       versaoNova: VERSAO_DO_CADASTRO,
       pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
       agoraIso: new Date().toISOString(),

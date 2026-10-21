@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
-import type { ResultadoDeNesting } from '../domain/nesting';
+import type { MetodoDoNesting, ResultadoDeNesting } from '../domain/nesting';
 import { arestaDeSimetria } from '../domain/anotacoes';
 import { rotacoesNoEncaixe, type Molde } from '../domain/molde';
 import { lerMedida } from './medidas';
@@ -14,6 +14,8 @@ export interface OpcoesAvancadasDeNesting {
   readonly abrirSimetrias?: boolean;
   /** A distância entre os moldes (mm), de linha de corte a linha de corte: passa a ser a do enfesto. */
   readonly distanciaEntreMoldesMm: number;
+  /** O método: só vem quando não é o de sempre (a busca em grade). */
+  readonly metodo?: MetodoDoNesting;
 }
 
 interface PainelDeNestingProps {
@@ -43,6 +45,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
+  const [metodo, setMetodo] = useState<MetodoDoNesting>('grade');
   /** Os tamanhos com que a peça entra no encaixe: todos os da graduação, só o base, ou o dela. */
   const tamanhosDa = (p: Molde): string => {
     if (!p.graduacao) return p.tamanho.trim() === '' ? '—' : p.tamanho;
@@ -61,6 +64,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(temGraduadas ? { todosOsTamanhos } : {}),
       ...(temSimetria ? { abrirSimetrias } : {}),
       distanciaEntreMoldesMm: distanciaLida,
+      ...(metodo !== 'grade' ? { metodo } : {}),
     });
   }
 
@@ -74,6 +78,18 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               onSubmit={(e) => e.preventDefault()}
             >
               <p className="legenda-inline">Parâmetros gerais</p>
+              <label>
+                Método do encaixe
+                <select value={metodo} onChange={(e) => setMetodo(e.target.value as MetodoDoNesting)}>
+                  <option value="grade">Busca em grade (o de sempre)</option>
+                  <option value="pontos-de-canto">Pontos de canto (o do planejamento de corte)</option>
+                </select>
+              </label>
+              <p className="nota-do-formulario">
+                {metodo === 'grade'
+                  ? 'Procura o primeiro lugar livre numa grade de 10 mm, até 20 000 posições por peça: em mesas longas (mais de uns 2,4 m numa largura de 1,6 m), as peças que passam disso ficam de fora.'
+                  : 'Põe cada peça junto das já postas, testa três ordens de entrada e fica com o encaixe mais curto; mais rápido, e sem o limite de posições. A meta de aproveitamento não vale neste método. Nenhum dos dois métodos garante o menor encaixe possível.'}
+              </p>
               <label>
                 Distância entre os moldes (mm)
                 <input

@@ -357,7 +357,7 @@ import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnf
 import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
-import type { ResultadoDeNesting } from './domain/nesting';
+import type { MetodoDoNesting, ResultadoDeNesting } from './domain/nesting';
 import type { MensagemParaWorker } from './nesting.worker';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
@@ -712,6 +712,8 @@ export default function App(): React.JSX.Element {
   const [folgaNoCampo, setFolgaNoCampo] = useState(() => folgaEscrita(lerFolgaForaDaPeca(window.localStorage)));
 
   const workerDeNestingRef = useRef<Worker | null>(null);
+  // O método do encaixe em curso (o cancelar dos pontos de canto fecha o Worker).
+  const metodoDoNestingRef = useRef<MetodoDoNesting>('grade');
   const [nestingExecutando, setNestingExecutando] = useState(false);
   const [progressoNesting, setProgressoNesting] = useState<{ colocadas: number; total: number } | null>(null);
   const [resultadoNesting, setResultadoNesting] = useState<ResultadoDeNesting | null>(null);
@@ -2354,6 +2356,7 @@ export default function App(): React.JSX.Element {
       todosOsTamanhos?: boolean;
       abrirSimetrias?: boolean;
       distanciaEntreMoldesMm?: number;
+      metodo?: MetodoDoNesting;
     }) => {
       if (!enfesto || pecas.length === 0) return;
       // A distância entre os moldes pedida na janela do encaixe passa a ser a do enfesto: a validação mede com ela.
@@ -2388,6 +2391,7 @@ export default function App(): React.JSX.Element {
       setResultadoNesting(null);
       setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
       setNestingExecutando(true);
+      metodoDoNestingRef.current = opcoesAvancadas.metodo ?? 'grade';
 
       const worker = new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
       workerDeNestingRef.current = worker;
@@ -2428,6 +2432,7 @@ export default function App(): React.JSX.Element {
           : {}),
         // Tecido com pelo ou estampa direcional: nenhuma peça sai virada.
         ...(sentidoUnicoDoTecido(tecido) ? { tecidoDeSentidoUnico: true } : {}),
+        ...(opcoesAvancadas.metodo ? { metodo: opcoesAvancadas.metodo } : {}),
       };
       worker.postMessage(mensagemIniciar);
     },
@@ -2437,6 +2442,13 @@ export default function App(): React.JSX.Element {
   const cancelarNestingAutomatico = useCallback(() => {
     const mensagemCancelar: MensagemParaWorker = { tipo: 'cancelar' };
     workerDeNestingRef.current?.postMessage(mensagemCancelar);
+    // O método dos pontos de canto roda de uma vez: o cancelar fecha o Worker e volta para a configuração.
+    if (metodoDoNestingRef.current === 'pontos-de-canto') {
+      workerDeNestingRef.current?.terminate();
+      workerDeNestingRef.current = null;
+      setNestingExecutando(false);
+      setResultadoNesting(null);
+    }
   }, []);
 
   const fecharPainelDeNesting = useCallback(() => {

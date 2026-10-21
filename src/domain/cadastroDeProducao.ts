@@ -9,7 +9,9 @@ import type { PadraoDoTecido } from './tecido';
  * faltando ou não confere.
  */
 
-export const VERSAO_DO_CADASTRO = 1;
+/** 2: os defeitos com posição e os movimentos de estoque (reserva, baixa, estorno). */
+export const VERSAO_DO_CADASTRO = 2;
+export const MAXIMO_DE_MOVIMENTOS = 50_000;
 export const MAXIMO_DE_MALHAS = 200;
 export const MAXIMO_DE_ROLOS = 2000;
 export const MAXIMO_DE_ORDENS = 2000;
@@ -38,6 +40,17 @@ export interface MalhaDoCadastro {
    * diz se a compensação está, ou não, no molde.
    */
   readonly encolhimentoCompensadoNoMolde: boolean;
+  /**
+   * Listras e xadrez: a repetição do desenho (o rapport) no comprimento e na largura, e a fase (onde a linha de
+   * referência cai, do começo do risco e da borda da malha). Com elas, o risco pode casar o desenho (ver
+   * `Casamento` em risco.ts); sem elas, o casamento é feito à parte.
+   */
+  readonly rapportComprimentoMm?: number;
+  readonly rapportLarguraMm?: number;
+  readonly faseComprimentoMm?: number;
+  readonly faseLarguraMm?: number;
+  /** De onde vem o valor do encolhimento. */
+  readonly fonteDoEncolhimento?: 'ensaio-de-lavagem' | 'fornecedor' | 'estimativa';
   /** Quanto a largura útil de um rolo pode ficar abaixo da do cadastro sem ser um problema (mm). */
   readonly toleranciaDeLarguraMm?: number;
   /** A espessura de uma folha (mm), para o limite de altura do enfesto. */
@@ -45,10 +58,29 @@ export interface MalhaDoCadastro {
   readonly observacoes?: string;
 }
 
+export type TipoDeDefeito = 'furo' | 'mancha' | 'fio-puxado' | 'barramento' | 'falha-de-tinturaria' | 'outro';
+
+export const ROTULO_DO_DEFEITO: Readonly<Record<TipoDeDefeito, string>> = {
+  furo: 'Furo',
+  mancha: 'Mancha',
+  'fio-puxado': 'Fio puxado',
+  barramento: 'Barramento',
+  'falha-de-tinturaria': 'Falha de tinturaria',
+  outro: 'Outro',
+};
+
 export interface DefeitoDoRolo {
   readonly descricao: string;
-  /** Quanto do comprimento do rolo o defeito tira (mm). */
+  /** A extensão do defeito no comprimento do rolo (mm): o quanto ele tira. */
   readonly perdaMm: number;
+  /**
+   * Onde o defeito começa, medido do começo do rolo (mm). Com ela, o plano tira só o trecho do defeito e as
+   * camadas não passam por cima dele; sem ela, o defeito não é evitado (o plano pede uma decisão).
+   */
+  readonly posicaoMm?: number;
+  /** Quanto da largura o defeito pega (mm), quando se sabe. */
+  readonly larguraAfetadaMm?: number;
+  readonly tipo?: TipoDeDefeito;
 }
 
 export type UnidadeDePeso = 'kg' | 'g';
@@ -96,14 +128,42 @@ export interface OrdemDeProducao {
   readonly atualizadaEmIso: string;
 }
 
+/**
+ * Um movimento de estoque de um rolo, ligado a um plano de corte confirmado. Os movimentos nunca são apagados nem
+ * mudados: desfazer é um estorno (outro movimento, que aponta o que desfaz).
+ * - reserva: o comprimento separado para o plano (sai do disponível, continua no saldo físico);
+ * - baixa: o comprimento consumido pelo plano (sai do saldo físico; a reserva do mesmo plano e rolo deixa de valer);
+ * - estorno: desfaz uma reserva ou uma baixa.
+ */
+export type TipoDeMovimento = 'reserva' | 'baixa' | 'estorno';
+
+export interface MovimentoDeEstoque {
+  readonly id: string;
+  readonly tipo: TipoDeMovimento;
+  readonly roloId: string;
+  readonly planoId: string;
+  readonly projetoId: string;
+  /** O comprimento movimentado (mm). */
+  readonly comprimentoMm: number;
+  /** O peso equivalente (g), pelo rendimento da malha, quando há. */
+  readonly pesoG?: number;
+  readonly dataIso: string;
+  /** Informado por quem fez o movimento (o programa não tem login). */
+  readonly responsavel: string;
+  readonly motivo?: string;
+  /** No estorno: o movimento desfeito. */
+  readonly estornaId?: string;
+}
+
 export interface CadastroDeProducao {
   readonly versaoDoFormato: number;
   readonly malhas: readonly MalhaDoCadastro[];
   readonly rolos: readonly RoloDeEstoque[];
   readonly ordens: readonly OrdemDeProducao[];
+  readonly movimentos: readonly MovimentoDeEstoque[];
 }
 
-export const CADASTRO_VAZIO: CadastroDeProducao = { versaoDoFormato: VERSAO_DO_CADASTRO, malhas: [], rolos: [], ordens: [] };
+export const CADASTRO_VAZIO: CadastroDeProducao = { versaoDoFormato: VERSAO_DO_CADASTRO, malhas: [], rolos: [], ordens: [], movimentos: [] };
 
 // ---- Leitura tolerante: o que não dá para ler fica de fora, com o motivo; nada impede o programa de abrir.
 
@@ -125,10 +185,15 @@ function ehMalha(v: unknown): v is MalhaDoCadastro {
     typeof m.sentidoUnico === 'boolean' &&
     (m.padrao === 'liso' || m.padrao === 'listrado' || m.padrao === 'xadrez') &&
     typeof m.encolhimentoCompensadoNoMolde === 'boolean' &&
+    (m.fonteDoEncolhimento === undefined || m.fonteDoEncolhimento === 'ensaio-de-lavagem' || m.fonteDoEncolhimento === 'fornecedor' || m.fonteDoEncolhimento === 'estimativa') &&
     positivoOuAusente(m.gramaturaGm2) &&
     positivoOuAusente(m.larguraNominalMm) &&
     positivoOuAusente(m.rendimentoMmPorG) &&
     positivoOuAusente(m.espessuraDaFolhaMm) &&
+    positivoOuAusente(m.rapportComprimentoMm) &&
+    positivoOuAusente(m.rapportLarguraMm) &&
+    (m.faseComprimentoMm === undefined || (typeof m.faseComprimentoMm === 'number' && m.faseComprimentoMm >= 0)) &&
+    (m.faseLarguraMm === undefined || (typeof m.faseLarguraMm === 'number' && m.faseLarguraMm >= 0)) &&
     (m.toleranciaDeLarguraMm === undefined || (typeof m.toleranciaDeLarguraMm === 'number' && m.toleranciaDeLarguraMm >= 0)) &&
     [m.composicao, m.tituloDoFio, m.observacoes].every(textoOuAusente)
   );
@@ -146,7 +211,16 @@ function ehRolo(v: unknown): v is RoloDeEstoque {
     Array.isArray(r.defeitos) &&
     r.defeitos.every((d: unknown) => {
       const x = d as Record<string, unknown> | null;
-      return typeof x === 'object' && x !== null && ehTexto(x.descricao) && typeof x.perdaMm === 'number' && x.perdaMm >= 0;
+      return (
+        typeof x === 'object' &&
+        x !== null &&
+        ehTexto(x.descricao) &&
+        typeof x.perdaMm === 'number' &&
+        x.perdaMm >= 0 &&
+        (x.posicaoMm === undefined || (typeof x.posicaoMm === 'number' && x.posicaoMm >= 0)) &&
+        positivoOuAusente(x.larguraAfetadaMm) &&
+        (x.tipo === undefined || (typeof x.tipo === 'string' && x.tipo in ROTULO_DO_DEFEITO))
+      );
     }) &&
     (r.unidadeDoPeso === 'kg' || r.unidadeDoPeso === 'g') &&
     (r.unidadeDoComprimento === 'm' || r.unidadeDoComprimento === 'cm' || r.unidadeDoComprimento === 'mm') &&
@@ -157,6 +231,26 @@ function ehRolo(v: unknown): v is RoloDeEstoque {
     (numeroPositivo(r.pesoLiquidoG) || numeroPositivo(r.comprimentoMedidoMm)) &&
     (r.dataDaMedicao === undefined || (ehTexto(r.dataDaMedicao) && DATA.test(r.dataDaMedicao))) &&
     [r.localizacao, r.origemDaMedicao, r.observacoes].every(textoOuAusente)
+  );
+}
+
+function ehMovimento(v: unknown): v is MovimentoDeEstoque {
+  if (typeof v !== 'object' || v === null) return false;
+  const m = v as Record<string, unknown>;
+  return (
+    ehTexto(m.id) &&
+    (m.tipo === 'reserva' || m.tipo === 'baixa' || m.tipo === 'estorno') &&
+    ehTexto(m.roloId) &&
+    ehTexto(m.planoId) &&
+    ehTexto(m.projetoId) &&
+    typeof m.comprimentoMm === 'number' &&
+    Number.isFinite(m.comprimentoMm) &&
+    m.comprimentoMm >= 0 &&
+    positivoOuAusente(m.pesoG) &&
+    ehTexto(m.dataIso) &&
+    ehTexto(m.responsavel) &&
+    textoOuAusente(m.motivo) &&
+    (m.tipo === 'estorno' ? ehTexto(m.estornaId) : m.estornaId === undefined)
   );
 }
 
@@ -212,6 +306,8 @@ export function lerCadastroDeProducao(bruto: unknown): CadastroLido {
       malhas: filtrar(b.malhas, ehMalha, 'malhas'),
       rolos: filtrar(b.rolos, ehRolo, 'rolos'),
       ordens: filtrar(b.ordens, ehOrdem, 'ordens'),
+      // Da versão 1 para a 2 só entram os movimentos (vazios) e os campos opcionais dos defeitos.
+      movimentos: filtrar(b.movimentos, ehMovimento, 'movimentos de estoque'),
     },
     descartados,
     maisNovo: versao > VERSAO_DO_CADASTRO,
@@ -248,6 +344,18 @@ export function validarMalha(malha: MalhaDoCadastro, outras: readonly MalhaDoCad
     if (valor !== undefined && !(valor >= 0 && valor < 50)) erros.push(`${nome} precisa ficar entre 0 e 50%.`);
   }
   if (malha.toleranciaDeLarguraMm !== undefined && !(malha.toleranciaDeLarguraMm >= 0)) erros.push('A tolerância de largura precisa ser de 0 para cima (mm).');
+  for (const [valor, nome] of [
+    [malha.rapportComprimentoMm, 'A repetição do desenho no comprimento'],
+    [malha.rapportLarguraMm, 'A repetição do desenho na largura'],
+  ] as const) {
+    if (valor !== undefined && !(valor > 0)) erros.push(`${nome} precisa ser maior que zero (mm).`);
+  }
+  for (const [valor, nome] of [
+    [malha.faseComprimentoMm, 'A fase do desenho no comprimento'],
+    [malha.faseLarguraMm, 'A fase do desenho na largura'],
+  ] as const) {
+    if (valor !== undefined && !(valor >= 0)) erros.push(`${nome} precisa ser de 0 para cima (mm).`);
+  }
   textoCurto(malha.composicao, 'Composição', erros);
   textoCurto(malha.tituloDoFio, 'Título do fio', erros);
   return erros;
@@ -269,6 +377,11 @@ export function validarRolo(rolo: RoloDeEstoque, cadastro: CadastroDeProducao): 
   if (rolo.comprimentoMedidoMm !== undefined && !numeroPositivo(rolo.comprimentoMedidoMm)) erros.push('O comprimento medido precisa ser maior que zero.');
   if (rolo.larguraUtilMedidaMm !== undefined && !numeroPositivo(rolo.larguraUtilMedidaMm)) erros.push('A largura útil medida precisa ser maior que zero.');
   if (rolo.defeitos.some((d) => !(d.perdaMm >= 0) || d.descricao.trim() === '')) erros.push('Cada defeito precisa da descrição e da perda (de 0 mm para cima).');
+  if (rolo.defeitos.some((d) => d.posicaoMm !== undefined && !(d.posicaoMm >= 0))) erros.push('A posição de um defeito precisa ser de 0 para cima (medida do começo do rolo).');
+  if (rolo.comprimentoMedidoMm !== undefined && rolo.defeitos.some((d) => d.posicaoMm !== undefined && d.posicaoMm + d.perdaMm > rolo.comprimentoMedidoMm! + 0.5)) {
+    erros.push('Um defeito passa do fim do rolo (posição + extensão maior que o comprimento medido): confira.');
+  }
+  if (rolo.defeitos.some((d) => d.larguraAfetadaMm !== undefined && !(d.larguraAfetadaMm > 0))) erros.push('A largura afetada de um defeito precisa ser maior que zero.');
   if (rolo.dataDaMedicao !== undefined && !DATA.test(rolo.dataDaMedicao)) erros.push('A data da medição precisa ser uma data (dia/mês/ano).');
   textoCurto(rolo.lote, 'Lote', erros);
   textoCurto(rolo.tonalidade, 'Tonalidade', erros);
@@ -442,4 +555,192 @@ export function lerGradeColada(texto: string): GradeColada {
     erros.push('Não deu para ler a grade: cole duas linhas (os tamanhos e, embaixo, as quantidades) ou um tamanho e a quantidade por linha.');
   }
   return { quantidades, erros };
+}
+
+// ---- Estoque: o estado de cada rolo pelos movimentos, e as operações (sempre um movimento novo, nunca apagar)
+
+/**
+ * O casamento que a malha permite (a repetição e a fase cadastradas), ou `null` se ela é lisa ou não tem a
+ * repetição: aí o casamento não é automático.
+ */
+export function casamentoDaMalha(malha: MalhaDoCadastro): { readonly rapportComprimentoMm?: number; readonly rapportLarguraMm?: number; readonly faseComprimentoMm: number; readonly faseLarguraMm: number } | null {
+  if (malha.padrao === 'liso') return null;
+  const comprimento = numeroPositivo(malha.rapportComprimentoMm) ? malha.rapportComprimentoMm : undefined;
+  const largura = numeroPositivo(malha.rapportLarguraMm) ? malha.rapportLarguraMm : undefined;
+  if (comprimento === undefined && largura === undefined) return null;
+  return {
+    ...(comprimento !== undefined ? { rapportComprimentoMm: comprimento } : {}),
+    ...(largura !== undefined ? { rapportLarguraMm: largura } : {}),
+    faseComprimentoMm: malha.faseComprimentoMm ?? 0,
+    faseLarguraMm: malha.faseLarguraMm ?? 0,
+  };
+}
+
+/** O rendimento da malha para converter peso em comprimento: o informado, ou o pela gramatura. */
+export function rendimentoDaMalha(malha: Pick<MalhaDoCadastro, 'rendimentoMmPorG' | 'gramaturaGm2' | 'larguraUtilMm'> | undefined): number | null {
+  if (!malha) return null;
+  if (numeroPositivo(malha.rendimentoMmPorG)) return malha.rendimentoMmPorG;
+  if (numeroPositivo(malha.gramaturaGm2) && numeroPositivo(malha.larguraUtilMm)) return 1_000_000 / (malha.larguraUtilMm * malha.gramaturaGm2);
+  return null;
+}
+
+/** Os movimentos que valem: as reservas e baixas não estornadas, sem as reservas já trocadas pela baixa do mesmo plano e rolo. */
+export function movimentosAtivos(movimentos: readonly MovimentoDeEstoque[]): MovimentoDeEstoque[] {
+  const estornados = new Set(movimentos.filter((m) => m.tipo === 'estorno').map((m) => m.estornaId!));
+  const vivos = movimentos.filter((m) => m.tipo !== 'estorno' && !estornados.has(m.id));
+  const baixas = new Set(vivos.filter((m) => m.tipo === 'baixa').map((m) => `${m.planoId}|${m.roloId}`));
+  return vivos.filter((m) => m.tipo === 'baixa' || !baixas.has(`${m.planoId}|${m.roloId}`));
+}
+
+export interface EstadoDoRolo {
+  /** O comprimento do rolo como entrou (medido, ou peso × rendimento), ou `null` se não há como saber. */
+  readonly inicialMm: number | null;
+  readonly origem: 'medido' | 'pelo peso' | null;
+  readonly consumidoMm: number;
+  readonly reservadoMm: number;
+  /** Reservado por outros planos (sem contar `excetoPlanoId`). */
+  readonly reservadoPorOutrosMm: number;
+  /** O que ainda existe do rolo: o inicial menos o consumido. */
+  readonly saldoFisicoMm: number | null;
+  /** O que pode ir para um plano novo: o saldo físico menos o reservado (por outros planos). */
+  readonly disponivelMm: number | null;
+}
+
+export function estadoDoRolo(cadastro: CadastroDeProducao, rolo: RoloDeEstoque, excetoPlanoId?: string): EstadoDoRolo {
+  const malha = cadastro.malhas.find((m) => m.id === rolo.malhaId);
+  const inicial = comprimentoDoRolo(rolo, rendimentoDaMalha(malha));
+  const doRolo = movimentosAtivos(cadastro.movimentos).filter((m) => m.roloId === rolo.id);
+  const consumidoMm = doRolo.filter((m) => m.tipo === 'baixa').reduce((s, m) => s + m.comprimentoMm, 0);
+  const reservadoMm = doRolo.filter((m) => m.tipo === 'reserva').reduce((s, m) => s + m.comprimentoMm, 0);
+  const reservadoPorOutrosMm = doRolo.filter((m) => m.tipo === 'reserva' && m.planoId !== excetoPlanoId).reduce((s, m) => s + m.comprimentoMm, 0);
+  const saldoFisicoMm = inicial ? Math.max(0, inicial.comprimentoMm - consumidoMm) : null;
+  return {
+    inicialMm: inicial?.comprimentoMm ?? null,
+    origem: inicial?.origem ?? null,
+    consumidoMm,
+    reservadoMm,
+    reservadoPorOutrosMm,
+    saldoFisicoMm,
+    disponivelMm: saldoFisicoMm === null ? null : Math.max(0, saldoFisicoMm - reservadoPorOutrosMm),
+  };
+}
+
+export interface UsoDoRolo {
+  readonly roloId: string;
+  readonly comprimentoMm: number;
+}
+
+export interface DadosDoMovimento {
+  readonly planoId: string;
+  readonly projetoId: string;
+  readonly responsavel: string;
+  readonly agoraIso: string;
+  readonly novoId: () => string;
+  readonly motivo?: string;
+}
+
+export interface ResultadoDoMovimento {
+  readonly cadastro: CadastroDeProducao;
+  /** Os rolos em que o movimento foi feito agora. */
+  readonly feitos: readonly string[];
+  /** Os rolos em que ele já estava feito (não se repete). */
+  readonly jaFeitos: readonly string[];
+}
+
+function movimentar(cadastro: CadastroDeProducao, tipo: 'reserva' | 'baixa', usos: readonly UsoDoRolo[], dados: DadosDoMovimento): ResultadoDoMovimento {
+  if (dados.responsavel.trim() === '') throw new Error('Informe quem está fazendo o movimento de estoque.');
+  const ativos = movimentosAtivos(cadastro.movimentos);
+  const novos: MovimentoDeEstoque[] = [];
+  const feitos: string[] = [];
+  const jaFeitos: string[] = [];
+  const erros: string[] = [];
+  for (const uso of usos) {
+    if (!(uso.comprimentoMm > 0)) continue;
+    const rolo = cadastro.rolos.find((r) => r.id === uso.roloId);
+    if (!rolo) {
+      erros.push(`O rolo do plano (${uso.roloId}) não está mais no cadastro.`);
+      continue;
+    }
+    // Sem repetir: a mesma operação do mesmo plano no mesmo rolo já feita (e não estornada) não é feita de novo.
+    if (ativos.some((m) => m.tipo === tipo && m.planoId === dados.planoId && m.roloId === rolo.id)) {
+      jaFeitos.push(rolo.identificacao);
+      continue;
+    }
+    if (tipo === 'reserva' && ativos.some((m) => m.tipo === 'baixa' && m.planoId === dados.planoId && m.roloId === rolo.id)) {
+      jaFeitos.push(rolo.identificacao);
+      continue;
+    }
+    const estado = estadoDoRolo(cadastro, rolo, dados.planoId);
+    const limite = tipo === 'reserva' ? estado.disponivelMm : estado.saldoFisicoMm;
+    if (limite !== null && uso.comprimentoMm > limite + 0.5) {
+      erros.push(
+        `O rolo ${rolo.identificacao} tem ${(limite / 1000).toFixed(2).replace('.', ',')} m ${tipo === 'reserva' ? 'disponíveis' : 'de saldo'}, menos que os ${(uso.comprimentoMm / 1000).toFixed(2).replace('.', ',')} m do plano.`,
+      );
+      continue;
+    }
+    const malha = cadastro.malhas.find((m) => m.id === rolo.malhaId);
+    const rendimento = rendimentoDaMalha(malha);
+    novos.push({
+      id: dados.novoId(),
+      tipo,
+      roloId: rolo.id,
+      planoId: dados.planoId,
+      projetoId: dados.projetoId,
+      comprimentoMm: uso.comprimentoMm,
+      ...(rendimento !== null ? { pesoG: uso.comprimentoMm / rendimento } : {}),
+      dataIso: dados.agoraIso,
+      responsavel: dados.responsavel.trim(),
+      ...(dados.motivo ? { motivo: dados.motivo } : {}),
+    });
+    feitos.push(rolo.identificacao);
+  }
+  // Tudo ou nada: com um erro, nenhum movimento entra.
+  if (erros.length > 0) throw new Error(erros.join(' '));
+  if (cadastro.movimentos.length + novos.length > MAXIMO_DE_MOVIMENTOS) throw new Error('O histórico de estoque chegou ao limite deste cadastro.');
+  return { cadastro: { ...cadastro, movimentos: [...cadastro.movimentos, ...novos] }, feitos, jaFeitos };
+}
+
+/** Reserva os rolos do plano (o comprimento que o plano usa de cada um). Repetir não reserva de novo. */
+export function reservarPlano(cadastro: CadastroDeProducao, usos: readonly UsoDoRolo[], dados: DadosDoMovimento): ResultadoDoMovimento {
+  return movimentar(cadastro, 'reserva', usos, dados);
+}
+
+/** Dá baixa do que o plano consumiu de cada rolo. A reserva do mesmo plano deixa de valer. Repetir não baixa de novo. */
+export function darBaixaDoPlano(cadastro: CadastroDeProducao, usos: readonly UsoDoRolo[], dados: DadosDoMovimento): ResultadoDoMovimento {
+  return movimentar(cadastro, 'baixa', usos, dados);
+}
+
+/** Desfaz um movimento (reserva ou baixa) com um estorno; o histórico fica. */
+export function estornarMovimento(
+  cadastro: CadastroDeProducao,
+  movimentoId: string,
+  dados: { readonly responsavel: string; readonly motivo: string; readonly agoraIso: string; readonly novoId: () => string },
+): CadastroDeProducao {
+  const alvo = cadastro.movimentos.find((m) => m.id === movimentoId);
+  if (!alvo) throw new Error('Este movimento não está no histórico.');
+  if (alvo.tipo === 'estorno') throw new Error('Um estorno não se estorna: faça o movimento de novo, se for o caso.');
+  if (cadastro.movimentos.some((m) => m.tipo === 'estorno' && m.estornaId === movimentoId)) throw new Error('Este movimento já foi estornado.');
+  if (dados.responsavel.trim() === '') throw new Error('Informe quem está estornando.');
+  if (dados.motivo.trim() === '') throw new Error('Diga o motivo do estorno.');
+  const estorno: MovimentoDeEstoque = {
+    id: dados.novoId(),
+    tipo: 'estorno',
+    roloId: alvo.roloId,
+    planoId: alvo.planoId,
+    projetoId: alvo.projetoId,
+    comprimentoMm: alvo.comprimentoMm,
+    ...(alvo.pesoG !== undefined ? { pesoG: alvo.pesoG } : {}),
+    dataIso: dados.agoraIso,
+    responsavel: dados.responsavel.trim(),
+    motivo: dados.motivo.trim(),
+    estornaId: alvo.id,
+  };
+  return { ...cadastro, movimentos: [...cadastro.movimentos, estorno] };
+}
+
+/** Os movimentos de um plano (para a tela do plano), do mais antigo ao mais novo, com o que ainda vale marcado. */
+export function movimentosDoPlano(cadastro: CadastroDeProducao, planoId: string): Array<MovimentoDeEstoque & { readonly ativo: boolean; readonly estornado: boolean }> {
+  const ativos = new Set(movimentosAtivos(cadastro.movimentos).map((m) => m.id));
+  const estornados = new Set(cadastro.movimentos.filter((m) => m.tipo === 'estorno').map((m) => m.estornaId!));
+  return cadastro.movimentos.filter((m) => m.planoId === planoId).map((m) => ({ ...m, ativo: ativos.has(m.id), estornado: estornados.has(m.id) }));
 }

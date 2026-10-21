@@ -1,5 +1,5 @@
 import type { PedidoDeRisco } from './planejamento';
-import { fazerRisco, type RiscoGerado } from './risco';
+import { fazerRisco, type Casamento, type RiscoGerado } from './risco';
 
 /**
  * A busca dos riscos de um planejamento: faz os riscos pedidos um por um, até o tempo da busca acabar (os que não
@@ -12,6 +12,8 @@ export interface OpcoesDaBusca {
   readonly distanciaMm: number;
   readonly sentidoUnico: boolean;
   readonly tempoTotalMs: number;
+  /** Casar listras/xadrez (ver `Casamento` em risco.ts). */
+  readonly casamento?: Casamento;
 }
 
 export interface ResultadoDaBusca {
@@ -54,9 +56,15 @@ export async function executarBusca(
       sentidoUnico: opcoes.sentidoUnico,
       tempoLimiteMs: tempoPorRiscoMs,
       agora,
+      ...(opcoes.casamento ? { casamento: opcoes.casamento } : {}),
+      // O cancelar vale também no meio de um risco (entre uma peça e outra).
+      ...(meios.deveParar ? { deveParar: meios.deveParar } : {}),
     });
     if (risco.ok) feitos.push({ chave: pedido.chave, risco });
-    else naoSairam.push({ chave: pedido.chave, motivo: risco.motivo });
+    else if (risco.cancelado) {
+      cancelada = true;
+      semTempo.push(pedido.chave);
+    } else naoSairam.push({ chave: pedido.chave, motivo: risco.motivo });
     meios.aoProgredir?.(i + 1, pedidos.length);
     if (meios.pausar) await meios.pausar();
   }

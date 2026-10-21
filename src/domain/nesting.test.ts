@@ -11,7 +11,7 @@ import {
 import { criarMolde, linhaDeCorteDaPeca, type Molde } from './molde';
 import { validarProjeto } from './validacao';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
-import { executarEmFatias, executarNestingAutomatico, passosDoNesting } from './nesting';
+import { executarEmFatias, executarNestingAutomatico, executarNestingPorPontosDeCanto, passosDoNesting } from './nesting';
 import { encontrarPrimeiraPosicaoValida, FOLGA_DO_ENCOSTO_MM, type LimitesDeArea } from './posicionamento';
 
 function pecaRetangular(
@@ -492,5 +492,30 @@ describe('executarNestingAutomatico — peça em par (direita e esquerda)', () =
     const original = Math.sign(areaAssinada(L));
     expect(sentidos([emPar])).toEqual([original, -original, original, -original]);
     expect(sentidos([pecaRetangular('manga', 10, 10, { contorno: L, quantidade: 4 })])).toEqual([original, original, original, original]);
+  });
+});
+
+describe('executarNestingPorPontosDeCanto — o método do planejamento na mesa do projeto', () => {
+  it('as cópias com o id de sempre, o par espelhado, as margens da mesa e as que não cabem ditas', () => {
+    const L = [ponto(0, 0), ponto(200, 0), ponto(200, 60), ponto(60, 60), ponto(60, 300), ponto(0, 300)];
+    const manga = { ...pecaRetangular('manga', 10, 10, { contorno: L, quantidade: 2 }), emPar: true as const };
+    const grande = pecaRetangular('g', 300, 900, { quantidade: 4 });
+    const r = executarNestingPorPontosDeCanto([manga, grande], enfestoBase({ larguraUtilMm: 1000, comprimentoMm: 1500, margemLateralMm: 20, margemDeExtremidadeMm: 30 }));
+    expect(r.pecasColocadas.map((p) => p.molde.id).sort()).toEqual(['g#0', 'g#1', 'g#2', 'manga#0', 'manga#1']);
+    expect(r.pecasNaoColocadas).toEqual([{ idOriginal: 'g', indiceCopia: 3, nome: 'g' }]);
+    const sinais = r.pecasColocadas.filter((p) => p.idOriginal === 'manga').map((p) => Math.sign(areaAssinada(p.molde.contorno)));
+    expect(sinais.sort()).toEqual([-1, 1]);
+    for (const p of r.pecasColocadas) {
+      const b = retanguloEnvolvente(linhaDeCorteDaPeca(p.molde));
+      expect(b.minX).toBeGreaterThanOrEqual(20 - 1e-6);
+      expect(b.maxX).toBeLessThanOrEqual(980 + 1e-6);
+      expect(b.minY).toBeGreaterThanOrEqual(30 - 1e-6);
+    }
+  });
+
+  it('cancelado (deveContinuar falso), nada é posto e o resultado diz que foi interrompido', () => {
+    const r = executarNestingPorPontosDeCanto([pecaRetangular('a', 100, 100, { quantidade: 3 })], enfestoBase(), { deveContinuar: () => false });
+    expect(r).toMatchObject({ interrompido: true, pecasColocadas: [] });
+    expect(r.pecasNaoColocadas).toHaveLength(3);
   });
 });

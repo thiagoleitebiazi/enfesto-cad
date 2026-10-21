@@ -44,3 +44,12 @@ describe('cadastro no disco', () => {
     expect(await gravarCadastro(falha, null, cadastro)).toBe('O cadastro não foi gravado: disco cheio');
   });
 });
+
+describe('cadastro recuperado da versão anterior', () => {
+  it('abre a versão anterior e diz que ela foi recuperada', async () => {
+    const anterior = salvarMalha(CADASTRO_VAZIO, MALHA);
+    const lido = await carregarCadastro({ lerCadastroDeProducao: async () => ({ recuperadoDaVersaoAnterior: 'ilegivel', conteudo: anterior }), gravarCadastroDeProducao: async () => true }, null);
+    expect(lido.cadastro).toEqual(anterior);
+    expect(lido.avisos[0]).toContain('estava quebrado: o programa abriu a versão anterior dele');
+  });
+});

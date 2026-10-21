@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { area, areaAssinada, contornosSeSobrepoem, distanciaEntreContornos, ponto, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { criarMolde, type Molde, type RestricaoDeRotacao } from './molde';
 import { modeloDoPlano } from './modeloDoPlano';
-import { chaveDaGrade, escreverGrade, fazerRisco, orientacoesDoRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
+import { chaveDaGrade, conferirCasamento, escreverGrade, fazerRisco, linhaDeCorteVerdadeira, orientacoesDoRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
 
 function retangulo(id: string, nome: string, largura: number, comprimento: number, extras: Partial<Parameters<typeof criarMolde>[0]> = {}): Molde {
   return criarMolde(
@@ -218,5 +218,83 @@ describe('fazerRisco — curvas simplificadas para as contas', () => {
     for (let i = 0; i < r.pecas.length; i++) for (let j = i + 1; j < r.pecas.length; j++) menor = Math.min(menor, distanciaEntreContornos(r.pecas[i]!.contorno, r.pecas[j]!.contorno));
     expect(menor).toBeGreaterThanOrEqual(3 + 0.4 - 0.02);
     expect(menor).toBeLessThan(3 + 0.4 + 1);
+  });
+});
+
+describe('fazerRisco — a distância verdadeira (sem simplificar)', () => {
+  it('entre as linhas de corte verdadeiras das peças curvas, nunca menos que a distância pedida', () => {
+    const circulo = Array.from({ length: 180 }, (_, i) => ponto(120 + 120 * Math.cos((2 * Math.PI * i) / 180), 90 + 90 * Math.sin((2 * Math.PI * i) / 180)));
+    const L = [ponto(0, 0), ponto(250, 0), ponto(250, 80), ponto(80, 80), ponto(80, 400), ponto(0, 400)];
+    const oval = retangulo('o', 'Oval', 1, 1, { contorno: circulo, margemDeCosturaMm: 7, linhaDeFio: { inicio: ponto(120, 20), fim: ponto(120, 160) }, restricaoDeRotacao: { permite180: true, permite90e270: true } });
+    const gola = retangulo('l', 'Gola', 1, 1, { contorno: L, margemDeCosturaMm: 10 });
+    const pecas = [...Array.from({ length: 7 }, () => copia(oval)), ...Array.from({ length: 4 }, () => copia(gola))];
+    for (const distancia of [0, 3, 8]) {
+      const r = gerado(fazerRisco(pecas, { M: 1 }, { ...opcoes, distanciaMm: distancia, larguraMm: 900 }));
+      const verdadeiras = r.pecas.map((p, i) => linhaDeCorteVerdadeira(pecas.find((q) => q.pecaId === p.pecaId)!, r.pecas[i]!));
+      let menor = Infinity;
+      for (let i = 0; i < verdadeiras.length; i++)
+        for (let j = i + 1; j < verdadeiras.length; j++) {
+          expect(contornosSeSobrepoem(verdadeiras[i]!, verdadeiras[j]!)).toBe(false);
+          menor = Math.min(menor, distanciaEntreContornos(verdadeiras[i]!, verdadeiras[j]!));
+        }
+      expect(menor).toBeGreaterThanOrEqual(distancia);
+      // E a peça verdadeira fica dentro da largura.
+      for (const v of verdadeiras) expect(retanguloEnvolvente(v).maxX).toBeLessThanOrEqual(900 + 1e-6);
+    }
+  }, 60_000);
+});
+
+describe('fazerRisco — cancelar', () => {
+  it('cancelado no meio, o risco não sai e diz que foi cancelado', () => {
+    let chamadas = 0;
+    const r = fazerRisco(Array.from({ length: 6 }, () => copia(retangulo('a', 'Frente', 300, 300))), { M: 6 }, { ...opcoes, deveParar: () => ++chamadas > 3 });
+    expect(r).toEqual({ ok: false, grade: { M: 6 }, motivo: 'A busca foi cancelada.', cancelado: true });
+  });
+});
+
+describe('fazerRisco — casamento de listras e xadrez', () => {
+  // Retângulo de 200 × 300 com a marca "casamento" a (50, 70) da peça.
+  const marcada = (extras: Partial<Parameters<typeof criarMolde>[0]> = {}) =>
+    retangulo('c', 'Frente', 200, 300, { marcas: [{ id: 'k', posicao: ponto(50, 70), rotulo: 'Casamento' }], ...extras });
+
+  it('listras no comprimento (repetição de 100 mm, fase 30): o ponto de cada peça cai numa listra, e a conferência confirma', () => {
+    const casamento = { rapportComprimentoMm: 100, faseComprimentoMm: 30, faseLarguraMm: 0 };
+    const r = gerado(fazerRisco(Array.from({ length: 6 }, () => copia(marcada())), { M: 6 }, { ...opcoes, casamento }));
+    for (const p of r.pecas) {
+      const resto = (((p.pontoDeCasamento!.y - 30) % 100) + 100) % 100;
+      expect(Math.min(resto, 100 - resto)).toBeLessThan(1e-6);
+    }
+    expect(r.casamento).toEqual({ ...casamento, conferido: true });
+    expect(conferirCasamento(r.pecas, casamento)).toEqual([]);
+    conferirGeometria(r, 3);
+  });
+
+  it('xadrez (repetição nas duas direções): o ponto cai no cruzamento das linhas', () => {
+    const casamento = { rapportComprimentoMm: 120, rapportLarguraMm: 80, faseComprimentoMm: 10, faseLarguraMm: 20 };
+    const r = gerado(fazerRisco(Array.from({ length: 5 }, () => copia(marcada())), { M: 5 }, { ...opcoes, casamento }));
+    for (const p of r.pecas) {
+      expect((((p.pontoDeCasamento!.y - 10) % 120) + 120) % 120).toBeCloseTo(0, 6);
+      expect((((p.pontoDeCasamento!.x - 20) % 80) + 80) % 80).toBeCloseTo(0, 6);
+    }
+    expect(r.casamento?.conferido).toBe(true);
+  });
+
+  it('com casamento, a peça não deita (90°/270° viraria as listras), mesmo podendo', () => {
+    const giro = marcada({ restricaoDeRotacao: { permite180: true, permite90e270: true } });
+    const r = gerado(fazerRisco(Array.from({ length: 4 }, () => copia(giro)), { M: 4 }, { ...opcoes, casamento: { rapportComprimentoMm: 100, faseComprimentoMm: 0, faseLarguraMm: 0 } }));
+    expect(r.pecas.every((p) => p.anguloGraus === 0 || p.anguloGraus === 180)).toBe(true);
+  });
+
+  it('sem a marca "casamento" numa peça, ou sem repetição, não sai — e diz o que falta', () => {
+    const semMarca = fazerRisco([copia(marcada()), copia(retangulo('s', 'Bolso', 100, 100))], { M: 1 }, { ...opcoes, casamento: { rapportComprimentoMm: 100, faseComprimentoMm: 0, faseLarguraMm: 0 } });
+    expect(!semMarca.ok && semMarca.motivo).toContain('Faltam em: Bolso');
+    const semRepeticao = fazerRisco([copia(marcada())], { M: 1 }, { ...opcoes, casamento: { faseComprimentoMm: 0, faseLarguraMm: 0 } });
+    expect(!semRepeticao.ok && semRepeticao.motivo).toBe('O casamento precisa da repetição do desenho (rapport) no comprimento ou na largura, maior que zero.');
+  });
+
+  it('a conferência acha a peça fora da fase', () => {
+    const posta = { pecaId: 'x', nome: 'Frente', tamanho: 'M', contorno: [], fio: { inicio: ponto(0, 0), fim: ponto(0, 1) }, anguloGraus: 0, espelhada: false, pontoDeCasamento: ponto(10, 145) };
+    expect(conferirCasamento([posta], { rapportComprimentoMm: 100, faseComprimentoMm: 30, faseLarguraMm: 0 })).toEqual(['Frente (M)']);
+    expect(conferirCasamento([{ ...posta, pontoDeCasamento: ponto(10, 230) }], { rapportComprimentoMm: 100, faseComprimentoMm: 30, faseLarguraMm: 0 })).toEqual([]);
   });
 });

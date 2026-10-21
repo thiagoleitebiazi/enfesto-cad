@@ -12,7 +12,7 @@ const CHAVE_DA_PRIMEIRA_VERSAO = 'enfesto-cad:configuracao-do-plano-de-corte';
 function ehConfiguracao(valor: unknown): valor is ConfiguracaoDoPlanejamento {
   if (typeof valor !== 'object' || valor === null) return false;
   const c = { ...CONFIGURACAO_PADRAO_DO_PLANEJAMENTO, ...(valor as object) } as ConfiguracaoDoPlanejamento;
-  return Object.values(c).every((v) => typeof v === 'number') && validarConfiguracaoDoPlanejamento(c).length === 0;
+  return Object.entries(c).every(([k, v]) => (k === 'permitirEmendas' ? typeof v === 'boolean' : typeof v === 'number')) && validarConfiguracaoDoPlanejamento(c).length === 0;
 }
 
 export function lerConfiguracaoDoPlanejamento(armazenamento: Pick<Storage, 'getItem'>): ConfiguracaoDoPlanejamento {
@@ -21,7 +21,7 @@ export function lerConfiguracaoDoPlanejamento(armazenamento: Pick<Storage, 'getI
     if (ehConfiguracao(lido)) return { ...CONFIGURACAO_PADRAO_DO_PLANEJAMENTO, ...lido };
     const antiga = JSON.parse(armazenamento.getItem(CHAVE_DA_PRIMEIRA_VERSAO) ?? 'null') as Record<string, unknown> | null;
     if (antiga && typeof antiga === 'object') {
-      const comAntiga: Record<string, number | undefined> = { ...CONFIGURACAO_PADRAO_DO_PLANEJAMENTO };
+      const comAntiga: Record<string, number | boolean | undefined> = { ...CONFIGURACAO_PADRAO_DO_PLANEJAMENTO };
       for (const campo of ['margemInicialDaMesaMm', 'margemFinalDaMesaMm', 'sobraPorCamadaMm', 'folhasPorEnfestoMax', 'toleranciaDeRendimentoPercentual'] as const) {
         const valor = antiga[campo];
         if (typeof valor === 'number') comAntiga[campo] = valor;

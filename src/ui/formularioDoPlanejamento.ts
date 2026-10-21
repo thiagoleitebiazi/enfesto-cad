@@ -272,6 +272,8 @@ export interface FormularioDaConfiguracao {
   readonly distancia: string;
   readonly tolerancia: string;
   readonly tempo: string;
+  readonly permitirEmendas: boolean;
+  readonly sobreposicaoDaEmenda: string;
 }
 
 export function configuracaoNoFormulario(c: ConfiguracaoDoPlanejamento): FormularioDaConfiguracao {
@@ -289,6 +291,8 @@ export function configuracaoNoFormulario(c: ConfiguracaoDoPlanejamento): Formula
     distancia: noCampo(c.distanciaEntrePecasMm),
     tolerancia: noCampo(c.toleranciaDeRendimentoPercentual),
     tempo: noCampo(c.tempoDeBuscaS),
+    permitirEmendas: c.permitirEmendas === true,
+    sobreposicaoDaEmenda: noCampo((c.sobreposicaoDaEmendaMm ?? 0) / 10),
   };
 }
 
@@ -308,6 +312,7 @@ export function configuracaoDoFormulario(f: FormularioDaConfiguracao): { readonl
   const distancia = lerNumero(f.distancia, 'Distância entre as peças (mm)', erros, zero);
   const tolerancia = lerNumero(f.tolerancia, 'Tolerância de rendimento (%)', erros, zero);
   const tempo = lerNumero(f.tempo, 'Tempo da busca dos riscos (s)', erros, { obrigatorio: true });
+  const sobreposicao = lerNumero(f.sobreposicaoDaEmenda, 'Sobreposição da emenda (cm)', erros, zero);
   if (erros.length > 0) return { configuracao: null, erros };
   return {
     configuracao: {
@@ -324,6 +329,8 @@ export function configuracaoDoFormulario(f: FormularioDaConfiguracao): { readonl
       distanciaEntrePecasMm: distancia!,
       toleranciaDeRendimentoPercentual: tolerancia!,
       tempoDeBuscaS: tempo!,
+      permitirEmendas: f.permitirEmendas,
+      sobreposicaoDaEmendaMm: deCm(sobreposicao)!,
     },
     erros,
   };

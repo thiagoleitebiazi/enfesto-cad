@@ -180,6 +180,7 @@ export function riscoGeradoNoPlano(chave: string, risco: RiscoGerado): RiscoDoPl
     areaDasPecasMm2: risco.areaDasPecasMm2,
     eficienciaPercentual: risco.eficienciaPercentual,
     pecas: risco.pecas,
+    ...(risco.casamento ? { casamento: risco.casamento } : {}),
   };
 }
 

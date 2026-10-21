@@ -1,4 +1,4 @@
-import { executarEmFatias, passosDoNesting } from './domain/nesting';
+import { executarEmFatias, executarNestingPorPontosDeCanto, passosDoNesting, type MetodoDoNesting } from './domain/nesting';
 import type { Molde } from './domain/molde';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 
@@ -10,6 +10,8 @@ export interface MensagemIniciar {
   readonly limiteDeTempoMs?: number;
   readonly aproveitamentoDesejadoPercentual?: number;
   readonly tecidoDeSentidoUnico?: boolean;
+  /** Ausente: a busca em grade (o de sempre). */
+  readonly metodo?: MetodoDoNesting;
 }
 
 export interface MensagemCancelar {
@@ -25,6 +27,21 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
 
   if (mensagem.tipo === 'cancelar') {
     cancelado = true;
+    return;
+  }
+
+  if (mensagem.tipo === 'iniciar' && mensagem.metodo === 'pontos-de-canto') {
+    // De uma vez só (é rápido): o cancelar deste método é a janela fechar o Worker.
+    try {
+      const resultado = executarNestingPorPontosDeCanto(mensagem.pecas, mensagem.enfesto, {
+        ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
+        ...(mensagem.tecidoDeSentidoUnico ? { tecidoDeSentidoUnico: true } : {}),
+        aoProgredir: (colocadas, total) => self.postMessage({ tipo: 'progresso', colocadas, total }),
+      });
+      self.postMessage({ tipo: 'concluido', resultado });
+    } catch (erro) {
+      self.postMessage({ tipo: 'erro', mensagem: erro instanceof Error ? erro.message : String(erro) });
+    }
     return;
   }
 
