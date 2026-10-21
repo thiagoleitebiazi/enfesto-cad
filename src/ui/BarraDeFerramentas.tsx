@@ -525,7 +525,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   rotulo="Selecionar"
                   icone="selecionar"
                   pressionado={props.modo === 'selecionar'}
-                  dica="Selecionar ou mover peças: clique numa peça, ou arraste-a (Esc volta para cá de qualquer ferramenta)"
+                  dica="Selecionar ou mover peças: clique numa peça, ou arraste-a; arraste no vazio para selecionar as peças dentro do retângulo; Ctrl+clique põe ou tira uma peça da seleção; arrastar uma das selecionadas leva todas (Esc volta para cá de qualquer ferramenta)"
                   onClick={props.onEntrarModoSelecionar}
                 />
                 <div className="coluna-de-ferramenta">

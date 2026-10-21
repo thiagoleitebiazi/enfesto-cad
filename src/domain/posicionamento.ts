@@ -1,5 +1,5 @@
 import { linhaDeCorteDaPeca, transladarMolde, type Molde } from './molde';
-import type { ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from './enfesto';
 import {
   contornosSeSobrepoem,
   distanciaEntreContornos,
@@ -170,12 +170,7 @@ export function sugerirPosicaoSemSobreposicao(
   passoMm = 10,
   maxTentativas = 20000,
 ): Ponto2D | null {
-  const limites: LimitesDeArea = {
-    minX: enfesto.margemLateralMm,
-    maxX: enfesto.larguraUtilMm - enfesto.margemLateralMm,
-    minY: enfesto.margemDeExtremidadeMm,
-    maxY: enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm,
-  };
+  const limites: LimitesDeArea = areaUtilDaMesa(enfesto);
   // Pela linha de corte: é ela que ocupa o tecido (com a costura, fica fora do contorno).
   return encontrarPrimeiraPosicaoValida(
     linhaDeCorteDaPeca(pecaAlvo),

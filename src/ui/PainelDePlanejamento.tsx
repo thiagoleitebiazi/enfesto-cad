@@ -203,7 +203,7 @@ const LIMITACOES = [
   'Emendas só nas linhas do risco que não cortam peça (riscos gerados ou da mesa), e só se a configuração permitir.',
   'Listras e xadrez: o casamento automático alinha o ponto "casamento" de cada peça à repetição; ele precisa da repetição e da fase no cadastro da malha e das camadas estendidas com o desenho alinhado (mesa de agulhas). Casamento por mais de um ponto da peça não é feito.',
   'Encolhimento: compensado só no risco, por decisão; a peça não muda no projeto.',
-  'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos e com dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm); sem camada de fio no arquivo, a direção do fio é escolhida na importação.',
+  'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos e com dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm); a importação é direta, com o nome do arquivo e o fio na horizontal.',
 ];
 
 /** Uma medida em cm, como é digitada no cadastro da malha. */

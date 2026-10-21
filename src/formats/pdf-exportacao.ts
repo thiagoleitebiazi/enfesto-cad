@@ -10,7 +10,7 @@ import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import { registroDaPeca } from './pdf-registro';
-import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { margensDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 
 // A build para navegador do pdfkit (usada no processo de renderer do
@@ -328,7 +328,7 @@ export interface OpcoesDeExportacaoDeEncaixe extends OpcoesDePagina {
 export function comprimentoDoEncaixeAImprimirMm(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): number {
   const comContorno = pecas.filter((p) => p.contorno.length > 0);
   if (comContorno.length === 0) return enfesto.comprimentoMm;
-  return Math.max(...comContorno.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY)) + enfesto.margemDeExtremidadeMm;
+  return Math.max(...comContorno.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)).maxY)) + margensDaMesa(enfesto).extremidadeMm;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
+import { pecasDentroDoRetangulo } from '../domain/selecao';
 import {
   bissetrizDaCotaDeAngulo,
   geometriaDaCotaLinear,
@@ -24,7 +25,7 @@ import {
   somar,
   type Ponto2D,
 } from '../core/geometria';
-import type { ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import {
   aplicarZoom,
   enquadrarRetanguloDeTela,
@@ -307,13 +308,18 @@ const NO_MAC = ehMac();
 
 /**
  * Retângulo sendo arrastado no canvas, em mm do mundo: seleção de vértices
- * (Mover ponto), definição da cerca ou zoom por janela.
+ * (Mover ponto), seleção de peças (Selecionar), definição da cerca ou zoom por janela.
  */
 interface RetanguloEmDesenho {
-  readonly tipo: 'selecao-de-vertices' | 'cerca' | 'zoom-janela';
+  readonly tipo: 'selecao-de-vertices' | 'selecao-de-pecas' | 'cerca' | 'zoom-janela';
   readonly inicio: Ponto2D;
   readonly atual: Ponto2D;
+  /** Na seleção de peças com o Ctrl: as do retângulo entram junto com as que já estavam selecionadas. */
+  readonly somar?: boolean;
 }
+
+/** Menor que isto (px, nos dois sentidos), o retângulo da seleção de peças é um clique, e não seleciona nada. */
+const TAMANHO_MINIMO_DA_SELECAO_PX = 4;
 
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
@@ -331,6 +337,12 @@ interface AreaDeDesenhoProps {
   /** `mundo` é o ponto do clique, já preso pelo ímã quando vale; `semCaptura`, o ponto exato sob o mouse. */
   readonly onCliqueNoCanvas: (mundo: Ponto2D, semCaptura: Ponto2D) => void;
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
+  /** Arrastar uma das peças selecionadas leva todas: um passo só para desfazer. */
+  readonly onMoverPecas?: (ids: readonly string[], deslocamento: Ponto2D) => void;
+  /** Ctrl+clique (⌘ no Mac) numa peça: entra na seleção, ou sai dela se já estava. */
+  readonly onAlternarNaSelecao?: (id: string) => void;
+  /** O retângulo arrastado no vazio: as peças inteiras dentro dele passam a ser a seleção (com o Ctrl, somam-se a ela). */
+  readonly onSelecionarVarias?: (ids: readonly string[], somar: boolean) => void;
   readonly onAbrirPropriedades?: (id: string) => void;
   readonly onMoverVariosPontos?: (indices: readonly number[], delta: Ponto2D) => void;
   readonly onInserirPontoNoMolde?: (indiceAresta: number, ponto: Ponto2D) => void;
@@ -426,6 +438,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onCursorMove,
     onCliqueNoCanvas,
     onMoverPeca,
+    onMoverPecas,
+    onAlternarNaSelecao,
+    onSelecionarVarias,
     onAbrirPropriedades,
     onMoverVariosPontos,
     onInserirPontoNoMolde,
@@ -489,8 +504,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const [panAtivo, setPanAtivo] = useState(false);
   const ultimaRolagemRef = useRef(-Infinity);
   const espacoPressionadoRef = useRef(false);
-  const arrastoRef = useRef<{ id: string; ultimoMundo: Ponto2D } | null>(null);
-  const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ id: string; delta: Ponto2D } | null>(null);
+  const arrastoRef = useRef<{ ids: readonly string[]; ultimoMundo: Ponto2D } | null>(null);
+  const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ ids: ReadonlySet<string>; delta: Ponto2D } | null>(null);
   // Seleção de vértices nos modos "Mover ponto" e "Modificar": clique simples
   // seleciona só um e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
   // clique+arrasto num espaço vazio desenha um retângulo de seleção que
@@ -807,11 +822,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         cantoExternoOposto.y - cantoExterno.y,
       );
 
-      const cantoUtil = mundoParaTela(ponto(enfesto.margemLateralMm, enfesto.margemDeExtremidadeMm), transform);
-      const cantoUtilOposto = mundoParaTela(
-        ponto(enfesto.larguraUtilMm - enfesto.margemLateralMm, enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm),
-        transform,
-      );
+      const util = areaUtilDaMesa(enfesto);
+      const cantoUtil = mundoParaTela(ponto(util.minX, util.minY), transform);
+      const cantoUtilOposto = mundoParaTela(ponto(util.maxX, util.maxY), transform);
       ctx.fillStyle = COR_MESA;
       ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
 
@@ -869,7 +882,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       // deslocada (prévia em tempo real) sem tocar no estado real ainda —
       // o deslocamento só é confirmado (e entra no histórico) ao soltar o mouse.
       let peca =
-        deltaDeArrasto && deltaDeArrasto.id === pecaOriginal.id
+        deltaDeArrasto && deltaDeArrasto.ids.has(pecaOriginal.id)
           ? transladarMolde(pecaOriginal, deltaDeArrasto.delta, pecaOriginal.id)
           : pecaOriginal;
       // Mesma lógica de prévia ao vivo, mas para um grupo de vértices sendo
@@ -1739,11 +1752,24 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
     if (modo === 'selecionar') {
       const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
-      onSelecionar(encontrada ? encontrada.id : null);
-      if (encontrada) {
-        arrastoRef.current = { id: encontrada.id, ultimoMundo: mundo };
-        setDeltaDeArrasto({ id: encontrada.id, delta: { x: 0, y: 0 } });
+      // Ctrl+clique (⌘ no Mac): a peça entra na seleção ou sai dela; no vazio, o retângulo soma à seleção.
+      if (e.ctrlKey || e.metaKey) {
+        if (encontrada) onAlternarNaSelecao?.(encontrada.id);
+        else setRetanguloEmDesenho({ tipo: 'selecao-de-pecas', inicio: semCaptura, atual: semCaptura, somar: true });
+        return;
       }
+      if (!encontrada) {
+        // No vazio: tira a seleção e começa o retângulo de seleção de peças.
+        onSelecionar(null);
+        setRetanguloEmDesenho({ tipo: 'selecao-de-pecas', inicio: semCaptura, atual: semCaptura });
+        return;
+      }
+      // Agarrar uma das peças selecionadas em grupo leva o grupo; outra peça vira a seleção, sozinha.
+      const doGrupo = idsSelecionadosEmLote.size > 1 && idsSelecionadosEmLote.has(encontrada.id);
+      if (!doGrupo) onSelecionar(encontrada.id);
+      const ids = doGrupo ? [...idsSelecionadosEmLote] : [encontrada.id];
+      arrastoRef.current = { ids, ultimoMundo: mundo };
+      setDeltaDeArrasto({ ids: new Set(ids), delta: { x: 0, y: 0 } });
       return;
     }
     onCliqueNoCanvas(mundo, semCaptura);
@@ -1805,17 +1831,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (arrastoRef.current) {
       const deltaPasso = { x: mundo.x - arrastoRef.current.ultimoMundo.x, y: mundo.y - arrastoRef.current.ultimoMundo.y };
       arrastoRef.current.ultimoMundo = mundo;
-      setDeltaDeArrasto((atual) =>
-        atual ? { id: atual.id, delta: somar(atual.delta, deltaPasso) } : atual,
-      );
+      setDeltaDeArrasto((atual) => (atual ? { ids: atual.ids, delta: somar(atual.delta, deltaPasso) } : atual));
     }
   }
 
   function finalizarArrasto(): void {
     if (arrastoRef.current && deltaDeArrasto) {
-      const { id, delta } = deltaDeArrasto;
+      const { delta } = deltaDeArrasto;
+      const ids = arrastoRef.current.ids;
       if (Math.abs(delta.x) > 1e-6 || Math.abs(delta.y) > 1e-6) {
-        onMoverPeca(id, delta);
+        if (ids.length > 1 && onMoverPecas) onMoverPecas(ids, delta);
+        else if (ids[0]) onMoverPeca(ids[0], delta);
       }
     }
     arrastoRef.current = null;
@@ -1865,6 +1891,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     const fim = telaFinal ? pontoNoMundo(telaFinal).mundo : retangulo.atual;
     if (retangulo.tipo === 'selecao-de-vertices') {
       selecionarVerticesNoRetangulo(retangulo.inicio, fim);
+      return;
+    }
+    if (retangulo.tipo === 'selecao-de-pecas') {
+      // Sem o ímã: o retângulo vai até onde o mouse foi solto. Pequeno demais, foi um clique no vazio.
+      const ate = telaFinal ? telaParaMundo(telaFinal, transform) : retangulo.atual;
+      const a = mundoParaTela(retangulo.inicio, transform);
+      const b = mundoParaTela(ate, transform);
+      if (Math.abs(b.x - a.x) < TAMANHO_MINIMO_DA_SELECAO_PX && Math.abs(b.y - a.y) < TAMANHO_MINIMO_DA_SELECAO_PX) return;
+      onSelecionarVarias?.(pecasDentroDoRetangulo(pecas, retangulo.inicio, ate), retangulo.somar === true);
       return;
     }
     if (!telaFinal) return;

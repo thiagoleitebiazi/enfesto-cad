@@ -268,6 +268,6 @@ compensado, defeitos não evitados, emendas, enfesto com lotes misturados.
   presumida em mm com aviso) e PDF vetorial. Testados com arquivos sintéticos
   escritos pela especificação (`src/formats/formatosSuportados.test.ts`) e com
   dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm, um
-  com curvas e o outro com polilinhas, tudo numa camada): sem nomes de camada,
-  cada contorno aparece desenhado na janela de importação, e a direção do fio
-  é escolhida por quem importa (o programa não a presume).
+  com curvas e o outro com polilinhas, tudo numa camada). A importação é
+  direta: as peças entram com o nome do arquivo e o fio na horizontal (a que
+  vem com a linha de fio em outra direção é girada até ela ficar deitada).

@@ -80,7 +80,7 @@ describe('os dois motores do encaixe na mesa, nos mesmos casos', () => {
     }, 120_000);
   }
 
-  it('números medidos (os do ADR 0089)', () => {
+  it('números medidos (os do ADR 0089, com a margem de segurança de 4 mm do ADR 0091: o mesmo encaixe, 4 mm adiante)', () => {
     const linhas = CASOS.map((caso) => {
       const grade = executarNestingAutomatico(caso.pecas, caso.mesa, { maxTentativasPorPeca: 10_000_000 });
       const cantos = executarNestingPorPontosDeCanto(caso.pecas, caso.mesa);
@@ -88,10 +88,10 @@ describe('os dois motores do encaixe na mesa, nos mesmos casos', () => {
     });
     expect(linhas).toEqual([
       // [caso, comprimento pela grade (mm), de fora, comprimento pelos pontos de canto (mm), de fora]
-      ['12 retângulos de 300 × 200 numa mesa de 1 m', 815, 0, 815, 0],
+      ['12 retângulos de 300 × 200 numa mesa de 1 m', 819, 0, 819, 0],
       ['L e triângulos com costura, mesa com margens', 1248, 0, 1319, 0],
-      ['camiseta (curvas), 2 roupas, manga em par', 1744, 0, 1769, 0],
-      ['mais peças que a mesa: as de fora são ditas', 905, 5, 905, 5],
+      ['camiseta (curvas), 2 roupas, manga em par', 1748, 0, 1773, 0],
+      ['mais peças que a mesa: as de fora são ditas', 909, 5, 909, 5],
     ]);
   }, 120_000);
 });

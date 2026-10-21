@@ -405,7 +405,8 @@ describe('executarNestingAutomatico — tecido de sentido único (pelo, estampa 
       },
       id,
     );
-  const mesa = enfestoBase({ larguraUtilMm: 110, comprimentoMm: 110, distanciaMinimaEntrePecasMm: 0 });
+  // 110 mm de espaço, mais a margem de segurança de 4 mm de cada lado.
+  const mesa = enfestoBase({ larguraUtilMm: 118, comprimentoMm: 118, distanciaMinimaEntrePecasMm: 0 });
   const pecas = [triangulo('fixa', { permite180: false, permite90e270: false }), triangulo('livre', { permite180: true, permite90e270: true })];
 
   it('sem sentido único, a peça que permite entra virada 180°', () => {
@@ -471,14 +472,15 @@ describe('executarNestingAutomatico — a distância entre os moldes é a pedida
     const [a, b] = resultado.pecasColocadas.map((p) => p.molde);
     expect(vao(a!, b!)).toBeGreaterThanOrEqual(3);
     expect(vao(a!, b!)).toBeLessThan(3.02);
-    // A primeira fica com a linha de corte (e não o contorno) no começo da mesa.
-    expect(retanguloEnvolvente(linhaDeCorteDaPeca(a!)).minX).toBeCloseTo(0, 6);
-    expect(retanguloEnvolvente(a!.contorno).minX).toBeCloseTo(10, 6);
+    // A primeira fica com a linha de corte (e não o contorno) no começo da mesa, depois da margem de segurança.
+    expect(retanguloEnvolvente(linhaDeCorteDaPeca(a!)).minX).toBeCloseTo(4, 6);
+    expect(retanguloEnvolvente(a!.contorno).minX).toBeCloseTo(14, 6);
     const contornos = Math.max(retanguloEnvolvente(b!.contorno).minX - retanguloEnvolvente(a!.contorno).maxX, retanguloEnvolvente(b!.contorno).minY - retanguloEnvolvente(a!.contorno).maxY);
     expect(contornos).toBeGreaterThanOrEqual(23);
     expect(contornos).toBeLessThan(23.02);
-    // O aproveitamento conta o tecido da linha de corte: 2 × 220 × 220 na largura de 1000 e comprimento de 220.
-    expect(resultado.aproveitamentoPercentual).toBeCloseTo(((2 * 220 * 220) / (1000 * 220)) * 100, 6);
+    // O aproveitamento conta o tecido da linha de corte: 2 × 220 × 220 na largura de 1000 e no comprimento usado da
+    // mesa, 224 (os 220 da peça depois dos 4 mm da margem de segurança).
+    expect(resultado.aproveitamentoPercentual).toBeCloseTo(((2 * 220 * 220) / (1000 * 224)) * 100, 6);
   });
 });
 

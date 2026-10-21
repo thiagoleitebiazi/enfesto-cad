@@ -822,6 +822,27 @@ export function rotacionarMolde(molde: Molde, anguloGraus: number): Molde {
 }
 
 /**
+ * A peça com o fio na horizontal da tela — o y do mundo, o comprimento do tecido na mesa: girada em torno do centro
+ * pelo menor ângulo que deixa a linha de fio deitada (a seta para qualquer um dos dois lados), ou como está, se ela
+ * já está deitada. A orientação que sai é a de origem da peça (ângulo de rotação 0). É para a importação, que só
+ * aceita o fio na horizontal (ADR 0091): não confere a `restricaoDeRotacao`, porque a peça ainda não tem posição.
+ */
+export function comOFioNaHorizontal(molde: Molde): { readonly molde: Molde; readonly giroGraus: number } {
+  const dx = molde.linhaDeFio.fim.x - molde.linhaDeFio.inicio.x;
+  const dy = molde.linhaDeFio.fim.y - molde.linhaDeFio.inicio.y;
+  if (Math.hypot(dx, dy) < 1e-9) return { molde, giroGraus: 0 };
+  const angulo = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const noIntervalo = (graus: number): number => {
+    const g = ((graus % 360) + 360) % 360;
+    return g > 180 ? g - 360 : g;
+  };
+  // Deitada na tela é ao longo do y do mundo: a 90° ou a −90° do eixo x.
+  const giro = [noIntervalo(90 - angulo), noIntervalo(-90 - angulo)].reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a));
+  if (Math.abs(giro) < 1e-9) return { molde, giroGraus: 0 };
+  return { molde: { ...rotacionarMolde(molde, giro), anguloDeRotacaoGraus: 0 }, giroGraus: giro };
+}
+
+/**
  * Espelha um molde inteiro horizontalmente (imagem de espelho) em torno do
  * centro do seu retângulo envolvente. Assim como `rotacionarMolde`, é pura
  * geometria — NÃO verifica `restricaoDeRotacao.permiteEspelhamento`; quem

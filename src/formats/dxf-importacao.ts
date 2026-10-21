@@ -688,7 +688,7 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
     );
     if (contornos.length > 0) {
       avisos.push(
-        `Nenhuma camada de contorno reconhecida (ex.: "CONTORNO"/"OUTLINE"); ${contornos.length} forma(s) fechada(s) de fora foram tratadas como contornos candidatos. Confirme cada uma antes de importar.`,
+        `Nenhuma camada de contorno reconhecida (ex.: "CONTORNO"/"OUTLINE"): as ${contornos.length} forma(s) fechada(s) de fora entram como peças — tire as que não forem.`,
       );
     }
   }
@@ -749,6 +749,7 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
     avisos.push(`${ignoradas.length} linha(s) ou forma(s) fora das peças (textos e anotações do desenho, por exemplo) foram ignoradas.`);
   }
 
+  const semFio: number[] = [];
   const pecas: PecaImportadaDxf[] = contornos.map((contornoEntidade, indice) => {
     const contorno = contornoEntidade.pontos;
     const furosDaPeca = furosCandidatos
@@ -763,11 +764,7 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
       return pontoDentroDoContorno(meio, contorno);
     });
 
-    if (!fioDaPeca) {
-      avisos.push(
-        `Peça ${indice + 1} (camada "${contornoEntidade.camada}") não tem linha de fio reconhecível no arquivo — defina manualmente antes de finalizar a importação (regra crítica da seção 5, nunca presumida automaticamente).`,
-      );
-    }
+    if (!fioDaPeca) semFio.push(indice + 1);
 
     return {
       nome: contornos.length === 1 ? nomeArquivoSemExtensao : `${nomeArquivoSemExtensao}-${indice + 1}`,
@@ -779,6 +776,13 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
     };
   });
 
+  if (semFio.length > 0) {
+    avisos.push(
+      semFio.length === pecas.length
+        ? `Nenhuma peça tem linha de fio no arquivo (camada de fio): todas entram com o fio na horizontal.`
+        : `${semFio.length} peça(s) sem linha de fio no arquivo (${semFio.join(', ')}): entram com o fio na horizontal.`,
+    );
+  }
   return { pecas, unidadeDetectada: unidade.rotulo, unidadeAssumida: unidade.assumida, avisos };
 }
 
@@ -802,13 +806,4 @@ export function alturaDoDesenho(resultado: ResultadoImportacaoDxf): number {
  */
 export function dxfParaMundo(p: Ponto2D, alturaDoDesenhoDxf: number): Ponto2D {
   return ponto(alturaDoDesenhoDxf - p.y, p.x);
-}
-
-/**
- * Direção, na tela do app, de uma linha de fio lida do DXF (coordenadas do
- * arquivo). Como em dxfParaMundo, o x do DXF vai para a horizontal da tela e
- * o y para a vertical; uma linha inclinada fica com o eixo em que anda mais.
- */
-export function direcaoNaTelaDaLinhaDeFio(fio: LinhaDeFio): 'vertical' | 'horizontal' {
-  return Math.abs(fio.fim.x - fio.inicio.x) >= Math.abs(fio.fim.y - fio.inicio.y) ? 'horizontal' : 'vertical';
 }

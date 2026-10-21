@@ -312,6 +312,11 @@ describe('gerarPdfDeEncaixe — só até onde há peças', () => {
   const opcoes = { formato: 'A4' as const, orientacao: 'retrato' as const, margemMm: 10 };
   const mesa = enfestoBase({ larguraUtilMm: 1500, comprimentoMm: 3000, margemDeExtremidadeMm: 20 } as Partial<ConfiguracaoDeEnfesto>);
 
+  it('com a margem de extremidade configurada abaixo de 4 mm, o comprimento impresso leva a de segurança', () => {
+    const semMargem = enfestoBase({ larguraUtilMm: 1500, comprimentoMm: 3000, margemDeExtremidadeMm: 0 } as Partial<ConfiguracaoDeEnfesto>);
+    expect(comprimentoDoEncaixeAImprimirMm([pecaRetangular('P1', 50, 50)], semMargem)).toBe(54);
+  });
+
   it('o comprimento impresso vai até a ponta da peça mais distante, mais a margem de extremidade', () => {
     expect(comprimentoDoEncaixeAImprimirMm([pecaRetangular('P1', 50, 50)], mesa)).toBe(70);
     expect(comprimentoDoEncaixeAImprimirMm([], mesa)).toBe(3000);

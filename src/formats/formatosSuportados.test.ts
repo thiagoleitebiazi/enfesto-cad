@@ -224,9 +224,9 @@ describe('DXF — como chegam os arquivos reais de outro programa (tudo numa cam
     expect(r.pecas.map((p) => p.piques.length)).toEqual([0, 1]);
   });
 
-  it('sem a linha de fio numa camada própria, a direção não é presumida: o aviso pede para defini-la', () => {
+  it('sem a linha de fio numa camada própria, o importador não inventa uma: diz que a peça entra com o fio na horizontal', () => {
     const r = importarDxf(arquivo, 'real');
     expect(r.pecas[0]!.linhaDeFio).toBeNull();
-    expect(r.avisos.some((a) => a.includes('não tem linha de fio reconhecível'))).toBe(true);
+    expect(r.avisos).toContain('Nenhuma peça tem linha de fio no arquivo (camada de fio): todas entram com o fio na horizontal.');
   });
 });

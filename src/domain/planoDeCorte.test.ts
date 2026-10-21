@@ -491,13 +491,13 @@ describe('enfestoDoPlano — o enfesto do projeto ajustado ao plano', () => {
     expect(enfestoDoPlano(anterior, 'par', r, 3)).toEqual({ tipo: 'par', larguraUtilMm: 1600, comprimentoMm: 3250, quantidadeDeCamadas: 44, margemLateralMm: 5, margemDeExtremidadeMm: 7, distanciaMinimaEntrePecasMm: 4 });
   });
 
-  it('sem enfesto antes, as margens zeradas e a distância padrão; o tubular leva a largura do tubo', () => {
-    expect(enfestoDoPlano(null, 'tubular', r, 3)).toEqual({ tipo: 'tubular', larguraUtilMm: 1600, comprimentoMm: 3250, quantidadeDeCamadas: 44, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 3, larguraDoTuboMm: 1600 });
+  it('sem enfesto antes, as margens de segurança (4 mm) e a distância padrão; o tubular leva a largura do tubo', () => {
+    expect(enfestoDoPlano(null, 'tubular', r, 3)).toEqual({ tipo: 'tubular', larguraUtilMm: 1600, comprimentoMm: 3250, quantidadeDeCamadas: 44, margemLateralMm: 4, margemDeExtremidadeMm: 4, distanciaMinimaEntrePecasMm: 3, larguraDoTuboMm: 1600 });
     expect(enfestoDoPlano(null, 'ramado', r, 3)).toMatchObject({ tipo: 'ramado', alinhamentoDasBordas: 'alinhado', sentidoDeAlimentacao: 'unico' });
   });
 
-  it('a mesa não fica mais curta que as peças que estão nela', () => {
-    expect(enfestoDoPlano(null, 'impar', r, 3, 5000).comprimentoMm).toBe(5000);
+  it('a mesa não fica mais curta que as peças que estão nela, com a margem de segurança depois delas', () => {
+    expect(enfestoDoPlano(null, 'impar', r, 3, 5000).comprimentoMm).toBe(5004);
     expect(enfestoDoPlano(null, 'impar', r, 3, 1000).comprimentoMm).toBe(3250);
   });
 });

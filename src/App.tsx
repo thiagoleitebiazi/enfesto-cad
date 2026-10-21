@@ -276,7 +276,7 @@ import {
   type EstadoDeMedicao,
   type MedicaoResolvida,
 } from './ui/medicao';
-import { inverterSelecao } from './domain/selecao';
+import { alternarNaSelecao, inverterSelecao, selecionarPeloRetangulo, type SelecaoDePecas } from './domain/selecao';
 import {
   aplicarZoom,
   enquadrarRetanguloDoMundo,
@@ -323,22 +323,11 @@ import {
   type PenceDaPeca,
   type PontaDaAresta,
 } from './domain/molde';
-import {
-  alturaDoDesenho,
-  direcaoNaTelaDaLinhaDeFio,
-  dxfParaMundo,
-  importarDxf,
-  type ResultadoImportacaoDxf,
-} from './formats/dxf-importacao';
+import { importarDxf } from './formats/dxf-importacao';
 import { importarPdf, moldeDaPecaImportada } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
-import {
-  contornoEmMundo,
-  extrairContornosDoPdf,
-  linhaDeFioSobreContorno,
-  type ResultadoContornosPdf,
-} from './formats/pdf-pecas-vetoriais';
-import { DialogoDeImportacaoDeContornos, type ItemConfirmadoDeContorno } from './ui/DialogoDeImportacaoDeContornos';
+import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pecas-vetoriais';
+import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
@@ -353,7 +342,7 @@ import {
 } from './core/geometria';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto } from './domain/enfesto';
+import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
 import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -405,8 +394,8 @@ function enfestoDeDemonstracao(): ConfiguracaoDeEnfesto {
     larguraUtilMm: 1500,
     comprimentoMm: 3000,
     quantidadeDeCamadas: 1,
-    margemLateralMm: 0,
-    margemDeExtremidadeMm: 0,
+    margemLateralMm: MARGEM_DE_SEGURANCA_DA_MESA_MM,
+    margemDeExtremidadeMm: MARGEM_DE_SEGURANCA_DA_MESA_MM,
     distanciaMinimaEntrePecasMm: DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   } as ConfiguracaoDeEnfesto);
 }
@@ -700,8 +689,6 @@ export default function App(): React.JSX.Element {
   // O registro da figura (círculo, espiral) cujo contorno está pendente: entra na peça quando ela é criada, se o contorno ainda for o dela.
   const [figuraPendente, setFiguraPendente] = useState<FiguraDaPeca | null>(null);
   const [mensagensImportacao, setMensagensImportacao] = useState<readonly string[] | null>(null);
-  const [importacaoPdfPendente, setImportacaoPdfPendente] = useState<ResultadoContornosPdf | null>(null);
-  const [importacaoDxfPendente, setImportacaoDxfPendente] = useState<ResultadoImportacaoDxf | null>(null);
 
   const [tecido, setTecido] = useState<Tecido | null>(tecidoDeDemonstracao);
   const [enfesto, setEnfesto] = useState<ConfiguracaoDeEnfesto | null>(enfestoDeDemonstracao);
@@ -949,6 +936,24 @@ export default function App(): React.JSX.Element {
     });
   }, []);
 
+  /** Aplica uma seleção (a peça única ou o lote). */
+  const aplicarSelecao = useCallback((selecao: SelecaoDePecas) => {
+    setSelecionadoId(selecao.selecionadoId);
+    setIdsSelecionadosEmLote(selecao.idsEmLote);
+  }, []);
+
+  /** Ctrl+clique (⌘ no Mac) numa peça do desenho: entra na seleção, ou sai dela. */
+  const alternarPecaNaSelecao = useCallback(
+    (id: string) => aplicarSelecao(alternarNaSelecao({ selecionadoId, idsEmLote: idsSelecionadosEmLote }, id)),
+    [selecionadoId, idsSelecionadosEmLote, aplicarSelecao],
+  );
+
+  /** O retângulo arrastado no vazio do desenho: as peças inteiras dentro dele (com o Ctrl, somadas às que já estavam). */
+  const selecionarPecasPeloRetangulo = useCallback(
+    (ids: readonly string[], somar: boolean) => aplicarSelecao(selecionarPeloRetangulo({ selecionadoId, idsEmLote: idsSelecionadosEmLote }, ids, somar)),
+    [selecionadoId, idsSelecionadosEmLote, aplicarSelecao],
+  );
+
   const excluirSelecionado = useCallback(() => {
     if (idsSelecionadosEmLote.size > 0) {
       aplicarMudanca(pecas.filter((p) => !idsSelecionadosEmLote.has(p.id)));
@@ -1024,8 +1029,8 @@ export default function App(): React.JSX.Element {
       larguraUtilMm: dados.larguraUtilMm,
       comprimentoMm: dados.comprimentoMm,
       quantidadeDeCamadas: 1,
-      margemLateralMm: 0,
-      margemDeExtremidadeMm: 0,
+      margemLateralMm: MARGEM_DE_SEGURANCA_DA_MESA_MM,
+      margemDeExtremidadeMm: MARGEM_DE_SEGURANCA_DA_MESA_MM,
       distanciaMinimaEntrePecasMm: DISTANCIA_PADRAO_ENTRE_PECAS_MM,
     } as ConfiguracaoDeEnfesto);
     const tecidoInicial = criarTecido(
@@ -2328,6 +2333,15 @@ export default function App(): React.JSX.Element {
     [pecas, aplicarMudanca],
   );
 
+  /** O grupo selecionado arrastado junto: um passo só no Desfazer. */
+  const moverPecas = useCallback(
+    (ids: readonly string[], deslocamento: Ponto2D) => {
+      const doGrupo = new Set(ids);
+      aplicarMudanca(pecas.map((p) => (doGrupo.has(p.id) ? transladarMolde(p, deslocamento, p.id) : p)));
+    },
+    [pecas, aplicarMudanca],
+  );
+
   const sugerirPosicaoParaSelecionada = useCallback(() => {
     const peca = pecas.find((p) => p.id === selecionadoId);
     if (!peca || !enfesto) return;
@@ -3237,6 +3251,19 @@ export default function App(): React.JSX.Element {
     ],
   );
 
+  /** As peças que chegam de um arquivo: no lugar delas, com a origem anotada, numa versão do histórico. */
+  const acrescentarPecasImportadas = useCallback(
+    (chegando: readonly Molde[], origem: Parameters<typeof origemDaPecaImportada>[1], descricao: string) => {
+      const comOrigem = chegando.map((m) => ({ ...m, origemDaImportacao: origemDaPecaImportada(m, origem) }));
+      const depois = [...pecas, ...comOrigem];
+      aplicarMudanca(depois);
+      // A importação fica como uma versão no histórico: a forma das peças como chegaram do arquivo.
+      registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, descricao);
+    },
+    [pecas, tecido, enfesto, aplicarMudanca, registrarEventoEPersistir],
+  );
+
+  // A importação é direta (ADR 0091): o nome vem do arquivo e o fio fica na horizontal; nada é perguntado.
   const importarDxfHandler = useCallback(() => {
     const api = window.enfestoCad;
     if (!api) {
@@ -3248,18 +3275,41 @@ export default function App(): React.JSX.Element {
       arquivoImportadoRef.current = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
       const nomeBase = arquivoImportadoRef.current.replace(/\.dxf$/i, '');
       const resultado = importarDxf(arquivo.conteudo, nomeBase);
-      const mensagens = [...resultado.avisos];
-      if (resultado.unidadeAssumida) {
-        mensagens.push(`Unidade do arquivo não declarada: ${resultado.unidadeDetectada}.`);
-      }
+      const avisos = [...resultado.avisos];
+      if (resultado.unidadeAssumida) avisos.push(`Unidade do arquivo não declarada: ${resultado.unidadeDetectada}.`);
       if (resultado.pecas.length === 0) {
-        setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
+        setMensagensImportacao(avisos.length > 0 ? avisos : null);
         return;
       }
-      setImportacaoDxfPendente(resultado);
-      setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
+      try {
+        const { moldes, giradas } = moldesDoDxf(resultado, proximoId);
+        // A origem do DXF é arbitrária (pode estar no meio do desenho): o conjunto inteiro é deslocado para o canto
+        // útil da mesa, com o mesmo deslocamento para todas as peças, sem mudar a posição relativa entre elas.
+        const todos = moldes.flatMap((m) => m.contorno);
+        const margens = margensDaMesa(enfesto ?? { margemLateralMm: 0, margemDeExtremidadeMm: 0 });
+        const delta = ponto(margens.lateralMm - Math.min(...todos.map((p) => p.x)), margens.extremidadeMm - Math.min(...todos.map((p) => p.y)));
+        const posicionados = moldes.map((m) => transladarMolde(m, delta, m.id));
+        const origem = {
+          formato: 'dxf' as const,
+          arquivo: arquivoImportadoRef.current,
+          importadaEmIso: new Date().toISOString(),
+          unidade: resultado.unidadeDetectada,
+          unidadeAssumida: resultado.unidadeAssumida,
+        };
+        acrescentarPecasImportadas(posicionados, origem, `Importação do DXF “${origem.arquivo}”: ${posicionados.length} peça(s), em ${origem.unidade}`);
+        setMensagensImportacao([
+          `${posicionados.length} peça(s) importada(s) do DXF, em ${resultado.unidadeDetectada}, com o nome do arquivo (${posicionados.map((m) => m.nome).join(', ')}) e o fio na horizontal. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
+          ...(giradas.length > 0
+            ? [`Girada(s) para o fio ficar na horizontal (no arquivo, a linha de fio estava em outra direção): ${giradas.map((g) => `${g.nome} (${Math.round(g.giroGraus * 10) / 10}°)`).join(', ')}.`]
+            : []),
+          ...avisos,
+        ]);
+      } catch (erro) {
+        const motivo = erro instanceof Error ? erro.message : String(erro);
+        setMensagensImportacao([`Não foi possível importar: ${motivo}`, ...avisos]);
+      }
     });
-  }, []);
+  }, [enfesto, acrescentarPecasImportadas]);
 
   const importarPdfHandler = useCallback(() => {
     const api = window.enfestoCad;
@@ -3270,48 +3320,41 @@ export default function App(): React.JSX.Element {
     void api.abrirArquivoPdf().then(async (arquivo) => {
       if (!arquivo) return;
       arquivoImportadoRef.current = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
+      const nomeBase = arquivoImportadoRef.current.replace(/\.pdf$/i, '');
       const resultado = importarPdf(arquivo.conteudo);
-      const prontas = resultado.pecas.filter((p) => p.linhaDeFio !== null);
-      const semFio = resultado.pecas.filter((p) => p.linhaDeFio === null);
+      // A peça sem linha de fio no PDF entra com o fio na horizontal, como as do DXF.
+      const pecasDoPdf = resultado.pecas.map((p) => (p.linhaDeFio || p.molde ? p : { ...p, linhaDeFio: linhaDeFioSobreContorno(p.contorno, 'horizontal') }));
+      const mensagens = [...resultado.avisos];
 
       // A peça inteira, quando o PDF traz o registro dela; senão, a que o desenho mostra. Cada uma vai para um
       // lugar livre: as posições da página não dizem nada, e deixariam a peça em cima das que já estão no projeto.
       const agora = new Date().toISOString();
-      const novosMoldes = posicionarAsQueChegam(prontas.map((p) => moldeDaPecaImportada(p, proximoId)), pecas, enfesto).map((m) => ({
-        ...m,
-        origemDaImportacao: origemDaPecaImportada(m, {
-          formato: 'pdf',
-          arquivo: arquivoImportadoRef.current,
-          importadaEmIso: agora,
-          unidade: 'mm (tamanho real do PDF)',
-          unidadeAssumida: false,
-        }),
-      }));
-
-      if (novosMoldes.length > 0) {
-        const depois = [...pecas, ...novosMoldes];
-        aplicarMudanca(depois);
-        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do PDF “${arquivoImportadoRef.current}”: ${novosMoldes.length} peça(s)`);
-      }
-
-      const mensagens = [...resultado.avisos];
-      if (semFio.length > 0) {
-        mensagens.push(
-          `${semFio.length} peça(s) do arquivo não foram adicionadas por não terem linha de fio reconhecível: ${semFio
-            .map((p) => p.nome)
-            .join(', ')}. Desenhe-as manualmente com "Reta" (aba Construção), definindo o fio correto.`,
+      if (pecasDoPdf.length > 0) {
+        const novosMoldes = posicionarAsQueChegam(pecasDoPdf.map((p) => moldeDaPecaImportada(p, proximoId)), pecas, enfesto);
+        acrescentarPecasImportadas(
+          novosMoldes,
+          { formato: 'pdf', arquivo: arquivoImportadoRef.current, importadaEmIso: agora, unidade: 'mm (tamanho real do PDF)', unidadeAssumida: false },
+          `Importação do PDF “${arquivoImportadoRef.current}”: ${novosMoldes.length} peça(s)`,
         );
+        mensagens.unshift(`${novosMoldes.length} peça(s) importada(s) do PDF.`);
       }
       if (resultado.pecas.length === 0) {
         const contornos = await extrairContornosDoPdf(arquivo.conteudo);
+        const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
         if (contornos.candidatos.length > 0 && contornos.alturaPaginaPt !== null) {
-          setImportacaoPdfPendente(contornos);
-          const indiceGenerico = mensagens.findIndex((m) => m.startsWith("Nenhuma peça reconhecível"));
-          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1);
+          // PDF de outro programa: os contornos fechados viram peças no tamanho do papel, com o nome do arquivo.
+          const moldes = moldesDosContornosDoPdf(contornos, nomeBase, proximoId);
+          acrescentarPecasImportadas(
+            moldes,
+            { formato: 'pdf', arquivo: arquivoImportadoRef.current, importadaEmIso: agora, unidade: 'tamanho do papel (1:1, em mm)', unidadeAssumida: true },
+            `Importação do PDF “${arquivoImportadoRef.current}”: ${moldes.length} peça(s)`,
+          );
+          const texto = `${moldes.length} contorno(s) do PDF importado(s) como peça(s), no tamanho do papel (1:1), com o nome do arquivo e o fio na horizontal — se o PDF não estava em tamanho real, use Dimensionar. Ficaram de fora: ${contornos.descartados.borda} de borda da folha, ${contornos.descartados.areaPequena} de área pequena (letras e marcas), ${contornos.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${contornos.curvasAproximadas}.`;
+          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, texto);
+          else mensagens.push(texto);
         } else {
           const diagnostico = await diagnosticarVetorPdf(arquivo.conteudo);
           if (diagnostico.subcaminhos > 0) {
-            const indiceGenerico = mensagens.findIndex((m) => m.startsWith("Nenhuma peça reconhecível"));
             const textoDoDiagnostico = descreverDiagnosticoVetorial(diagnostico);
             if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, textoDoDiagnostico);
             else mensagens.push(textoDoDiagnostico);
@@ -3320,121 +3363,7 @@ export default function App(): React.JSX.Element {
       }
       setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
     });
-  }, [pecas, enfesto, tecido, aplicarMudanca, registrarEventoEPersistir]);
-
-  const confirmarImportacaoDxf = useCallback(
-    (itens: readonly ItemConfirmadoDeContorno[]) => {
-      const pendente = importacaoDxfPendente;
-      if (!pendente) return;
-      try {
-        const altura = alturaDoDesenho(pendente);
-        const paraTela = (pontos: readonly Ponto2D[]) => pontos.map((p) => dxfParaMundo(p, altura));
-        const novosMoldes = itens.map((item) => {
-          const peca = pendente.pecas[Number(item.candidatoId)]!;
-          const contorno = paraTela(peca.contorno);
-          const fioDoArquivo = peca.linhaDeFio;
-          return criarMolde(
-            {
-              nome: item.nome,
-              referencia: '',
-              tamanho: item.tamanho,
-              contorno,
-              furos: peca.furos.map(paraTela),
-              linhasInternas: peca.linhasInternas.map(paraTela),
-              // Os piques do arquivo: a posição vai como os pontos; a aresta é a mesma (o contorno é levado ponto a ponto).
-              piques: peca.piques.map((p) => ({ id: proximoId(), posicao: dxfParaMundo(p.posicao, altura), indiceAresta: p.indiceAresta })),
-              // A linha exata do arquivo só vale se o usuário manteve a
-              // direção dela no diálogo; se escolheu a outra, vale a escolha.
-              linhaDeFio:
-                fioDoArquivo && direcaoNaTelaDaLinhaDeFio(fioDoArquivo) === item.direcaoDoFio
-                  ? { inicio: dxfParaMundo(fioDoArquivo.inicio, altura), fim: dxfParaMundo(fioDoArquivo.fim, altura) }
-                  : linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
-            },
-            proximoId(),
-          );
-        });
-        // A origem do DXF é arbitrária (pode estar no meio do desenho): o
-        // conjunto inteiro é deslocado para o canto útil da mesa, com o
-        // mesmo deslocamento para todas as peças, sem mudar a posição
-        // relativa entre elas.
-        const todos = novosMoldes.flatMap((m) => m.contorno);
-        const delta = ponto(
-          (enfesto?.margemLateralMm ?? 0) - Math.min(...todos.map((p) => p.x)),
-          (enfesto?.margemDeExtremidadeMm ?? 0) - Math.min(...todos.map((p) => p.y)),
-        );
-        const agora = new Date().toISOString();
-        const origem = {
-          formato: 'dxf' as const,
-          arquivo: arquivoImportadoRef.current,
-          importadaEmIso: agora,
-          unidade: pendente.unidadeDetectada,
-          unidadeAssumida: pendente.unidadeAssumida,
-        };
-        const posicionados = novosMoldes.map((m) => {
-          const levada = transladarMolde(m, delta, m.id);
-          return { ...levada, origemDaImportacao: origemDaPecaImportada(levada, origem) };
-        });
-        const depois = [...pecas, ...posicionados];
-        aplicarMudanca(depois);
-        // A importação fica como uma versão no histórico: a forma das peças como chegaram do arquivo.
-        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do DXF “${origem.arquivo}”: ${posicionados.length} peça(s), em ${origem.unidade}`);
-        setImportacaoDxfPendente(null);
-        setMensagensImportacao([
-          `${posicionados.length} peça(s) importada(s) do DXF, em ${pendente.unidadeDetectada}. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
-        ]);
-      } catch (erro) {
-        const motivo = erro instanceof Error ? erro.message : String(erro);
-        setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
-      }
-    },
-    [importacaoDxfPendente, pecas, aplicarMudanca, enfesto, tecido, registrarEventoEPersistir],
-  );
-
-  const confirmarImportacaoPdf = useCallback(
-    (itens: readonly ItemConfirmadoDeContorno[]) => {
-      const pendente = importacaoPdfPendente;
-      if (!pendente || pendente.alturaPaginaPt === null) return;
-      try {
-        const novosMoldes = itens.map((item) => {
-          const candidato = pendente.candidatos.find((c) => c.id === item.candidatoId);
-          if (!candidato) throw new Error(`contorno ${item.candidatoId} não encontrado`);
-          const contorno = contornoEmMundo(candidato, pendente.alturaPaginaPt!, item.fatorDeEscala);
-          return criarMolde(
-            {
-              nome: item.nome,
-              referencia: '',
-              tamanho: item.tamanho,
-              contorno,
-              linhaDeFio: linhaDeFioSobreContorno(contorno, item.direcaoDoFio),
-            },
-            proximoId(),
-          );
-        });
-        const agora = new Date().toISOString();
-        const comOrigem = novosMoldes.map((m, i) => ({
-          ...m,
-          origemDaImportacao: origemDaPecaImportada(m, {
-            formato: 'pdf',
-            arquivo: arquivoImportadoRef.current,
-            importadaEmIso: agora,
-            unidade: `fator de escala ${String(itens[i]!.fatorDeEscala).replace('.', ',')} (1 = tamanho do papel)`,
-            unidadeAssumida: false,
-          }),
-        }));
-        const depois = [...pecas, ...comOrigem];
-        aplicarMudanca(depois);
-        registrarEventoEPersistir('mudanca-de-moldes', { pecas: depois, tecido, enfesto }, `Importação do PDF “${arquivoImportadoRef.current}”: ${comOrigem.length} peça(s)`);
-        setImportacaoPdfPendente(null);
-        setMensagensImportacao([
-          `${novosMoldes.length} peça(s) importada(s) do PDF. Medidas no fator de escala escolhido (1 = tamanho do papel, em mm).`,
-        ]);
-      } catch (erro) {
-        const motivo = erro instanceof Error ? erro.message : String(erro);
-        setMensagensImportacao([`Não foi possível importar: ${motivo}`]);
-      }
-    },
-    [importacaoPdfPendente, pecas, aplicarMudanca, tecido, enfesto, registrarEventoEPersistir],
-  );
+  }, [pecas, enfesto, acrescentarPecasImportadas]);
 
   // Ao abrir o programa o foco fica no corpo da página, fora da janela do
   // app, e os atalhos (F1, Ctrl+O...) só valeriam depois do primeiro clique.
@@ -5411,6 +5340,9 @@ export default function App(): React.JSX.Element {
             onCursorMove={setCursorMundo}
             onCliqueNoCanvas={onCliqueNoCanvas}
             onMoverPeca={moverPeca}
+            onMoverPecas={moverPecas}
+            onAlternarNaSelecao={alternarPecaNaSelecao}
+            onSelecionarVarias={selecionarPecasPeloRetangulo}
             onAbrirPropriedades={abrirPropriedadesDaPeca}
             onMoverVariosPontos={moverVariosPontosDaSelecionada}
             onIndicarPontosParaModificar={setPontosParaModificar}
@@ -5456,42 +5388,6 @@ export default function App(): React.JSX.Element {
           )}
         </div>
       </div>
-      {importacaoPdfPendente && (
-        <DialogoDeImportacaoDeContornos
-          titulo="Importar contornos do PDF"
-          descricao="A escala é a do papel: escolha o fator abaixo."
-          resumoDeDescartes={`Descartados: ${importacaoPdfPendente.descartados.borda} de borda da folha, ${importacaoPdfPendente.descartados.areaPequena} de área pequena (letras e marcas), ${importacaoPdfPendente.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${importacaoPdfPendente.curvasAproximadas}.`}
-          candidatos={importacaoPdfPendente.candidatos.map((c) => ({
-            id: c.id,
-            vertices: c.vertices,
-            ...(importacaoPdfPendente.alturaPaginaPt !== null ? { desenho: { contorno: contornoEmMundo(c, importacaoPdfPendente.alturaPaginaPt, 1) } } : {}),
-          }))}
-          mostrarEscala
-          onConfirmar={confirmarImportacaoPdf}
-          onCancelar={() => setImportacaoPdfPendente(null)}
-        />
-      )}
-      {importacaoDxfPendente && (
-        <DialogoDeImportacaoDeContornos
-          titulo="Importar contornos do DXF"
-          descricao={`Unidade do arquivo: ${importacaoDxfPendente.unidadeDetectada}.`}
-          resumoDeDescartes="Linhas abertas do arquivo ficam como linhas internas das peças."
-          candidatos={importacaoDxfPendente.pecas.map((p, indice) => {
-            // O desenho como ele vai ficar na tela (o mesmo caminho da importação, `dxfParaMundo`).
-            const altura = alturaDoDesenho(importacaoDxfPendente);
-            const noMundo = (pontos: readonly Ponto2D[]) => pontos.map((q) => dxfParaMundo(q, altura));
-            return {
-              id: String(indice),
-              vertices: p.contorno.length,
-              direcaoSugerida: p.linhaDeFio ? direcaoNaTelaDaLinhaDeFio(p.linhaDeFio) : undefined,
-              desenho: { contorno: noMundo(p.contorno), linhas: [...p.linhasInternas.map(noMundo), ...(p.linhaDeFio ? [noMundo([p.linhaDeFio.inicio, p.linhaDeFio.fim])] : [])] },
-            };
-          })}
-          mostrarEscala={false}
-          onConfirmar={confirmarImportacaoDxf}
-          onCancelar={() => setImportacaoDxfPendente(null)}
-        />
-      )}
       {mostrarPropriedadesDaPeca && pecaSelecionada && (
         <Sobreposicao titulo="Propriedades da peça" onFechar={() => setMostrarPropriedadesDaPeca(false)}>
           <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />

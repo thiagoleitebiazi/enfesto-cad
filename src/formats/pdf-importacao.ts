@@ -334,7 +334,7 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
       linhaDeFio = { inicio: inicio!, fim: fim! };
     } else {
       avisos.push(
-        `Peça "${rotulo.nome}" não tem linha de fio reconhecível no PDF — defina manualmente antes de finalizar a importação (regra crítica da seção 5, nunca presumida automaticamente).`,
+        `Peça "${rotulo.nome}" não tem linha de fio no PDF: ela entra com o fio na horizontal.`,
       );
     }
 

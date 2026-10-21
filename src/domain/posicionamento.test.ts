@@ -37,8 +37,9 @@ describe('sugerirPosicaoSemSobreposicao', () => {
     expect(delta).not.toBeNull();
     const contornoResultante = transladarContorno(peca.contorno, delta!);
     const bbox = retanguloEnvolvente(contornoResultante);
-    expect(bbox.minX).toBeCloseTo(0, 9);
-    expect(bbox.minY).toBeCloseTo(0, 9);
+    // O canto da mesa, depois da margem de segurança de 4 mm.
+    expect(bbox.minX).toBeCloseTo(4, 9);
+    expect(bbox.minY).toBeCloseTo(4, 9);
   });
 
   it('desvia de uma peça já existente, respeitando a distância mínima', () => {
@@ -98,7 +99,8 @@ describe('posicionarAsQueChegam: as peças importadas não ficam em cima das que
     // enfesto (5 mm, mais a folga de 0,01 mm) — e não no passo seguinte da grade (110).
     expect(canto(posta!).x).toBeGreaterThanOrEqual(105.01);
     expect(canto(posta!).x).toBeLessThan(105.02);
-    expect(canto(posta!).y).toBe(0);
+    // No comprimento, depois da margem de segurança da mesa (4 mm).
+    expect(canto(posta!).y).toBeCloseTo(4, 9);
     expect(emCimaDeAlguma([existente, posta!])).toBe(false);
     const bbox = retanguloEnvolvente(posta!.contorno);
     expect(bbox.minX).toBeGreaterThanOrEqual(0);
@@ -145,9 +147,9 @@ describe('sugerirPosicaoSemSobreposicao — a peça com costura', () => {
     // A linha de corte começa 5 mm (mais a folga) depois da outra peça; o contorno, mais 10 mm.
     expect(contorno.minX).toBeGreaterThanOrEqual(100 + 5 + 10);
     expect(contorno.minX).toBeLessThan(100 + 5 + 10 + 0.02);
-    // Sozinha, a linha de corte encosta no começo da mesa: o contorno fica 10 mm para dentro.
+    // Sozinha, a linha de corte encosta na margem de segurança (4 mm): o contorno fica 10 mm mais para dentro.
     const sozinha = retanguloEnvolvente(transladarContorno(comCostura.contorno, sugerirPosicaoSemSobreposicao(comCostura, [], enfestoBase())!));
-    expect(sozinha.minX).toBeCloseTo(10, 6);
-    expect(sozinha.minY).toBeCloseTo(10, 6);
+    expect(sozinha.minX).toBeCloseTo(14, 6);
+    expect(sozinha.minY).toBeCloseTo(14, 6);
   });
 });

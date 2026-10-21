@@ -15,6 +15,34 @@ export type TipoDeEnfesto = 'par' | 'impar' | 'zigue-zague' | 'tubular' | 'ramad
 /** A distância entre os moldes, de linha de corte a linha de corte, de um projeto novo (mm). */
 export const DISTANCIA_PADRAO_ENTRE_PECAS_MM = 3;
 
+/**
+ * A margem de segurança da mesa (mm): nenhuma peça chega mais perto que isto de nenhuma borda da mesa, qualquer que
+ * seja a margem configurada (pedido do usuário, ADR 0091).
+ */
+export const MARGEM_DE_SEGURANCA_DA_MESA_MM = 4;
+
+/**
+ * As margens que valem na mesa: as configuradas, nunca menos que a de segurança. Os projetos de antes, gravados com
+ * margem zero, abrem como estão — a margem de segurança vale do mesmo jeito.
+ */
+export function margensDaMesa(enfesto: Pick<ConfiguracaoBase, 'margemLateralMm' | 'margemDeExtremidadeMm'>): { readonly lateralMm: number; readonly extremidadeMm: number } {
+  return {
+    lateralMm: Math.max(enfesto.margemLateralMm, MARGEM_DE_SEGURANCA_DA_MESA_MM),
+    extremidadeMm: Math.max(enfesto.margemDeExtremidadeMm, MARGEM_DE_SEGURANCA_DA_MESA_MM),
+  };
+}
+
+/** A área da mesa em que as peças podem ficar (mm): a mesa menos as margens que valem, nos quatro lados. */
+export function areaUtilDaMesa(enfesto: Pick<ConfiguracaoBase, 'larguraUtilMm' | 'comprimentoMm' | 'margemLateralMm' | 'margemDeExtremidadeMm'>): {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+} {
+  const { lateralMm, extremidadeMm } = margensDaMesa(enfesto);
+  return { minX: lateralMm, maxX: enfesto.larguraUtilMm - lateralMm, minY: extremidadeMm, maxY: enfesto.comprimentoMm - extremidadeMm };
+}
+
 export interface ConfiguracaoBase {
   readonly larguraUtilMm: number;
   readonly comprimentoMm: number;

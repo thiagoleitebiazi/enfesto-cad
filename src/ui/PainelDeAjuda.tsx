@@ -53,6 +53,9 @@ const GESTOS_DO_MOUSE: ReadonlyArray<readonly [string, string]> = [
   ['Roda', 'Zoom no ponto do cursor'],
   ['Botão do meio, ou Espaço + arrastar', 'Mover a vista (como a Mão)'],
   ['Duplo clique numa peça', 'Propriedades da peça'],
+  ['Arrastar no vazio (Selecionar)', 'Seleciona as peças que ficam inteiras dentro do retângulo'],
+  ['Ctrl+clique numa peça', 'Põe a peça na seleção, ou a tira; arrastar uma das selecionadas leva todas'],
+  ['Ctrl+arrastar no vazio', 'Soma as peças do retângulo às que já estavam selecionadas'],
   ['Shift+clique num vértice', 'Mover ponto e Modificar: incluir o vértice na seleção, ou tirá-lo dela'],
   ['Clique no canto das réguas', 'Alternar a régua entre cm e mm'],
 ];

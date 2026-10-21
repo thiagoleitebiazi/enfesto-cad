@@ -443,3 +443,95 @@ describe('espaço para arrastar a vista: a tecla não fica presa', () => {
     expect(onCliqueNoCanvas).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AreaDeDesenho — Selecionar: o retângulo, o Ctrl e o grupo', () => {
+  // A peça 'a' vai de (0, 0) a (103, 100) no mundo; a 'b', de (200, 0) a (300, 100). Na tela, x = mundo.y e y = mundo.x.
+  function renderizarSelecao(selecionadoId: string | null, lote: readonly string[] = []) {
+    const chamadas = {
+      onSelecionar: vi.fn(),
+      onMoverPeca: vi.fn(),
+      onMoverPecas: vi.fn(),
+      onAlternarNaSelecao: vi.fn(),
+      onSelecionarVarias: vi.fn(),
+    };
+    const { container } = render(
+      <AreaDeDesenho
+        pecas={[SELECIONADA, VIZINHA]}
+        selecionadoId={selecionadoId}
+        idsSelecionadosEmLote={new Set(lote)}
+        enfesto={null}
+        idsComErro={new Set()}
+        transform={TRANSFORM}
+        modo="selecionar"
+        pontosEmEdicao={[]}
+        contornoFinalizado={null}
+        onTransformChange={vi.fn()}
+        onCursorMove={vi.fn()}
+        onCliqueNoCanvas={vi.fn()}
+        cerca={null}
+        opcoesDaCerca={TODAS_AS_OPCOES_DA_CERCA}
+        ferramentaDeVista={null}
+        mostrarGrade={false}
+        imaAtivo={false}
+        unidadeDaRegua="cm"
+        onAlternarUnidadeDaRegua={vi.fn()}
+        {...chamadas}
+      />,
+    );
+    const canvas = canvasDoDesenho(container);
+    const naTela = (mundo: Ponto2D) => ({ clientX: mundo.y, clientY: mundo.x });
+    const arrastar = (de: Ponto2D, ate: Ponto2D, teclas: { ctrlKey?: boolean; metaKey?: boolean } = {}) => {
+      fireEvent.mouseDown(canvas, { button: 0, ...teclas, ...naTela(de) });
+      fireEvent.mouseMove(canvas, naTela(ate));
+      fireEvent.mouseUp(canvas, { button: 0, ...teclas, ...naTela(ate) });
+    };
+    return { ...chamadas, arrastar };
+  }
+
+  it('arrastar no vazio desenha o retângulo: seleciona as peças inteiras dentro dele', () => {
+    const r = renderizarSelecao('b');
+    r.arrastar(ponto(-5, -5), ponto(110, 105));
+    expect(r.onSelecionar).toHaveBeenCalledWith(null);
+    expect(r.onSelecionarVarias).toHaveBeenCalledWith(['a'], false);
+  });
+
+  it('com o Ctrl, o retângulo soma à seleção', () => {
+    const r = renderizarSelecao('b');
+    r.arrastar(ponto(-5, -5), ponto(110, 105), { ctrlKey: true });
+    expect(r.onSelecionar).not.toHaveBeenCalled();
+    expect(r.onSelecionarVarias).toHaveBeenCalledWith(['a'], true);
+  });
+
+  it('o clique no vazio, sem arrastar, só tira a seleção', () => {
+    const r = renderizarSelecao('a');
+    r.arrastar(ponto(150, 50), ponto(150, 50));
+    expect(r.onSelecionar).toHaveBeenCalledWith(null);
+    expect(r.onSelecionarVarias).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+clique (ou ⌘+clique no Mac) numa peça a põe ou tira da seleção, sem arrastar', () => {
+    const r = renderizarSelecao('a');
+    r.arrastar(ponto(250, 50), ponto(260, 60), { ctrlKey: true });
+    r.arrastar(ponto(50, 50), ponto(50, 50), { metaKey: true });
+    expect(r.onAlternarNaSelecao.mock.calls).toEqual([['b'], ['a']]);
+    expect(r.onSelecionar).not.toHaveBeenCalled();
+    expect(r.onMoverPeca).not.toHaveBeenCalled();
+    expect(r.onMoverPecas).not.toHaveBeenCalled();
+  });
+
+  it('arrastar uma das peças do grupo selecionado leva o grupo todo, de uma vez', () => {
+    const r = renderizarSelecao(null, ['a', 'b']);
+    r.arrastar(ponto(50, 50), ponto(60, 70));
+    expect(r.onSelecionar).not.toHaveBeenCalled();
+    expect(r.onMoverPecas).toHaveBeenCalledWith(['a', 'b'], { x: 10, y: 20 });
+    expect(r.onMoverPeca).not.toHaveBeenCalled();
+  });
+
+  it('arrastar uma peça fora do grupo a seleciona sozinha e leva só ela', () => {
+    const r = renderizarSelecao(null, ['b']);
+    r.arrastar(ponto(50, 50), ponto(60, 70));
+    expect(r.onSelecionar).toHaveBeenCalledWith('a');
+    expect(r.onMoverPeca).toHaveBeenCalledWith('a', { x: 10, y: 20 });
+    expect(r.onMoverPecas).not.toHaveBeenCalled();
+  });
+});

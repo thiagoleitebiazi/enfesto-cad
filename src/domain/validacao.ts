@@ -1,6 +1,6 @@
 import type { Molde } from './molde';
 import { linhaDeCorteDaPeca, rotacaoEhPermitida } from './molde';
-import { enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
 import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
@@ -217,10 +217,7 @@ function validarSobreposicaoEEspacamento(
 
 function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto, folgaMm: number): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
-  const minX = enfesto.margemLateralMm;
-  const maxX = enfesto.larguraUtilMm - enfesto.margemLateralMm;
-  const minY = enfesto.margemDeExtremidadeMm;
-  const maxY = enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm;
+  const { minX, maxX, minY, maxY } = areaUtilDaMesa(enfesto);
 
   for (const peca of pecas) {
     if (peca.contorno.length === 0) continue;

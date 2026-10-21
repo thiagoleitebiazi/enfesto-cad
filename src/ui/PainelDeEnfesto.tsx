@@ -4,6 +4,8 @@ import { DiagramaDeEnfesto } from './DiagramaDeEnfesto';
 import {
   criarConfiguracaoDeEnfesto,
   DISTANCIA_PADRAO_ENTRE_PECAS_MM,
+  MARGEM_DE_SEGURANCA_DA_MESA_MM,
+  margensDaMesa,
   ROTULO_DO_TIPO,
   type ConfiguracaoDeEnfesto,
   type TipoDeEnfesto,
@@ -29,13 +31,15 @@ interface CamposDeFormulario {
 }
 
 function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulario {
+  // As margens que valem: o projeto de antes, gravado com margem zero, já mostra a de segurança.
+  const margens = config ? margensDaMesa(config) : null;
   return {
     tipo: config?.tipo ?? 'impar',
     larguraUtilMm: String(config?.larguraUtilMm ?? 1500),
     comprimentoMm: String(config?.comprimentoMm ?? 3000),
     quantidadeDeCamadas: String(config?.quantidadeDeCamadas ?? 10),
-    margemLateralMm: String(config?.margemLateralMm ?? 10),
-    margemDeExtremidadeMm: String(config?.margemDeExtremidadeMm ?? 20),
+    margemLateralMm: String(margens?.lateralMm ?? MARGEM_DE_SEGURANCA_DA_MESA_MM),
+    margemDeExtremidadeMm: String(margens?.extremidadeMm ?? MARGEM_DE_SEGURANCA_DA_MESA_MM),
     distanciaMinimaEntrePecasMm: String(config?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM),
     larguraDoTuboMm: String(config?.tipo === 'tubular' ? config.larguraDoTuboMm : 1500),
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
@@ -87,7 +91,11 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
 
   function salvar(): void {
     try {
-      const config = criarConfiguracaoDeEnfesto(construirConfiguracao(campos));
+      const pedida = construirConfiguracao(campos);
+      if (!(pedida.margemLateralMm >= MARGEM_DE_SEGURANCA_DA_MESA_MM) || !(pedida.margemDeExtremidadeMm >= MARGEM_DE_SEGURANCA_DA_MESA_MM)) {
+        throw new Error(`As margens da mesa vão de ${MARGEM_DE_SEGURANCA_DA_MESA_MM} mm para cima: é a margem de segurança, nenhuma peça chega mais perto da borda que isso.`);
+      }
+      const config = criarConfiguracaoDeEnfesto(pedida);
       setErro(null);
       props.onSalvar(config);
     } catch (e) {
@@ -145,19 +153,19 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
           />
         </label>
         <label>
-          Margem lateral (mm)
+          Margem lateral (mm, a partir de {MARGEM_DE_SEGURANCA_DA_MESA_MM})
           <input
             type="number"
-            min={0}
+            min={MARGEM_DE_SEGURANCA_DA_MESA_MM}
             value={campos.margemLateralMm}
             onChange={(e) => alterar({ margemLateralMm: e.target.value })}
           />
         </label>
         <label>
-          Margem de extremidade (mm)
+          Margem de extremidade (mm, a partir de {MARGEM_DE_SEGURANCA_DA_MESA_MM})
           <input
             type="number"
-            min={0}
+            min={MARGEM_DE_SEGURANCA_DA_MESA_MM}
             value={campos.margemDeExtremidadeMm}
             onChange={(e) => alterar({ margemDeExtremidadeMm: e.target.value })}
           />

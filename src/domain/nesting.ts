@@ -1,5 +1,5 @@
 import { linhaDeCorteDaPeca, rotacionarMolde, espelharMolde, transladarMolde, rotacoesNoEncaixe, type Molde } from './molde';
-import type { ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
 import { fazerRisco, moldeOrientado, type PecaDoRisco } from './risco';
@@ -145,12 +145,7 @@ export function* passosDoNesting(
   const maxTentativasPorPeca = opcoes.maxTentativasPorPeca ?? 20000;
 
   const instancias = construirInstancias(pecas);
-  const limites: LimitesDeArea = {
-    minX: enfesto.margemLateralMm,
-    maxX: enfesto.larguraUtilMm - enfesto.margemLateralMm,
-    minY: enfesto.margemDeExtremidadeMm,
-    maxY: enfesto.comprimentoMm - enfesto.margemDeExtremidadeMm,
-  };
+  const limites: LimitesDeArea = areaUtilDaMesa(enfesto);
 
   const colocadas: PecaColocada[] = [];
   const naoColocadas: PecaNaoColocada[] = [];
@@ -311,8 +306,9 @@ export function executarNestingPorPontosDeCanto(
       copias.push({ pecaId: peca.id, nome: peca.nome, tamanho: peca.tamanho, molde: { ...peca, quantidade: 1 }, espelhada: peca.emPar === true && i % 2 === 1, copia: i });
     }
   }
-  const largura = enfesto.larguraUtilMm - 2 * enfesto.margemLateralMm;
-  const comprimento = enfesto.comprimentoMm - 2 * enfesto.margemDeExtremidadeMm;
+  const util = areaUtilDaMesa(enfesto);
+  const largura = util.maxX - util.minX;
+  const comprimento = util.maxY - util.minY;
   const vazio = (motivoDeFora: readonly PecaDoRisco[], interrompido: boolean): ResultadoDeNesting => ({
     pecasColocadas: [],
     pecasNaoColocadas: motivoDeFora.map((p) => ({ idOriginal: p.pecaId, indiceCopia: p.copia ?? 0, nome: p.nome })),
@@ -337,7 +333,7 @@ export function executarNestingPorPontosDeCanto(
     ...(opcoes.aoProgredir ? { aoProgredir: opcoes.aoProgredir } : {}),
   });
   if (!risco.ok) return vazio(copias, risco.cancelado === true);
-  const margem = { x: enfesto.margemLateralMm, y: enfesto.margemDeExtremidadeMm };
+  const margem = { x: util.minX, y: util.minY };
   const colocadas: PecaColocada[] = risco.pecas.map((posta) => {
     const copia = copias.find((c) => c.pecaId === posta.pecaId && c.copia === posta.copia)!;
     const orientada = moldeOrientado(copia, posta);

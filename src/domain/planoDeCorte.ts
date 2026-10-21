@@ -1,5 +1,5 @@
 import type { ConfiguracaoDeEnfesto, TipoDeEnfesto } from './enfesto';
-import { criarConfiguracaoDeEnfesto, espessurasFisicasPorCamada } from './enfesto';
+import { criarConfiguracaoDeEnfesto, espessurasFisicasPorCamada, MARGEM_DE_SEGURANCA_DA_MESA_MM, margensDaMesa } from './enfesto';
 import { linhaDeCorteDaPeca, type Molde } from './molde';
 import { area, retanguloEnvolvente } from '../core/geometria';
 
@@ -635,12 +635,17 @@ export function enfestoDoPlano(
   distanciaPadraoMm: number,
   alcanceDasPecasMm = 0,
 ): ConfiguracaoDeEnfesto {
+  // As margens de antes, e nunca menos que a de segurança da mesa.
+  const margens = {
+    margemLateralMm: Math.max(anterior?.margemLateralMm ?? 0, MARGEM_DE_SEGURANCA_DA_MESA_MM),
+    margemDeExtremidadeMm: Math.max(anterior?.margemDeExtremidadeMm ?? 0, MARGEM_DE_SEGURANCA_DA_MESA_MM),
+  };
   const base = {
     larguraUtilMm: resultado.larguraDaMesaMm,
-    comprimentoMm: Math.max(resultado.comprimentoDaMesaMm, alcanceDasPecasMm),
+    comprimentoMm: Math.max(resultado.comprimentoDaMesaMm, alcanceDasPecasMm > 0 ? alcanceDasPecasMm + margensDaMesa(margens).extremidadeMm : 0),
     quantidadeDeCamadas: Math.max(1, ...resultado.enfestos),
-    margemLateralMm: anterior?.margemLateralMm ?? 0,
-    margemDeExtremidadeMm: anterior?.margemDeExtremidadeMm ?? 0,
+    margemLateralMm: margens.margemLateralMm,
+    margemDeExtremidadeMm: margens.margemDeExtremidadeMm,
     distanciaMinimaEntrePecasMm: anterior?.distanciaMinimaEntrePecasMm ?? distanciaPadraoMm,
   };
   if (tipo === 'tubular') {
