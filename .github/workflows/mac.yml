@@ -62,6 +62,44 @@ jobs:
             arch -x86_64 "$APP" --user-data-dir="$RUNNER_TEMP/dados-intel" 2>&1 | tee abertura-intel.txt
           grep -q "ABERTURA-OK" abertura-intel.txt
 
+      # Informativo: o teste acima é só o modo padrão (que no Mac desenha pela placa de vídeo). No uso, quando a tela
+      # não aparece, o programa se reabre nos modos de segurança (ADR 0083); aqui cada um é aberto na parte Intel.
+      - name: Abrir o programa montado (Intel, pelo Rosetta, nos modos de segurança)
+        timeout-minutes: 8
+        continue-on-error: true
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Este Mac do GitHub não tem o Rosetta." | tee abertura-intel-modos.txt
+            exit 0
+          fi
+          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          for MODO in video-no-principal sem-isolamento com-gpu; do
+            ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-$MODO.png" \
+              arch -x86_64 "$APP" --abertura="$MODO" --user-data-dir="$RUNNER_TEMP/dados-intel-$MODO" 2>&1 | tee "abertura-intel-$MODO.txt" || true
+          done
+          grep -h "ABERTURA-" abertura-intel-*.txt | tee abertura-intel-modos.txt
+          grep -q "ABERTURA-OK" abertura-intel-modos.txt
+
+      # O programa usado como uma pessoa usaria, com o mouse e o teclado do sistema e uma foto a cada passo
+      # (scripts/teste-de-uso): importar, selecionar, arrastar o grupo, exportar o PDF, o planejamento, o enfesto.
+      - name: Usar o programa (chip Apple)
+        timeout-minutes: 8
+        continue-on-error: true
+        run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
+
+      - name: Guardar as fotos do teste
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enfesto-cad-mac-fotos
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            abertura-*.png
+            abertura-*.txt
+            uso/*.png
+            uso/*.txt
+
       - name: Guardar o instalador e as fotos da abertura
         if: always()
         uses: actions/upload-artifact@v4
