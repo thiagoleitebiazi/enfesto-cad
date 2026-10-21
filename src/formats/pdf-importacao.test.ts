@@ -36,6 +36,44 @@ function pecaCompleta(nome: string, extras: Partial<Parameters<typeof criarMolde
   return peca;
 }
 
+describe('importarPdf — a orientação da folha', () => {
+  // Uma peça em L (sem simetria): o espelho dela é outra peça.
+  const emL = (): Molde =>
+    criarMolde(
+      {
+        nome: 'L',
+        referencia: 'R',
+        tamanho: 'M',
+        contorno: [ponto(0, 0), ponto(30, 0), ponto(30, 100), ponto(80, 100), ponto(80, 130), ponto(0, 130)],
+        linhaDeFio: { inicio: ponto(15, 10), fim: ponto(15, 120) },
+      },
+      'L',
+    );
+  const relativo = (c: readonly { x: number; y: number }[]) => c.map((p) => ({ x: Math.round((p.x - c[0]!.x) * 100) / 100, y: Math.round((p.y - c[0]!.y) * 100) / 100 }));
+
+  it('a folha de agora (com a marca) volta com a peça como era, e não espelhada', async () => {
+    const original = emL();
+    const texto = await paraTextoLatin1(await gerarPdfDeMoldesIndividuais([original], { formato: 'A4', orientacao: 'retrato', margemMm: 10 }));
+    const importada = importarPdf(texto).pecas[0]!;
+    expect(relativo(importada.contorno)).toEqual(relativo(original.contorno));
+    expect(importada.molde).toBeDefined();
+  });
+
+  it('a folha de antes (sem a marca, com o x e o y do mundo direto) continua sendo lida como antes', async () => {
+    const original = emL();
+    const agora = await paraTextoLatin1(await gerarPdfDeMoldesIndividuais([original], { formato: 'A4', orientacao: 'retrato', margemMm: 10 }));
+    // A folha como ela saía antes: os pontos com os eixos destrocados, e sem a marca.
+    const deAntes = agora
+      .replace(/\n% enfesto-cad:folha:como-a-tela/g, '')
+      .replace(/(-?[\d.]+) (-?[\d.]+) (m|l)\n/g, '$2 $1 $3\n')
+      .replace(/(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) c\n/g, '$2 $1 $4 $3 $6 $5 c\n');
+    expect(deAntes).not.toContain('enfesto-cad:folha');
+    const importada = importarPdf(deAntes).pecas[0]!;
+    expect(relativo(importada.contorno)).toEqual(relativo(original.contorno));
+    expect(importada.molde).toBeDefined();
+  });
+});
+
 describe('importarPdf — ciclo completo de ida e volta (exportar → importar)', () => {
   it('reconstrói contorno, área e proporções da peça', async () => {
     const original = pecaCompleta('Frente');

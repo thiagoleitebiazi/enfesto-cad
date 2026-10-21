@@ -13,7 +13,9 @@ import {
   areaImprimivelMm,
   comprimentoDoEncaixeAImprimirMm,
   margemMaximaMm,
+  MARCA_DA_FOLHA_COMO_A_TELA,
 } from './pdf-exportacao';
+import { mundoParaTela } from '../ui/transformacaoDeTela';
 
 // O PDF é gerado com compress:false deliberadamente (ver comentário no
 // módulo), então dá para inspecionar o stream de conteúdo bruto como texto
@@ -316,13 +318,113 @@ describe('gerarPdfDeEncaixe — só até onde há peças', () => {
   });
 
   it('a mesa de 3 m com uma peça perto do começo: uma faixa de folhas, e não a mesa inteira', async () => {
-    // 1500 mm de largura em folhas de 190 mm: 8 colunas; 70 mm de comprimento: 1 linha.
-    expect(await paginas(await gerarPdfDeEncaixe([pecaRetangular('P1', 50, 50)], mesa, opcoes))).toBe(8);
+    // Como na tela, o comprimento vai na horizontal da folha: 70 mm em folhas de 190 mm, 1 coluna; 1500 mm de
+    // largura em folhas de 277 mm, 6 linhas.
+    expect(await paginas(await gerarPdfDeEncaixe([pecaRetangular('P1', 50, 50)], mesa, opcoes))).toBe(6);
   });
 
   it('a peça lá no fim leva o PDF até ela', async () => {
     const longe = criarMolde({ nome: 'P2', referencia: '', tamanho: 'M', contorno: [ponto(0, 2850), ponto(50, 2850), ponto(50, 2900), ponto(0, 2900)], linhaDeFio: { inicio: ponto(25, 2855), fim: ponto(25, 2895) } }, 'P2');
-    // 2920 mm em folhas de 277 mm: 11 linhas.
-    expect(await paginas(await gerarPdfDeEncaixe([longe], mesa, opcoes))).toBe(8 * 11);
+    // 2920 mm de comprimento em folhas de 190 mm: 16 colunas (e as 6 linhas da largura).
+    expect(await paginas(await gerarPdfDeEncaixe([longe], mesa, opcoes))).toBe(16 * 6);
+  });
+});
+
+describe('a folha mostra a peça como a tela — sem espelhar', () => {
+  // Uma peça em L não tem simetria nenhuma: o espelho dela é outra peça (a de "outro lado").
+  const emL = criarMolde(
+    {
+      nome: 'L',
+      referencia: '',
+      tamanho: 'M',
+      contorno: [ponto(0, 0), ponto(30, 0), ponto(30, 100), ponto(80, 100), ponto(80, 130), ponto(0, 130)],
+      linhaDeFio: { inicio: ponto(15, 10), fim: ponto(15, 120) },
+    },
+    'L',
+  );
+  const OPCOES = { formato: 'A4', orientacao: 'retrato', margemMm: 10 } as const;
+  /** O primeiro caminho da folha (o contorno da peça), em mm: os pontos do "m" e dos "l" seguidos dele. */
+  const primeiroCaminho = (texto: string) => {
+    const m = /(-?[\d.]+) (-?[\d.]+) m\n((?:-?[\d.]+ -?[\d.]+ l\n)+)/.exec(texto)!;
+    const pontos = [[m[1], m[2]], ...[...m[3]!.matchAll(/(-?[\d.]+) (-?[\d.]+) l/g)].map((l) => [l[1], l[2]])];
+    return pontos.map(([x, y]) => ({ x: Number(x) / PONTOS_POR_MM, y: Number(y) / PONTOS_POR_MM }));
+  };
+  const areaComSinal = (p: readonly { x: number; y: number }[]) => p.reduce((s, a, i) => s + a.x * p[(i + 1) % p.length]!.y - p[(i + 1) % p.length]!.x * a.y, 0) / 2;
+
+  it('o contorno na folha é o da tela, ponto a ponto (só a escala e o lugar mudam)', async () => {
+    const naFolha = primeiroCaminho(await paraTexto(await gerarPdfDeMoldesIndividuais([emL], OPCOES)));
+    const naTela = emL.contorno.map((p) => mundoParaTela(p, { offsetXPx: 0, offsetYPx: 0, escalaPxPorMm: 1 }));
+    expect(naFolha).toHaveLength(naTela.length);
+    naFolha.forEach((p, i) => {
+      expect(p.x - naFolha[0]!.x).toBeCloseTo(naTela[i]!.x - naTela[0]!.x, 3);
+      expect(p.y - naFolha[0]!.y).toBeCloseTo(naTela[i]!.y - naTela[0]!.y, 3);
+    });
+  });
+
+  it('o sentido de giro do contorno, que muda quando a peça é espelhada, é o mesmo na folha e na tela', async () => {
+    const naFolha = primeiroCaminho(await paraTexto(await gerarPdfDeMoldesIndividuais([emL], OPCOES)));
+    const naTela = emL.contorno.map((p) => mundoParaTela(p, { offsetXPx: 0, offsetYPx: 0, escalaPxPorMm: 1 }));
+    expect(Math.sign(areaComSinal(naFolha))).toBe(Math.sign(areaComSinal(naTela)));
+    expect(Math.abs(areaComSinal(naFolha))).toBeCloseTo(Math.abs(areaComSinal(emL.contorno)), 1);
+  });
+
+  /** Os blocos de texto da página: a posição (Tm) e o texto. */
+  const textosDaPagina = (texto: string) =>
+    [...texto.matchAll(/BT\n([\s\S]*?)ET/g)].map((b) => {
+      const tm = /([-\d.]+) ([-\d.]+) Tm/.exec(b[1]!)!;
+      return { x: Number(tm[1]), texto: decodificarTextoDoPdf(b[1]!) };
+    });
+  /** O primeiro ponto do desenho da peça em cada folha (pontos). */
+  const primeirosPontos = (texto: string): number[] => [...texto.matchAll(/(-?[\d.]+) (-?[\d.]+) m\n(?:-?[\d.]+ -?[\d.]+ l\n){3}h\n/g)].map((m) => Number(m[1]));
+
+  it('a peça comprida no sentido do comprimento: as folhas andam na horizontal, e cada uma mostra o seu pedaço', async () => {
+    // 100 mm de largura (x) por 600 mm de comprimento (y): na folha de 190 mm de largura útil, 4 colunas e 1 linha.
+    const comprida = pecaRetangular('Comprida', 100, 600);
+    const texto = await paraTexto(await gerarPdfDeMoldesIndividuais([comprida], OPCOES));
+    expect((texto.match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(4);
+    // O contorno em cada folha começa 190 mm mais para a esquerda que na anterior: cada folha mostra o pedaço seguinte.
+    const xs = primeirosPontos(texto);
+    expect(xs).toHaveLength(4);
+    xs.forEach((x, i) => expect(x).toBeCloseTo(-i * mmParaPontos(190), 3));
+  });
+
+  it('no encaixe, a peça lá no fim da mesa é desenhada na coluna de folhas em que ela cai', async () => {
+    const mesa = enfestoBase({ larguraUtilMm: 1500, comprimentoMm: 3000, margemDeExtremidadeMm: 20 } as Partial<ConfiguracaoDeEnfesto>);
+    const longe = criarMolde({ nome: 'P2', referencia: '', tamanho: 'M', contorno: [ponto(0, 2850), ponto(50, 2850), ponto(50, 2900), ponto(0, 2900)], linhaDeFio: { inicio: ponto(25, 2855), fim: ponto(25, 2895) } }, 'P2');
+    const texto = await paraTexto(await gerarPdfDeEncaixe([longe], mesa, OPCOES));
+    // 2850 mm de comprimento: a coluna 16 (2850 ÷ 190 = 15,0 — a peça começa no fim da 15ª e vai até a 16ª).
+    const xs = primeirosPontos(texto);
+    expect(xs.length).toBeGreaterThan(0);
+    expect(xs.every((x) => x >= mmParaPontos(2850 - 16 * 190) - 0.01 && x <= mmParaPontos(2850 - 14 * 190) + 0.01)).toBe(true);
+  });
+
+  it('no encaixe, a peça que cai mais para baixo na folha (entre 190 e 277 mm da largura) é desenhada nela', async () => {
+    // A folha (A4 retrato, margem 10) mostra 190 mm do comprimento e 277 mm da largura da mesa.
+    const mesa = enfestoBase({ larguraUtilMm: 1500, comprimentoMm: 3000, margemDeExtremidadeMm: 20 } as Partial<ConfiguracaoDeEnfesto>);
+    const embaixo = criarMolde({ nome: 'P3', referencia: '', tamanho: 'M', contorno: [ponto(200, 10), ponto(250, 10), ponto(250, 60), ponto(200, 60)], linhaDeFio: { inicio: ponto(225, 15), fim: ponto(225, 55) } }, 'P3');
+    const texto = await paraTexto(await gerarPdfDeEncaixe([embaixo], mesa, OPCOES));
+    expect(primeirosPontos(texto)).toEqual([expect.closeTo(mmParaPontos(10), 3)]);
+  });
+
+  it('o texto com ângulo sai girado como na tela (anti-horário), e o nome da peça no canto dela', async () => {
+    const peca = adicionarTexto(pecaRetangular('Frente', 80, 120), ponto(40, 60), 'BOLSO', 6, 't1');
+    const comAngulo: Molde = { ...peca, textos: peca.textos!.map((t) => ({ ...t, anguloGraus: 30 })) };
+    const texto = await paraTexto(await gerarPdfDeMoldesIndividuais([comAngulo], OPCOES));
+    // O giro de 30° anti-horário na tela é a matriz (cos, −sen, sen, cos) — a mesma do canvas.
+    const giros = [...texto.matchAll(/([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) [-\d.]+ [-\d.]+ cm/g)].map((m) => [1, 2, 3, 4].map((k) => Number(m[k])));
+    expect(giros.some(([a, b, c, d]) => Math.abs(a! - Math.cos(Math.PI / 6)) < 1e-4 && Math.abs(b! + 0.5) < 1e-4 && Math.abs(c! - 0.5) < 1e-4 && Math.abs(d! - Math.cos(Math.PI / 6)) < 1e-4)).toBe(true);
+    // O nome vai 2 mm para dentro do canto da peça (o canto de cima à esquerda, na folha).
+    const rotulo = textosDaPagina(texto).find((t) => t.texto === 'Frente (REF-Frente) M');
+    expect(rotulo?.x).toBeCloseTo(mmParaPontos(2), 3);
+  });
+
+  it('cada folha leva a marca de que mostra a peça como a tela (os moldes e o encaixe)', async () => {
+    const grande = pecaRetangular('Grande', 500, 500);
+    const moldes = await paraTexto(await gerarPdfDeMoldesIndividuais([grande, emL], OPCOES));
+    const encaixe = await paraTexto(await gerarPdfDeEncaixe([emL], enfestoBase(), OPCOES));
+    const conta = (texto: string) => texto.split(MARCA_DA_FOLHA_COMO_A_TELA).length - 1;
+    const folhas = (texto: string) => (texto.match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+    expect(conta(moldes)).toBe(folhas(moldes));
+    expect(conta(encaixe)).toBe(folhas(encaixe));
   });
 });

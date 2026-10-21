@@ -1,7 +1,7 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import { distancia, ponto, retanguloEnvolvente, pontoMaisProximoNoContorno } from '../core/geometria';
 import { criarMolde, type LinhaDeFio, type Molde } from '../domain/molde';
-import { PONTOS_POR_MM } from './pdf-exportacao';
+import { MARCA_DA_FOLHA_COMO_A_TELA, PONTOS_POR_MM } from './pdf-exportacao';
 import { lerRegistroDaPagina } from './pdf-registro';
 
 /**
@@ -54,8 +54,12 @@ function tolerancia(a: number, b: number, margem = 0.05): boolean {
   return Math.abs(a - b) < margem;
 }
 
-function pontosParaMm(pontosPdf: readonly Ponto2D[]): Ponto2D[] {
-  return pontosPdf.map((p) => ponto(p.x / PONTOS_POR_MM, p.y / PONTOS_POR_MM));
+/**
+ * Os pontos da folha (pontos do PDF) no mundo (mm). A folha com a marca `MARCA_DA_FOLHA_COMO_A_TELA` mostra a peça como
+ * a tela (a horizontal da folha é o y do mundo); a sem ela é de antes, quando a folha usava o x e o y do mundo direto.
+ */
+function pontosParaMm(pontosPdf: readonly Ponto2D[], comoATela: boolean): Ponto2D[] {
+  return pontosPdf.map((p) => (comoATela ? ponto(p.y / PONTOS_POR_MM, p.x / PONTOS_POR_MM) : ponto(p.x / PONTOS_POR_MM, p.y / PONTOS_POR_MM)));
 }
 
 interface ElementoBruto {
@@ -317,15 +321,16 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
       continue;
     }
 
-    const contorno = pontosParaMm(blocoContorno.subpaths[0]!);
-    const furos = blocoContorno.subpaths.slice(1).map((sp) => pontosParaMm(sp));
+    const comoATela = stream.includes(MARCA_DA_FOLHA_COMO_A_TELA);
+    const contorno = pontosParaMm(blocoContorno.subpaths[0]!, comoATela);
+    const furos = blocoContorno.subpaths.slice(1).map((sp) => pontosParaMm(sp, comoATela));
 
-    const linhasInternas = elementos.filter((e) => e.tipo === 'linha-interna').map((e) => pontosParaMm(e.subpaths[0]!));
+    const linhasInternas = elementos.filter((e) => e.tipo === 'linha-interna').map((e) => pontosParaMm(e.subpaths[0]!, comoATela));
 
     const elementoFio = elementos.find((e) => e.tipo === 'fio');
     let linhaDeFio: LinhaDeFio | null = null;
     if (elementoFio) {
-      const [inicio, fim] = pontosParaMm(elementoFio.subpaths[0]!);
+      const [inicio, fim] = pontosParaMm(elementoFio.subpaths[0]!, comoATela);
       linhaDeFio = { inicio: inicio!, fim: fim! };
     } else {
       avisos.push(
@@ -336,14 +341,14 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
     const piques = elementos
       .filter((e) => e.tipo === 'pique')
       .map((e) => {
-        const posicao = pontosParaMm(e.subpaths[0]!)[0]!;
+        const posicao = pontosParaMm(e.subpaths[0]!, comoATela)[0]!;
         return { posicao, indiceAresta: pontoMaisProximoNoContorno(posicao, contorno).indiceAresta };
       });
 
     const marcas = elementos
       .filter((e) => e.tipo === 'marca')
       .map((e) => {
-        const pontosMm = pontosParaMm(e.subpaths[0]!);
+        const pontosMm = pontosParaMm(e.subpaths[0]!, comoATela);
         const bbox = retanguloEnvolvente(pontosMm);
         return ponto((bbox.minX + bbox.maxX) / 2, (bbox.minY + bbox.maxY) / 2);
       });
@@ -351,7 +356,7 @@ export function importarPdf(bytesComoLatin1: string): ResultadoImportacaoPdf {
     const elementoLinhaDeCorte = elementos.find((e) => e.tipo === 'linha-de-corte');
     let margemDeCosturaMm = 0;
     if (elementoLinhaDeCorte) {
-      const bboxCorte = retanguloEnvolvente(pontosParaMm(elementoLinhaDeCorte.subpaths[0]!));
+      const bboxCorte = retanguloEnvolvente(pontosParaMm(elementoLinhaDeCorte.subpaths[0]!, comoATela));
       const bboxContorno = retanguloEnvolvente(contorno);
       margemDeCosturaMm = Math.max(
         0,

@@ -29,6 +29,13 @@ if (typeof registerStdFonts === 'function') {
  * nunca uma imagem rasterizada. Unidade interna: mm; convertida para
  * pontos PDF (72/polegada) só no momento de desenhar.
  *
+ * A folha mostra a peça como a tela: o comprimento (o y do mundo) na
+ * horizontal, a largura (o x do mundo) descendo — `naFolha`. Antes a folha
+ * usava o x e o y do mundo sem a troca que a tela faz desde o ADR 0012, e a
+ * troca de eixos sozinha é um espelho: a peça impressa saía espelhada em
+ * relação à tela (e ao arquivo de onde ela veio). Cada folha leva a marca
+ * `MARCA_DA_FOLHA_COMO_A_TELA`, para a importação saber que eixos ler.
+ *
  * `compress: false` deliberado — arquivos de molde/encaixe são pequenos
  * o bastante para o tamanho não importar, e isso permite inspecionar/
  * testar o conteúdo do PDF gerado diretamente (ver pdf-exportacao.test.ts).
@@ -53,6 +60,17 @@ export const PONTOS_POR_MM = 72 / 25.4;
 
 export function mmParaPontos(valorMm: number): number {
   return valorMm * PONTOS_POR_MM;
+}
+
+/** A marca, em cada folha, de que ela mostra a peça como a tela (ver `naFolha`). As folhas sem ela são de antes. */
+export const MARCA_DA_FOLHA_COMO_A_TELA = '% enfesto-cad:folha:como-a-tela';
+
+/**
+ * Um ponto do mundo (mm) na folha (pontos, a partir do canto de cima à esquerda da área do desenho), como a tela o
+ * mostra: o y do mundo na horizontal, o x descendo. `origem` é o ponto do mundo que cai nesse canto.
+ */
+export function naFolha(p: Ponto2D, origem: Ponto2D): { readonly x: number; readonly y: number } {
+  return { x: mmParaPontos(p.y - origem.y), y: mmParaPontos(p.x - origem.x) };
 }
 
 export function dimensoesDaPaginaMm(opcoes: OpcoesDePagina): { largura: number; altura: number } {
@@ -106,16 +124,18 @@ async function finalizarComoBlob(doc: PDFKit.PDFDocument): Promise<Blob> {
 /** Traça um contorno (mm, relativo à origem da página) como um caminho vetorial real. */
 function tracarContorno(doc: PDFKit.PDFDocument, contorno: Contorno, origem: Ponto2D): void {
   if (contorno.length === 0) return;
-  doc.moveTo(mmParaPontos(contorno[0]!.x - origem.x), mmParaPontos(contorno[0]!.y - origem.y));
+  const primeiro = naFolha(contorno[0]!, origem);
+  doc.moveTo(primeiro.x, primeiro.y);
   for (let i = 1; i < contorno.length; i++) {
-    doc.lineTo(mmParaPontos(contorno[i]!.x - origem.x), mmParaPontos(contorno[i]!.y - origem.y));
+    const p = naFolha(contorno[i]!, origem);
+    doc.lineTo(p.x, p.y);
   }
   doc.closePath();
 }
 
 function desenharSeta(doc: PDFKit.PDFDocument, inicio: Ponto2D, fim: Ponto2D, origem: Ponto2D): void {
-  const i = { x: mmParaPontos(inicio.x - origem.x), y: mmParaPontos(inicio.y - origem.y) };
-  const f = { x: mmParaPontos(fim.x - origem.x), y: mmParaPontos(fim.y - origem.y) };
+  const i = naFolha(inicio, origem);
+  const f = naFolha(fim, origem);
   doc.moveTo(i.x, i.y).lineTo(f.x, f.y).stroke();
 
   const angulo = Math.atan2(f.y - i.y, f.x - i.x);
@@ -135,7 +155,7 @@ function desenharPique(doc: PDFKit.PDFDocument, peca: Molde, indice: number, ori
   const comAPosicao = pique.formato ? [[pique.posicao, pique.posicao], ...tracos] : tracos;
   for (const traco of comAPosicao) {
     traco.forEach((q, k) => {
-      const [x, y] = [mmParaPontos(q.x - origem.x), mmParaPontos(q.y - origem.y)];
+      const { x, y } = naFolha(q, origem);
       if (k === 0) doc.moveTo(x, y);
       else doc.lineTo(x, y);
     });
@@ -152,9 +172,8 @@ function desenharPique(doc: PDFKit.PDFDocument, peca: Molde, indice: number, ori
 
 /** Escreve o texto centrado no ponto (mm), no tamanho de letra já escolhido no documento. */
 function escreverCentrado(doc: PDFKit.PDFDocument, texto: string, centro: Ponto2D, origem: Ponto2D): void {
-  const x = mmParaPontos(centro.x - origem.x) - doc.widthOfString(texto) / 2;
-  const y = mmParaPontos(centro.y - origem.y) - doc.currentLineHeight() / 2;
-  doc.text(texto, x, y, { lineBreak: false });
+  const c = naFolha(centro, origem);
+  doc.text(texto, c.x - doc.widthOfString(texto) / 2, c.y - doc.currentLineHeight() / 2, { lineBreak: false });
 }
 
 /**
@@ -210,10 +229,9 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, com
     doc.lineWidth(mmParaPontos(0.6));
     // @ts-expect-error @types/pdfkit só declara o traço simples; o pdfkit aceita o padrão inteiro (traço, vão, ponto, vão)
     doc.dash([mmParaPontos(6), mmParaPontos(2), mmParaPontos(1), mmParaPontos(2)], {});
-    doc
-      .moveTo(mmParaPontos(de.x - origem.x), mmParaPontos(de.y - origem.y))
-      .lineTo(mmParaPontos(ate.x - origem.x), mmParaPontos(ate.y - origem.y))
-      .stroke('#6a1b9a');
+    const a = naFolha(de, origem);
+    const b = naFolha(ate, origem);
+    doc.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke('#6a1b9a');
     doc.undash();
     doc.restore();
   }
@@ -237,7 +255,7 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, com
       doc.strokeColor('#00838f');
       for (const traco of doFormato) {
         traco.forEach((q, k) => {
-          const [x, y] = [mmParaPontos(q.x - origem.x), mmParaPontos(q.y - origem.y)];
+          const { x, y } = naFolha(q, origem);
           if (k === 0) doc.moveTo(x, y);
           else doc.lineTo(x, y);
         });
@@ -245,7 +263,7 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, com
       doc.stroke();
       continue;
     }
-    const p = { x: mmParaPontos(marca.posicao.x - origem.x), y: mmParaPontos(marca.posicao.y - origem.y) };
+    const p = naFolha(marca.posicao, origem);
     doc.circle(p.x, p.y, mmParaPontos(1.2)).fill();
   }
   doc.restore();
@@ -257,19 +275,19 @@ function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, com
     if (texto.anguloGraus === undefined) {
       escreverCentrado(doc, texto.texto, texto.posicao, origem);
     } else {
-      // O "Pique texto" acompanha a peça: na folha os eixos da tela vêm trocados, e a linha do texto, que na tela
-      // está a `anguloGraus`, fica a 90° + esse ângulo (as letras não são espelhadas).
-      const [x, y] = [mmParaPontos(texto.posicao.x - origem.x), mmParaPontos(texto.posicao.y - origem.y)];
+      // O "Pique texto" acompanha a peça: a folha mostra a peça como a tela, e a linha do texto fica no mesmo ângulo
+      // dela (`anguloGraus` é anti-horário na tela; o giro do PDFKit, como o do canvas, é horário).
+      const { x, y } = naFolha(texto.posicao, origem);
       const largura = doc.widthOfString(texto.texto);
       const antes = texto.ancora === 'inicio' ? 0 : texto.ancora === 'fim' ? largura : largura / 2;
-      doc.rotate(90 + texto.anguloGraus, { origin: [x, y] });
+      doc.rotate(0 - texto.anguloGraus, { origin: [x, y] });
       doc.text(texto.texto, x - antes, y - doc.currentLineHeight() / 2, { lineBreak: false });
     }
     doc.restore();
   }
 
   const bbox = retanguloEnvolvente(peca.contorno);
-  const centroTexto = { x: mmParaPontos(bbox.minX - origem.x + 2), y: mmParaPontos(bbox.minY - origem.y + 2) };
+  const centroTexto = naFolha({ x: bbox.minX + 2, y: bbox.minY + 2 }, origem);
   doc.save();
   doc.fillColor('#000000').fontSize(mmParaPontos(3));
   // Sem quebra de linha: com ela, o texto que cai fora da folha (a peça de outra folha do ladrilhado) fazia o
@@ -330,8 +348,8 @@ export async function gerarPdfDeEncaixe(
 
   const larguraTotal = enfesto.larguraUtilMm;
   const alturaTotal = comprimentoDoEncaixeAImprimirMm(pecas, enfesto);
-  const colunas = Math.max(1, Math.ceil(larguraTotal / larguraImprimivel));
-  const linhas = Math.max(1, Math.ceil(alturaTotal / alturaImprimivel));
+  const colunas = Math.max(1, Math.ceil(alturaTotal / larguraImprimivel));
+  const linhas = Math.max(1, Math.ceil(larguraTotal / alturaImprimivel));
   const totalDePaginas = colunas * linhas;
 
   let indicePagina = 0;
@@ -340,8 +358,10 @@ export async function gerarPdfDeEncaixe(
       if (indicePagina > 0) doc.addPage();
       indicePagina++;
 
-      const origem = { x: coluna * larguraImprimivel, y: linha * alturaImprimivel };
+      // O ponto do mundo no canto da folha: a folha anda no comprimento (y) pelas colunas e na largura (x) pelas linhas.
+      const origem = { x: linha * alturaImprimivel, y: coluna * larguraImprimivel };
 
+      doc.addContent(MARCA_DA_FOLHA_COMO_A_TELA);
       doc.save();
       doc.rect(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm), mmParaPontos(larguraImprimivel), mmParaPontos(alturaImprimivel));
       doc.clip();
@@ -350,9 +370,9 @@ export async function gerarPdfDeEncaixe(
       // Só as peças que caem nesta folha.
       for (const peca of pecas) {
         const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
-        const naFolha =
-          caixa.maxX >= origem.x && caixa.minX <= origem.x + larguraImprimivel && caixa.maxY >= origem.y && caixa.minY <= origem.y + alturaImprimivel;
-        if (naFolha) desenharPeca(doc, peca, origem);
+        const cai =
+          caixa.maxY >= origem.y && caixa.minY <= origem.y + larguraImprimivel && caixa.maxX >= origem.x && caixa.minX <= origem.x + alturaImprimivel;
+        if (cai) desenharPeca(doc, peca, origem);
       }
 
       doc.restore();
@@ -392,8 +412,8 @@ export async function gerarPdfDeMoldesIndividuais(
   for (const peca of pecas) {
     // A folha enquadra a linha de corte: enquadrando o contorno, a costura (que fica fora dele) saía cortada na beira.
     const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
-    const colunas = Math.max(1, Math.ceil(bbox.largura / larguraImprimivel));
-    const linhas = Math.max(1, Math.ceil(bbox.altura / alturaImprimivel));
+    const colunas = Math.max(1, Math.ceil(bbox.altura / larguraImprimivel));
+    const linhas = Math.max(1, Math.ceil(bbox.largura / alturaImprimivel));
     const totalDePaginasDaPeca = colunas * linhas;
 
     let indiceNaPeca = 0;
@@ -403,8 +423,9 @@ export async function gerarPdfDeMoldesIndividuais(
         primeiraPagina = false;
         indiceNaPeca++;
 
-        const origem = { x: bbox.minX + coluna * larguraImprimivel, y: bbox.minY + linha * alturaImprimivel };
+        const origem = { x: bbox.minX + linha * alturaImprimivel, y: bbox.minY + coluna * larguraImprimivel };
 
+        doc.addContent(MARCA_DA_FOLHA_COMO_A_TELA);
         doc.save();
         doc.rect(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm), mmParaPontos(larguraImprimivel), mmParaPontos(alturaImprimivel));
         doc.clip();

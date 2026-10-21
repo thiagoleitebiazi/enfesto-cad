@@ -26,6 +26,29 @@ function renderizar(options: { mostrarEscala?: boolean; candidatos?: CandidatoDe
 describe('DialogoDeImportacaoDeContornos', () => {
   afterEach(() => cleanup());
 
+  it('com o desenho do contorno, cada item mostra a miniatura dele, na orientação da tela, com as linhas de dentro', () => {
+    renderizar({
+      candidatos: [
+        {
+          id: 'c1',
+          vertices: 4,
+          desenho: {
+            contorno: [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 300 }, { x: 0, y: 300 }],
+            linhas: [[{ x: 30, y: 20 }, { x: 30, y: 280 }]],
+          },
+        },
+        { id: 'c2', vertices: 12 },
+      ],
+    });
+    const miniatura = screen.getByRole('img', { name: 'Desenho do contorno 1' });
+    // O comprimento (o y do mundo) na horizontal: a caixa é larga e baixa.
+    const [, , largura, altura] = miniatura.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(largura!).toBeGreaterThan(altura!);
+    expect(miniatura.querySelector('polygon')!.getAttribute('points')).toBe('0,0 0,60 300,60 300,0');
+    expect(miniatura.querySelectorAll('polyline')).toHaveLength(1);
+    expect(screen.queryByRole('img', { name: 'Desenho do contorno 2' })).toBeNull();
+  });
+
   it('não permite importar sem nome e direção do fio definidos pelo usuário', () => {
     renderizar();
 

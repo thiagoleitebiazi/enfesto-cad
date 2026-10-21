@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { retanguloEnvolvente, type Ponto2D } from '../core/geometria';
 import { Sobreposicao } from './Sobreposicao';
 
 /** Um contorno candidato a peça, vindo de PDF ou DXF. `direcaoSugerida` só existe quando o próprio arquivo traz a linha de fio. */
@@ -6,6 +7,32 @@ export interface CandidatoDeContorno {
   readonly id: string;
   readonly vertices: number;
   readonly direcaoSugerida?: 'vertical' | 'horizontal' | undefined;
+  /**
+   * O desenho do contorno (e das linhas de dentro dele), em mm do mundo, como ele vai ficar: sem nomes de camada no
+   * arquivo, é por ele que se sabe qual contorno é qual peça.
+   */
+  readonly desenho?: { readonly contorno: readonly Ponto2D[]; readonly linhas?: readonly (readonly Ponto2D[])[] };
+}
+
+/** A miniatura do contorno, na orientação da tela (o y do mundo na horizontal, o x descendo), com as linhas de dentro. */
+function MiniaturaDoContorno(props: { readonly titulo: string; readonly desenho: NonNullable<CandidatoDeContorno['desenho']> }): React.JSX.Element {
+  const caixa = retanguloEnvolvente([...props.desenho.contorno]);
+  const margem = Math.max(caixa.largura, caixa.altura, 1) * 0.05;
+  const naTela = (pontos: readonly Ponto2D[]): string => pontos.map((p) => `${p.y},${p.x}`).join(' ');
+  return (
+    <svg
+      className="miniatura-de-contorno"
+      role="img"
+      aria-label={props.titulo}
+      viewBox={`${caixa.minY - margem} ${caixa.minX - margem} ${caixa.altura + margem * 2 || 1} ${caixa.largura + margem * 2 || 1}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <polygon points={naTela(props.desenho.contorno)} />
+      {(props.desenho.linhas ?? []).map((linha, i) => (
+        <polyline key={i} points={naTela(linha)} />
+      ))}
+    </svg>
+  );
 }
 
 export interface ItemConfirmadoDeContorno {
@@ -103,6 +130,7 @@ export function DialogoDeImportacaoDeContornos(props: DialogoDeImportacaoDeConto
           return (
             <fieldset key={c.id} className="grupo-de-rotacao">
               <legend>Contorno {indice + 1} — {c.vertices} vértices</legend>
+              {c.desenho && <MiniaturaDoContorno titulo={`Desenho do contorno ${indice + 1}`} desenho={c.desenho} />}
               <label className="opcao-em-linha">
                 <input
                   type="checkbox"

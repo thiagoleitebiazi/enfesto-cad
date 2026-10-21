@@ -277,7 +277,7 @@ describe('importarDxf — as retas soltas dentro da peça', () => {
     const resultado = importarDxf(doc, 'retas');
     expect(resultado.pecas[0]!.linhasInternas).toEqual([[{ x: 50, y: 200 }, { x: 250, y: 200 }]]);
     expect(resultado.pecas[0]!.linhaDeFio).toEqual({ inicio: { x: 150, y: 50 }, fim: { x: 150, y: 350 } });
-    expect(resultado.avisos).toContain('1 linha(s) reta(s) fora das peças foram ignoradas.');
+    expect(resultado.avisos).toContain('1 linha(s) ou forma(s) fora das peças (textos e anotações do desenho, por exemplo) foram ignoradas.');
   });
 
   it('a polilinha aberta de dois pontos também', () => {

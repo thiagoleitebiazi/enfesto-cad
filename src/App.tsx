@@ -3341,6 +3341,8 @@ export default function App(): React.JSX.Element {
               contorno,
               furos: peca.furos.map(paraTela),
               linhasInternas: peca.linhasInternas.map(paraTela),
+              // Os piques do arquivo: a posição vai como os pontos; a aresta é a mesma (o contorno é levado ponto a ponto).
+              piques: peca.piques.map((p) => ({ id: proximoId(), posicao: dxfParaMundo(p.posicao, altura), indiceAresta: p.indiceAresta })),
               // A linha exata do arquivo só vale se o usuário manteve a
               // direção dela no diálogo; se escolheu a outra, vale a escolha.
               linhaDeFio:
@@ -5459,7 +5461,11 @@ export default function App(): React.JSX.Element {
           titulo="Importar contornos do PDF"
           descricao="A escala é a do papel: escolha o fator abaixo."
           resumoDeDescartes={`Descartados: ${importacaoPdfPendente.descartados.borda} de borda da folha, ${importacaoPdfPendente.descartados.areaPequena} de área pequena (letras e marcas), ${importacaoPdfPendente.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${importacaoPdfPendente.curvasAproximadas}.`}
-          candidatos={importacaoPdfPendente.candidatos.map((c) => ({ id: c.id, vertices: c.vertices }))}
+          candidatos={importacaoPdfPendente.candidatos.map((c) => ({
+            id: c.id,
+            vertices: c.vertices,
+            ...(importacaoPdfPendente.alturaPaginaPt !== null ? { desenho: { contorno: contornoEmMundo(c, importacaoPdfPendente.alturaPaginaPt, 1) } } : {}),
+          }))}
           mostrarEscala
           onConfirmar={confirmarImportacaoPdf}
           onCancelar={() => setImportacaoPdfPendente(null)}
@@ -5470,11 +5476,17 @@ export default function App(): React.JSX.Element {
           titulo="Importar contornos do DXF"
           descricao={`Unidade do arquivo: ${importacaoDxfPendente.unidadeDetectada}.`}
           resumoDeDescartes="Linhas abertas do arquivo ficam como linhas internas das peças."
-          candidatos={importacaoDxfPendente.pecas.map((p, indice) => ({
-            id: String(indice),
-            vertices: p.contorno.length,
-            direcaoSugerida: p.linhaDeFio ? direcaoNaTelaDaLinhaDeFio(p.linhaDeFio) : undefined,
-          }))}
+          candidatos={importacaoDxfPendente.pecas.map((p, indice) => {
+            // O desenho como ele vai ficar na tela (o mesmo caminho da importação, `dxfParaMundo`).
+            const altura = alturaDoDesenho(importacaoDxfPendente);
+            const noMundo = (pontos: readonly Ponto2D[]) => pontos.map((q) => dxfParaMundo(q, altura));
+            return {
+              id: String(indice),
+              vertices: p.contorno.length,
+              direcaoSugerida: p.linhaDeFio ? direcaoNaTelaDaLinhaDeFio(p.linhaDeFio) : undefined,
+              desenho: { contorno: noMundo(p.contorno), linhas: [...p.linhasInternas.map(noMundo), ...(p.linhaDeFio ? [noMundo([p.linhaDeFio.inicio, p.linhaDeFio.fim])] : [])] },
+            };
+          })}
           mostrarEscala={false}
           onConfirmar={confirmarImportacaoDxf}
           onCancelar={() => setImportacaoDxfPendente(null)}

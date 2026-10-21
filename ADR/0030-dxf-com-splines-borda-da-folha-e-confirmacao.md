@@ -57,6 +57,16 @@ fechada, que era a borda da folha, e a folha virava peça.
   e partes fora da mesa de 1500 mm. O desenho original também tem essas
   sobreposições.
 
+## Correção posterior (ADR 0090)
+
+- A "caixa de nota" de 430 × 60 mm é uma peça: o acabamento do decote
+  ("101-ACAB. DO DECOTE-G – 1 VEZ"), com nome, quantidade e linha de fio como
+  as outras. A janela de importação a deixa marcada, como todas; quem a
+  desmarcou foi a conferência deste ADR.
+- A orientação foi conferida (ADR 0090): a tela mostra o arquivo como o
+  visualizador de CAD, sem espelho. O PDF de tamanho real é que saía
+  espelhado, e foi corrigido.
+
 ## Consequências
 
 - `importarDxf` retorna as candidatas sem decidir por conta própria a direção

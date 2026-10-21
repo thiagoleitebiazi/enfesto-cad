@@ -266,5 +266,8 @@ compensado, defeitos não evitados, emendas, enfesto com lotes misturados.
   soltos que fecham, CIRCLE como furo, SPLINE, blocos com INSERT e escala;
   unidade pelo `$INSUNITS` — mm, cm, m, polegada, pé —, a desconhecida
   presumida em mm com aviso) e PDF vetorial. Testados com arquivos sintéticos
-  escritos pela especificação (`src/formats/formatosSuportados.test.ts`);
-  **nenhum arquivo real de outro CAD foi testado.**
+  escritos pela especificação (`src/formats/formatosSuportados.test.ts`) e com
+  dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm, um
+  com curvas e o outro com polilinhas, tudo numa camada): sem nomes de camada,
+  cada contorno aparece desenhado na janela de importação, e a direção do fio
+  é escolhida por quem importa (o programa não a presume).

@@ -710,6 +710,31 @@ button:focus-visible {
   vector-effect: non-scaling-stroke;
 }
 
+.miniatura-de-contorno {
+  display: block;
+  width: 100%;
+  height: 140px;
+  margin: 4px 0 6px;
+  padding: 4px;
+  border-radius: 2px;
+  background: #fff;
+  border: 1px solid #e1e4e8;
+}
+
+.miniatura-de-contorno polygon {
+  fill: #f2f4f7;
+  stroke: #34465c;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.miniatura-de-contorno polyline {
+  fill: none;
+  stroke: #7a8696;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
 .lista-de-pecas button.item-selecionado .miniatura-de-peca {
   border-color: #9cbfea;
 }

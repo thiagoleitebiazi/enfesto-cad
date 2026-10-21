@@ -53,7 +53,8 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   (`electron/main.ts` + `preload.ts`).
 - [ ] Importação AAMA/ASTM: tratada apenas como heurística de nome de camada
   sobre DXF comum, não uma implementação certificada — ver ADR 0002 e risco
-  R-1 (nenhum arquivo real de terceiros disponível para testar).
+  R-1 (fechado no ADR 0090 com dois DXF reais de outro programa de modelagem — DXF comum, sem as camadas
+  numeradas do AAMA, que nenhum arquivo real trouxe).
 - [x] Bug real encontrado e corrigido numa análise posterior (2026-09-28):
   `POLYLINE` clássica só lia a camada (código 8) de cada `VERTEX`, nunca do
   cabeçalho da própria `POLYLINE` — arquivos que declaram a camada uma vez

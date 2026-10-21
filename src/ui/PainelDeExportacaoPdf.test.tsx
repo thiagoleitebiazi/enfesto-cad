@@ -17,7 +17,7 @@ describe('PainelDeExportacaoPdf — a margem', () => {
     const { onExportar, margem, exportar } = abrir();
     fireEvent.change(margem, { target: { value: '12,5' } });
     fireEvent.click(exportar);
-    expect(onExportar).toHaveBeenCalledWith(expect.objectContaining({ margemMm: 12.5, formato: 'A4' }));
+    expect(onExportar).toHaveBeenCalledWith(expect.objectContaining({ margemMm: 12.5, formato: 'A4', orientacao: 'paisagem' }));
   });
 
   it('a margem que não deixa espaço na folha é recusada, e o botão fica desligado', () => {

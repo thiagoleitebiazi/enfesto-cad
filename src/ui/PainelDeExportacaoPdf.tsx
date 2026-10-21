@@ -24,7 +24,9 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
     props.podeExportarEncaixeCompleto ? 'encaixe-completo' : 'moldes-individuais',
   );
   const [formato, setFormato] = useState<FormatoDePagina>('A4');
-  const [orientacao, setOrientacao] = useState<OrientacaoDePagina>('retrato');
+  // Paisagem: a folha mostra a peça como a tela, com o comprimento na horizontal (ADR 0090) — deitada, ela gasta as
+  // mesmas folhas que antes gastava em retrato.
+  const [orientacao, setOrientacao] = useState<OrientacaoDePagina>('paisagem');
   const [margemMm, setMargemMm] = useState('10');
   // A margem que não deixa espaço na folha travava o programa ao gerar; agora é recusada aqui.
   const margem = lerMedida(margemMm);

@@ -131,3 +131,102 @@ describe('DXF — o que não vira peça, e os erros', () => {
     expect(r.avisos.length).toBeGreaterThan(0);
   });
 });
+
+describe('DXF — como chegam os arquivos reais de outro programa (tudo numa camada, em cm)', () => {
+  // A estrutura dos dois arquivos reais recebidos (que não ficam no repositório): o contorno, o pique como um traço
+  // curto que atravessa a linha de corte, linhas e textos dentro da peça, e textos fora dela, tudo em "Camada 1".
+  const C = 'Camada 1';
+  const splineAberta = (pontos: readonly [number, number][]): Par[] => [
+    [0, 'SPLINE'],
+    [8, C],
+    [70, 0],
+    [71, 1],
+    [72, pontos.length + 2],
+    [73, pontos.length],
+    ...[0, ...pontos.map((_, i) => i / (pontos.length - 1)), 1].map((k): Par => [40, k]),
+    ...pontos.flatMap(([x, y]): Par[] => [[10, x], [20, y]]),
+  ];
+  const arquivo = documento(
+    [
+      ...lw(C, QUADRADO),
+      // Os piques: um traço reto de 0,6 cm na borda da direita (mais dentro que fora: o meio dele fica dentro da peça)
+      // e uma curva de grau 1 de 0,4 cm na de cima.
+      ...lw(C, [[99.6, 40], [100.2, 40]], false),
+      ...splineAberta([[30, 99.8], [30, 100.2]]),
+      // Uma linha de 3 cm que encosta na borda por dentro: é linha da peça, não pique (passa de 20 mm).
+      ...lw(C, [[70, 97.5], [70, 100.5]], false),
+      // O fio desenhado, sem camada de fio: fica como linha de dentro.
+      ...lw(C, [[50, 10], [50, 90]], false),
+      // Textos fora da peça: uma curva aberta e uma reta; e uma reta que começa dentro e termina longe, fora (o meio fora).
+      ...splineAberta([[200, 0], [202, 3], [204, 0]]),
+      ...lw(C, [[210, 0], [215, 5]], false),
+      ...lw(C, [[90, 50], [130, 50]], false),
+    ],
+    5,
+  );
+
+  it('o traço curto que atravessa a linha de corte vira pique, no ponto em que a cruza, na aresta certa', () => {
+    const r = importarDxf(arquivo, 'real');
+    const peca = r.pecas[0]!;
+    expect(peca.piques).toHaveLength(2);
+    const [reto, curvo] = [...peca.piques].sort((a, b) => a.indiceAresta - b.indiceAresta);
+    expect(reto!.indiceAresta).toBe(1);
+    expect(reto!.posicao.x).toBeCloseTo(1000, 6);
+    expect(reto!.posicao.y).toBeCloseTo(400, 6);
+    expect(curvo!.indiceAresta).toBe(2);
+    expect(curvo!.posicao.x).toBeCloseTo(300, 6);
+    expect(curvo!.posicao.y).toBeCloseTo(1000, 6);
+    expect(r.avisos).toContain('2 pique(s) reconhecido(s): traço(s) de até 20 mm que atravessa(m) a linha de corte. O desenho de cada um é o do programa (aba Marcações), no ponto em que o traço cruza o contorno.');
+  });
+
+  it('o pique não fica também como linha; a linha longa e o fio desenhado ficam como linhas da peça', () => {
+    const peca = importarDxf(arquivo, 'real').pecas[0]!;
+    // (O traço do pique de 0,6 cm tem o meio dentro da peça: mesmo assim ele não vira linha.)
+    expect(peca.linhasInternas).toHaveLength(2);
+    expect(peca.linhasInternas.map((l) => l[0])).toEqual([
+      { x: 700, y: 975 },
+      { x: 500, y: 100 },
+    ]);
+  });
+
+  it('o que fica fora das peças, de qualquer tipo (a curva também), é contado no aviso', () => {
+    expect(importarDxf(arquivo, 'real').avisos).toContain('3 linha(s) ou forma(s) fora das peças (textos e anotações do desenho, por exemplo) foram ignoradas.');
+  });
+
+  it('o traço curto que só corta um canto da peça (as duas pontas fora) não é pique', () => {
+    const r = importarDxf(documento([...lw(C, QUADRADO), ...lw(C, [[99.5, 100.2], [100.2, 99.5]], false)], 5), 'canto');
+    expect(r.pecas[0]!.piques).toEqual([]);
+  });
+
+  it('o pique fica na aresta que ele cruza, mesmo quando o prolongamento de outra aresta passa pelo mesmo ponto', () => {
+    // Uma peça em L: a aresta de dentro (y = 40, de x = 100 a 40) prolongada passa por (0, 40), na borda da esquerda.
+    const emL: [number, number][] = [
+      [0, 0],
+      [100, 0],
+      [100, 40],
+      [40, 40],
+      [40, 100],
+      [0, 100],
+    ];
+    const r = importarDxf(documento([...lw(C, emL), ...lw(C, [[-0.2, 39.9], [0.2, 40.1]], false)], 5), 'l');
+    expect(r.pecas[0]!.piques).toHaveLength(1);
+    expect(r.pecas[0]!.piques[0]!.indiceAresta).toBe(5);
+  });
+
+  it('com duas peças, o pique fica só na peça que o traço atravessa', () => {
+    const outra: [number, number][] = [
+      [200, 0],
+      [300, 0],
+      [300, 100],
+      [200, 100],
+    ];
+    const r = importarDxf(documento([...lw(C, QUADRADO), ...lw(C, outra), ...lw(C, [[299.8, 50], [300.3, 50]], false)], 5), 'duas');
+    expect(r.pecas.map((p) => p.piques.length)).toEqual([0, 1]);
+  });
+
+  it('sem a linha de fio numa camada própria, a direção não é presumida: o aviso pede para defini-la', () => {
+    const r = importarDxf(arquivo, 'real');
+    expect(r.pecas[0]!.linhaDeFio).toBeNull();
+    expect(r.avisos.some((a) => a.includes('não tem linha de fio reconhecível'))).toBe(true);
+  });
+});

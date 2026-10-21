@@ -62,6 +62,37 @@ interface EntidadeBruta {
 const AMOSTRAS_POR_VAO_DA_SPLINE = 12;
 // Formas menores que isto são textos/letras desenhados como contorno, não peças.
 const AREA_MINIMA_DE_CONTORNO_MM2 = 500;
+// Um traço aberto até este comprimento que atravessa a linha de corte (uma ponta dentro da peça, a outra fora) é um
+// pique — como os programas de modelagem o desenham quando não há camada própria para ele.
+const COMPRIMENTO_MAXIMO_DO_PIQUE_MM = 20;
+
+/** O ponto em que os segmentos p→q e a→b se cruzam, ou `null`. */
+function cruzamento(p: Ponto2D, q: Ponto2D, a: Ponto2D, b: Ponto2D): Ponto2D | null {
+  const r = { x: q.x - p.x, y: q.y - p.y };
+  const s = { x: b.x - a.x, y: b.y - a.y };
+  const denominador = r.x * s.y - r.y * s.x;
+  if (Math.abs(denominador) < 1e-12) return null;
+  const t = ((a.x - p.x) * s.y - (a.y - p.y) * s.x) / denominador;
+  const u = ((a.x - p.x) * r.y - (a.y - p.y) * r.x) / denominador;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return ponto(p.x + t * r.x, p.y + t * r.y);
+}
+
+/** O pique que um traço aberto curto faz no contorno: onde ele cruza a linha de corte e em que aresta; ou `null`. */
+function piqueDoTraco(pontos: readonly Ponto2D[], contorno: Contorno): { readonly posicao: Ponto2D; readonly indiceAresta: number } | null {
+  if (pontos.length < 2) return null;
+  let comprimento = 0;
+  for (let i = 1; i < pontos.length; i++) comprimento += Math.hypot(pontos[i]!.x - pontos[i - 1]!.x, pontos[i]!.y - pontos[i - 1]!.y);
+  if (comprimento > COMPRIMENTO_MAXIMO_DO_PIQUE_MM) return null;
+  if (pontoDentroDoContorno(pontos[0]!, contorno) === pontoDentroDoContorno(pontos.at(-1)!, contorno)) return null;
+  for (let i = 1; i < pontos.length; i++) {
+    for (let k = 0; k < contorno.length; k++) {
+      const posicao = cruzamento(pontos[i - 1]!, pontos[i]!, contorno[k]!, contorno[(k + 1) % contorno.length]!);
+      if (posicao) return { posicao, indiceAresta: k };
+    }
+  }
+  return null;
+}
 
 function deBoor(grau: number, nos: readonly number[], ctrl: readonly Ponto2D[], pesos: readonly number[], vao: number, t: number): Ponto2D {
   const d: { x: number; y: number; w: number }[] = [];
@@ -563,6 +594,8 @@ export interface PecaImportadaDxf {
   readonly furos: Contorno[];
   readonly linhasInternas: Contorno[];
   readonly linhaDeFio: LinhaDeFio | null;
+  /** Os piques: o ponto em que um traço curto cruza a linha de corte e a aresta do contorno em que ele fica. */
+  readonly piques: { readonly posicao: Ponto2D; readonly indiceAresta: number }[];
 }
 
 export interface ResultadoImportacaoDxf {
@@ -677,15 +710,43 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
   const linhasDeFioCandidatas = entidadesMm.filter(
     (e) => e.tipo === 'LINE' && nomeDeCamadaContem(e.camada, 'FIO', 'GRAIN'),
   );
+  // Os piques: os traços abertos curtos que atravessam a linha de corte de uma peça. Antes eles caíam em "linha
+  // reta fora das peças" (o meio do traço fica fora) e eram ignorados — o pique sumia.
+  const piquesPorTraco = new Map<EntidadeBruta, { readonly contorno: EntidadeBruta; readonly posicao: Ponto2D; readonly indiceAresta: number }>();
+  for (const e of entidadesMm) {
+    if (e.fechada || linhasDeFioCandidatas.includes(e)) continue;
+    for (const c of contornos) {
+      const pique = piqueDoTraco(e.pontos, c.pontos);
+      if (pique) {
+        piquesPorTraco.set(e, { contorno: c, ...pique });
+        break;
+      }
+    }
+  }
+  if (piquesPorTraco.size > 0) {
+    avisos.push(
+      `${piquesPorTraco.size} pique(s) reconhecido(s): traço(s) de até ${COMPRIMENTO_MAXIMO_DO_PIQUE_MM} mm que atravessa(m) a linha de corte. O desenho de cada um é o do programa (aba Marcações), no ponto em que o traço cruza o contorno.`,
+    );
+  }
   // As retas soltas (LINE, ou polilinha aberta de dois pontos) que não são linha de fio: dentro de uma peça,
   // são linhas internas dela, como a janela de importação diz. Antes eram todas descartadas — a linha de
   // posição do bolso, o centro da frente sumiam.
   const meioDa = (e: EntidadeBruta): Ponto2D =>
     ponto((e.pontos[0]!.x + e.pontos.at(-1)!.x) / 2, (e.pontos[0]!.y + e.pontos.at(-1)!.y) / 2);
-  const retasSoltas = entidadesMm.filter((e) => !e.fechada && e.pontos.length === 2 && !linhasDeFioCandidatas.includes(e));
-  const retasDeFora = retasSoltas.filter((e) => !contornos.some((c) => pontoDentroDoContorno(meioDa(e), c.pontos)));
-  if (retasDeFora.length > 0) {
-    avisos.push(`${retasDeFora.length} linha(s) reta(s) fora das peças foram ignoradas.`);
+  const retasSoltas = entidadesMm.filter((e) => !e.fechada && e.pontos.length === 2 && !linhasDeFioCandidatas.includes(e) && !piquesPorTraco.has(e));
+  // Tudo o que fica fora das peças (textos e anotações do desenho; a borda da folha já foi dita) é ignorado — e dito,
+  // de qualquer tipo: antes só as retas de dois pontos eram contadas, e o texto escrito com curvas sumia calado.
+  const pontoDeReferencia = (e: EntidadeBruta): Ponto2D => (!e.fechada && e.pontos.length === 2 ? meioDa(e) : e.pontos[0]!);
+  const ignoradas = entidadesMm.filter(
+    (e) =>
+      e.pontos.length > 0 &&
+      !contornos.includes(e) &&
+      !bordas.includes(e) &&
+      !piquesPorTraco.has(e) &&
+      !contornos.some((c) => pontoDentroDoContorno(pontoDeReferencia(e), c.pontos)),
+  );
+  if (ignoradas.length > 0) {
+    avisos.push(`${ignoradas.length} linha(s) ou forma(s) fora das peças (textos e anotações do desenho, por exemplo) foram ignoradas.`);
   }
 
   const pecas: PecaImportadaDxf[] = contornos.map((contornoEntidade, indice) => {
@@ -694,7 +755,7 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
       .filter((f) => f.pontos.length > 0 && pontoDentroDoContorno(f.pontos[0]!, contorno))
       .map((f) => f.pontos);
     const internasDaPeca = [
-      ...internasCandidatas.filter((linha) => linha.pontos.length > 0 && pontoDentroDoContorno(linha.pontos[0]!, contorno)),
+      ...internasCandidatas.filter((linha) => linha.pontos.length > 0 && !piquesPorTraco.has(linha) && pontoDentroDoContorno(linha.pontos[0]!, contorno)),
       ...retasSoltas.filter((reta) => pontoDentroDoContorno(meioDa(reta), contorno)),
     ].map((linha) => linha.pontos);
     const fioDaPeca = linhasDeFioCandidatas.find((linha) => {
@@ -714,6 +775,7 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
       furos: furosDaPeca,
       linhasInternas: internasDaPeca,
       linhaDeFio: fioDaPeca ? { inicio: fioDaPeca.pontos[0]!, fim: fioDaPeca.pontos[1]! } : null,
+      piques: [...piquesPorTraco.values()].filter((p) => p.contorno === contornoEntidade).map((p) => ({ posicao: p.posicao, indiceAresta: p.indiceAresta })),
     };
   });
 
