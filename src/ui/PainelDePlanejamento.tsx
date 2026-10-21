@@ -23,7 +23,10 @@ import {
   type FormularioDoRolo,
 } from './formularioDoPlanejamento';
 import {
+  casamentoDaMalha,
+  estadoDoRolo,
   grupoDoRolo,
+  ROTULO_DO_DEFEITO,
   lerGradeColada,
   removerRolo,
   salvarMalha,
@@ -32,7 +35,11 @@ import {
   type CadastroDeProducao,
   type OrdemDeProducao,
   type RoloDeEstoque,
+  type TipoDeDefeito,
 } from '../domain/cadastroDeProducao';
+import { ERP_NAO_CONFIGURADO, importarOrdensCsv } from '../domain/importacaoDeOrdens';
+import { fatoresDeCompensacao, medidasCompensadas, riscoCompensado, ROTULO_DA_FONTE_DO_ENCOLHIMENTO, type FatoresDeCompensacao, type FonteDoEncolhimento } from '../domain/encolhimento';
+import { EstoqueDoPlano } from './EstoqueDoPlano';
 import { linhaDeCorteDaPeca, rotacoesPermitidas, type Molde } from '../domain/molde';
 import { modeloDoPlano, quantidadesPorRoupa } from '../domain/modeloDoPlano';
 import { revisaoAtualDoMolde, type Projeto } from '../domain/projeto';
@@ -70,7 +77,7 @@ import {
 } from '../domain/planejamento';
 import type { Composicao } from '../domain/composicaoDeRiscos';
 import type { OpcoesDaBusca, ResultadoDaBusca } from '../domain/buscaDeRiscos';
-import { chaveDaGrade, escreverGrade, METODO_DO_RISCO, type GradeDoRisco } from '../domain/risco';
+import { chaveDaGrade, escreverGrade, METODO_DO_RISCO, ROTULO_DO_PONTO_DE_CASAMENTO, type GradeDoRisco, type RiscoGerado } from '../domain/risco';
 
 /** Quem faz os riscos (no programa, um Web Worker; nos testes, a própria função). */
 export type BuscarRiscos = (
@@ -131,6 +138,9 @@ interface Base {
 
 interface BuscaFeita {
   readonly assinatura: string;
+  /** Os fatores da compensação de encolhimento com que os riscos foram feitos (ou `null`). */
+  readonly compensacao: FatoresDeCompensacao | null;
+  readonly larguraDoRiscoMm: number;
   readonly composicoes: readonly Composicao[];
   readonly grades: ReadonlyMap<string, GradeDoRisco>;
   readonly resultado: ResultadoDaBusca;
@@ -163,6 +173,41 @@ function riscoDaMesaNoPlano(pecas: readonly Molde[], grade: GradeDoRisco, tamanh
     })),
   };
 }
+
+/** O risco feito pela busca, como entra no plano (aumentado pela compensação de encolhimento, quando ela foi pedida). */
+function riscoDaBusca(busca: BuscaFeita, chave: string, risco: RiscoGerado): RiscoDoPlanejamento {
+  const r = riscoGeradoNoPlano(chave, risco);
+  return busca.compensacao ? riscoCompensado(r, busca.compensacao, busca.larguraDoRiscoMm) : r;
+}
+
+/** Como usar, na própria janela: o caminho do molde ao estoque, e o que é configurável. */
+const COMO_USAR = [
+  '1. Molde: confira as peças de cada tamanho e a quantidade por roupa; registre a revisão do molde quando as peças mudarem.',
+  '2. Ordem: digite, cole a grade de uma planilha, ou importe um CSV (o formato está na etapa); guarde a ordem no cadastro.',
+  '3. Malha e rolos: a malha (largura, rendimento ou gramatura, encolhimento e a fonte dele, padrão e a repetição do desenho) e o material — um peso, ou os rolos do estoque (cada defeito com a posição, a extensão e a largura afetada).',
+  '4. Risco e enfesto: o tipo de enfesto, de onde vem o risco (gerado, da mesa ou informado) e a configuração; a compensação do encolhimento só entra depois de ver a prévia e confirmar.',
+  '5. Alternativas: compare consumo, enfestos e excedente; o desenho mostra cada risco em escala.',
+  '6. Revisar e confirmar: ajuste as camadas e a mesa (o sugerido e o escolhido ficam no plano), diga quem confirma e confirme.',
+  'Planos deste projeto: o plano confirmado mostra os valores de então; nele, reserve os rolos e, depois do corte, dê a baixa. Um movimento errado se desfaz com o estorno (com o motivo), e tudo fica no histórico.',
+  'Configurável (etapa 4, guardado para os próximos planos): margens da mesa, pontas por camada, perda por rolo, folhas, altura e peso máximos do enfesto, comprimento e largura da mesa, roupas por risco, distância entre as peças, tolerância de rendimento, tempo da busca, se a emenda é permitida e a sobreposição dela.',
+  'O que bloqueia não deixa calcular nem confirmar (está em "Para calcular, falta" ou "Nenhuma composição calcula"); o que é aviso aparece no plano e não impede; o que é estimativa (pelo peso, pelo rendimento) é dito como estimativa.',
+];
+
+/** As limitações conhecidas, ditas na própria janela. */
+const LIMITACOES = [
+  'O encaixe é uma heurística (pontos de canto com encosto, três ordens de entrada): nem o menor risco nem a melhor composição são garantidos; a busca tem limite de roupas por risco e de tempo, e diz o que ficou de fora.',
+  'Login: o programa não tem; o responsável é digitado e aparece como "informado".',
+  'Banco de dados: não há; projetos, cadastro e estoque são arquivos deste computador (com cópia de segurança e a versão anterior para recuperar).',
+  'ERP: nenhum está ligado; as ordens entram digitadas, coladas de planilha ou por CSV.',
+  'Defeitos sem posição não são evitados (o plano pede a decisão); a largura afetada é registrada, mas a camada pula o trecho inteiro do defeito.',
+  'Emendas só nas linhas do risco que não cortam peça (riscos gerados ou da mesa), e só se a configuração permitir.',
+  'Listras e xadrez: o casamento automático alinha o ponto "casamento" de cada peça à repetição; ele precisa da repetição e da fase no cadastro da malha e das camadas estendidas com o desenho alinhado (mesa de agulhas). Casamento por mais de um ponto da peça não é feito.',
+  'Encolhimento: compensado só no risco, por decisão; a peça não muda no projeto.',
+  'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos; nenhum arquivo real de outro CAD foi testado.',
+];
+
+/** Uma medida em cm, como é digitada no cadastro da malha. */
+const emCm = (mm: number): string => `${(mm / 10).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} cm`;
 
 function Campo(props: { readonly rotulo: string; readonly valor: string; readonly onMudar: (v: string) => void; readonly tipo?: string; readonly dica?: string }): React.JSX.Element {
   return (
@@ -237,6 +282,10 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
   const [aceitarPadrao, setAceitarPadrao] = useState(false);
   const [rendimentoPrincipal, setRendimentoPrincipal] = useState<RendimentoPrincipal>('informado');
   const [formRolo, setFormRolo] = useState<FormularioDoRolo>(ROLO_VAZIO);
+  const [aceitarDefeitos, setAceitarDefeitos] = useState(false);
+  const [errosDoCsv, setErrosDoCsv] = useState<readonly string[]>([]);
+  // O plano em edição (o rascunho aberto): as reservas dele não contam como de outro plano.
+  const [planoEmEdicao, setPlanoEmEdicao] = useState<{ readonly id: string; readonly criadoEmIso: string; readonly copiaDePlanoId?: string } | null>(null);
   const [roloARemover, setRoloARemover] = useState<string | null>(null);
   const rolosDaMalha = useMemo(() => cadastro.rolos.filter((r) => r.malhaId === malhaEscolhida && !r.indisponivel), [cadastro.rolos, malhaEscolhida]);
   const rolosSelecionados = useMemo(() => rolosDaMalha.filter((r) => rolosEscolhidos.has(r.id)), [rolosDaMalha, rolosEscolhidos]);
@@ -257,6 +306,31 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     Object.fromEntries(Object.entries(riscoDaMesaBase?.gradePorTamanho ?? {}).map(([t, n]) => [t, String(n)])),
   );
   const [informado, setInformado] = useState<{ comprimento: string; largura: string; grade: Record<string, string> }>({ comprimento: '', largura: '', grade: {} });
+  // A compensação de encolhimento: só depois de ver a prévia e confirmar.
+  const [compensar, setCompensar] = useState(false);
+  const [previaDaCompensacao, setPreviaDaCompensacao] = useState(false);
+  const fatores = useMemo(() => (malhaLida.malha ? fatoresDeCompensacao(malhaLida.malha) : null), [malhaLida.malha]);
+  const fatoresValidos: FatoresDeCompensacao | null = fatores && !('erro' in fatores) ? fatores : null;
+  // A decisão só vale quando se aplica: com a malha já compensada no molde, ou o risco informado à mão, ela não entra.
+  const compensacaoEmUso: FatoresDeCompensacao | null = compensar && fonte !== 'informado' ? fatoresValidos : null;
+  const casamento = useMemo(() => (malhaLida.malha && !aceitarPadrao ? casamentoDaMalha(malhaLida.malha) : null), [malhaLida.malha, aceitarPadrao]);
+  const pecasSemMarcaDeCasamento = useMemo(
+    () =>
+      modelo.pecas
+        .filter((p) => !Object.values(modelo.pecasPorTamanho).some((lista) => lista.some((x) => x.pecaId === p.id && x.molde.marcas.some((m) => (m.rotulo ?? '').toLocaleLowerCase('pt-BR').includes(ROTULO_DO_PONTO_DE_CASAMENTO)))))
+        .map((p) => p.nome),
+    [modelo],
+  );
+  const rolosComDefeitoSemPosicao = rolosSelecionados.filter((r) => r.defeitos.some((d) => d.posicaoMm === undefined));
+  // Do estoque: o que cada rolo escolhido já tem consumido ou reservado por outros planos.
+  const usoAnterior = useMemo(() => {
+    const uso: Record<string, number> = {};
+    for (const r of rolosSelecionados) {
+      const e = estadoDoRolo(cadastro, r, planoEmEdicao?.id);
+      if (e.inicialMm !== null && e.disponivelMm !== null && e.inicialMm - e.disponivelMm > 0) uso[r.id] = e.inicialMm - e.disponivelMm;
+    }
+    return uso;
+  }, [rolosSelecionados, cadastro, planoEmEdicao?.id]);
 
   const larguraPadraoDoRiscoMm = malhaLida.malha ? larguraNaMesa(malhaLida.malha.larguraUtilMm, tipo, malhaLida.malha.tubular) : null;
   const larguraDoRisco = useMemo(() => {
@@ -311,9 +385,15 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
         aceitarPadraoSemCasamento: aceitarPadrao,
         tipoDeEnfesto: tipo,
         larguraDoRiscoMm: larguraDoRisco.mm,
+        ...(aceitarDefeitos && material === 'rolos' ? { aceitarDefeitosSemPosicao: true } : {}),
+        ...(compensacaoEmUso ? { compensarEncolhimento: true } : {}),
+        ...(material === 'rolos' && Object.keys(usoAnterior).length > 0 ? { usoAnteriorDosRolosMm: usoAnterior } : {}),
       },
     };
   }, [
+    aceitarDefeitos,
+    compensacaoEmUso,
+    usoAnterior,
     errosDoMolde,
     ordemLida,
     malhaLida,
@@ -354,6 +434,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     quantidades.quantidades,
     ordemLida.ordem?.quantidadesPorTamanho,
     modelo.impressaoDigital,
+    compensacaoEmUso ? [compensacaoEmUso.comprimento, compensacaoEmUso.largura] : null,
+    casamento,
   ]);
   const buscaDesatualizada = busca !== null && busca.assinatura !== assinaturaAgora;
 
@@ -364,7 +446,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       const g = grade(gradeDaMesa, 'Risco da mesa', errosDaFonte);
       const r = riscoDaMesaNoPlano(props.pecas, g, modelo.tamanhos, larguraDoRisco.mm);
       if (!r) errosDaFonte.push('Não há peças na mesa para tirar o risco: use "Gerar os riscos" ou informe um risco.');
-      return errosDaFonte.length > 0 ? null : r;
+      if (errosDaFonte.length > 0 || !r) return null;
+      return compensacaoEmUso ? riscoCompensado(r, compensacaoEmUso, larguraDoRisco.mm) : r;
     }
     const comprimento = lerNumero(informado.comprimento, 'Comprimento do risco (m)', errosDaFonte, { obrigatorio: true });
     const largura = lerNumero(informado.largura, 'Largura do risco (m)', errosDaFonte, { obrigatorio: true });
@@ -385,7 +468,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
 
   const montadas = useMemo(() => {
     if (fonte !== 'gerar' || !busca || !entrada.entrada || !config) return null;
-    const feitos = new Map(busca.resultado.feitos.map((f) => [f.chave, riscoGeradoNoPlano(f.chave, f.risco)]));
+    const feitos = new Map(busca.resultado.feitos.map((f) => [f.chave, riscoDaBusca(busca, f.chave, f.risco)]));
     const naoSairam = new Map(busca.resultado.naoSairam.map((n) => [n.chave, n.motivo]));
     return montarAlternativas(entrada.entrada, busca.composicoes, feitos, naoSairam, config);
   }, [fonte, busca, entrada.entrada, config]);
@@ -403,10 +486,14 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     setBusca(null);
     setProgresso({ feitos: 0, total: pedidos.length });
     const assinatura = assinaturaAgora;
+    const compensacao = compensacaoEmUso;
+    const larguraDaBusca = compensacao ? larguraDoRisco.mm / compensacao.largura : larguraDoRisco.mm;
+    const larguraDoRiscoMm = larguraDoRisco.mm;
     const { promessa, cancelar } = props.buscarRiscos(
       pedidos,
       {
-        larguraMm: larguraDoRisco.mm,
+        larguraMm: larguraDaBusca,
+        ...(casamento ? { casamento } : {}),
         comprimentoMaximoMm: config.comprimentoMaximoDaMesaMm - config.margemInicialDaMesaMm - config.margemFinalDaMesaMm,
         distanciaMm: config.distanciaEntrePecasMm,
         sentidoUnico: entrada.entrada.malha.sentidoUnico,
@@ -420,7 +507,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
         cancelarRef.current = null;
         setProgresso(null);
         setEscolhida(0);
-        setBusca({ assinatura, composicoes, grades: new Map(pedidos.map((p) => [p.chave, p.grade])), resultado });
+        setBusca({ assinatura, compensacao, larguraDoRiscoMm, composicoes, grades: new Map(pedidos.map((p) => [p.chave, p.grade])), resultado });
       },
       (erro: unknown) => {
         cancelarRef.current = null;
@@ -432,7 +519,6 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
 
   // A base da revisão: a alternativa escolhida, o risco da mesa ou o informado — ou o rascunho aberto.
   const [baseDoRascunho, setBaseDoRascunho] = useState<Base | null>(null);
-  const [planoEmEdicao, setPlanoEmEdicao] = useState<{ readonly id: string; readonly criadoEmIso: string; readonly copiaDePlanoId?: string } | null>(null);
   const base: Base | null = (() => {
     if (baseDoRascunho) return baseDoRascunho;
     if (fonte === 'gerar') {
@@ -442,7 +528,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
         estrategia: alternativa.criterios[0]!,
         criterio: alternativa.criterios.map((c) => `${CRITERIOS[c].rotulo}: ${CRITERIOS[c].explicacao}`).join(' '),
         origemDaComposicao: alternativa.composicao.origem,
-        riscos: alternativa.composicao.riscos.map((r) => riscoGeradoNoPlano(r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco)),
+        riscos: alternativa.composicao.riscos.map((r) => riscoDaBusca(busca, r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco)),
         composicao: alternativa.composicao.riscos.map((r) => ({ chave: r.chave, camadas: r.camadas })),
         busca: resumoDaBusca(montadas!.avaliadas, busca.resultado.feitos.length, new Map(busca.resultado.naoSairam.map((n) => [n.chave, n.motivo])), busca.grades, busca.resultado.semTempo.length, busca.resultado.tempoMs),
       };
@@ -598,6 +684,31 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     void mudarCadastro(() => salvarOrdem(cadastro, ordem), `Ordem ${ordem.codigo} guardada no cadastro.`).then((ok) => ok && setOrdemEscolhida(id));
   };
 
+  const importarCsv = async (arquivo: File): Promise<void> => {
+    setErrosDoCsv([]);
+    const texto = await arquivo.text();
+    const r = importarOrdensCsv(texto, {
+      tamanhosDoMolde: modelo.tamanhos,
+      projetoId: props.projeto.id,
+      codigoDoMolde: props.projeto.codigo,
+      revisoes: (props.projeto.revisoesDoMolde ?? []).map((x) => x.numero),
+      revisaoAtual: revisaoAtual?.numero ?? null,
+      existentes: cadastro.ordens,
+      agoraIso: props.agoraIso(),
+      novoId: () => props.novoId('ordem'),
+    });
+    if (r.erros.length > 0) {
+      setErrosDoCsv(r.erros);
+      setMensagem(`O arquivo ${arquivo.name} não foi importado (nenhuma ordem entrou): corrija as linhas abaixo e importe de novo.`);
+      return;
+    }
+    const ok = await mudarCadastro(() => r.ordens.reduce((c, o) => salvarOrdem(c, o), cadastro), `${r.ordens.length} ordem(ns) importada(s) de ${arquivo.name}: ${r.ordens.map((o) => o.codigo).join(', ')}.`);
+    if (ok && r.ordens[0]) {
+      setOrdemEscolhida(r.ordens[0].id);
+      setFormOrdem(ordemNoFormulario(r.ordens[0]));
+    }
+  };
+
   const guardarMalha = (): void => {
     const id = malhaEscolhida === NOVA || malhaEscolhida === DO_PROJETO ? props.novoId('malha') : malhaEscolhida;
     const { malha, erros } = malhaDoFormulario(formMalha, id);
@@ -654,6 +765,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     }
     setMisturarGrupos(e.misturarGrupos);
     setAceitarPadrao(e.aceitarPadraoSemCasamento);
+    setAceitarDefeitos(e.aceitarDefeitosSemPosicao === true);
+    setCompensar(e.compensarEncolhimento === true);
     setRendimentoPrincipal(e.rendimentoPrincipal);
     setTipo(e.tipoDeEnfesto);
     setLarguraDoRiscoTexto(noCampo(e.larguraDoRiscoMm / 1000));
@@ -886,6 +999,31 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
             <button type="button" onClick={guardarOrdem}>
               {cadastro.ordens.some((o) => o.id === ordemEscolhida) ? 'Guardar as mudanças da ordem' : 'Guardar a ordem no cadastro'}
             </button>
+            <fieldset className="grupo-de-opcoes-do-formulario">
+              <legend>Importar ordens (CSV)</legend>
+              <label>
+                Arquivo CSV das ordens
+                <input
+                  type="file"
+                  accept=".csv,.txt,text/csv"
+                  onChange={(e) => {
+                    const arquivo = e.target.files?.[0];
+                    if (arquivo) void importarCsv(arquivo);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <details>
+                <summary>O formato do arquivo</summary>
+                <p className="nota-do-formulario">
+                  Uma linha de cabeçalho e uma linha por ordem, separadas por ponto e vírgula (ou vírgula, ou tabulação). Colunas: codigo (obrigatória), produto, cor, prazo (AAAA-MM-DD ou DD/MM/AAAA),
+                  observacoes, molde (o código deste projeto), revisao (o número da revisão do molde); as outras colunas são os tamanhos, com a quantidade de cada um. Exemplo:
+                </p>
+                <pre className="exemplo-de-csv">{`codigo;produto;cor;prazo;${modelo.tamanhos.join(';')}\nOP-100;Camiseta;Azul;2026-11-30;${modelo.tamanhos.map(() => '10').join(';')}`}</pre>
+                <p className="nota-do-formulario">Tudo ou nada: com um erro em qualquer linha, nenhuma ordem entra, e cada erro diz a linha. {ERP_NAO_CONFIGURADO}</p>
+              </details>
+              {errosDoCsv.length > 0 && <Faltas titulo="O CSV não foi importado:" itens={errosDoCsv} />}
+            </fieldset>
             {confirmarTrocaDaOrdem && (
               <p role="alert" className="faltas-do-plano">
                 A ordem {formOrdem.codigo} já está no cadastro: guardar troca o que está lá pelo que está na tela.{' '}
@@ -940,6 +1078,17 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               <Campo rotulo="Encolhimento na largura (%)" valor={formMalha.encolhimentoLargura} onMudar={(v) => setFormMalha({ ...formMalha, encolhimentoLargura: v })} />
               <Campo rotulo="Tolerância de largura (mm)" valor={formMalha.tolerancia} onMudar={(v) => setFormMalha({ ...formMalha, tolerancia: v })} />
               <label>
+                Fonte do encolhimento
+                <select value={formMalha.fonteDoEncolhimento} onChange={(e) => setFormMalha({ ...formMalha, fonteDoEncolhimento: e.target.value as FonteDoEncolhimento | '' })}>
+                  <option value="">(não informada)</option>
+                  {(Object.keys(ROTULO_DA_FONTE_DO_ENCOLHIMENTO) as FonteDoEncolhimento[]).map((f) => (
+                    <option key={f} value={f}>
+                      {ROTULO_DA_FONTE_DO_ENCOLHIMENTO[f]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Padrão
                 <select value={formMalha.padrao} onChange={(e) => setFormMalha({ ...formMalha, padrao: e.target.value as FormularioDaMalha['padrao'] })}>
                   <option value="liso">Liso</option>
@@ -975,6 +1124,14 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </div>
             )}
             {formMalha.padrao !== 'liso' && (
+              <div className="grade-do-plano">
+                <Campo rotulo="Repetição do desenho no comprimento (cm)" valor={formMalha.rapportComprimento} onMudar={(v) => setFormMalha({ ...formMalha, rapportComprimento: v })} />
+                <Campo rotulo="Fase do desenho no comprimento (cm)" valor={formMalha.faseComprimento} onMudar={(v) => setFormMalha({ ...formMalha, faseComprimento: v })} />
+                <Campo rotulo="Repetição do desenho na largura (cm)" valor={formMalha.rapportLargura} onMudar={(v) => setFormMalha({ ...formMalha, rapportLargura: v })} />
+                <Campo rotulo="Fase do desenho na largura (cm)" valor={formMalha.faseLargura} onMudar={(v) => setFormMalha({ ...formMalha, faseLargura: v })} />
+              </div>
+            )}
+            {formMalha.padrao !== 'liso' && (
               <label className="opcao-em-linha">
                 <input type="checkbox" checked={aceitarPadrao} onChange={(e) => setAceitarPadrao(e.target.checked)} />O casamento das listras/xadrez será feito à parte (o programa não casa)
               </label>
@@ -1003,6 +1160,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                           <th scope="col">Peso</th>
                           <th scope="col">Comprimento medido</th>
                           <th scope="col">Largura medida</th>
+                          <th scope="col">Disponível / reservado / consumido</th>
                           <th scope="col">Defeitos</th>
                           <th scope="col">Local / medição</th>
                           <th scope="col" />
@@ -1029,7 +1187,20 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                             <td>{r.pesoLiquidoG !== undefined ? `${noCampo(r.pesoLiquidoG / 1000, 2)} kg` : '—'}</td>
                             <td>{r.comprimentoMedidoMm !== undefined ? escreverM(r.comprimentoMedidoMm) : '— (sai do peso)'}</td>
                             <td>{r.larguraUtilMedidaMm !== undefined ? escreverM(r.larguraUtilMedidaMm) : '— (a da malha)'}</td>
-                            <td>{r.defeitos.length > 0 ? r.defeitos.map((d) => `${d.descricao} (${escreverM(d.perdaMm)})`).join('; ') : '—'}</td>
+                            <td>
+                              {(() => {
+                                const e = estadoDoRolo(cadastro, r, planoEmEdicao?.id);
+                                const m = (v: number | null): string => (v === null ? '—' : escreverM(v));
+                                return `${m(e.disponivelMm)} / ${escreverM(e.reservadoMm)} / ${escreverM(e.consumidoMm)}${e.origem === 'pelo peso' ? ' (estimado pelo peso)' : ''}`;
+                              })()}
+                            </td>
+                            <td>
+                              {r.defeitos.length > 0
+                                ? r.defeitos
+                                    .map((d) => `${d.tipo ? ROTULO_DO_DEFEITO[d.tipo] : d.descricao}: ${escreverM(d.perdaMm)}${d.posicaoMm !== undefined ? ` a ${escreverM(d.posicaoMm)} do começo` : ' (sem posição)'}${d.larguraAfetadaMm !== undefined ? `, ${(d.larguraAfetadaMm / 10).toFixed(1).replace('.', ',')} cm de largura` : ''}`)
+                                    .join('; ')
+                                : '—'}
+                            </td>
                             <td>
                               {[r.localizacao, r.origemDaMedicao, r.dataDaMedicao?.split('-').reverse().join('/')].filter(Boolean).join(' · ') || '—'}
                             </td>
@@ -1064,6 +1235,12 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     <input type="checkbox" checked={misturarGrupos} onChange={(e) => setMisturarGrupos(e.target.checked)} />
                     Misturar lotes/tonalidades neste plano (decisão de quem planeja)
                   </label>
+                  {rolosComDefeitoSemPosicao.length > 0 && (
+                    <label className="opcao-em-linha">
+                      <input type="checkbox" checked={aceitarDefeitos} onChange={(e) => setAceitarDefeitos(e.target.checked)} />
+                      Usar os rolos com defeito sem posição ({rolosComDefeitoSemPosicao.map((r) => r.identificacao).join(', ')}): o defeito NÃO é evitado e será tratado no enfesto (decisão de quem planeja)
+                    </label>
+                  )}
                   <details>
                     <summary>Cadastrar um rolo desta malha</summary>
                     <div className="grade-do-plano">
@@ -1074,7 +1251,20 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                       <Campo rotulo="Lote" tipo="text" valor={formRolo.lote} onMudar={(v) => setFormRolo({ ...formRolo, lote: v })} />
                       <Campo rotulo="Tonalidade" tipo="text" valor={formRolo.tonalidade} onMudar={(v) => setFormRolo({ ...formRolo, tonalidade: v })} />
                       <Campo rotulo="Defeito" tipo="text" valor={formRolo.defeito} onMudar={(v) => setFormRolo({ ...formRolo, defeito: v })} />
-                      <Campo rotulo="Perda do defeito (m)" valor={formRolo.perdaDoDefeito} onMudar={(v) => setFormRolo({ ...formRolo, perdaDoDefeito: v })} />
+                      <label>
+                        Tipo do defeito
+                        <select value={formRolo.tipoDoDefeito} onChange={(e) => setFormRolo({ ...formRolo, tipoDoDefeito: e.target.value as TipoDeDefeito | '' })}>
+                          <option value="">(não informado)</option>
+                          {(Object.keys(ROTULO_DO_DEFEITO) as TipoDeDefeito[]).map((tipo) => (
+                            <option key={tipo} value={tipo}>
+                              {ROTULO_DO_DEFEITO[tipo]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Campo rotulo="Extensão do defeito (m)" valor={formRolo.perdaDoDefeito} onMudar={(v) => setFormRolo({ ...formRolo, perdaDoDefeito: v })} />
+                      <Campo rotulo="Posição do defeito (m, do começo do rolo)" valor={formRolo.posicaoDoDefeito} onMudar={(v) => setFormRolo({ ...formRolo, posicaoDoDefeito: v })} />
+                      <Campo rotulo="Largura afetada (cm)" valor={formRolo.larguraDoDefeito} onMudar={(v) => setFormRolo({ ...formRolo, larguraDoDefeito: v })} />
                       <Campo rotulo="Localização" tipo="text" valor={formRolo.localizacao} onMudar={(v) => setFormRolo({ ...formRolo, localizacao: v })} />
                       <Campo rotulo="Origem da medição" tipo="text" valor={formRolo.origem} onMudar={(v) => setFormRolo({ ...formRolo, origem: v })} />
                       <Campo rotulo="Data da medição" tipo="date" valor={formRolo.data} onMudar={(v) => setFormRolo({ ...formRolo, data: v })} />
@@ -1179,8 +1369,94 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                 <Campo rotulo="Distância entre as peças (mm)" valor={formConfig.distancia} onMudar={(v) => setFormConfig({ ...formConfig, distancia: v })} />
                 <Campo rotulo="Tolerância de rendimento (%)" valor={formConfig.tolerancia} onMudar={(v) => setFormConfig({ ...formConfig, tolerancia: v })} />
                 <Campo rotulo="Tempo da busca dos riscos (s)" valor={formConfig.tempo} onMudar={(v) => setFormConfig({ ...formConfig, tempo: v })} />
+                <Campo rotulo="Sobreposição da emenda (cm)" valor={formConfig.sobreposicaoDaEmenda} onMudar={(v) => setFormConfig({ ...formConfig, sobreposicaoDaEmenda: v })} />
               </div>
+              <label className="opcao-em-linha">
+                <input type="checkbox" checked={formConfig.permitirEmendas} onChange={(e) => setFormConfig({ ...formConfig, permitirEmendas: e.target.checked })} />
+                A enfestadeira/o processo permite emendar uma camada (a camada que não cabe no que resta do rolo — até o fim dele ou até um defeito — continua no rolo seguinte, numa linha do risco sem peça cortada)
+              </label>
             </fieldset>
+            <fieldset className="grupo-de-opcoes-do-formulario">
+              <legend>Encolhimento</legend>
+              {!fatores || 'erro' in fatores ? (
+                <p className="nota-do-formulario">{fatores && 'erro' in fatores ? fatores.erro : 'Informe a malha (etapa 3).'}</p>
+              ) : fonte === 'informado' ? (
+                <p className="nota-do-formulario">O risco informado à mão já é a medida do corte: a compensação não se aplica a ele.</p>
+              ) : compensar ? (
+                <p className="nota-do-formulario">
+                  Compensação aplicada ao risco: comprimento × {fatores.comprimento.toFixed(4).replace('.', ',')}, largura × {fatores.largura.toFixed(4).replace('.', ',')}.{' '}
+                  <button type="button" onClick={() => setCompensar(false)}>
+                    Tirar a compensação
+                  </button>
+                </p>
+              ) : previaDaCompensacao ? (
+                <div>
+                  <table className="tabela-de-relatorio">
+                    <caption>Prévia: as peças antes e depois da compensação (a linha de corte)</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Peça</th>
+                        <th scope="col">Antes (largura × comprimento)</th>
+                        <th scope="col">Depois</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modelo.pecas.map((p) => {
+                        const depois = medidasCompensadas(p.larguraMm, p.comprimentoMm, fatores);
+                        return (
+                          <tr key={p.id}>
+                            <td>{p.nome}</td>
+                            <td>
+                              {escreverM(p.larguraMm)} × {escreverM(p.comprimentoMm)}
+                            </td>
+                            <td>
+                              {escreverM(depois.larguraMm)} × {escreverM(depois.comprimentoMm)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompensar(true);
+                      setPreviaDaCompensacao(false);
+                    }}
+                  >
+                    Aplicar a compensação ao risco
+                  </button>{' '}
+                  <button type="button" onClick={() => setPreviaDaCompensacao(false)}>
+                    Não compensar
+                  </button>
+                </div>
+              ) : (
+                <p className="nota-do-formulario">
+                  Encolhimento da malha: {fatores.encolhimentoComprimentoPercentual.toFixed(1).replace('.', ',')}% no comprimento e {fatores.encolhimentoLarguraPercentual.toFixed(1).replace('.', ',')}% na largura, NÃO
+                  compensado no molde.{' '}
+                  <button type="button" onClick={() => setPreviaDaCompensacao(true)}>
+                    Ver a prévia da compensação no risco
+                  </button>
+                </p>
+              )}
+            </fieldset>
+            {formMalha.padrao !== 'liso' && (
+              <fieldset className="grupo-de-opcoes-do-formulario">
+                <legend>Listras e xadrez</legend>
+                {aceitarPadrao ? (
+                  <p className="nota-do-formulario">Casamento feito à parte (decisão de quem planeja): o risco não casa o desenho, e precisa ser conferido à mão.</p>
+                ) : casamento ? (
+                  <p className="nota-do-formulario">
+                    O risco vai casar o desenho: o ponto "{ROTULO_DO_PONTO_DE_CASAMENTO}" de cada peça cai na repetição
+                    {casamento.rapportComprimentoMm ? ` de ${emCm(casamento.rapportComprimentoMm)} no comprimento` : ''}
+                    {casamento.rapportLarguraMm ? ` e de ${emCm(casamento.rapportLarguraMm)} na largura` : ''}; as peças não deitam.
+                    {pecasSemMarcaDeCasamento.length > 0 ? ` Faltam a marca "${ROTULO_DO_PONTO_DE_CASAMENTO}" em: ${pecasSemMarcaDeCasamento.join(', ')} (aba Marcações) — sem ela, o risco não sai.` : ''}
+                  </p>
+                ) : (
+                  <p className="nota-do-formulario">Falta a repetição do desenho no cadastro da malha (etapa 3): sem ela, o casamento não é automático — informe-a, ou marque que o casamento será feito à parte.</p>
+                )}
+              </fieldset>
+            )}
             <Faltas titulo="Para calcular, falta:" itens={[...entrada.faltas, ...errosDaFonte]} />
             <button type="button" disabled={!entrada.entrada || errosDaFonte.length > 0} onClick={calcularAlternativas}>
               {fonte === 'gerar' ? 'Calcular as alternativas' : 'Calcular o plano'}
@@ -1311,7 +1587,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                       resultado={montadas.alternativas[escolhida]!.calculo.resultado}
                       alertas={montadas.alternativas[escolhida]!.calculo.alertas}
                       premissas={montadas.alternativas[escolhida]!.calculo.premissas}
-                      riscos={montadas.alternativas[escolhida]!.composicao.riscos.map((r) => riscoGeradoNoPlano(r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco))}
+                      riscos={montadas.alternativas[escolhida]!.composicao.riscos.map((r) => riscoDaBusca(busca, r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco))}
                       tamanhos={tamanhosDaTela}
                       comDesenho
                     />
@@ -1488,6 +1764,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                                 tamanhos={Object.keys(p.resultado.producaoPorTamanho)}
                                 comDesenho
                               />
+                              <EstoqueDoPlano plano={p} cadastro={cadastro} responsavelSugerido={responsavel} agoraIso={props.agoraIso} novoId={props.novoId} onMudar={mudarCadastro} />
                             </>
                           ) : (
                             <PropostaDoPlano entrada={p.entrada} configuracao={p.configuracao} resultado={p.resultado} alertas={p.alertas} premissas={p.premissas} />
@@ -1501,6 +1778,22 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
             )}
           </section>
         )}
+        <details className="limitacoes-do-planejamento">
+          <summary>Como usar</summary>
+          <ul>
+            {COMO_USAR.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </details>
+        <details className="limitacoes-do-planejamento">
+          <summary>Limitações conhecidas</summary>
+          <ul>
+            {LIMITACOES.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </details>
         <div className="acoes-em-linha">
           {etapa !== 'planos' && etapa !== 'revisar' && (
             <button

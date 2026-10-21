@@ -3,11 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { ponto } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
 import { criarProjeto, registrarRevisaoDoMolde, type Projeto } from '../domain/projeto';
-import { CADASTRO_VAZIO, salvarMalha, salvarRolo, type CadastroDeProducao } from '../domain/cadastroDeProducao';
+import { CADASTRO_VAZIO, reservarPlano, salvarMalha, salvarRolo, type CadastroDeProducao, type RoloDeEstoque } from '../domain/cadastroDeProducao';
 import { CONFIGURACAO_PADRAO_DO_PLANEJAMENTO } from '../domain/planoDeEnfesto';
 import { executarBusca } from '../domain/buscaDeRiscos';
 import { confirmarPlano, type PlanoDeCorteV2 } from '../domain/planejamento';
-import { calcularPlanoDeCorte, CONFIGURACAO_PADRAO_DO_PLANO, impressaoDigitalDoMolde, VERSAO_DO_CALCULO, type PlanoDeCorte } from '../domain/planoDeCorte';
+import { calcularPlanoDeCorte, CONFIGURACAO_PADRAO_DO_PLANO, escreverM, impressaoDigitalDoMolde, VERSAO_DO_CALCULO, type PlanoDeCorte } from '../domain/planoDeCorte';
 import { PainelDePlanejamento, type BuscarRiscos, type PainelDePlanejamentoProps } from './PainelDePlanejamento';
 
 afterEach(() => cleanup());
@@ -273,5 +273,269 @@ describe('PainelDePlanejamento — planos da primeira versão do cálculo', () =
     expect(screen.getByText(/Malha: Malha antiga/)).toBeInTheDocument();
     expect(screen.getByText('O molde mudou depois deste plano: os valores dele não valem para as peças de agora.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Duplicar como novo' })).toBeNull();
+  });
+});
+
+describe('PainelDePlanejamento — importar ordens (CSV)', () => {
+  const csv = (texto: string, nome = 'ordens.csv') => new File([texto], nome, { type: 'text/csv' });
+  const importar = (arquivo: File) => fireEvent.change(screen.getByLabelText('Arquivo CSV das ordens'), { target: { files: [arquivo] } });
+
+  it('o arquivo certo: as ordens entram no cadastro ligadas a este molde, e a primeira vem para o formulário', async () => {
+    const { onMudarCadastro } = abrir();
+    etapa('2. Ordem');
+    importar(csv('codigo;produto;cor;prazo;P;M\nOP-1;Camiseta;Azul;30/11/2026;10;20\nOP-2;Camiseta;Preta;;5;\n'));
+    await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
+    const cadastro = onMudarCadastro.mock.calls[0]![0];
+    expect(cadastro.ordens.map((o) => o.codigo)).toEqual(['OP-1', 'OP-2']);
+    expect(cadastro.ordens[0]).toMatchObject({ produto: 'Camiseta', cor: 'Azul', prazo: '2026-11-30', quantidadesPorTamanho: { P: 10, M: 20 }, projetoId: 'p1', codigoDoMolde: 'ENF-1' });
+    // O tamanho vazio vale 0 (não entra na ordem).
+    expect(cadastro.ordens[1]!.quantidadesPorTamanho).toEqual({ P: 5 });
+    expect(await screen.findByText('2 ordem(ns) importada(s) de ordens.csv: OP-1, OP-2.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Código da ordem')).toHaveValue('OP-1');
+  });
+
+  it('com um erro numa linha, nenhuma ordem entra, e o erro diz a linha', async () => {
+    const { onMudarCadastro } = abrir();
+    etapa('2. Ordem');
+    importar(csv('codigo;P;M\nOP-1;10;0\nOP-2;abc;0\n', 'errado.csv'));
+    expect(await screen.findByText(/O arquivo errado.csv não foi importado \(nenhuma ordem entrou\)/)).toBeInTheDocument();
+    expect(screen.getByText('Linha 3: a quantidade do tamanho P ("abc") não é um número inteiro.')).toBeInTheDocument();
+    expect(onMudarCadastro).not.toHaveBeenCalled();
+  });
+
+  it('o formato está na tela, e diz que nenhum ERP está ligado', () => {
+    abrir();
+    etapa('2. Ordem');
+    expect(screen.getByText(/codigo;produto;cor;prazo;P;M/)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhum ERP está ligado/)).toBeInTheDocument();
+  });
+});
+
+describe('PainelDePlanejamento — defeitos, estoque, emendas', () => {
+  const MALHA = { id: 'm1', descricao: 'Algodão', larguraUtilMm: 1600, rendimentoMmPorG: 4, tubular: false, sentidoUnico: false, padrao: 'liso' as const, encolhimentoCompensadoNoMolde: false };
+  const rolo = (id: string, extras: Partial<RoloDeEstoque> = {}): RoloDeEstoque => ({
+    id,
+    malhaId: 'm1',
+    identificacao: id.toUpperCase(),
+    comprimentoMedidoMm: 50_000,
+    lote: 'L1',
+    tonalidade: 'A',
+    defeitos: [],
+    unidadeDoPeso: 'kg',
+    unidadeDoComprimento: 'm',
+    indisponivel: false,
+    ...extras,
+  });
+  const comRolo = (r: RoloDeEstoque) => salvarRolo(salvarMalha(CADASTRO_VAZIO, MALHA), r);
+  function ordemERolos(...rolos: string[]) {
+    etapa('2. Ordem');
+    escrever('Código da ordem', 'OP-7');
+    escrever('P', '2', secao('Ordem de produção'));
+    etapa('3. Malha e rolos');
+    fireEvent.click(screen.getByLabelText(/Rolos do estoque/));
+    for (const r of rolos) fireEvent.click(screen.getByLabelText(`Usar o rolo ${r}`));
+  }
+  async function calcularEConfirmar(chamadas: ReturnType<typeof abrir>) {
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    return chamadas.onConfirmar.mock.calls[0]![0];
+  }
+
+  it('o rolo com defeito sem posição: o plano não sai sem a decisão, e a decisão vai no plano', async () => {
+    const chamadas = abrir({ cadastro: comRolo(rolo('r1', { defeitos: [{ descricao: 'mancha', perdaMm: 500 }] })) });
+    ordemERolos('R1');
+    expect(screen.getByText(/mancha: 0,50 m \(sem posição\)/)).toBeInTheDocument();
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    expect(await screen.findByText(/Nenhuma composição calcula/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Os rolos R1 têm defeito sem a posição: o plano não tem como evitá-lo');
+    etapa('3. Malha e rolos');
+    fireEvent.click(screen.getByLabelText(/Usar os rolos com defeito sem posição \(R1\)/));
+    const plano = await calcularEConfirmar(chamadas);
+    expect(plano.entrada.aceitarDefeitosSemPosicao).toBe(true);
+    expect(plano.alertas.map((a) => a.texto).join(' ')).toContain('Defeitos sem posição (rolos R1)');
+  });
+
+  it('o defeito com posição aparece com o tipo e a posição, e o plano não pede decisão', async () => {
+    const chamadas = abrir({ cadastro: comRolo(rolo('r1', { defeitos: [{ descricao: 'furo', perdaMm: 300, posicaoMm: 12_000, larguraAfetadaMm: 40, tipo: 'furo' }] })) });
+    ordemERolos('R1');
+    expect(screen.getByText('Furo: 0,30 m a 12,00 m do começo, 4,0 cm de largura')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Usar os rolos com defeito sem posição/)).toBeNull();
+    const plano = await calcularEConfirmar(chamadas);
+    expect(plano.entrada.aceitarDefeitosSemPosicao).toBeUndefined();
+    expect(plano.entrada.rolos![0]!.defeitos[0]).toMatchObject({ posicaoMm: 12_000 });
+  });
+
+  it('o que outro plano reservou do rolo aparece na tabela e entra no cálculo (o plano começa depois dele)', async () => {
+    const reservado = reservarPlano(comRolo(rolo('r1')), [{ roloId: 'r1', comprimentoMm: 20_000 }], {
+      planoId: 'outro',
+      projetoId: 'p9',
+      responsavel: 'Ana',
+      agoraIso: '2026-10-20T08:00:00.000Z',
+      novoId: () => 'mov-x',
+    }).cadastro;
+    const chamadas = abrir({ cadastro: reservado });
+    ordemERolos('R1');
+    expect(screen.getByText('30,00 m / 20,00 m / 0,00 m')).toBeInTheDocument();
+    const plano = await calcularEConfirmar(chamadas);
+    expect(plano.entrada.usoAnteriorDosRolosMm).toEqual({ r1: 20_000 });
+    expect(plano.resultado.rolos![0]).toMatchObject({ jaUsadoMm: 20_000 });
+  });
+
+  it('as emendas: só com a configuração ligada, e a sobreposição em cm na tela vai em mm para o plano', async () => {
+    const chamadas = abrir({ cadastro: comRolo(rolo('r1')) });
+    ordemERolos('R1');
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByLabelText(/permite emendar uma camada/));
+    escrever('Sobreposição da emenda (cm)', '15');
+    const plano = await calcularEConfirmar(chamadas);
+    expect(plano.configuracao).toMatchObject({ permitirEmendas: true, sobreposicaoDaEmendaMm: 150 });
+  });
+
+  it('o plano confirmado com rolos: o estoque dele se reserva pela tela, com quem faz informado', async () => {
+    const cadastro = comRolo(rolo('r1'));
+    const plano = await calcularEConfirmar((() => {
+      const c = abrir({ cadastro });
+      ordemERolos('R1');
+      return c;
+    })());
+    cleanup();
+    const { onMudarCadastro } = abrir({ projeto: confirmarPlano(PROJETO, plano, '2026-10-20T12:30:00.000Z'), cadastro });
+    etapa('Planos deste projeto');
+    fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-7/ }));
+    expect(screen.getByRole('table', { name: 'Estoque dos rolos do plano' })).toHaveTextContent(escreverM(plano.resultado.rolos![0]!.usadoMm));
+    fireEvent.change(screen.getByLabelText(/Quem faz o movimento/), { target: { value: 'Carla' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reservar os rolos do plano' }));
+    await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
+    expect(onMudarCadastro.mock.calls[0]![0].movimentos).toEqual([
+      expect.objectContaining({ tipo: 'reserva', roloId: 'r1', planoId: plano.id, projetoId: 'p1', comprimentoMm: plano.resultado.rolos![0]!.usadoMm, responsavel: 'Carla' }),
+    ]);
+    expect(await screen.findByText('Reservado: R1.')).toBeInTheDocument();
+  });
+});
+
+describe('PainelDePlanejamento — encolhimento e casamento', () => {
+  it('o encolhimento: a prévia mostra antes e depois; só compensa com a confirmação; o risco sai aumentado e o plano diz', async () => {
+    const { onConfirmar } = abrir();
+    preencherOrdemEMalha();
+    escrever('Encolhimento no comprimento (%)', '5');
+    etapa('4. Risco e enfesto');
+    expect(screen.getByText(/Encolhimento da malha: 5,0% no comprimento e 0,0% na largura, NÃO/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver a prévia da compensação no risco' }));
+    const previa = screen.getByRole('table', { name: /Prévia: as peças antes e depois/ });
+    expect(within(previa).getAllByRole('row').length).toBeGreaterThan(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Não compensar' }));
+    expect(screen.queryByRole('table', { name: /Prévia/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver a prévia da compensação no risco' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a compensação ao risco' }));
+    expect(screen.getByText(/Compensação aplicada ao risco: comprimento × 1,0526, largura × 1,0000/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    const plano = onConfirmar.mock.calls[0]![0];
+    expect(plano.entrada.compensarEncolhimento).toBe(true);
+    expect(plano.riscos.every((r) => r.compensado !== undefined && Math.abs(r.compensado.comprimento - 1 / 0.95) < 1e-9 && r.compensado.largura === 1)).toBe(true);
+    expect(plano.alertas.map((a) => a.texto).join(' ')).toContain('Encolhimento compensado no risco, por decisão de quem planeja');
+  });
+
+  it('com o encolhimento já compensado no molde, não oferece compensar de novo', () => {
+    abrir();
+    preencherOrdemEMalha();
+    escrever('Encolhimento no comprimento (%)', '5');
+    fireEvent.click(screen.getByLabelText(/O encolhimento já está compensado no molde/));
+    etapa('4. Risco e enfesto');
+    expect(screen.getByText(/compensar no risco também o aplicaria duas vezes/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver a prévia da compensação no risco' })).toBeNull();
+  });
+
+  it('com encolhimento na malha e a compensação não aplicada, o plano não compensa nada, e avisa', async () => {
+    const { onConfirmar } = abrir();
+    preencherOrdemEMalha();
+    escrever('Encolhimento no comprimento (%)', '5');
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    const plano = onConfirmar.mock.calls[0]![0];
+    expect(plano.entrada.compensarEncolhimento).toBeUndefined();
+    expect(plano.riscos.every((r) => r.compensado === undefined)).toBe(true);
+    expect(plano.alertas.map((a) => a.texto).join(' ')).toContain('NÃO compensado no molde, e o plano não o aplica');
+  });
+
+  it('com encolhimento na largura, os riscos são buscados na largura da malha dividida pelo fator (para caberem depois de aumentados)', async () => {
+    const larguras: number[] = [];
+    const buscar: BuscarRiscos = (pedidos, opcoes, aoProgredir) => {
+      larguras.push(opcoes.larguraMm);
+      return buscarAqui(pedidos, opcoes, aoProgredir);
+    };
+    const { onConfirmar } = abrir({ buscarRiscos: buscar });
+    preencherOrdemEMalha();
+    escrever('Encolhimento na largura (%)', '4');
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver a prévia da compensação no risco' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a compensação ao risco' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    expect(larguras).toHaveLength(1);
+    expect(larguras[0]).toBeCloseTo(1600 * 0.96, 6);
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    const plano = onConfirmar.mock.calls[0]![0];
+    for (const r of plano.riscos) {
+      expect(r.larguraDoRiscoMm).toBe(1600);
+      expect(Math.max(...r.pecas.flatMap((p) => p.contorno.map((q) => q.x)))).toBeLessThanOrEqual(1600 + 0.01);
+    }
+  });
+
+  it('listras: sem a repetição, o casamento não é automático; com ela, diz as peças sem a marca; com as marcas, o risco casa', async () => {
+    const marca = { id: 'mc', posicao: ponto(20, 20), rotulo: 'casamento' };
+    const marcadas = PECAS.map((p) => ({ ...p, marcas: [marca] }));
+    abrir();
+    preencherOrdemEMalha();
+    fireEvent.change(screen.getByLabelText('Padrão'), { target: { value: 'listrado' } });
+    etapa('4. Risco e enfesto');
+    expect(screen.getByText(/Falta a repetição do desenho no cadastro da malha/)).toBeInTheDocument();
+    etapa('3. Malha e rolos');
+    escrever('Repetição do desenho no comprimento (cm)', '10');
+    etapa('4. Risco e enfesto');
+    const nota = screen.getByText(/O risco vai casar o desenho/);
+    expect(nota).toHaveTextContent('na repetição de 10 cm no comprimento');
+    expect(nota).toHaveTextContent(/Faltam a marca "casamento" em: .*Frente/);
+    expect(nota).toHaveTextContent(/Faltam a marca "casamento" em: .*Bolso/);
+    cleanup();
+    const { onConfirmar } = abrir({ pecas: marcadas, projeto: criarProjeto('Camiseta', 'p1', 'ENF-1', '2026-10-20T09:00:00.000Z', { pecas: marcadas, tecido: null, enfesto: null }) });
+    preencherOrdemEMalha();
+    fireEvent.change(screen.getByLabelText('Padrão'), { target: { value: 'listrado' } });
+    escrever('Repetição do desenho no comprimento (cm)', '10');
+    etapa('4. Risco e enfesto');
+    expect(screen.getByText(/O risco vai casar o desenho/)).not.toHaveTextContent('Faltam a marca');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    const plano = onConfirmar.mock.calls[0]![0];
+    expect(plano.entrada.aceitarPadraoSemCasamento).toBeFalsy();
+    expect(plano.riscos.every((r) => r.casamento?.conferido === true && r.casamento.rapportComprimentoMm === 100)).toBe(true);
+  });
+
+  it('as limitações conhecidas estão na janela', () => {
+    abrir();
+    expect(screen.getByText('Limitações conhecidas')).toBeInTheDocument();
+    expect(screen.getByText(/Login: o programa não tem/)).toBeInTheDocument();
   });
 });

@@ -2126,6 +2126,33 @@ button:focus-visible {
   color: var(--cor-texto-secundario);
 }
 
+.limitacoes-do-planejamento summary {
+  cursor: pointer;
+  color: var(--cor-texto-secundario);
+}
+
+.limitacoes-do-planejamento ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.exemplo-de-csv {
+  margin: 4px 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  background: var(--cor-fundo-app);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  font-size: 12px;
+}
+
+.estoque-do-plano {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .confirmacao-do-plano {
   display: flex;
   flex-direction: column;

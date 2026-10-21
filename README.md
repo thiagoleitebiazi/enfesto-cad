@@ -12,6 +12,10 @@ o detalhe de cada uma e as limitações conhecidas de cada funcionalidade —
 nenhum botão da interface finge fazer algo que não faz: os que ainda não têm
 lógica por trás aparecem desabilitados com uma explicação).
 
+O planejamento de corte (do molde e da ordem ao plano de enfesto, com o
+estoque dos rolos) tem o guia de uso em
+[PLANEJAMENTO-DE-CORTE.md](PLANEJAMENTO-DE-CORTE.md).
+
 ## Baixar e instalar (usuário final, Windows)
 
 Instalador pronto (não precisa de Node/npm) na

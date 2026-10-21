@@ -23,6 +23,10 @@ export function ResumoDoPlanejamento(props: {
   const tamanhos = props.tamanhos.filter((t) => t in r.producaoPorTamanho || t in r.pedidoPorTamanho);
   const rendimento = r.rendimentoUsadoMmPorG;
   const lotes = r.rolos ? [...new Set(r.rolos.map((x) => x.grupo))].join('; ') : null;
+  // As colunas do que é novo no plano só aparecem quando há o que mostrar (os planos antigos não têm).
+  const comJaUsado = r.rolos?.some((x) => (x.jaUsadoMm ?? 0) > 0) ?? false;
+  const comPuladoPorDefeito = r.rolos?.some((x) => (x.perdaPorDefeitoMm ?? 0) > 0) ?? false;
+  const comEmendas = r.rolos?.some((x) => (x.emendas ?? 0) > 0) ?? false;
   return (
     <div className="resumo-do-planejamento">
       <p className="resumo-do-plano">
@@ -66,23 +70,28 @@ export function ResumoDoPlanejamento(props: {
           </tr>
         </thead>
         <tbody>
-          {r.riscos.map((x) => (
-            <tr key={x.chave}>
-              <td>
-                {escreverGrade(x.grade)}
-                {x.origem === 'mesa' ? ' (da mesa)' : x.origem === 'informado' ? ' (informado)' : ''}
-              </td>
-              <td>{escreverM(x.comprimentoMm)}</td>
-              <td>{escreverM(x.larguraMm)}</td>
-              <td>{x.eficienciaPercentual !== null ? `${x.eficienciaPercentual.toFixed(1).replace('.', ',')}%` : '—'}</td>
-              <td>{x.camadas}</td>
-              <td>{x.folhas}</td>
-              <td>
-                {x.enfestos.length} ({x.enfestos.join(' + ')} camadas; até {x.camadasPorEnfestoMax} por enfesto)
-              </td>
-              <td>{escreverM(x.consumoMm)}</td>
-            </tr>
-          ))}
+          {r.riscos.map((x) => {
+            const desenhado = props.riscos.find((y) => y.chave === x.chave);
+            return (
+              <tr key={x.chave}>
+                <td>
+                  {escreverGrade(x.grade)}
+                  {x.origem === 'mesa' ? ' (da mesa)' : x.origem === 'informado' ? ' (informado)' : ''}
+                  {desenhado?.compensado ? ' (encolhimento compensado)' : ''}
+                  {desenhado?.casamento?.conferido ? ' (desenho casado)' : ''}
+                </td>
+                <td>{escreverM(x.comprimentoMm)}</td>
+                <td>{escreverM(x.larguraMm)}</td>
+                <td>{x.eficienciaPercentual !== null ? `${x.eficienciaPercentual.toFixed(1).replace('.', ',')}%` : '—'}</td>
+                <td>{x.camadas}</td>
+                <td>{x.folhas}</td>
+                <td>
+                  {x.enfestos.length} ({x.enfestos.join(' + ')} camadas; até {x.camadasPorEnfestoMax} por enfesto)
+                </td>
+                <td>{escreverM(x.consumoMm)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -152,8 +161,11 @@ export function ResumoDoPlanejamento(props: {
               <th scope="col">Lote · tonalidade</th>
               <th scope="col">Comprimento</th>
               <th scope="col">Largura na mesa</th>
+              {comJaUsado && <th scope="col">Já usado por outros planos</th>}
               <th scope="col">Perda e defeitos</th>
+              {comPuladoPorDefeito && <th scope="col">Pulado por defeito (com posição)</th>}
               <th scope="col">Camadas</th>
+              {comEmendas && <th scope="col">Emendas</th>}
               <th scope="col">Usado</th>
               <th scope="col">Sobra do rolo</th>
             </tr>
@@ -167,8 +179,11 @@ export function ResumoDoPlanejamento(props: {
                   {escreverM(x.comprimentoMm)} ({x.origemDoComprimento === 'medido' ? 'medido' : 'estimado pelo peso'})
                 </td>
                 <td>{escreverM(x.larguraMm)}</td>
+                {comJaUsado && <td>{escreverM(x.jaUsadoMm ?? 0)}</td>}
                 <td>{escreverM(x.perdasMm + x.defeitosMm)}</td>
+                {comPuladoPorDefeito && <td>{escreverM(x.perdaPorDefeitoMm ?? 0)}</td>}
                 <td>{Object.values(x.camadasPorRisco).reduce((s, n) => s + n, 0)}</td>
+                {comEmendas && <td>{x.emendas ?? 0}</td>}
                 <td>{escreverM(x.usadoMm)}</td>
                 <td>{escreverM(x.sobraMm)}</td>
               </tr>
@@ -177,8 +192,40 @@ export function ResumoDoPlanejamento(props: {
         </table>
       )}
 
+      {r.emendas && r.emendas.length > 0 && (
+        <table className="tabela-de-relatorio">
+          <caption>Emendas (a camada continua no rolo seguinte)</caption>
+          <thead>
+            <tr>
+              <th scope="col">Risco</th>
+              <th scope="col">Do rolo</th>
+              <th scope="col">Para o rolo</th>
+              <th scope="col">Onde (do começo do risco)</th>
+              <th scope="col">Sobreposição</th>
+            </tr>
+          </thead>
+          <tbody>
+            {r.emendas.map((x, i) => {
+              const risco = r.riscos.find((y) => y.chave === x.chave);
+              const nome = (id: string): string => r.rolos?.find((y) => y.id === id)?.identificacao ?? id;
+              return (
+                <tr key={i}>
+                  <td>{risco ? escreverGrade(risco.grade) : x.chave}</td>
+                  <td>{nome(x.roloDe)}</td>
+                  <td>{nome(x.roloPara)}</td>
+                  <td>{escreverM(x.posicaoNoRiscoMm)}</td>
+                  <td>{escreverM(x.sobreposicaoMm)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
       <p className="nota-do-formulario">
-        Perdas: pontas das camadas {escreverM(r.pontasMm)}; perda dos rolos {escreverM(r.perdaDosRolosMm)}; defeitos {escreverM(r.defeitosMm)}.
+        Perdas: pontas das camadas {escreverM(r.pontasMm)}; perda dos rolos {escreverM(r.perdaDosRolosMm)}; defeitos {escreverM(r.defeitosMm)}
+        {r.perdaPorDefeitosMm ? `; trechos pulados por defeitos com posição ${escreverM(r.perdaPorDefeitosMm)}` : ''}
+        {r.sobreposicoesMm ? `; sobreposição das emendas ${escreverM(r.sobreposicoesMm)}` : ''}.
         {r.eficienciaMediaPercentual !== null ? ` Eficiência média dos riscos: ${r.eficienciaMediaPercentual.toFixed(1).replace('.', ',')}% (área das peças ÷ comprimento × largura do risco).` : ''}
       </p>
 

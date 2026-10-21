@@ -8,9 +8,10 @@
  *   o fim da camada anterior e o fim do defeito é perda por defeito).
  * - Um defeito sem posição não é evitado: o comprimento dele sai do fim do rolo (e o plano avisa que ele pode cair
  *   numa camada).
- * - Emenda: só se permitida. Quando o rolo acaba no meio de uma camada, ela pode continuar no rolo seguinte, numa
- *   linha de emenda do risco (uma posição em que nenhuma peça é cortada), com a sobreposição configurada; o que
- *   sobra do rolo depois da linha é perda. Sem linhas de emenda (risco informado à mão), não há emenda.
+ * - Emenda: só se permitida. Quando a camada não cabe no trecho livre em que o rolo está (até o fim dele, ou até
+ *   um defeito com posição), ela pode continuar no rolo seguinte, numa linha de emenda do risco (uma posição em que
+ *   nenhuma peça é cortada), com a sobreposição configurada; o que fica do rolo depois da linha é a ponta dele. Sem
+ *   linhas de emenda (risco informado à mão), não há emenda.
  * - Cada camada sai inteira de um rolo, ou de dois rolos com uma emenda; nunca de três.
  */
 
@@ -139,10 +140,11 @@ export function alocarCamadas(rolos: readonly RoloParaAlocar[], riscos: readonly
           alocada = { chave: risco.chave, trechos: [{ roloId: e.rolo.id, inicioMm: p, fimMm: p + risco.consumoMm }] };
           break;
         }
-        // Não cabe inteira no que resta do rolo: emenda no seguinte, se permitida e se há linha de emenda.
+        // Não cabe inteira no que resta do rolo: emenda no seguinte, se permitida e se há linha de emenda, no trecho
+        // livre em que o rolo está (até o fim dele, ou até um defeito: a camada para antes do defeito).
         const trecho = trechoLivre(e, e.cursor);
         const seguinte = servem[i + 1];
-        if (opcoes.permitirEmendas && risco.linhasDeEmenda && trecho && trecho[1] >= e.fim - 1e-6 && seguinte) {
+        if (opcoes.permitirEmendas && risco.linhasDeEmenda && trecho && seguinte) {
           const disponivel = trecho[1] - trecho[0];
           const linha = risco.linhasDeEmenda.filter((s) => s > 0 && s <= disponivel + 1e-9).reduce((m, s) => Math.max(m, s), 0);
           if (linha > 0) {

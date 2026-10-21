@@ -92,6 +92,19 @@ describe('alocarCamadas — emendas', () => {
     expect(a.porRolo[0]!.pontaMm).toBe(300);
   });
 
+  it('com um defeito no caminho: a camada para antes dele, na linha de emenda, e continua no rolo seguinte', () => {
+    // A tem um defeito de 6,0 a 6,5 m: depois da 1ª camada, a 2ª não cabe antes dele (2 m) nem depois (3,5 m).
+    const comDefeito = [rolo('A', 10_000, { defeitosComPosicao: [[6000, 6500]] }), rolo('B', 6200)];
+    const sem = alocarCamadas(comDefeito, [risco(4, 4000, [1500, 2000])], SEM_EMENDA);
+    expect(trechos(sem)).toEqual(['A:0-4000', 'B:0-4000']);
+    const com = alocarCamadas(comDefeito, [risco(4, 4000, [1500, 2000])], { permitirEmendas: true, sobreposicaoDaEmendaMm: 100 });
+    expect(trechos(com)).toEqual(['A:0-4000', 'A:4000-6000+B:0-2100', 'B:2100-6100']);
+    expect(com.camadas[1]!.emenda).toEqual({ posicaoNaCamadaMm: 2000, sobreposicaoMm: 100, roloDe: 'A', roloPara: 'B' });
+    expect(com.faltando).toEqual({ R: 1 });
+    // O que fica de A (o defeito e os 3,5 m depois dele) é a ponta do rolo, não perda por defeito.
+    expect(com.porRolo[0]).toMatchObject({ usadoMm: 6000, perdaPorDefeitoMm: 0, pontaMm: 4000, emendas: 1 });
+  });
+
   it('sem linhas de emenda conhecidas (risco informado à mão), não emenda', () => {
     const a = alocarCamadas(rolos, [risco(4, 4000, null)], { permitirEmendas: true, sobreposicaoDaEmendaMm: 100 });
     expect(a.camadas.some((c) => c.emenda)).toBe(false);
@@ -104,5 +117,7 @@ describe('linhasDeEmendaDoRisco', () => {
     const peca = (de: number, ate: number) => ({ contorno: [{ y: de }, { y: ate }, { y: (de + ate) / 2 }] });
     expect(linhasDeEmendaDoRisco([peca(0, 500), peca(503, 800), peca(600, 900), peca(905, 1200)], 1200)).toEqual([500, 900]);
     expect(linhasDeEmendaDoRisco([peca(0, 500), peca(400, 1200)], 1200)).toEqual([]);
+    // Uma peça curta ao lado de uma comprida (no mesmo trecho do comprimento): o vão só começa depois da comprida.
+    expect(linhasDeEmendaDoRisco([peca(0, 1400), peca(200, 600), peca(1500, 3000)], 3000)).toEqual([1400]);
   });
 });

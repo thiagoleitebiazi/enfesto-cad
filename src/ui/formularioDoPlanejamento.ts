@@ -1,4 +1,5 @@
-import type { MalhaDoCadastro, OrdemDeProducao, RoloDeEstoque } from '../domain/cadastroDeProducao';
+import type { MalhaDoCadastro, OrdemDeProducao, RoloDeEstoque, TipoDeDefeito } from '../domain/cadastroDeProducao';
+import type { FonteDoEncolhimento } from '../domain/encolhimento';
 import type { ConfiguracaoDoPlanejamento, OrdemNoPlano } from '../domain/planoDeEnfesto';
 import type { PadraoDoTecido, Tecido } from '../domain/tecido';
 import { lerMedida } from './medidas';
@@ -59,6 +60,11 @@ export interface FormularioDaMalha {
   readonly encolhimentoComprimento: string;
   readonly encolhimentoLargura: string;
   readonly compensadoNoMolde: boolean;
+  readonly fonteDoEncolhimento: FonteDoEncolhimento | '';
+  readonly rapportComprimento: string;
+  readonly rapportLargura: string;
+  readonly faseComprimento: string;
+  readonly faseLargura: string;
   readonly espessura: string;
   readonly tolerancia: string;
   readonly observacoes: string;
@@ -78,6 +84,11 @@ export const MALHA_VAZIA: FormularioDaMalha = {
   encolhimentoComprimento: '',
   encolhimentoLargura: '',
   compensadoNoMolde: false,
+  fonteDoEncolhimento: '',
+  rapportComprimento: '',
+  rapportLargura: '',
+  faseComprimento: '',
+  faseLargura: '',
   espessura: '',
   tolerancia: '',
   observacoes: '',
@@ -98,6 +109,11 @@ export function malhaNoFormulario(m: MalhaDoCadastro): FormularioDaMalha {
     encolhimentoComprimento: noCampo(m.encolhimentoComprimentoPercentual),
     encolhimentoLargura: noCampo(m.encolhimentoLarguraPercentual),
     compensadoNoMolde: m.encolhimentoCompensadoNoMolde,
+    fonteDoEncolhimento: m.fonteDoEncolhimento ?? '',
+    rapportComprimento: noCampo(m.rapportComprimentoMm === undefined ? undefined : m.rapportComprimentoMm / 10),
+    rapportLargura: noCampo(m.rapportLarguraMm === undefined ? undefined : m.rapportLarguraMm / 10),
+    faseComprimento: noCampo(m.faseComprimentoMm === undefined ? undefined : m.faseComprimentoMm / 10),
+    faseLargura: noCampo(m.faseLarguraMm === undefined ? undefined : m.faseLarguraMm / 10),
     espessura: noCampo(m.espessuraDaFolhaMm),
     tolerancia: noCampo(m.toleranciaDeLarguraMm),
     observacoes: m.observacoes ?? '',
@@ -130,6 +146,10 @@ export function malhaDoFormulario(f: FormularioDaMalha, id: string): { readonly 
   const encolhimentoLargura = lerNumero(f.encolhimentoLargura, 'Encolhimento na largura (%)', erros, { zeroVale: true });
   const espessura = lerNumero(f.espessura, 'Espessura da folha (mm)', erros);
   const tolerancia = lerNumero(f.tolerancia, 'Tolerância de largura (mm)', erros, { zeroVale: true });
+  const rapportComprimento = lerNumero(f.rapportComprimento, 'Repetição do desenho no comprimento (cm)', erros);
+  const rapportLargura = lerNumero(f.rapportLargura, 'Repetição do desenho na largura (cm)', erros);
+  const faseComprimento = lerNumero(f.faseComprimento, 'Fase do desenho no comprimento (cm)', erros, { zeroVale: true });
+  const faseLargura = lerNumero(f.faseLargura, 'Fase do desenho na largura (cm)', erros, { zeroVale: true });
   if (erros.length > 0 || larguraUtil === undefined) return { malha: null, erros };
   const texto = (v: string): string | undefined => (v.trim() === '' ? undefined : v.trim());
   const opcionais = {
@@ -143,6 +163,11 @@ export function malhaDoFormulario(f: FormularioDaMalha, id: string): { readonly 
     espessuraDaFolhaMm: espessura,
     toleranciaDeLarguraMm: tolerancia,
     observacoes: texto(f.observacoes),
+    fonteDoEncolhimento: f.fonteDoEncolhimento === '' ? undefined : f.fonteDoEncolhimento,
+    rapportComprimentoMm: deCm(rapportComprimento),
+    rapportLarguraMm: deCm(rapportLargura),
+    faseComprimentoMm: deCm(faseComprimento),
+    faseLarguraMm: deCm(faseLargura),
   };
   const malha: MalhaDoCadastro = {
     id,
@@ -168,12 +193,30 @@ export interface FormularioDoRolo {
   readonly tonalidade: string;
   readonly defeito: string;
   readonly perdaDoDefeito: string;
+  readonly posicaoDoDefeito: string;
+  readonly larguraDoDefeito: string;
+  readonly tipoDoDefeito: TipoDeDefeito | '';
   readonly localizacao: string;
   readonly origem: string;
   readonly data: string;
 }
 
-export const ROLO_VAZIO: FormularioDoRolo = { identificacao: '', peso: '', comprimento: '', largura: '', lote: '', tonalidade: '', defeito: '', perdaDoDefeito: '', localizacao: '', origem: '', data: '' };
+export const ROLO_VAZIO: FormularioDoRolo = {
+  identificacao: '',
+  peso: '',
+  comprimento: '',
+  largura: '',
+  lote: '',
+  tonalidade: '',
+  defeito: '',
+  perdaDoDefeito: '',
+  posicaoDoDefeito: '',
+  larguraDoDefeito: '',
+  tipoDoDefeito: '',
+  localizacao: '',
+  origem: '',
+  data: '',
+};
 
 export function roloDoFormulario(f: FormularioDoRolo, id: string, malhaId: string): { readonly rolo: RoloDeEstoque | null; readonly erros: string[] } {
   const erros: string[] = [];
@@ -181,9 +224,11 @@ export function roloDoFormulario(f: FormularioDoRolo, id: string, malhaId: strin
   const peso = lerNumero(f.peso, 'Peso líquido (kg)', erros);
   const comprimento = lerNumero(f.comprimento, 'Comprimento medido (m)', erros);
   const largura = lerNumero(f.largura, 'Largura útil medida (m)', erros);
-  const perda = lerNumero(f.perdaDoDefeito, 'Perda do defeito (m)', erros, { zeroVale: true });
+  const perda = lerNumero(f.perdaDoDefeito, 'Extensão do defeito (m)', erros, { zeroVale: true });
+  const posicao = lerNumero(f.posicaoDoDefeito, 'Posição do defeito (m, do começo do rolo)', erros, { zeroVale: true });
+  const larguraDoDefeito = lerNumero(f.larguraDoDefeito, 'Largura afetada (cm)', erros);
   if (peso === undefined && comprimento === undefined && erros.length === 0) erros.push('Informe o peso líquido (kg) ou o comprimento medido (m) do rolo.');
-  if (f.defeito.trim() !== '' && perda === undefined) erros.push('Informe quanto o defeito tira do rolo (m).');
+  if (f.defeito.trim() !== '' && perda === undefined) erros.push('Informe a extensão do defeito no comprimento do rolo (m).');
   if (f.data.trim() !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(f.data.trim())) erros.push('"Data da medição" precisa ser uma data.');
   if (erros.length > 0) return { rolo: null, erros };
   const texto = (v: string): string | undefined => (v.trim() === '' ? undefined : v.trim());
@@ -202,7 +247,18 @@ export function roloDoFormulario(f: FormularioDoRolo, id: string, malhaId: strin
       identificacao: f.identificacao.trim(),
       lote: f.lote.trim(),
       tonalidade: f.tonalidade.trim(),
-      defeitos: f.defeito.trim() !== '' && perda !== undefined ? [{ descricao: f.defeito.trim(), perdaMm: mm(perda)! }] : [],
+      defeitos:
+        f.defeito.trim() !== '' && perda !== undefined
+          ? [
+              {
+                descricao: f.defeito.trim(),
+                perdaMm: mm(perda)!,
+                ...(posicao !== undefined ? { posicaoMm: mm(posicao)! } : {}),
+                ...(larguraDoDefeito !== undefined ? { larguraAfetadaMm: deCm(larguraDoDefeito)! } : {}),
+                ...(f.tipoDoDefeito !== '' ? { tipo: f.tipoDoDefeito } : {}),
+              },
+            ]
+          : [],
       unidadeDoPeso: 'kg',
       unidadeDoComprimento: 'm',
       indisponivel: false,

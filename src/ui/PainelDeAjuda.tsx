@@ -109,6 +109,10 @@ export function PainelDeAjuda(props: PainelDeAjudaProps): React.JSX.Element {
           <dd>PDF vetorial em escala 1:1 (encaixe ou moldes) e relatório de produção em PDF ou Excel</dd>
           <dt>Projetos</dt>
           <dd>Salvos neste computador, na Biblioteca, com histórico de versões</dd>
+          <dt>Ordens de produção</dt>
+          <dd>Digitadas, coladas de uma planilha ou importadas de CSV (nenhum ERP ligado)</dd>
+          <dt>Usuários</dt>
+          <dd>Sem login: quem confirma um plano ou movimenta o estoque é informado (digitado)</dd>
         </dl>
       </div>
     </Sobreposicao>

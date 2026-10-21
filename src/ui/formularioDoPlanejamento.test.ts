@@ -48,7 +48,16 @@ describe('formulários do planejamento', () => {
     const { rolo } = roloDoFormulario({ ...ROLO_VAZIO, identificacao: 'R-1', peso: '24,5', largura: '1,58', lote: 'L7', defeito: 'mancha', perdaDoDefeito: '0,8', data: '2026-10-20' }, 'r1', 'm1');
     expect(rolo).toMatchObject({ pesoLiquidoG: 24_500, larguraUtilMedidaMm: 1580, lote: 'L7', defeitos: [{ descricao: 'mancha', perdaMm: 800 }], dataDaMedicao: '2026-10-20', unidadeDoPeso: 'kg' });
     expect(roloDoFormulario({ ...ROLO_VAZIO, identificacao: 'R-2' }, 'r', 'm').erros).toEqual(['Informe o peso líquido (kg) ou o comprimento medido (m) do rolo.']);
-    expect(roloDoFormulario({ ...ROLO_VAZIO, identificacao: 'R-2', peso: '10', defeito: 'furo' }, 'r', 'm').erros).toEqual(['Informe quanto o defeito tira do rolo (m).']);
+    expect(roloDoFormulario({ ...ROLO_VAZIO, identificacao: 'R-2', peso: '10', defeito: 'furo' }, 'r', 'm').erros).toEqual(['Informe a extensão do defeito no comprimento do rolo (m).']);
+    const comPosicao = roloDoFormulario({ ...ROLO_VAZIO, identificacao: 'R-3', peso: '10', defeito: 'furo', perdaDoDefeito: '0,3', posicaoDoDefeito: '12,5', larguraDoDefeito: '4', tipoDoDefeito: 'furo' }, 'r', 'm').rolo;
+    expect(comPosicao?.defeitos).toEqual([{ descricao: 'furo', perdaMm: 300, posicaoMm: 12_500, larguraAfetadaMm: 40, tipo: 'furo' }]);
+  });
+
+  it('a malha: a fonte do encolhimento e a repetição e a fase do desenho (cm na tela, mm no cálculo)', () => {
+    const { malha } = malhaDoFormulario({ ...MALHA_VAZIA, descricao: 'Listrada', larguraUtil: '1,6', fonteDoEncolhimento: 'fornecedor', rapportComprimento: '12,5', faseComprimento: '3', rapportLargura: '', faseLargura: '0' }, 'm');
+    expect(malha).toMatchObject({ fonteDoEncolhimento: 'fornecedor', rapportComprimentoMm: 125, faseComprimentoMm: 30, faseLarguraMm: 0 });
+    expect(malha && 'rapportLarguraMm' in malha).toBe(false);
+    expect(malhaNoFormulario(malha!)).toMatchObject({ rapportComprimento: '12,5', faseComprimento: '3', fonteDoEncolhimento: 'fornecedor' });
   });
 
   it('a ordem: quantidades inteiras; ao menos um tamanho', () => {
