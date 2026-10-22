@@ -292,6 +292,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
   return (
     <div className="barra-de-ferramentas-ribbon" role="toolbar" aria-label="Barra de ferramentas principal">
       <div className="barra-de-acesso-rapido" role="group" aria-label="Acesso rápido">
+        {/* A marca do programa: camadas empilhadas, como as folhas de um enfesto (o nome já está na barra da janela). */}
+        <span className="marca-do-programa" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 13.6 10 17l7-3.4" stroke="#f28c28" />
+            <path d="M3 10.1 10 13.5l7-3.4" stroke="#8fb4e6" />
+            <path d="M10 3 3 6.6l7 3.4 7-3.4L10 3Z" fill="#e8eef8" stroke="#e8eef8" />
+          </svg>
+          Enfesto CAD
+        </span>
         <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">
           <Icone nome="novo" />
         </button>

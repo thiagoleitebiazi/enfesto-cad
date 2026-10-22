@@ -24,6 +24,26 @@
   --azul-600: #1565c0;
   --azul-700: #0d47a1;
 
+  /* A marca (ADR 0097): o azul-marinho das barras de cima e de baixo e do cabeçalho das janelas, e o laranja do
+     destaque da aba aberta. */
+  --marca-950: #0f1f3a;
+  --marca-900: #142a4d;
+  --marca-800: #1b3866;
+  --marca-700: #26497f;
+  --marca-texto: #e8eef8;
+  --marca-texto-suave: #b4c3da;
+  --destaque: #f28c28;
+
+  /* As cores dos grupos da fita: cada grupo de ferramentas tem a sua, nos ícones (ver .grupo-de-ferramentas). */
+  --grupo-1: #1565c0;
+  --grupo-2: #00897b;
+  --grupo-3: #6a3fc1;
+  --grupo-4: #d9480f;
+  --grupo-5: #c2185b;
+  --grupo-6: #2e7d32;
+  --grupo-7: #00838f;
+  --grupo-8: #b26a00;
+
   --sucesso-texto: #1b6b3a;
   --sucesso-fundo: #edf7f0;
   --sucesso-borda: #9ccfae;
@@ -388,13 +408,52 @@ input[type='radio'] {
   z-index: 10;
 }
 
+/* A barra de cima, em azul-marinho: a marca do programa, o acesso rápido (ícones claros) e, logo abaixo, as abas. */
 .barra-de-acesso-rapido {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 4px 10px;
-  background: var(--cor-barra-alt);
-  border-bottom: 1px solid var(--cor-borda);
+  background: var(--marca-950);
+}
+
+.marca-do-programa {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 14px;
+  padding-right: 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--marca-texto);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.marca-do-programa svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* Os botões claros sobre o azul-marinho (mais específicos que o estilo comum com a barra de visualização, abaixo). */
+.barra-de-ferramentas-ribbon .barra-de-acesso-rapido button {
+  color: var(--marca-texto);
+}
+
+.barra-de-ferramentas-ribbon .barra-de-acesso-rapido button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+}
+
+.barra-de-ferramentas-ribbon .barra-de-acesso-rapido button:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.barra-de-ferramentas-ribbon .barra-de-acesso-rapido .separador-de-acesso-rapido {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .barra-de-acesso-rapido button,
@@ -449,7 +508,7 @@ input[type='radio'] {
   justify-content: space-between;
   gap: 8px;
   padding: 4px 8px 0;
-  background: var(--cor-barra);
+  background: var(--marca-800);
 }
 
 /* Se faltar largura mesmo com as abas apertadas (ver as regras de janela
@@ -481,15 +540,14 @@ input[type='radio'] {
   border: 1px solid transparent;
   border-radius: var(--raio-sm);
   background: transparent;
-  color: var(--cor-texto-secundario);
+  color: var(--marca-texto-suave);
   cursor: pointer;
 }
 
 .botao-de-menu:hover,
 .botao-de-menu-aberto {
-  background: var(--cinza-0);
-  border-color: var(--cor-borda);
-  color: var(--cor-texto);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 /* Alinhada pela direita do botão: os menus ficam no canto direito da janela. */
@@ -553,52 +611,48 @@ input[type='radio'] {
   background: var(--cor-borda);
 }
 
-/* Abas em maiúsculas, como numa fita de ferramentas de CAD. "Arquivo" fica
-   destacada em cor cheia, a convenção usual para a aba de arquivo. */
+/* Abas em maiúsculas, claras sobre o azul-marinho, como numa fita de ferramentas de CAD. A aberta é uma lingueta
+   branca (emenda na fita) com o traço laranja em cima; "Arquivo" fica em cor cheia, a convenção usual. */
 .ribbon-aba {
   position: relative;
   font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding: 6px 15px 5px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 3px 3px 0 0;
+  padding: 6px 15px 6px;
+  border: none;
+  border-radius: 4px 4px 0 0;
   background: transparent;
-  color: var(--cor-texto-secundario);
+  color: var(--marca-texto-suave);
   cursor: pointer;
 }
 
 .ribbon-aba:hover {
-  background: var(--cor-barra-alt);
-  color: var(--cor-texto);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .ribbon-aba-ativa,
 .ribbon-aba-ativa:hover {
   background: #fff;
-  border-color: var(--cor-borda);
-  color: var(--cor-selecao-escura);
-  font-weight: 600;
-  margin-bottom: -1px;
-  padding-bottom: 6px;
+  color: var(--marca-800);
+  font-weight: 700;
+  box-shadow: inset 0 3px 0 var(--destaque);
   z-index: 1;
 }
 
 .ribbon-aba-arquivo,
 .ribbon-aba-arquivo:hover {
-  background: var(--cor-selecao);
-  border-color: var(--cor-selecao);
+  background: var(--azul-600);
   color: #fff;
   font-weight: 600;
 }
 
 .ribbon-aba-arquivo.ribbon-aba-ativa,
 .ribbon-aba-arquivo.ribbon-aba-ativa:hover {
-  background: var(--cor-selecao-escura);
-  border-color: var(--cor-selecao-escura);
-  color: #fff;
+  background: #fff;
+  color: var(--azul-700);
+  box-shadow: inset 0 3px 0 var(--azul-600);
 }
 
 /* Janela estreita: as dez abas mais os quatro menus pedem ~1210 px. Abaixo
@@ -655,7 +709,6 @@ input[type='radio'] {
   justify-content: space-between;
   padding: 0 4px;
   background: #fff;
-  border-top: 1px solid var(--cor-borda);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -669,6 +722,7 @@ input[type='radio'] {
 /* Grupo sem caixa: separador vertical à direita e o nome do grupo embaixo,
    centralizado, como nas fitas de ferramentas de programas de desenho. */
 .grupo-de-ferramentas {
+  --cor-do-grupo: var(--grupo-1);
   position: relative;
   display: flex;
   flex-shrink: 0;
@@ -679,6 +733,16 @@ input[type='radio'] {
   border-right: 1px solid var(--cinza-150);
 }
 
+/* Cada grupo da aba com a sua cor, na ordem da tela (as cores se repetem a partir do nono). */
+.grupo-de-ferramentas:nth-child(8n + 2) { --cor-do-grupo: var(--grupo-2); }
+.grupo-de-ferramentas:nth-child(8n + 3) { --cor-do-grupo: var(--grupo-3); }
+.grupo-de-ferramentas:nth-child(8n + 4) { --cor-do-grupo: var(--grupo-4); }
+.grupo-de-ferramentas:nth-child(8n + 5) { --cor-do-grupo: var(--grupo-5); }
+.grupo-de-ferramentas:nth-child(8n + 6) { --cor-do-grupo: var(--grupo-6); }
+.grupo-de-ferramentas:nth-child(8n + 7) { --cor-do-grupo: var(--grupo-7); }
+.grupo-de-ferramentas:nth-child(8n + 8) { --cor-do-grupo: var(--grupo-8); }
+
+/* O nome do grupo embaixo, com um traço curto na cor dele. */
 .grupo-de-ferramentas::before {
   content: attr(aria-label);
   position: absolute;
@@ -687,10 +751,25 @@ input[type='radio'] {
   bottom: 4px;
   text-align: center;
   font-size: 11px;
-  color: var(--cor-texto-secundario);
+  font-weight: 500;
+  color: var(--cinza-600);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.grupo-de-ferramentas::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 22px;
+  height: 2px;
+  margin-left: -11px;
+  border-radius: 2px;
+  background: var(--cor-do-grupo);
+  opacity: 0.7;
   pointer-events: none;
 }
 
@@ -715,35 +794,34 @@ input[type='radio'] {
 .grupo-de-ferramentas button .icone-de-ferramenta {
   width: 26px;
   height: 26px;
-  color: #34465c;
+  color: var(--cor-do-grupo);
 }
 
+/* Desligada: o ícone perde a cor (cinza) — dá para ver de longe o que está disponível. */
 .grupo-de-ferramentas button:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
+.grupo-de-ferramentas button:disabled .icone-de-ferramenta {
+  color: var(--cinza-500);
+}
+
 .grupo-de-ferramentas button:hover:not(:disabled) {
-  background: var(--azul-50);
-  border-color: var(--azul-200);
+  background: color-mix(in srgb, var(--cor-do-grupo) 9%, #fff);
+  border-color: color-mix(in srgb, var(--cor-do-grupo) 35%, #fff);
 }
 
 .grupo-de-ferramentas button:active:not(:disabled) {
-  background: var(--azul-100);
+  background: color-mix(in srgb, var(--cor-do-grupo) 16%, #fff);
 }
 
-/* Ferramenta ativa: fundo azul-claro e borda, como um botão de alternância de
-   fita (em vez do bloco azul cheio, que chamava atenção demais). */
+/* Ferramenta ativa: fundo claro e borda na cor do grupo, como um botão de alternância de fita. */
 .grupo-de-ferramentas button.item-selecionado,
 .grupo-de-ferramentas button[aria-pressed='true'] {
-  background: var(--azul-100);
-  border-color: var(--azul-300);
-  color: var(--cor-selecao-escura);
-}
-
-.grupo-de-ferramentas button.item-selecionado .icone-de-ferramenta,
-.grupo-de-ferramentas button[aria-pressed='true'] .icone-de-ferramenta {
-  color: var(--cor-selecao);
+  background: color-mix(in srgb, var(--cor-do-grupo) 14%, #fff);
+  border-color: color-mix(in srgb, var(--cor-do-grupo) 55%, #fff);
+  color: var(--cinza-900);
 }
 
 /* Coluna de botões pequenos (ícone à esquerda, texto à direita) empilhados —
@@ -770,9 +848,19 @@ input[type='radio'] {
   flex-shrink: 0;
 }
 
-.grupo-de-ferramentas button.botao-grande .icone-de-ferramenta {
-  width: 30px;
-  height: 30px;
+/* O ícone grande num quadradinho com o fundo na cor do grupo. */
+.grupo-de-ferramentas button.botao-grande .icone-de-ferramenta,
+.grupo-de-ferramentas > button:not(.botao-pequeno):not(.botao-so-icone) .icone-de-ferramenta {
+  width: 34px;
+  height: 34px;
+  padding: 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cor-do-grupo) 12%, #fff);
+}
+
+.grupo-de-ferramentas button.botao-grande:disabled .icone-de-ferramenta,
+.grupo-de-ferramentas > button:not(.botao-pequeno):not(.botao-so-icone):disabled .icone-de-ferramenta {
+  background: var(--cinza-100);
 }
 
 .grupo-de-ferramentas button.botao-grande {
@@ -846,8 +934,12 @@ input[type='radio'] {
   align-items: center;
   gap: 2px;
   padding: 2px 8px;
-  background: var(--cor-barra);
+  background: #fff;
   border-top: 1px solid var(--cor-borda);
+}
+
+.barra-de-visualizacao button {
+  color: var(--marca-700);
 }
 
 .barra-de-visualizacao button[aria-pressed='true'] {
@@ -876,31 +968,34 @@ input[type='radio'] {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  padding: 4px 8px 0;
-  background: var(--cor-barra);
+  padding: 5px 8px 0;
+  background: var(--cinza-100);
   border-bottom: 1px solid var(--cor-borda);
   font-size: 11.5px;
 }
 
+/* O projeto aberto: uma aba branca com o traço azul em cima. */
 .aba-de-documento {
   position: relative;
   max-width: 45%;
-  padding: 4px 16px 5px;
+  padding: 5px 16px 6px;
   margin-bottom: -1px;
   background: #fff;
   border: 1px solid var(--cor-borda);
   border-bottom-color: #fff;
-  border-radius: 3px 3px 0 0;
-  color: var(--cor-texto);
-  font-weight: 600;
+  border-radius: 4px 4px 0 0;
+  box-shadow: inset 0 3px 0 var(--azul-600);
+  color: var(--marca-800);
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Tecido e enfesto em etiquetas, cada um com a sua cor. */
 .contexto-do-documento {
   display: flex;
-  gap: 20px;
+  gap: 8px;
   min-width: 0;
   padding-bottom: 5px;
   color: var(--cor-texto-secundario);
@@ -909,27 +1004,44 @@ input[type='radio'] {
   text-overflow: ellipsis;
 }
 
+.contexto-do-documento > span {
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--grupo-2) 30%, #fff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--grupo-2) 10%, #fff);
+  color: color-mix(in srgb, var(--grupo-2) 75%, #000);
+  font-weight: 500;
+}
+
+.contexto-do-documento > span + span {
+  border-color: color-mix(in srgb, var(--grupo-3) 30%, #fff);
+  background: color-mix(in srgb, var(--grupo-3) 9%, #fff);
+  color: color-mix(in srgb, var(--grupo-3) 80%, #000);
+}
+
 .painel-lateral {
   min-height: 0;
-  background: #fff;
+  background: var(--cinza-50);
   border-right: 1px solid var(--cor-borda);
   padding: 0;
   overflow-y: auto;
 }
 
+/* O título do painel com o traço azul à esquerda. */
 .painel-lateral h2 {
   position: sticky;
   top: 0;
   z-index: 1;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--cor-texto-secundario);
+  letter-spacing: 0.06em;
+  color: var(--marca-800);
   margin: 0;
-  padding: 8px 12px;
-  background: var(--cor-barra);
+  padding: 9px 12px;
+  background: #fff;
   border-bottom: 1px solid var(--cor-borda);
+  box-shadow: inset 3px 0 0 var(--azul-600);
 }
 
 .painel-lateral .texto-vazio {
@@ -958,12 +1070,21 @@ input[type='radio'] {
   flex-direction: column;
 }
 
+/* Cada peça num cartão branco. */
 .lista-de-pecas li {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 6px 8px 6px 10px;
-  border-bottom: 1px solid var(--cinza-150);
+  margin: 6px 8px 0;
+  padding: 6px 6px 6px 8px;
+  background: #fff;
+  border: 1px solid var(--cinza-200);
+  border-radius: var(--raio-md);
+  box-shadow: var(--sombra-leve);
+}
+
+.lista-de-pecas li:last-child {
+  margin-bottom: 8px;
 }
 
 .caixa-de-selecao-em-lote {
@@ -993,9 +1114,16 @@ input[type='radio'] {
   background: var(--cinza-50);
 }
 
+/* A peça selecionada: o cartão inteiro em azul-claro, com a borda e o traço azul à esquerda. */
 .lista-de-pecas button.item-selecionado {
+  background: transparent;
+  border-color: transparent;
+}
+
+.lista-de-pecas li:has(button.item-selecionado) {
   background: var(--azul-50);
-  border-color: var(--azul-300);
+  border-color: var(--azul-600);
+  box-shadow: inset 3px 0 0 var(--azul-600), var(--sombra-leve);
 }
 
 .miniatura-de-peca {
@@ -1492,9 +1620,9 @@ input[type='radio'] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 10px 8px 16px;
-  background: var(--cinza-50);
-  border-bottom: 1px solid var(--cinza-200);
+  padding: 9px 10px 9px 16px;
+  background: var(--marca-800);
+  border-bottom: 3px solid var(--destaque);
   border-radius: var(--raio-lg) var(--raio-lg) 0 0;
 }
 
@@ -1502,7 +1630,7 @@ input[type='radio'] {
   font-size: 14px;
   font-weight: 600;
   margin: 0;
-  color: var(--cinza-900);
+  color: #fff;
 }
 
 .sobreposicao-fechar {
@@ -1518,12 +1646,12 @@ input[type='radio'] {
   font-size: 18px;
   cursor: pointer;
   line-height: 1;
-  color: var(--cinza-600);
+  color: var(--marca-texto-suave);
 }
 
 .sobreposicao-fechar:hover {
-  background: var(--cinza-150);
-  color: var(--cinza-900);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
 .sobreposicao-corpo {
@@ -1889,19 +2017,52 @@ input[type='radio'] {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 24px;
+  min-height: 26px;
   padding: 3px 12px;
-  background: var(--cor-barra);
-  border-top: 1px solid var(--cor-borda);
+  background: var(--marca-900);
   font-size: 11px;
-  color: var(--cor-texto-secundario);
+  color: var(--marca-texto-suave);
   white-space: nowrap;
   overflow: hidden;
 }
 
 .barra-de-status > * + * {
   padding-left: 12px;
-  border-left: 1px solid var(--cinza-300);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+/* Na barra azul-marinho, o salvamento e a validação viram selos: verde, amarelo ou vermelho, com o ícone e o texto. */
+.barra-de-status .estado-do-salvamento,
+.barra-de-status .indicador-de-validacao {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 999px;
+  background: #1f8a4c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.barra-de-status .estado-do-salvamento.salvamento-falhou,
+.barra-de-status .indicador-de-validacao.tem-erro {
+  background: #d32f2f;
+  color: #fff;
+}
+
+.barra-de-status .indicador-de-validacao.tem-aviso {
+  background: #f5b300;
+  color: #3a2800;
+}
+
+.barra-de-status .indicador-de-validacao:hover {
+  color: #fff;
+  filter: brightness(1.1);
+  text-decoration: none;
+}
+
+.barra-de-status .indicador-de-validacao.tem-aviso:hover {
+  color: #3a2800;
 }
 
 .painel-de-biblioteca {
