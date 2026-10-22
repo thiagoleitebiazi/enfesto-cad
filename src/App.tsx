@@ -3283,7 +3283,7 @@ export default function App(): React.JSX.Element {
         return;
       }
       try {
-        const { moldes, giradas } = moldesDoDxf(resultado, proximoId);
+        const { moldes } = moldesDoDxf(resultado, proximoId);
         // A origem do DXF é arbitrária (pode estar no meio do desenho): o conjunto inteiro é deslocado para o canto
         // útil da mesa, com o mesmo deslocamento para todas as peças, sem mudar a posição relativa entre elas.
         const todos = moldes.flatMap((m) => m.contorno);
@@ -3298,13 +3298,9 @@ export default function App(): React.JSX.Element {
           unidadeAssumida: resultado.unidadeAssumida,
         };
         acrescentarPecasImportadas(posicionados, origem, `Importação do DXF “${origem.arquivo}”: ${posicionados.length} peça(s), em ${origem.unidade}`);
-        setMensagensImportacao([
-          `${posicionados.length} peça(s) importada(s) do DXF, em ${resultado.unidadeDetectada}, com o nome do arquivo (${posicionados.map((m) => m.nome).join(', ')}) e o fio na horizontal. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
-          ...(giradas.length > 0
-            ? [`Girada(s) para o fio ficar na horizontal (no arquivo, a linha de fio estava em outra direção): ${giradas.map((g) => `${g.nome} (${numeroComVirgula(Math.round(g.giroGraus * 10) / 10)}°)`).join(', ')}.`]
-            : []),
-          ...avisos,
-        ]);
+        // Importou: as peças aparecem na lista e na mesa, sem faixa de avisos (pedido do usuário, ADR 0095). A faixa
+        // fica para quando nada entra, com o motivo.
+        setMensagensImportacao(null);
       } catch (erro) {
         const motivo = erro instanceof Error ? erro.message : String(erro);
         setMensagensImportacao([`Não foi possível importar: ${motivo}`, ...avisos]);
@@ -3326,6 +3322,7 @@ export default function App(): React.JSX.Element {
       // A peça sem linha de fio no PDF entra com o fio na horizontal, como as do DXF.
       const pecasDoPdf = resultado.pecas.map((p) => (p.linhaDeFio || p.molde ? p : { ...p, linhaDeFio: linhaDeFioSobreContorno(p.contorno, 'horizontal') }));
       const mensagens = [...resultado.avisos];
+      let importadas = 0;
 
       // A peça inteira, quando o PDF traz o registro dela; senão, a que o desenho mostra. Cada uma vai para um
       // lugar livre: as posições da página não dizem nada, e deixariam a peça em cima das que já estão no projeto.
@@ -3337,11 +3334,10 @@ export default function App(): React.JSX.Element {
           { formato: 'pdf', arquivo: arquivoImportadoRef.current, importadaEmIso: agora, unidade: 'mm (tamanho real do PDF)', unidadeAssumida: false },
           `Importação do PDF “${arquivoImportadoRef.current}”: ${novosMoldes.length} peça(s)`,
         );
-        mensagens.unshift(`${novosMoldes.length} peça(s) importada(s) do PDF.`);
+        importadas += novosMoldes.length;
       }
       if (resultado.pecas.length === 0) {
         const contornos = await extrairContornosDoPdf(arquivo.conteudo);
-        const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
         if (contornos.candidatos.length > 0 && contornos.alturaPaginaPt !== null) {
           // PDF de outro programa: os contornos fechados viram peças no tamanho do papel, com o nome do arquivo.
           const moldes = moldesDosContornosDoPdf(contornos, nomeBase, proximoId);
@@ -3350,19 +3346,19 @@ export default function App(): React.JSX.Element {
             { formato: 'pdf', arquivo: arquivoImportadoRef.current, importadaEmIso: agora, unidade: 'tamanho do papel (1:1, em mm)', unidadeAssumida: true },
             `Importação do PDF “${arquivoImportadoRef.current}”: ${moldes.length} peça(s)`,
           );
-          const texto = `${moldes.length} contorno(s) do PDF importado(s) como peça(s), no tamanho do papel (1:1), com o nome do arquivo e o fio na horizontal — se o PDF não estava em tamanho real, use Dimensionar. Ficaram de fora: ${contornos.descartados.borda} de borda da folha, ${contornos.descartados.areaPequena} de área pequena (letras e marcas), ${contornos.descartados.abertos} abertos. Curvas aproximadas por segmentos retos: ${contornos.curvasAproximadas}.`;
-          if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, texto);
-          else mensagens.push(texto);
+          importadas += moldes.length;
         } else {
           const diagnostico = await diagnosticarVetorPdf(arquivo.conteudo);
           if (diagnostico.subcaminhos > 0) {
             const textoDoDiagnostico = descreverDiagnosticoVetorial(diagnostico);
+            const indiceGenerico = mensagens.findIndex((m) => m.startsWith('Nenhuma peça reconhecível'));
             if (indiceGenerico >= 0) mensagens.splice(indiceGenerico, 1, textoDoDiagnostico);
             else mensagens.push(textoDoDiagnostico);
           }
         }
       }
-      setMensagensImportacao(mensagens.length > 0 ? mensagens : null);
+      // Como no DXF: importou, sem faixa; nada entrou, a faixa diz o motivo (ADR 0095).
+      setMensagensImportacao(importadas === 0 && mensagens.length > 0 ? mensagens : null);
     });
   }, [pecas, enfesto, acrescentarPecasImportadas]);
 

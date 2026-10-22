@@ -83,7 +83,6 @@ async function principal() {
   const lista = () =>
     js(`JSON.stringify(Array.from(document.querySelectorAll('.lista-de-pecas li')).map(li => li.querySelector('.texto-do-item-de-peca').textContent.split(' (')[0] + (li.querySelector('input').checked || li.querySelector('button').classList.contains('item-selecionado') ? ' *' : '')))`).then(JSON.parse);
   const avisos = () => js(`((document.querySelector('.faixa-de-avisos') || {}).innerText || '').replace(/\\s+/g, ' ')`);
-  const dispensarAvisos = () => js(`(Array.from(document.querySelectorAll('.faixa-de-avisos button')).find(b => b.textContent === 'Dispensar') || { click() {} }).click()`);
   // O projeto como está gravado (o mais recente da pasta de dados do teste), depois do Ctrl/⌘+S.
   const pecasGravadas = async () => {
     await js(`document.querySelector('.app-shell').focus()`);
@@ -105,13 +104,14 @@ async function principal() {
   await botao('Importar DXF');
   await espera(2500);
   conferir('importa direto, sem janela de confirmação', (await janela()) === 'nenhuma', await janela());
+  // Importou sem problema: nenhuma faixa de avisos; as peças aparecem na lista, com o nome do arquivo (ADR 0095).
   const aviso = await avisos();
-  log('      aviso: ' + aviso.slice(0, 400));
-  conferir('a mensagem diz os nomes do arquivo, o fio na horizontal e a peça girada', aviso.includes('molde-de-teste-1') && aviso.includes('fio na horizontal') && aviso.includes('Girada(s)'), aviso.slice(0, 160));
+  conferir('sem faixa de avisos depois de importar', aviso === '', aviso.slice(0, 160));
+  const nomes = await lista();
+  conferir('as peças na lista, com o nome do arquivo', nomes.length === 3 && nomes.every((n) => n.startsWith('molde-de-teste-')), JSON.stringify(nomes));
   await clicarEm(`document.querySelector('.barra-de-visualizacao button[aria-label="Ajustar à tela"]')`);
   await espera(600);
   await foto('02-importado.png');
-  await dispensarAvisos();
   const importadas = await pecasGravadas();
   conferir('as 3 peças, com o fio deitado (na horizontal da tela)', importadas.length === 3 && importadas.every((p) => Math.abs(p.linhaDeFio.fim.x - p.linhaDeFio.inicio.x) < 1e-6), JSON.stringify(importadas.map((p) => p.nome)));
   conferir('o pique do arquivo veio', importadas.some((p) => p.piques.length === 1));
