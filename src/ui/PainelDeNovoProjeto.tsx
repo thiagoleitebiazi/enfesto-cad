@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MARGEM_DE_SEGURANCA_DA_MESA_MM } from '../domain/enfesto';
 import { Sobreposicao } from './Sobreposicao';
 
 export interface DadosDeNovoProjeto {
@@ -21,7 +22,8 @@ interface PainelDeNovoProjetoProps {
  * Diálogo de "Novo projeto" (seção 2 do escopo) — pede nome, medidas da
  * mesa e a configuração do tecido de uma vez, como o "Novo Documento" de
  * qualquer programa de desenho. As medidas da mesa viram um enfesto inicial
- * (tipo Ímpar, sem margens); os dados do tecido viram um Tecido completo —
+ * (tipo Ímpar, sem margens adicionais: só a margem de segurança de 4 mm, que
+ * vale sempre — ADR 0091); os dados do tecido viram um Tecido completo —
  * ambos editáveis depois pelos botões "Enfesto"/"Tecido" se precisar de
  * ajuste fino. Só os campos essenciais (nome do projeto, largura/
  * comprimento da mesa, tipo e largura do tecido) são obrigatórios; kilos,
@@ -105,8 +107,9 @@ export function PainelDeNovoProjeto(props: PainelDeNovoProjetoProps): React.JSX.
           <input type="number" min={0} value={comprimentoMm} onChange={(e) => setComprimentoMm(e.target.value)} />
         </label>
         <p className="nota-do-formulario">
-          As medidas da mesa definem o enfesto inicial (tipo Ímpar, sem margens) — ajuste depois pelo botão
-          "Enfesto" se precisar de outro tipo ou de margens.
+          As medidas da mesa definem o enfesto inicial (tipo Ímpar). Não há margens adicionais, mas a margem de segurança
+          de {MARGEM_DE_SEGURANCA_DA_MESA_MM} mm vale sempre: nenhuma peça chega mais perto que isso das bordas da mesa.
+          Ajuste depois pelo botão "Enfesto" se precisar de outro tipo ou de margens maiores.
         </p>
 
         <p className="legenda-inline">Tecido</p>

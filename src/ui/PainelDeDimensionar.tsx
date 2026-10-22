@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
+import { numeroComVirgula } from '../core/numeros';
 
 interface PainelDeDimensionarProps {
   readonly larguraAtualMm: number;
@@ -45,13 +46,13 @@ export function PainelDeDimensionar(props: PainelDeDimensionarProps): React.JSX.
 
         <dl className="lista-de-propriedades">
           <dt>Largura atual</dt>
-          <dd>{props.larguraAtualMm.toFixed(1)} mm</dd>
+          <dd>{numeroComVirgula(props.larguraAtualMm, 1)} mm</dd>
           <dt>Altura atual</dt>
-          <dd>{props.alturaAtualMm.toFixed(1)} mm</dd>
+          <dd>{numeroComVirgula(props.alturaAtualMm, 1)} mm</dd>
           <dt>Nova largura</dt>
-          <dd>{fatoresValidos ? (props.larguraAtualMm * fx).toFixed(1) : '—'} mm</dd>
+          <dd>{fatoresValidos ? numeroComVirgula(props.larguraAtualMm * fx, 1) : '—'} mm</dd>
           <dt>Nova altura</dt>
-          <dd>{fatoresValidos ? (props.alturaAtualMm * fy).toFixed(1) : '—'} mm</dd>
+          <dd>{fatoresValidos ? numeroComVirgula(props.alturaAtualMm * fy, 1) : '—'} mm</dd>
         </dl>
 
         <label className="opcao-em-linha">

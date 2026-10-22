@@ -16,6 +16,7 @@ import {
   type Contorno,
   type Ponto2D,
 } from '../core/geometria';
+import { numeroComVirgula } from '../core/numeros';
 
 /**
  * Módulo independente de validação geométrica (seção 7 do escopo). Opera só
@@ -210,8 +211,8 @@ function validarSobreposicaoEEspacamento(
             tipo: 'espacamento-insuficiente',
             severidade: 'erro',
             mensagem: seTocam
-              ? `Peças "${a.nome}" e "${b.nome}" estão encostadas uma na outra; o mínimo exigido entre peças é de ${distanciaMinimaMm} mm.`
-              : `Peças "${a.nome}" e "${b.nome}" estão a ${d.toFixed(1)} mm uma da outra, abaixo do mínimo exigido (${distanciaMinimaMm} mm).`,
+              ? `Peças "${a.nome}" e "${b.nome}" estão encostadas uma na outra; o mínimo exigido entre peças é de ${numeroComVirgula(distanciaMinimaMm)} mm.`
+              : `Peças "${a.nome}" e "${b.nome}" estão a ${numeroComVirgula(d, 1)} mm uma da outra, abaixo do mínimo exigido (${numeroComVirgula(distanciaMinimaMm)} mm).`,
             pecasEnvolvidasIds: [a.id, b.id],
           });
         }
@@ -304,7 +305,7 @@ function validarRotacoes(pecas: readonly Molde[]): ProblemaDeValidacao[] {
       problemas.push({
         tipo: 'rotacao-proibida',
         severidade: 'erro',
-        mensagem: `Peça "${peca.nome}" está rotacionada ${peca.anguloDeRotacaoGraus}°, que não é uma orientação permitida para o sentido do fio desta peça.`,
+        mensagem: `Peça "${peca.nome}" está rotacionada ${numeroComVirgula(peca.anguloDeRotacaoGraus)}°, que não é uma orientação permitida para o sentido do fio desta peça.`,
         pecasEnvolvidasIds: [peca.id],
       });
     }
@@ -322,7 +323,7 @@ function validarEscala(pecas: readonly Molde[], tolerancias: ToleranciasDeValida
       problemas.push({
         tipo: 'escala-suspeita',
         severidade: 'aviso',
-        mensagem: `Peça "${peca.nome}" tem apenas ${maiorDimensao.toFixed(1)} mm na maior dimensão — possível problema de escala/unidade.`,
+        mensagem: `Peça "${peca.nome}" tem apenas ${numeroComVirgula(maiorDimensao, 1)} mm na maior dimensão — possível problema de escala/unidade.`,
         pecasEnvolvidasIds: [peca.id],
       });
     } else if (maiorDimensao > tolerancias.dimensaoMaximaPlausivelMm) {
@@ -339,7 +340,7 @@ function validarEscala(pecas: readonly Molde[], tolerancias: ToleranciasDeValida
 
 /** A distância como a lista a diz: com uma casa abaixo de 10 mm, e em milímetros inteiros daí para cima. */
 function emMilimetros(mm: number): string {
-  return mm < 10 ? mm.toFixed(1) : mm.toFixed(0);
+  return mm < 10 ? numeroComVirgula(mm, 1) : numeroComVirgula(mm, 0);
 }
 
 /** No aviso de uma linha só: diz que ela é da metade que a dobra guarda — a que não aparece no desenho. */

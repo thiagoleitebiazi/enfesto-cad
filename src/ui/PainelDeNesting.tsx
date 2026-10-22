@@ -3,6 +3,7 @@ import { Sobreposicao } from './Sobreposicao';
 import type { MetodoDoNesting, ResultadoDeNesting } from '../domain/nesting';
 import { arestaDeSimetria } from '../domain/anotacoes';
 import { rotacoesNoEncaixe, type Molde } from '../domain/molde';
+import { numeroComVirgula } from '../core/numeros';
 import { lerMedida } from './medidas';
 
 export interface OpcoesAvancadasDeNesting {
@@ -239,9 +240,9 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               <dt>Peças não colocadas</dt>
               <dd>{props.resultado.pecasNaoColocadas.length}</dd>
               <dt>Comprimento utilizado</dt>
-              <dd>{props.resultado.comprimentoUtilizadoMm.toFixed(1)} mm</dd>
+              <dd>{numeroComVirgula(props.resultado.comprimentoUtilizadoMm, 1)} mm</dd>
               <dt>Aproveitamento</dt>
-              <dd>{props.resultado.aproveitamentoPercentual.toFixed(1)}%</dd>
+              <dd>{numeroComVirgula(props.resultado.aproveitamentoPercentual, 1)}%</dd>
               <dt>Tempo de processamento</dt>
               <dd>{props.resultado.tempoDeProcessamentoMs} ms</dd>
               {props.resultado.interrompido && (

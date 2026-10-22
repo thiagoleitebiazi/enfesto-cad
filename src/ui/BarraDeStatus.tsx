@@ -1,4 +1,5 @@
 import { distancia, anguloEmGraus, type Ponto2D } from '../core/geometria';
+import { numeroComVirgula } from '../core/numeros';
 import { valorDaReguaEmUnidade, type TransformacaoDeTela, type UnidadeDeRegua } from './transformacaoDeTela';
 import type { ProblemaDeValidacao } from '../domain/validacao';
 import type { EstadoDoSalvamento } from './salvamento';
@@ -21,9 +22,9 @@ interface BarraDeStatusProps {
   readonly salvamento?: EstadoDoSalvamento | null;
 }
 
-/** Medida em mm escrita na unidade das réguas; em cm, duas casas dão a mesma precisão de 0,1 mm. */
+/** Medida em mm escrita na unidade das réguas, com vírgula; em cm, duas casas dão a mesma precisão de 0,1 mm. */
 function medida(mm: number, unidade: UnidadeDeRegua): string {
-  return unidade === 'cm' ? `${valorDaReguaEmUnidade(mm, 'cm').toFixed(2)} cm` : `${mm.toFixed(1)} mm`;
+  return unidade === 'cm' ? `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'cm'), 2)} cm` : `${numeroComVirgula(mm, 1)} mm`;
 }
 
 export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
@@ -50,7 +51,7 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
       {referencia && (
         <span>
           DX: {medida(referencia.dx, props.unidade)}  DY: {medida(referencia.dy, props.unidade)}  Dist:{' '}
-          {medida(referencia.distancia, props.unidade)}  Âng: {referencia.angulo.toFixed(1)}°
+          {medida(referencia.distancia, props.unidade)}  Âng: {numeroComVirgula(referencia.angulo, 1)}°
         </span>
       )}
       <span>Zoom: {zoomPercentual}%</span>
@@ -65,7 +66,7 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
       </span>
       <span title="Área das peças na mesa ÷ (largura útil × comprimento usado)">
         Aproveitamento da mesa:{' '}
-        {props.aproveitamentoPercentual != null ? `${props.aproveitamentoPercentual.toFixed(1)}%` : '—'}
+        {props.aproveitamentoPercentual != null ? `${numeroComVirgula(props.aproveitamentoPercentual, 1)}%` : '—'}
       </span>
       {props.salvamento &&
         (props.salvamento.ok ? (

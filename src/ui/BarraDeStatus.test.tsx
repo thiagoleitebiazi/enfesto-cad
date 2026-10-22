@@ -5,7 +5,7 @@ import { ponto } from '../core/geometria';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
 import { motivoDoErroDeSalvar, type EstadoDoSalvamento } from './salvamento';
 
-function renderizar(unidade: UnidadeDeRegua, pecasSelecionadas = 0): void {
+function renderizar(unidade: UnidadeDeRegua, pecasSelecionadas = 0, aproveitamentoPercentual: number | null = null): void {
   render(
     <BarraDeStatus
       cursorMundo={ponto(123.4, 600)}
@@ -16,6 +16,7 @@ function renderizar(unidade: UnidadeDeRegua, pecasSelecionadas = 0): void {
       problemas={[]}
       onAlternarValidacao={() => {}}
       unidade={unidade}
+      aproveitamentoPercentual={aproveitamentoPercentual}
     />,
   );
 }
@@ -23,16 +24,22 @@ function renderizar(unidade: UnidadeDeRegua, pecasSelecionadas = 0): void {
 describe('BarraDeStatus', () => {
   afterEach(() => cleanup());
 
-  it('em cm (como as réguas), posição e DX/DY/distância com duas casas', () => {
+  it('em cm (como as réguas), posição e DX/DY/distância com duas casas, com vírgula decimal', () => {
     renderizar('cm');
-    expect(screen.getByText(/X: 12\.34 cm\s+Y: 60\.00 cm/)).toBeInTheDocument();
-    expect(screen.getByText(/DX: 2\.34 cm\s+DY: 0\.00 cm\s+Dist: 2\.34 cm/)).toBeInTheDocument();
+    expect(screen.getByText(/X: 12,34 cm\s+Y: 60,00 cm/)).toBeInTheDocument();
+    expect(screen.getByText(/DX: 2,34 cm\s+DY: 0,00 cm\s+Dist: 2,34 cm\s+Âng: 0,0°/)).toBeInTheDocument();
   });
 
-  it('em mm, uma casa decimal', () => {
+  it('em mm, uma casa decimal, com vírgula', () => {
     renderizar('mm');
-    expect(screen.getByText(/X: 123\.4 mm\s+Y: 600\.0 mm/)).toBeInTheDocument();
-    expect(screen.getByText(/DX: 23\.4 mm/)).toBeInTheDocument();
+    expect(screen.getByText(/X: 123,4 mm\s+Y: 600,0 mm/)).toBeInTheDocument();
+    expect(screen.getByText(/DX: 23,4 mm/)).toBeInTheDocument();
+  });
+
+  it('o aproveitamento da mesa com vírgula; nenhum número da barra com ponto decimal', () => {
+    renderizar('mm', 0, 19.54);
+    expect(screen.getByText(/Aproveitamento da mesa:\s+19,5%/)).toBeInTheDocument();
+    expect(document.querySelector('.barra-de-status')!.textContent).not.toMatch(/\d\.\d/);
   });
 
   it.each([

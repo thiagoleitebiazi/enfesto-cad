@@ -258,6 +258,18 @@ describe('gerarPdfDeEncaixe — estrutura e escala', () => {
     expect(textoDecodificado).toMatch(/conferir escala/);
   });
 
+  it('a legenda da folha escreve as medidas da mesa com vírgula decimal (antes: largura útil 150.5 mm)', async () => {
+    const blob = await gerarPdfDeEncaixe([pecaRetangular('P1', 50, 50)], enfestoBase({ larguraUtilMm: 150.5, comprimentoMm: 200.5 }), {
+      formato: 'A4',
+      orientacao: 'paisagem',
+      margemMm: 10,
+    });
+    const textoDecodificado = decodificarTextoDoPdf(await paraTexto(blob));
+    expect(textoDecodificado).toMatch(/largura útil\s?150,5 mm/);
+    expect(textoDecodificado).toMatch(/mesa de\s?200,5 mm/);
+    expect(textoDecodificado).not.toMatch(/150\.5|200\.5/);
+  });
+
   it('a linha de referência mede exatamente 100mm convertidos em pontos no conteúdo vetorial (não só o rótulo)', async () => {
     const blob = await gerarPdfDeEncaixe([pecaRetangular('P1', 50, 50)], enfestoBase(), {
       formato: 'A4',
@@ -296,6 +308,7 @@ describe('a margem da folha', () => {
 
   it('a margem que não deixa espaço é recusada, com o motivo', () => {
     expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: 51 })).toThrow(/vai até 50 mm/);
+    expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: 50.5 })).toThrow('A margem de 50,5 mm não deixa espaço na folha A4 (retrato): ela vai até 50 mm.');
     expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: -1 })).toThrow(/de 0 mm para cima/);
     expect(() => areaImprimivelMm({ formato: 'A4', orientacao: 'retrato', margemMm: Number.NaN })).toThrow(/de 0 mm para cima/);
   });

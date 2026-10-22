@@ -1,6 +1,7 @@
 import type { Molde, RestricaoDeRotacao } from '../domain/molde';
 import { dimensoesDoMolde, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
 import { retanguloEnvolvente, type Contorno } from '../core/geometria';
+import { numeroComVirgula } from '../core/numeros';
 
 interface PainelDePecasProps {
   readonly pecas: readonly Molde[];
@@ -218,13 +219,13 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
 
       <dl className="lista-de-propriedades">
         <dt>Ângulo atual</dt>
-        <dd>{peca.anguloDeRotacaoGraus}°</dd>
+        <dd>{numeroComVirgula(peca.anguloDeRotacaoGraus)}°</dd>
         <dt>Largura</dt>
-        <dd>{dim.larguraMm.toFixed(1)} mm</dd>
+        <dd>{numeroComVirgula(dim.larguraMm, 1)} mm</dd>
         <dt>Altura</dt>
-        <dd>{dim.alturaMm.toFixed(1)} mm</dd>
+        <dd>{numeroComVirgula(dim.alturaMm, 1)} mm</dd>
         <dt>Área</dt>
-        <dd>{(dim.areaMm2 / 100).toFixed(1)} cm²</dd>
+        <dd>{numeroComVirgula(dim.areaMm2 / 100, 1)} cm²</dd>
         <dt>Rotações permitidas</dt>
         <dd>{rotacoes.map((r) => `${r}°`).join(', ')}</dd>
         <dt>Espelhamento</dt>

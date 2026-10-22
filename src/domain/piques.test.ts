@@ -73,8 +73,8 @@ describe('os formatos de pique', () => {
     expect(() => conferirFormato(formato('v'))).not.toThrow();
     expect(() => conferirFormato({ ...formato('meu'), forma: [[ponto(0, 0), ponto(0, 1)]] })).not.toThrow();
     expect(() => conferirFormato(formato('meu'))).toThrow('Escolha um tipo de pique da lista.');
-    expect(() => conferirFormato(formato('v', 0.2))).toThrow('A largura do pique precisa ficar entre 0.5 e 200 mm.');
-    expect(() => conferirFormato(formato('v', 4, 300))).toThrow('A altura do pique precisa ficar entre 0.5 e 200 mm.');
+    expect(() => conferirFormato(formato('v', 0.2))).toThrow('A largura do pique precisa ficar entre 0,5 e 200 mm.');
+    expect(() => conferirFormato(formato('v', 4, 300))).toThrow('A altura do pique precisa ficar entre 0,5 e 200 mm.');
     expect(() => conferirFormato(formato('v', 4, 6, 200))).toThrow('O ângulo do pique precisa ficar entre −180° e 180°.');
     expect(() => conferirFormato(formato('v', 4, 6, Number.NaN))).toThrow(/ângulo/);
   });

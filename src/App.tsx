@@ -261,6 +261,7 @@ import {
   type CurvaCadastrada,
 } from './ui/curvasCadastradas';
 import { formatarMm } from './ui/medidas';
+import { numeroComVirgula } from './core/numeros';
 import { circulo, espiral } from './core/curvas';
 import { CLIQUES_DA_COTA, cotaSobOPonto, montarCota, previaDaCota, type FerramentaDeCotaPorPontos } from './ui/cotas';
 import { cotaDePerimetro } from './domain/cota';
@@ -2484,7 +2485,7 @@ export default function App(): React.JSX.Element {
     registrarEventoEPersistir(
       'execucao-de-nesting',
       { pecas: novasPecas, tecido, enfesto },
-      `${resultadoNesting.pecasColocadas.length} peça(s) colocada(s), ${resultadoNesting.aproveitamentoPercentual.toFixed(1)}% de aproveitamento`,
+      `${resultadoNesting.pecasColocadas.length} peça(s) colocada(s), ${numeroComVirgula(resultadoNesting.aproveitamentoPercentual, 1)}% de aproveitamento`,
     );
   }, [resultadoNesting, aplicarMudanca, tecido, enfesto, registrarEventoEPersistir]);
 
@@ -3300,7 +3301,7 @@ export default function App(): React.JSX.Element {
         setMensagensImportacao([
           `${posicionados.length} peça(s) importada(s) do DXF, em ${resultado.unidadeDetectada}, com o nome do arquivo (${posicionados.map((m) => m.nome).join(', ')}) e o fio na horizontal. O conjunto foi posicionado no canto da mesa; a posição entre as peças é a do arquivo.`,
           ...(giradas.length > 0
-            ? [`Girada(s) para o fio ficar na horizontal (no arquivo, a linha de fio estava em outra direção): ${giradas.map((g) => `${g.nome} (${Math.round(g.giroGraus * 10) / 10}°)`).join(', ')}.`]
+            ? [`Girada(s) para o fio ficar na horizontal (no arquivo, a linha de fio estava em outra direção): ${giradas.map((g) => `${g.nome} (${numeroComVirgula(Math.round(g.giroGraus * 10) / 10)}°)`).join(', ')}.`]
             : []),
           ...avisos,
         ]);
@@ -5317,7 +5318,7 @@ export default function App(): React.JSX.Element {
               {projetoAtual.nome || 'Projeto sem nome'}
             </span>
             <span className="contexto-do-documento">
-              <span>Tecido: {tecido ? `${tecido.nome} (${tecido.larguraUtilMm} mm úteis)` : 'não configurado'}</span>
+              <span>Tecido: {tecido ? `${tecido.nome} (${numeroComVirgula(tecido.larguraUtilMm)} mm úteis)` : 'não configurado'}</span>
               <span>
                 Enfesto:{' '}
                 {enfesto ? `${ROTULO_DO_TIPO[enfesto.tipo]}, ${enfesto.quantidadeDeCamadas} camada(s)` : 'não configurado'}

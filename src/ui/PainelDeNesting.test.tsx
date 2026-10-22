@@ -176,3 +176,34 @@ describe('PainelDeNesting — o método do encaixe', () => {
     expect(onCalcular).toHaveBeenLastCalledWith({ distanciaEntreMoldesMm: 3, metodo: 'pontos-de-canto' });
   });
 });
+
+describe('PainelDeNesting — o resultado, com os números em português', () => {
+  it('o comprimento usado e o aproveitamento com vírgula decimal', () => {
+    render(
+      <PainelDeNesting
+        pecas={[molde('Frente', 'f')]}
+        distanciaEntreMoldesMm={3}
+        executando={false}
+        progresso={null}
+        resultado={{
+          pecasColocadas: [],
+          pecasNaoColocadas: [],
+          comprimentoUtilizadoMm: 1234.56,
+          areaOcupadaMm2: 0,
+          aproveitamentoPercentual: 74.35,
+          tempoDeProcessamentoMs: 12,
+          interrompido: false,
+          paradaPorTempoLimite: false,
+          paradaPorMetaDeAproveitamento: false,
+        }}
+        onCalcular={() => {}}
+        onCancelar={() => {}}
+        onAplicar={() => {}}
+        onFechar={() => {}}
+      />,
+    );
+    const valor = (rotulo: string) => screen.getByText(rotulo, { selector: 'dt' }).nextElementSibling!.textContent;
+    expect(valor('Comprimento utilizado')).toBe('1234,6 mm');
+    expect(valor('Aproveitamento')).toBe('74,3%');
+  });
+});

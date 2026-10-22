@@ -5,7 +5,7 @@ import { criarMolde } from '../domain/molde';
 import { criarTecido } from '../domain/tecido';
 import { criarProjeto } from '../domain/projeto';
 import { gerarRelatorioDeProducao } from '../domain/relatorio';
-import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './relatorio-exportacao';
+import { camposDoRelatorioEmPdf, gerarPdfDeRelatorio, gerarExcelDeRelatorio, pesoDaLinhaEmPdf } from './relatorio-exportacao';
 
 function projetoDeTeste() {
   const pecas = [
@@ -27,6 +27,44 @@ function projetoDeTeste() {
     enfesto: null,
   });
 }
+
+describe('camposDoRelatorioEmPdf — os números do PDF em português', () => {
+  it('vírgula decimal em todas as medidas, porcentagens e pesos (antes: 954.0 mm, 19.5%)', () => {
+    const relatorio = {
+      ...gerarRelatorioDeProducao(projetoDeTeste(), '2026-09-28T11:00:00.000Z'),
+      larguraTotalMm: 1600,
+      larguraUtilMm: 1500.5,
+      comprimentoConfiguradoMm: 3000,
+      comprimentoUtilizadoMm: 954,
+      areaOcupadaMm2: 1_234_567,
+      aproveitamentoPercentual: 19.54,
+      desperdicioPercentual: 80.46,
+      gramaturaGm2: 180.5,
+      quantidadeDisponivelKg: 12.25,
+      pesoTotalEstimadoKg: 0.2,
+    };
+    const campos = Object.fromEntries(camposDoRelatorioEmPdf(relatorio));
+    expect(campos['Largura total / útil:']).toBe('1600 mm / 1500,5 mm');
+    expect(campos['Comprimento configurado:']).toBe('3000 mm');
+    expect(campos['Comprimento utilizado:']).toBe('954,0 mm');
+    expect(campos['Área ocupada:']).toBe('1,235 m²');
+    expect(campos['Aproveitamento / Desperdício:']).toBe('19,5% / 80,5%');
+    expect(campos['Gramatura:']).toBe('180,5 g/m²');
+    expect(campos['Estoque disponível:']).toBe('12,25 kg');
+    expect(campos['Peso total estimado:']).toBe('0,200 kg');
+    for (const valor of Object.values(campos)) expect(valor, valor).not.toMatch(/\d\.\d/);
+    expect(pesoDaLinhaEmPdf(0.0626)).toBe('0,063 kg');
+    expect(pesoDaLinhaEmPdf(null)).toBe('—');
+  });
+
+  it('sem os dados, o travessão, como antes', () => {
+    const relatorio = { ...gerarRelatorioDeProducao(projetoDeTeste(), '2026-09-28T11:00:00.000Z'), larguraTotalMm: null, larguraUtilMm: null, comprimentoConfiguradoMm: null };
+    const campos = Object.fromEntries(camposDoRelatorioEmPdf(relatorio));
+    expect(campos['Largura total / útil:']).toBe('— mm / — mm');
+    expect(campos['Comprimento configurado:']).toBe('— mm');
+    expect(campos['Gramatura:']).toBe('— (configure no tecido)');
+  });
+});
 
 describe('gerarPdfDeRelatorio', () => {
   it('produz um PDF de verdade com conteúdo', async () => {

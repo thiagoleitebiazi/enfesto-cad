@@ -8,6 +8,7 @@ import {
   type Ponto2D,
   type PosicaoNoContorno,
 } from '../core/geometria';
+import { numeroComVirgula } from '../core/numeros';
 import { contornoDeCorte, inserirPontoNoMolde, type FormatoDePique, type Marca, type Molde, type Pique } from './molde';
 import { definirGraduacaoDoPique, referenciaSugerida } from './piquesGraduados';
 
@@ -86,7 +87,7 @@ export function conferirFormato(formato: FormatoDePique): void {
     ['A altura', formato.alturaMm],
   ] as const) {
     if (!Number.isFinite(valor) || valor < MEDIDA_MINIMA_DO_PIQUE_MM || valor > MEDIDA_MAXIMA_DO_PIQUE_MM) {
-      throw new Error(`${nome} do pique precisa ficar entre ${MEDIDA_MINIMA_DO_PIQUE_MM} e ${MEDIDA_MAXIMA_DO_PIQUE_MM} mm.`);
+      throw new Error(`${nome} do pique precisa ficar entre ${numeroComVirgula(MEDIDA_MINIMA_DO_PIQUE_MM)} e ${numeroComVirgula(MEDIDA_MAXIMA_DO_PIQUE_MM)} mm.`);
     }
   }
   if (!Number.isFinite(formato.anguloGraus) || Math.abs(formato.anguloGraus) > 180) throw new Error('O ângulo do pique precisa ficar entre −180° e 180°.');

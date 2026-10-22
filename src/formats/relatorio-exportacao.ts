@@ -7,6 +7,7 @@ import Helvetica from 'pdfkit/standard-fonts/Helvetica';
 import HelveticaBold from 'pdfkit/standard-fonts/HelveticaBold';
 import blobStream from 'blob-stream';
 import ExcelJS from 'exceljs';
+import { numeroComVirgula } from '../core/numeros';
 import type { RelatorioDeProducao } from '../domain/relatorio';
 
 // Este módulo usa negrito (.font('Helvetica-Bold')) além da fonte regular —
@@ -27,34 +28,37 @@ function linhaDeCampo(doc: PDFKit.PDFDocument, rotulo: string, valor: string, y:
   doc.font('Helvetica').text(`  ${valor}`);
 }
 
-export async function gerarPdfDeRelatorio(relatorio: RelatorioDeProducao): Promise<Blob> {
-  const doc = new PDFDocument({ size: 'A4', margin: 40, compress: false });
+/** O número com vírgula, ou o travessão quando não há (as unidades ficam no texto, como antes). */
+const ouTraco = (valor: number | null, casas?: number): string => (valor === null ? '—' : numeroComVirgula(valor, casas));
 
-  doc.fontSize(16).font('Helvetica-Bold').text('Relatório de Produção', { align: 'center' });
-  doc.moveDown();
+/** O peso de uma linha de "Peças por tamanho", como o PDF o escreve. */
+export const pesoDaLinhaEmPdf = (pesoKg: number | null): string => (pesoKg !== null ? `${numeroComVirgula(pesoKg, 3)} kg` : '—');
 
-  let y = doc.y;
-  const passo = 18;
-  const campos: Array<[string, string]> = [
+/**
+ * Os campos do PDF (rótulo e valor), com os números em português: vírgula decimal, como na tela. O Excel recebe os
+ * números como números (o próprio Excel os mostra na configuração de quem abre).
+ */
+export function camposDoRelatorioEmPdf(relatorio: RelatorioDeProducao): Array<[string, string]> {
+  return [
     ['Projeto:', `${relatorio.nomeDoProjeto} (${relatorio.codigoDoProjeto})`],
     ['Status:', relatorio.status],
     ['Referências:', relatorio.referencias.length > 0 ? relatorio.referencias.join(', ') : '—'],
     ['Tecido:', relatorio.tecidoNome],
-    ['Largura total / útil:', `${relatorio.larguraTotalMm ?? '—'} mm / ${relatorio.larguraUtilMm ?? '—'} mm`],
-    ['Comprimento configurado:', `${relatorio.comprimentoConfiguradoMm ?? '—'} mm`],
+    ['Largura total / útil:', `${ouTraco(relatorio.larguraTotalMm)} mm / ${ouTraco(relatorio.larguraUtilMm)} mm`],
+    ['Comprimento configurado:', `${ouTraco(relatorio.comprimentoConfiguradoMm)} mm`],
     ['Tipo de enfesto:', relatorio.tipoDeEnfesto ?? '—'],
     ['Quantidade de camadas:', String(relatorio.quantidadeDeCamadas ?? '—')],
-    ['Comprimento utilizado:', `${relatorio.comprimentoUtilizadoMm.toFixed(1)} mm`],
-    ['Área ocupada:', `${(relatorio.areaOcupadaMm2 / 1_000_000).toFixed(3)} m²`],
+    ['Comprimento utilizado:', `${numeroComVirgula(relatorio.comprimentoUtilizadoMm, 1)} mm`],
+    ['Área ocupada:', `${numeroComVirgula(relatorio.areaOcupadaMm2 / 1_000_000, 3)} m²`],
     [
       'Aproveitamento / Desperdício:',
       relatorio.aproveitamentoPercentual !== null
-        ? `${relatorio.aproveitamentoPercentual.toFixed(1)}% / ${relatorio.desperdicioPercentual!.toFixed(1)}%`
+        ? `${numeroComVirgula(relatorio.aproveitamentoPercentual, 1)}% / ${numeroComVirgula(relatorio.desperdicioPercentual!, 1)}%`
         : '— (configure o enfesto)',
     ],
-    ['Gramatura:', relatorio.gramaturaGm2 !== null ? `${relatorio.gramaturaGm2} g/m²` : '— (configure no tecido)'],
-    ['Estoque disponível:', relatorio.quantidadeDisponivelKg !== null ? `${relatorio.quantidadeDisponivelKg} kg` : '—'],
-    ['Peso total estimado:', relatorio.pesoTotalEstimadoKg !== null ? `${relatorio.pesoTotalEstimadoKg.toFixed(3)} kg` : '—'],
+    ['Gramatura:', relatorio.gramaturaGm2 !== null ? `${numeroComVirgula(relatorio.gramaturaGm2)} g/m²` : '— (configure no tecido)'],
+    ['Estoque disponível:', relatorio.quantidadeDisponivelKg !== null ? `${numeroComVirgula(relatorio.quantidadeDisponivelKg)} kg` : '—'],
+    ['Peso total estimado:', relatorio.pesoTotalEstimadoKg !== null ? `${numeroComVirgula(relatorio.pesoTotalEstimadoKg, 3)} kg` : '—'],
     [
       'Rendimento:',
       relatorio.rendimentoLotes !== null
@@ -64,6 +68,17 @@ export async function gerarPdfDeRelatorio(relatorio: RelatorioDeProducao): Promi
     ['Versão do encaixe:', String(relatorio.versaoDoEncaixe)],
     ['Data:', new Date(relatorio.dataIso).toLocaleString('pt-BR')],
   ];
+}
+
+export async function gerarPdfDeRelatorio(relatorio: RelatorioDeProducao): Promise<Blob> {
+  const doc = new PDFDocument({ size: 'A4', margin: 40, compress: false });
+
+  doc.fontSize(16).font('Helvetica-Bold').text('Relatório de Produção', { align: 'center' });
+  doc.moveDown();
+
+  let y = doc.y;
+  const passo = 18;
+  const campos = camposDoRelatorioEmPdf(relatorio);
   for (const [rotulo, valor] of campos) {
     linhaDeCampo(doc, rotulo, valor, y);
     y += passo;
@@ -83,7 +98,7 @@ export async function gerarPdfDeRelatorio(relatorio: RelatorioDeProducao): Promi
     doc.text(linha.tamanho, 40, y, { width: 100 });
     doc.text(String(linha.quantidadeDeModelos), 140, y, { width: 120 });
     doc.text(String(linha.quantidadeTotal), 260, y, { width: 120 });
-    doc.text(linha.pesoEstimadoKg !== null ? `${linha.pesoEstimadoKg.toFixed(3)} kg` : '—', 400, y, { width: 100 });
+    doc.text(pesoDaLinhaEmPdf(linha.pesoEstimadoKg), 400, y, { width: 100 });
     y += 16;
   }
   if (relatorio.pecasPorTamanho.length === 0) {

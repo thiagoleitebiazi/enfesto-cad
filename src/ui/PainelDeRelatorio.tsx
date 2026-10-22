@@ -1,5 +1,9 @@
 import { Sobreposicao } from './Sobreposicao';
+import { numeroComVirgula } from '../core/numeros';
 import type { RelatorioDeProducao } from '../domain/relatorio';
+
+/** O número com vírgula, ou o travessão quando não há (as unidades ficam no texto, como antes). */
+const ouTraco = (valor: number | null, casas?: number): string => (valor === null ? '—' : numeroComVirgula(valor, casas));
 
 interface PainelDeRelatorioProps {
   readonly relatorio: RelatorioDeProducao;
@@ -24,29 +28,31 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
           <dt>Tecido</dt>
           <dd>{r.tecidoNome}</dd>
           <dt>Largura total / útil</dt>
-          <dd>{r.larguraTotalMm ?? '—'} mm / {r.larguraUtilMm ?? '—'} mm</dd>
+          <dd>
+            {ouTraco(r.larguraTotalMm)} mm / {ouTraco(r.larguraUtilMm)} mm
+          </dd>
           <dt>Comprimento configurado</dt>
-          <dd>{r.comprimentoConfiguradoMm ?? '—'} mm</dd>
+          <dd>{ouTraco(r.comprimentoConfiguradoMm)} mm</dd>
           <dt>Tipo de enfesto</dt>
           <dd>{r.tipoDeEnfesto ?? '—'}</dd>
           <dt>Camadas</dt>
           <dd>{r.quantidadeDeCamadas ?? '—'}</dd>
           <dt>Comprimento utilizado</dt>
-          <dd>{r.comprimentoUtilizadoMm.toFixed(1)} mm</dd>
+          <dd>{numeroComVirgula(r.comprimentoUtilizadoMm, 1)} mm</dd>
           <dt>Aproveitamento / Desperdício</dt>
           <dd>
             {r.aproveitamentoPercentual !== null
-              ? `${r.aproveitamentoPercentual.toFixed(1)}% / ${r.desperdicioPercentual!.toFixed(1)}%`
+              ? `${numeroComVirgula(r.aproveitamentoPercentual, 1)}% / ${numeroComVirgula(r.desperdicioPercentual!, 1)}%`
               : '— (configure o enfesto)'}
           </dd>
           <dt>Versão do encaixe</dt>
           <dd>{r.versaoDoEncaixe}</dd>
           <dt>Gramatura</dt>
-          <dd>{r.gramaturaGm2 !== null ? `${r.gramaturaGm2} g/m²` : '— (configure no tecido)'}</dd>
+          <dd>{r.gramaturaGm2 !== null ? `${numeroComVirgula(r.gramaturaGm2)} g/m²` : '— (configure no tecido)'}</dd>
           <dt>Estoque disponível</dt>
-          <dd>{r.quantidadeDisponivelKg !== null ? `${r.quantidadeDisponivelKg} kg` : '—'}</dd>
+          <dd>{r.quantidadeDisponivelKg !== null ? `${numeroComVirgula(r.quantidadeDisponivelKg)} kg` : '—'}</dd>
           <dt>Peso total estimado</dt>
-          <dd>{r.pesoTotalEstimadoKg !== null ? `${r.pesoTotalEstimadoKg.toFixed(3)} kg` : '—'}</dd>
+          <dd>{r.pesoTotalEstimadoKg !== null ? `${numeroComVirgula(r.pesoTotalEstimadoKg, 3)} kg` : '—'}</dd>
           <dt>Rendimento</dt>
           <dd>{r.rendimentoLotes !== null ? `${r.rendimentoLotes} lote(s) igual(is) cabem no estoque` : '—'}</dd>
         </dl>
@@ -70,7 +76,7 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
                   <td>{linha.tamanho}</td>
                   <td className="coluna-numerica">{linha.quantidadeDeModelos}</td>
                   <td className="coluna-numerica">{linha.quantidadeTotal}</td>
-                  <td className="coluna-numerica">{linha.pesoEstimadoKg !== null ? `${linha.pesoEstimadoKg.toFixed(3)} kg` : '—'}</td>
+                  <td className="coluna-numerica">{linha.pesoEstimadoKg !== null ? `${numeroComVirgula(linha.pesoEstimadoKg, 3)} kg` : '—'}</td>
                 </tr>
               ))}
             </tbody>

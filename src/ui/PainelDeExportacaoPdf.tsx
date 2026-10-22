@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { margemMaximaMm, type FormatoDePagina, type OrientacaoDePagina } from '../formats/pdf-exportacao';
 import { lerMedida } from './medidas';
+import { numeroComVirgula } from '../core/numeros';
 
 export type TipoDeExportacaoPdf = 'encaixe-completo' | 'moldes-individuais';
 
@@ -35,7 +36,7 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
     margem === null || margemMm.trim() === '' || margem < 0
       ? 'A margem precisa ser um número de 0 mm para cima.'
       : margem > maxima
-        ? `Nesta folha, a margem vai até ${maxima} mm.`
+        ? `Nesta folha, a margem vai até ${numeroComVirgula(maxima)} mm.`
         : null;
 
   return (

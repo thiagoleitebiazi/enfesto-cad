@@ -235,7 +235,7 @@ describe('validarProjeto — encostar não é sobrepor', () => {
 
   it('a mensagem de quem está perto, sem encostar, continua dizendo a distância', () => {
     const problemas = validarProjeto([ESQUERDA, pecaRetangular('b', 152, 50, 100, 200)], enfestoBase());
-    expect(problemas.map((p) => p.mensagem)).toEqual(['Peças "a" e "b" estão a 2.0 mm uma da outra, abaixo do mínimo exigido (5 mm).']);
+    expect(problemas.map((p) => p.mensagem)).toEqual(['Peças "a" e "b" estão a 2,0 mm uma da outra, abaixo do mínimo exigido (5 mm).']);
   });
 });
 
@@ -256,7 +256,7 @@ describe('validarProjeto — linha interna inteira fora da peça', () => {
 
   it('a que está perto da borda, do lado de fora, também é apontada — com a distância em décimos', () => {
     const aTresEMeio = [comLinhas([[ponto(253.5, 100), ponto(253.5, 300)]])];
-    expect(validarProjeto(aTresEMeio, enfestoBase()).map((p) => p.mensagem)).toEqual(['Peça "Frente": uma linha interna está fora da peça, até 3.5 mm da borda — sobra de desenho ou de importação.']);
+    expect(validarProjeto(aTresEMeio, enfestoBase()).map((p) => p.mensagem)).toEqual(['Peça "Frente": uma linha interna está fora da peça, até 3,5 mm da borda — sobra de desenho ou de importação.']);
     // De 10 mm para cima, em milímetros inteiros.
     const aDuzentos = validarProjeto([comLinhas([[ponto(450, 100), ponto(450, 300)]])], enfestoBase());
     expect(aDuzentos.map((p) => p.mensagem)).toEqual(['Peça "Frente": uma linha interna está fora da peça, até 200 mm da borda — sobra de desenho ou de importação.']);
@@ -293,7 +293,7 @@ describe('validarProjeto — linha interna que sai da peça', () => {
     const passaCinco = [comLinhas([[ponto(100, 100), ponto(100, 355)]])];
 
     expect(validarProjeto(passaCinco, enfestoBase()).map((p) => p.mensagem)).toEqual([
-      'Peça "Frente": uma linha interna sai da peça e vai até 5.0 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
+      'Peça "Frente": uma linha interna sai da peça e vai até 5,0 mm para fora da borda — pode ser sobra de desenho ou de importação (uma moldura, o contorno de outra peça).',
     ]);
     expect(validarProjeto(passaCinco, enfestoBase(), { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm: 10 })).toEqual([]);
     expect(TOLERANCIAS_PADRAO.folgaForaDaPecaMm).toBe(1);
@@ -555,12 +555,32 @@ describe('validarProjeto — pela linha de corte (com a costura)', () => {
     expect(validarProjeto([a, b], enfestoBase({ distanciaMinimaEntrePecasMm: 3 }))).toEqual([]);
     const [problema] = validarProjeto([a, b], enfestoBase({ distanciaMinimaEntrePecasMm: 6 }));
     expect(problema).toMatchObject({ tipo: 'espacamento-insuficiente' });
-    expect(problema!.mensagem).toContain('a 5.0 mm uma da outra');
+    expect(problema!.mensagem).toContain('a 5,0 mm uma da outra');
   });
 
   it('a costura que passa da borda da mesa deixa a peça fora dos limites', () => {
     const naBorda = pecaRetangular('a', 15, 50, 100, 100, { margemDeCosturaMm: 10 });
     expect(validarProjeto([naBorda], enfestoBase()).map((p) => p.tipo)).toEqual(['fora-dos-limites']);
     expect(validarProjeto([{ ...naBorda, margemDeCosturaMm: 0 }], enfestoBase())).toEqual([]);
+  });
+});
+
+describe('validarProjeto — os números das mensagens em português', () => {
+  it('a distância mínima, a distância medida, o ângulo e a medida da peça com vírgula decimal (antes: 2.5 mm, 12.5°, 4.5 mm)', () => {
+    const minimo = enfestoBase({ distanciaMinimaEntrePecasMm: 2.5 });
+    const esquerda = pecaRetangular('a', 50, 50, 100, 200);
+    expect(validarProjeto([esquerda, pecaRetangular('b', 150, 50, 100, 200)], minimo).map((p) => p.mensagem)).toEqual([
+      'Peças "a" e "b" estão encostadas uma na outra; o mínimo exigido entre peças é de 2,5 mm.',
+    ]);
+    expect(validarProjeto([esquerda, pecaRetangular('b', 151.5, 50, 100, 200)], minimo).map((p) => p.mensagem)).toEqual([
+      'Peças "a" e "b" estão a 1,5 mm uma da outra, abaixo do mínimo exigido (2,5 mm).',
+    ]);
+
+    const girada = rotacionarMolde(pecaRetangular('a', 300, 300, 100, 100), 12.5);
+    const rotacao = validarProjeto([girada], enfestoBase()).filter((p) => p.tipo === 'rotacao-proibida');
+    expect(rotacao.map((p) => p.mensagem)).toEqual(['Peça "a" está rotacionada 12,5°, que não é uma orientação permitida para o sentido do fio desta peça.']);
+
+    const pequena = validarProjeto([pecaRetangular('a', 0, 0, 4.5, 2)], null).filter((p) => p.tipo === 'escala-suspeita');
+    expect(pequena.map((p) => p.mensagem)).toEqual(['Peça "a" tem apenas 4,5 mm na maior dimensão — possível problema de escala/unidade.']);
   });
 });

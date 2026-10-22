@@ -12,6 +12,7 @@ import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import { registroDaPeca } from './pdf-registro';
 import { margensDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
+import { numeroComVirgula } from '../core/numeros';
 
 // A build para navegador do pdfkit (usada no processo de renderer do
 // Electron) não lê fontes do disco como a build Node — é preciso registrar
@@ -97,7 +98,7 @@ export function areaImprimivelMm(opcoes: OpcoesDePagina): { largura: number; alt
   if (!Number.isFinite(opcoes.margemMm) || opcoes.margemMm < 0) throw new Error('A margem precisa ser um número de 0 mm para cima.');
   const maxima = margemMaximaMm(opcoes);
   if (opcoes.margemMm > maxima) {
-    throw new Error(`A margem de ${opcoes.margemMm} mm não deixa espaço na folha ${opcoes.formato} (${opcoes.orientacao}): ela vai até ${maxima} mm.`);
+    throw new Error(`A margem de ${numeroComVirgula(opcoes.margemMm)} mm não deixa espaço na folha ${opcoes.formato} (${opcoes.orientacao}): ela vai até ${numeroComVirgula(maxima)} mm.`);
   }
   const pagina = dimensoesDaPaginaMm(opcoes);
   return { largura: pagina.largura - 2 * opcoes.margemMm, altura: pagina.altura - 2 * opcoes.margemMm };
@@ -380,7 +381,7 @@ export async function gerarPdfDeEncaixe(
       doc.save();
       doc.fontSize(mmParaPontos(3)).fillColor('#000000');
       doc.text(
-        `Página ${indicePagina}/${totalDePaginas} (linha ${linha + 1}, coluna ${coluna + 1}) — ${opcoes.tecidoNome ?? 'tecido não identificado'} — largura útil ${larguraTotal} mm, comprimento usado ${Math.round(alturaTotal)} mm (mesa de ${enfesto.comprimentoMm} mm), ${enfesto.quantidadeDeCamadas} camada(s)`,
+        `Página ${indicePagina}/${totalDePaginas} (linha ${linha + 1}, coluna ${coluna + 1}) — ${opcoes.tecidoNome ?? 'tecido não identificado'} — largura útil ${numeroComVirgula(larguraTotal)} mm, comprimento usado ${Math.round(alturaTotal)} mm (mesa de ${numeroComVirgula(enfesto.comprimentoMm)} mm), ${enfesto.quantidadeDeCamadas} camada(s)`,
         mmParaPontos(2),
         mmParaPontos(2),
         { width: mmParaPontos(pagina.largura - 4) },
