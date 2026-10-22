@@ -10,7 +10,7 @@ describe('PainelDePecas — a lista de peças', () => {
   it('vazia: diz que não há peça e como começar (importar um molde ou desenhar)', () => {
     render(<PainelDePecas pecas={[]} selecionadoId={null} onSelecionar={() => {}} />);
     expect(screen.getByText('Nenhuma peça no projeto.')).toBeInTheDocument();
-    expect(screen.getByText(/Para começar, importe um molde \(aba Encaixe › Importar DXF ou Importar PDF\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Para começar, importe um molde \(aba Início › Importar DXF ou Importar PDF\)/)).toBeInTheDocument();
   });
 
   it('com peças: a lista, sem a dica de começar', () => {

@@ -39,7 +39,7 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
         <>
           <p className="texto-vazio">Nenhuma peça no projeto.</p>
           <p className="texto-vazio dica-do-vazio">
-            Para começar, importe um molde (aba Encaixe › Importar DXF ou Importar PDF) ou desenhe as peças na aba
+            Para começar, importe um molde (aba Início › Importar DXF ou Importar PDF) ou desenhe as peças na aba
             Construção.
           </p>
         </>

@@ -365,6 +365,7 @@ function lerEntidadesEntre(
 
     if (tipo === 'POLYLINE') {
       let camada = '0';
+      let marcas = 0;
       const vertices: Ponto2D[] = [];
       const bulges: number[] = [];
       i++;
@@ -374,6 +375,7 @@ function lerEntidadesEntre(
       // VERTEX não repetem o código 8.
       while (i < pares.length && pares[i]!.codigo !== 0) {
         if (pares[i]!.codigo === 8) camada = pares[i]!.valor;
+        else if (pares[i]!.codigo === 70) marcas = Number.parseInt(pares[i]!.valor, 10) || 0;
         i++;
       }
       while (i < pares.length && pares[i]!.valor === 'VERTEX') {
@@ -396,8 +398,10 @@ function lerEntidadesEntre(
         i++;
         while (i < pares.length && pares[i]!.codigo !== 0) i++;
       }
-      // convenção adotada: POLYLINE clássica de molde é sempre fechada
-      entidades.push({ tipo: 'LWPOLYLINE', camada, pontos: comOsArcos(vertices, bulges, true), fechada: true });
+      // convenção adotada: POLYLINE clássica de molde é sempre fechada — menos numa camada de linhas internas (o DXF
+      // deste programa, ADR 0096), em que vale a marca de fechada (70) da própria POLYLINE: a linha aberta fica aberta.
+      const fechada = (marcas & 1) === 1 || !ehCamadaDeLinhasInternas(camada);
+      entidades.push({ tipo: 'LWPOLYLINE', camada, pontos: comOsArcos(vertices, bulges, fechada), fechada });
       continue;
     }
 
@@ -588,6 +592,18 @@ function nomeDeCamadaContem(camada: string, ...termos: string[]): boolean {
   return termos.some((t) => c.includes(t));
 }
 
+/** A camada das linhas internas, pelo nome (a do DXF deste programa é "LINHAS-INTERNAS"). */
+function ehCamadaDeLinhasInternas(camada: string): boolean {
+  return nomeDeCamadaContem(camada, 'INTERNA', 'INTERNAL');
+}
+
+/** A linha passa por dentro do contorno: algum ponto dela, ou o meio de algum trecho, fica dentro. */
+function passaPorDentro(pontos: readonly Ponto2D[], contorno: Contorno): boolean {
+  return pontos.some(
+    (q, k) => pontoDentroDoContorno(q, contorno) || (k > 0 && pontoDentroDoContorno(ponto((pontos[k - 1]!.x + q.x) / 2, (pontos[k - 1]!.y + q.y) / 2), contorno)),
+  );
+}
+
 export interface PecaImportadaDxf {
   readonly nome: string;
   readonly contorno: Contorno;
@@ -634,7 +650,8 @@ function estaDentroDe(forma: EntidadeBruta, externa: EntidadeBruta): boolean {
  */
 function ehBordaDaFolha(entidade: EntidadeBruta, formasFechadas: readonly EntidadeBruta[]): boolean {
   if (formasFechadas.length < 3) return false;
-  if (nomeDeCamadaContem(entidade.camada, 'CONTORNO', 'OUTLINE', 'BOUNDARY', 'CORTE', 'CUT')) return false;
+  // A linha de costura (a do DXF deste programa) cobre quase a peça inteira, e não é borda de folha.
+  if (nomeDeCamadaContem(entidade.camada, 'CONTORNO', 'OUTLINE', 'BOUNDARY', 'CORTE', 'CUT', 'COSTURA')) return false;
   const caixa = caixaDe(entidade.pontos);
   const todas = formasFechadas.map((e) => caixaDe(e.pontos));
   const alcanceX = Math.max(...todas.map((c) => c.maxX)) - Math.min(...todas.map((c) => c.minX));
@@ -714,7 +731,8 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
   // reta fora das peças" (o meio do traço fica fora) e eram ignorados — o pique sumia.
   const piquesPorTraco = new Map<EntidadeBruta, { readonly contorno: EntidadeBruta; readonly posicao: Ponto2D; readonly indiceAresta: number }>();
   for (const e of entidadesMm) {
-    if (e.fechada || linhasDeFioCandidatas.includes(e)) continue;
+    // A linha interna curta que começa na borda e a linha de simetria (em cima da borda) não são piques.
+    if (e.fechada || linhasDeFioCandidatas.includes(e) || ehCamadaDeLinhasInternas(e.camada) || nomeDeCamadaContem(e.camada, 'SIMETRIA', 'MIRROR')) continue;
     for (const c of contornos) {
       const pique = piqueDoTraco(e.pontos, c.pontos);
       if (pique) {
@@ -733,17 +751,23 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
   // posição do bolso, o centro da frente sumiam.
   const meioDa = (e: EntidadeBruta): Ponto2D =>
     ponto((e.pontos[0]!.x + e.pontos.at(-1)!.x) / 2, (e.pontos[0]!.y + e.pontos.at(-1)!.y) / 2);
-  const retasSoltas = entidadesMm.filter((e) => !e.fechada && e.pontos.length === 2 && !linhasDeFioCandidatas.includes(e) && !piquesPorTraco.has(e));
+  const retasSoltas = entidadesMm.filter(
+    (e) => !e.fechada && e.pontos.length === 2 && !linhasDeFioCandidatas.includes(e) && !piquesPorTraco.has(e) && !nomeDeCamadaContem(e.camada, 'SIMETRIA', 'MIRROR'),
+  );
   // Tudo o que fica fora das peças (textos e anotações do desenho; a borda da folha já foi dita) é ignorado — e dito,
   // de qualquer tipo: antes só as retas de dois pontos eram contadas, e o texto escrito com curvas sumia calado.
   const pontoDeReferencia = (e: EntidadeBruta): Ponto2D => (!e.fechada && e.pontos.length === 2 ? meioDa(e) : e.pontos[0]!);
+  // De que peça a linha é: pelo ponto de referência; na camada de linhas internas, por onde ela passa — a que começa
+  // na borda (o centro da frente, a cintura) também fica na peça.
+  const naPeca = (e: EntidadeBruta, contorno: Contorno): boolean =>
+    ehCamadaDeLinhasInternas(e.camada) ? passaPorDentro(e.pontos, contorno) : pontoDentroDoContorno(pontoDeReferencia(e), contorno);
   const ignoradas = entidadesMm.filter(
     (e) =>
       e.pontos.length > 0 &&
       !contornos.includes(e) &&
       !bordas.includes(e) &&
       !piquesPorTraco.has(e) &&
-      !contornos.some((c) => pontoDentroDoContorno(pontoDeReferencia(e), c.pontos)),
+      !contornos.some((c) => naPeca(e, c.pontos)),
   );
   if (ignoradas.length > 0) {
     avisos.push(`${ignoradas.length} linha(s) ou forma(s) fora das peças (textos e anotações do desenho, por exemplo) foram ignoradas.`);
@@ -756,8 +780,8 @@ export function importarDxf(conteudo: string, nomeArquivoSemExtensao: string): R
       .filter((f) => f.pontos.length > 0 && pontoDentroDoContorno(f.pontos[0]!, contorno))
       .map((f) => f.pontos);
     const internasDaPeca = [
-      ...internasCandidatas.filter((linha) => linha.pontos.length > 0 && !piquesPorTraco.has(linha) && pontoDentroDoContorno(linha.pontos[0]!, contorno)),
-      ...retasSoltas.filter((reta) => pontoDentroDoContorno(meioDa(reta), contorno)),
+      ...internasCandidatas.filter((linha) => linha.pontos.length > 0 && !piquesPorTraco.has(linha) && naPeca(linha, contorno)),
+      ...retasSoltas.filter((reta) => naPeca(reta, contorno)),
     ].map((linha) => linha.pontos);
     const fioDaPeca = linhasDeFioCandidatas.find((linha) => {
       const meio = ponto((linha.pontos[0]!.x + linha.pontos[1]!.x) / 2, (linha.pontos[0]!.y + linha.pontos[1]!.y) / 2);

@@ -90,7 +90,10 @@ interface BarraDeFerramentasProps {
   readonly onAlinhar: () => void;
   readonly podeAlinhar: boolean;
   readonly onAbrirExportacaoPdf: () => void;
+  /** Há peça para exportar (vale para o PDF e para o DXF). */
   readonly podeExportarPdf: boolean;
+  /** Grava as peças, como estão na mesa, num arquivo DXF (ADR 0096). */
+  readonly onExportarDxf: () => void;
   readonly onSalvar: () => void;
   readonly onSalvarComo: () => void;
   readonly onAbrirBiblioteca: () => void;
@@ -471,6 +474,34 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
           {abaAtiva === 'inicio' && (
             <>
+              {/* A primeira aba que o programa mostra: importar e exportar ficam à mão logo ao abrir (ADR 0096). */}
+              <div className="grupo-de-ferramentas" role="group" aria-label="Importação e exportação">
+                <Ferramenta tamanho="grande" rotulo={['Importar', 'DXF']} icone="importar" dica="Importar peças de um arquivo DXF (Ctrl+I)" onClick={props.onImportarDxf} />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Importar', 'PDF']}
+                  icone="importar"
+                  dica="Importar peças de um PDF (o exportado por este programa traz a peça inteira)"
+                  onClick={props.onImportarPdf}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Exportar', 'DXF']}
+                  icone="exportar"
+                  dica="Exportar DXF: as peças como estão na mesa, em milímetros, para outros programas e para o corte"
+                  falta={props.podeExportarPdf ? null : SEM_PECAS}
+                  onClick={props.onExportarDxf}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Exportar', 'PDF']}
+                  icone="exportar"
+                  dica="Exportar PDF vetorial em escala 1:1 (Ctrl+E)"
+                  falta={props.podeExportarPdf ? null : SEM_PECAS}
+                  onClick={props.onAbrirExportacaoPdf}
+                />
+              </div>
+
               <div className="grupo-de-ferramentas" role="group" aria-label="Desenho">
                 <Ferramenta
                   tamanho="grande"
@@ -1789,27 +1820,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
 
           {abaAtiva === 'encaixe' && (
             <>
-              <div className="grupo-de-ferramentas" role="group" aria-label="Importação e exportação">
-                <button onClick={props.onImportarDxf} title="Importar peças de um arquivo DXF (Ctrl+I)">
-                  <Icone nome="importar" />
-                  <span>Importar DXF</span>
-                </button>
-                <button onClick={props.onImportarPdf} title="Importar peças de um PDF exportado por este app (moldes individuais)">
-                  <Icone nome="importar" />
-                  <span>Importar PDF</span>
-                </button>
-                <button
-                  onClick={props.onAbrirExportacaoPdf}
-                  disabled={!props.podeExportarPdf}
-                  title={
-                    props.podeExportarPdf
-                      ? 'Exportar PDF vetorial em escala 1:1 (Ctrl+E)'
-                      : 'Adicione ao menos uma peça primeiro'
-                  }
-                >
-                  <Icone nome="exportar" />
-                  <span>Exportar PDF</span>
-                </button>
+              {/* Importar e exportar ficam só na aba Início (pedido do usuário, ADR 0096). */}
+              <div className="grupo-de-ferramentas" role="group" aria-label="Relatórios">
                 <button onClick={props.onAbrirRelatorio} title="Relatório de produção (PDF/Excel)">
                   <Icone nome="relatorio" />
                   <span>Relatórios</span>

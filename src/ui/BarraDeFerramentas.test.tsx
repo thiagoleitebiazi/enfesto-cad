@@ -75,6 +75,7 @@ function propsBase(): Props {
     podeAlinhar: false,
     onAbrirExportacaoPdf: vi.fn(),
     podeExportarPdf: true,
+    onExportarDxf: vi.fn(),
     onSalvar: vi.fn(),
     onSalvarComo: vi.fn(),
     onAbrirBiblioteca: vi.fn(),
@@ -175,10 +176,12 @@ describe('BarraDeFerramentas: abas', () => {
     expect(screen.getByRole('tab', { name: 'Início' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('Início: Desenho, Editar, Selecionar, Restauração e Programas', () => {
+  it('Início: Importação e exportação (logo ao abrir o programa), Desenho, Editar, Selecionar, Restauração e Programas', () => {
     renderizar('Início');
 
+    expect(Object.keys(gruposDaAba())[0]).toBe('Importação e exportação');
     expect(gruposDaAba()).toEqual({
+      'Importação e exportação': ['Importar DXF', 'Importar PDF', 'Exportar DXF', 'Exportar PDF'],
       Desenho: ['Cor'],
       Editar: ['Colar', 'Recortar', 'Copiar', 'Excluir'],
       Selecionar: ['Selecionar', 'Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes'],
@@ -547,6 +550,33 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     }
     // "Inverter moldes" faz o mesmo que "Inverter seleção": aqui todo objeto é um molde.
     expect(props.onInverterSelecao).toHaveBeenCalledTimes(2);
+  });
+
+  it('Início: importar e exportar (DXF e PDF) chamam as suas ações; sem peça, as exportações dizem o motivo', () => {
+    const props = renderizar('Início');
+    fireEvent.click(botao('Importar DXF'));
+    fireEvent.click(botao('Importar PDF'));
+    fireEvent.click(botao('Exportar DXF'));
+    fireEvent.click(botao('Exportar PDF'));
+    for (const acao of [props.onImportarDxf, props.onImportarPdf, props.onExportarDxf, props.onAbrirExportacaoPdf]) expect(acao).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    renderizar('Início', { podeExportarPdf: false });
+    expect(botao('Exportar DXF')).toBeDisabled();
+    expect(botao('Exportar DXF').title).toBe('Exportar DXF — não há peças no projeto');
+    expect(botao('Exportar PDF').title).toBe('Exportar PDF — não há peças no projeto');
+    expect(botao('Importar DXF')).not.toBeDisabled();
+  });
+
+  it('Encaixe: sem importar nem exportar (ficam só no Início); os relatórios, o planejamento, a configuração e o encaixe', () => {
+    renderizar('Encaixe');
+
+    expect(gruposDaAba()).toEqual({
+      Relatórios: ['Relatórios'],
+      Planejamento: ['Planejamento de corte'],
+      Configuração: ['Tecido', 'Enfesto'],
+      Encaixe: ['Sugerir posição', 'Nesting Automático'],
+    });
   });
 
   it('Início: "Selecionar tudo" e "Selecionar moldes" selecionam todas as peças (aqui todo objeto é um molde)', () => {

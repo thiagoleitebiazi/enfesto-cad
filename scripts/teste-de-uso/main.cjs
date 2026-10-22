@@ -98,9 +98,14 @@ async function principal() {
   log(`sistema: ${NO_MAC ? 'macOS' : process.platform} ${os.release()} (${process.arch}), Electron ${process.versions.electron}`);
   await foto('01-aberto.png');
   conferir('o programa abre, com a mesa e a barra de ferramentas', (await js(`!!document.querySelector('.app-shell') && !!document.querySelector('.area-de-desenho-container canvas')`)) === true);
+  // A tela de início: importar e exportar à mão logo ao abrir (ADR 0096).
+  const naAbertura = JSON.parse(
+    await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] [aria-label="Importação e exportação"] button')).map(b => b.textContent.replace(/\\s+/g, ' ').trim()))`),
+  );
+  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF e Exportar PDF', naAbertura.join('|') === 'Importar DXF|Importar PDF|Exportar DXF|Exportar PDF', naAbertura.join(', '));
 
   // 1. Importar o DXF de teste: direto, com o nome do arquivo e o fio na horizontal.
-  await aba('Encaixe');
+  await aba('Início');
   await botao('Importar DXF');
   await espera(2500);
   conferir('importa direto, sem janela de confirmação', (await janela()) === 'nenhuma', await janela());
@@ -220,7 +225,7 @@ async function principal() {
   await foto('08-grupo-arrastado.png');
 
   // 3. Exportar o PDF das peças (tamanho real).
-  await aba('Encaixe');
+  await aba('Início');
   await botao('Exportar PDF');
   await espera(600);
   await js(`(() => { const s = document.querySelector('[role=dialog] select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'moldes-individuais'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
@@ -232,6 +237,16 @@ async function principal() {
   const pdf = pdfs[0] ? fs.readFileSync(path.join(SAIDA, pdfs[0]), 'latin1') : '';
   conferir('o PDF foi gravado, com a folha na orientação da tela', pdf.startsWith('%PDF-') && pdf.includes('enfesto-cad:folha:como-a-tela'), JSON.stringify(pdfs));
   await fecharJanela();
+  await espera(300);
+
+  // 3b. Exportar o DXF, pela aba Início (ADR 0096): as 3 peças, cada uma com a linha de corte na camada CONTORNO.
+  await botao('Exportar DXF');
+  await espera(1500);
+  const dxfs = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.dxf'));
+  const dxf = dxfs[0] ? fs.readFileSync(path.join(SAIDA, dxfs[0]), 'latin1') : '';
+  const contornosNoDxf = dxf.split('0\r\nPOLYLINE\r\n8\r\nCONTORNO\r\n').length - 1;
+  conferir('o DXF foi gravado: R12, em mm, com as 3 peças', dxf.startsWith('0\r\nSECTION') && dxf.includes('AC1009') && dxf.includes('$INSUNITS\r\n70\r\n4') && contornosNoDxf === 3, `${JSON.stringify(dxfs)} ${contornosNoDxf} contorno(s)`);
+  await aba('Encaixe');
   await espera(300);
 
   // 4. O planejamento de corte e o enfesto (a margem de segurança).

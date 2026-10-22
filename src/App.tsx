@@ -330,6 +330,7 @@ import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pd
 import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pecas-vetoriais';
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
+import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import {
@@ -2527,6 +2528,22 @@ export default function App(): React.JSX.Element {
     [pecas, enfesto, tecido, registrarEventoEPersistir],
   );
 
+  // O DXF (ADR 0096): as peças como estão na mesa, direto para a janela de salvar — não há o que escolher antes.
+  const exportarDxf = useCallback(async () => {
+    const api = window.enfestoCad;
+    if (!api) {
+      window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+      return;
+    }
+    try {
+      const bytes = codificarDxf(gerarDxf(pecas, enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}));
+      const caminhoSalvo = await api.salvarArquivo('moldes.dxf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+      if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `DXF salvo em ${caminhoSalvo}`);
+    } catch (e) {
+      window.alert(`Falha ao gerar o DXF: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
+
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
   // Só é montado com o painel aberto, e a hora é a de quando foi aberto (ou de quando as peças mudaram).
   const relatorioAtual = useMemo(
@@ -4033,6 +4050,7 @@ export default function App(): React.JSX.Element {
         podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
         onAbrirExportacaoPdf={() => setMostrarExportacaoPdf(true)}
         podeExportarPdf={pecas.length > 0}
+        onExportarDxf={() => void exportarDxf()}
         onSalvar={salvarProjetoAtual}
         onSalvarComo={salvarComo}
         onAbrirBiblioteca={abrirBiblioteca}

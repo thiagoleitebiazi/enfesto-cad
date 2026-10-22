@@ -303,6 +303,32 @@ describe('importarDxf — POLYLINE clássica (VERTEX/SEQEND)', () => {
     expect(area(resultado.pecas[0]!.contorno)).toBe(2500);
     expect(resultado.avisos.some((a) => /nenhuma camada de contorno reconhecida/i.test(a))).toBe(false);
   });
+
+  /** Uma POLYLINE clássica com a marca de fechada (70) dada, na camada dada. */
+  function polylineClassica(camada: string, marca: number, pontos: readonly [number, number][]): Par[] {
+    return [[0, 'POLYLINE'], [8, camada], [66, 1], [70, marca], ...pontos.flatMap(([x, y]): Par[] => [[0, 'VERTEX'], [10, x], [20, y]]), [0, 'SEQEND']];
+  }
+  const peca = (...internas: Par[][]): string =>
+    montar([...cabecalho(4), [0, 'SECTION'], [2, 'ENTITIES'], ...lwpolyline('CONTORNO', [[0, 0], [200, 0], [200, 100], [0, 100]]), ...internas.flat(), [0, 'ENDSEC'], [0, 'EOF']]);
+
+  it('na camada de linhas internas (o DXF deste programa), a POLYLINE sem a marca de fechada fica aberta (ADR 0096)', () => {
+    const resultado = importarDxf(peca(polylineClassica('LINHAS-INTERNAS', 0, [[20, 20], [100, 80], [180, 20]])), 'aberta');
+    expect(resultado.pecas[0]!.linhasInternas).toEqual([[{ x: 20, y: 20 }, { x: 100, y: 80 }, { x: 180, y: 20 }]]);
+  });
+
+  it('nas outras camadas, como antes: a POLYLINE clássica é fechada mesmo sem a marca', () => {
+    const resultado = importarDxf(peca(polylineClassica('8', 0, [[20, 20], [100, 80], [180, 20]])), 'como-antes');
+    expect(resultado.pecas[0]!.linhasInternas).toHaveLength(1);
+    expect(area(resultado.pecas[0]!.linhasInternas[0]!)).toBeCloseTo(4800, 6);
+  });
+
+  it('a linha interna que começa na borda fica na peça; nas outras camadas, como antes, pelo primeiro ponto', () => {
+    const naBorda = polylineClassica('LINHAS-INTERNAS', 0, [[0, 50], [60, 50], [120, 70]]);
+    expect(importarDxf(peca(naBorda), 'borda').pecas[0]!.linhasInternas).toHaveLength(1);
+    // Fora da peça, nem na camada de linhas internas ela entra.
+    const fora = polylineClassica('LINHAS-INTERNAS', 0, [[300, 50], [360, 50], [420, 70]]);
+    expect(importarDxf(peca(fora), 'fora').pecas[0]!.linhasInternas).toEqual([]);
+  });
 });
 
 describe('importarDxf — arquivo sem nenhuma polilinha', () => {
