@@ -5,6 +5,67 @@
  */
 export type PadraoDoTecido = 'liso' | 'listrado' | 'xadrez';
 
+/**
+ * Ramado: a malha aberta, que passou pela rama; tubular: o tubo da malharia, achatado. É o tipo do tecido — não o
+ * tipo do enfesto (que também tem um "Ramado" e um "Tubular", ver `domain/enfesto.ts`). Ausente: não informado.
+ */
+export type TipoDeTecido = 'ramado' | 'tubular';
+
+export const ROTULO_DO_TIPO_DE_TECIDO: Readonly<Record<TipoDeTecido, string>> = { ramado: 'Ramado (aberto)', tubular: 'Tubular' };
+
+export const ehTipoDeTecido = (v: unknown): v is TipoDeTecido => v === 'ramado' || v === 'tubular';
+
+/** A que se refere o custo: um metro de comprimento da malha como é comprada (do tubo, na tubular), ou um quilo. */
+export type UnidadeDoCusto = 'metro-linear' | 'kg';
+
+export const ROTULO_DA_UNIDADE_DO_CUSTO: Readonly<Record<UnidadeDoCusto, string>> = { 'metro-linear': 'por metro linear (R$/m)', kg: 'por quilo (R$/kg)' };
+
+/** A moeda do custo. O programa só trabalha em reais; ela fica gravada com o valor para não haver dúvida. */
+export type Moeda = 'BRL';
+
+export const CASAS_DECIMAIS_DO_CUSTO = 2;
+
+/** O custo do tecido, como foi informado (opcional: sem ele, nada muda — só a estimativa de custo não sai). */
+export interface CustoDoTecido {
+  readonly valor: number;
+  readonly unidade: UnidadeDoCusto;
+  readonly moeda: Moeda;
+}
+
+const temNoMaximoCasas = (v: number, casas: number): boolean => Math.abs(v * 10 ** casas - Math.round(v * 10 ** casas)) < 1e-6;
+
+/** O que está errado no custo, ou `null`: um número finito, de 0 para cima, com até 2 casas, e a unidade e a moeda. */
+export function problemaDoCusto(custo: unknown): string | null {
+  if (typeof custo !== 'object' || custo === null) return 'O custo do tecido não pôde ser lido.';
+  const c = custo as Record<string, unknown>;
+  if (typeof c.valor !== 'number' || !Number.isFinite(c.valor)) return 'O custo do tecido precisa ser um número.';
+  if (c.valor < 0) return 'O custo do tecido não pode ser negativo.';
+  if (!temNoMaximoCasas(c.valor, CASAS_DECIMAIS_DO_CUSTO)) return `O custo do tecido pode ter no máximo ${CASAS_DECIMAIS_DO_CUSTO} casas decimais (os centavos).`;
+  if (c.unidade !== 'metro-linear' && c.unidade !== 'kg') return 'Diga se o custo do tecido é por metro linear ou por quilo.';
+  if (c.moeda !== 'BRL') return 'O custo do tecido precisa estar em reais (R$).';
+  return null;
+}
+
+export const ehCustoDoTecido = (v: unknown): v is CustoDoTecido => problemaDoCusto(v) === null;
+
+/**
+ * Lê o custo digitado ("12,50", "12.5", "0"). Vazio: sem custo (`custo` ausente, sem erro). O que não é um número
+ * simples (com "R$", ponto de milhar, sinal), negativo, com mais de 2 casas ou sem a unidade escolhida é um erro com o
+ * motivo — nada é convertido por conta própria.
+ */
+export function lerCustoDoTecido(texto: string, unidade: UnidadeDoCusto | ''): { readonly custo?: CustoDoTecido; readonly erro?: string } {
+  const limpo = texto.trim();
+  if (limpo === '') return {};
+  if (/^-/.test(limpo)) return { erro: 'O custo do tecido não pode ser negativo.' };
+  const numero = /^(\d+)(?:[.,](\d+))?$/.exec(limpo);
+  if (!numero) return { erro: 'O custo do tecido precisa ser um número, com vírgula nos centavos (sem "R$" e sem ponto de milhar): por exemplo, 32,50.' };
+  if ((numero[2] ?? '').length > CASAS_DECIMAIS_DO_CUSTO) return { erro: `O custo do tecido pode ter no máximo ${CASAS_DECIMAIS_DO_CUSTO} casas decimais (os centavos).` };
+  if (unidade === '') return { erro: 'Diga se o custo do tecido é por metro linear ou por quilo.' };
+  const custo: CustoDoTecido = { valor: Number(`${numero[1]}.${numero[2] ?? '0'}`), unidade, moeda: 'BRL' };
+  const problema = problemaDoCusto(custo);
+  return problema ? { erro: problema } : { custo };
+}
+
 export interface Tecido {
   readonly id: string;
   readonly nome: string;
@@ -21,6 +82,12 @@ export interface Tecido {
   /** Quantidade em estoque para este projeto, em kg — usado junto com a gramatura para calcular o rendimento. */
   readonly quantidadeDisponivelKg?: number;
   readonly observacoes?: string;
+  /** Ramado ou tubular; ausente: não informado (os projetos de antes). */
+  readonly tipoDeTecido?: TipoDeTecido;
+  /** O custo do tecido; ausente: não informado. Só a estimativa de custo do planejamento o usa. */
+  readonly custo?: CustoDoTecido;
+  /** O rendimento informado (mm/g, o mesmo número que m/kg): quantos metros dá um quilo. */
+  readonly rendimentoMmPorG?: number;
 }
 
 export interface DadosDeNovoTecido {
@@ -35,6 +102,9 @@ export interface DadosDeNovoTecido {
   readonly gramaturaGm2?: number;
   readonly quantidadeDisponivelKg?: number;
   readonly observacoes?: string;
+  readonly tipoDeTecido?: TipoDeTecido;
+  readonly custo?: CustoDoTecido;
+  readonly rendimentoMmPorG?: number;
 }
 
 export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
@@ -56,6 +126,16 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
   ) {
     throw new Error(`Tecido "${dados.nome}": quantidade em estoque precisa ser > 0 quando informada.`);
   }
+  if (dados.tipoDeTecido !== undefined && !ehTipoDeTecido(dados.tipoDeTecido)) {
+    throw new Error(`Tecido "${dados.nome}": o tipo de tecido é ramado ou tubular (ou fica sem informar).`);
+  }
+  if (dados.custo !== undefined) {
+    const problema = problemaDoCusto(dados.custo);
+    if (problema) throw new Error(`Tecido "${dados.nome}": ${problema}`);
+  }
+  if (dados.rendimentoMmPorG !== undefined && (!Number.isFinite(dados.rendimentoMmPorG) || dados.rendimentoMmPorG <= 0)) {
+    throw new Error(`Tecido "${dados.nome}": o rendimento precisa ser > 0 (m/kg) quando informado.`);
+  }
   return {
     id,
     nome: dados.nome,
@@ -69,6 +149,9 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
     ...(dados.gramaturaGm2 !== undefined ? { gramaturaGm2: dados.gramaturaGm2 } : {}),
     ...(dados.quantidadeDisponivelKg !== undefined ? { quantidadeDisponivelKg: dados.quantidadeDisponivelKg } : {}),
     ...(dados.observacoes !== undefined ? { observacoes: dados.observacoes } : {}),
+    ...(dados.tipoDeTecido !== undefined ? { tipoDeTecido: dados.tipoDeTecido } : {}),
+    ...(dados.custo !== undefined ? { custo: dados.custo } : {}),
+    ...(dados.rendimentoMmPorG !== undefined ? { rendimentoMmPorG: dados.rendimentoMmPorG } : {}),
   };
 }
 

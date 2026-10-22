@@ -1,5 +1,78 @@
 import { describe, it, expect } from 'vitest';
-import { criarTecido, sentidoUnicoDoTecido, tecidoExigeRespeitoDeOrientacao, type DadosDeNovoTecido } from './tecido';
+import {
+  criarTecido,
+  ehCustoDoTecido,
+  lerCustoDoTecido,
+  problemaDoCusto,
+  sentidoUnicoDoTecido,
+  tecidoExigeRespeitoDeOrientacao,
+  type DadosDeNovoTecido,
+} from './tecido';
+
+describe('lerCustoDoTecido — o custo digitado', () => {
+  it('vazio é "não informado": sem custo e sem erro, qualquer que seja a unidade', () => {
+    expect(lerCustoDoTecido('', '')).toEqual({});
+    expect(lerCustoDoTecido('   ', 'kg')).toEqual({});
+  });
+
+  it('com vírgula ou ponto nos centavos, em reais, na unidade escolhida', () => {
+    expect(lerCustoDoTecido('32,50', 'metro-linear')).toEqual({ custo: { valor: 32.5, unidade: 'metro-linear', moeda: 'BRL' } });
+    expect(lerCustoDoTecido('41.9', 'kg')).toEqual({ custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' } });
+    expect(lerCustoDoTecido(' 12 ', 'kg')).toEqual({ custo: { valor: 12, unidade: 'kg', moeda: 'BRL' } });
+    expect(lerCustoDoTecido('0', 'metro-linear')).toEqual({ custo: { valor: 0, unidade: 'metro-linear', moeda: 'BRL' } });
+  });
+
+  it('negativo, com mais de 2 casas, ou o que não é um número simples: erro com o motivo, nada convertido', () => {
+    expect(lerCustoDoTecido('-5', 'kg').erro).toBe('O custo do tecido não pode ser negativo.');
+    expect(lerCustoDoTecido('12,345', 'kg').erro).toBe('O custo do tecido pode ter no máximo 2 casas decimais (os centavos).');
+    // "1.234" pode ser mil duzentos e trinta e quatro (ponto de milhar) ou 1,234: com 3 casas, é recusado.
+    expect(lerCustoDoTecido('1.234', 'kg').erro).toContain('no máximo 2 casas decimais');
+    for (const texto of ['R$ 12', '1.234,56', 'doze', '12,', 'Infinity', 'NaN', '1e3', '12 reais']) {
+      expect(lerCustoDoTecido(texto, 'kg').erro, texto).toContain('precisa ser um número');
+    }
+  });
+
+  it('com valor e sem a unidade, não presume a unidade', () => {
+    expect(lerCustoDoTecido('32,50', '').erro).toBe('Diga se o custo do tecido é por metro linear ou por quilo.');
+  });
+});
+
+describe('problemaDoCusto — o custo guardado', () => {
+  it('aceita só número finito, de 0 para cima, com até 2 casas, com a unidade e em reais', () => {
+    expect(problemaDoCusto({ valor: 10.25, unidade: 'kg', moeda: 'BRL' })).toBeNull();
+    expect(problemaDoCusto({ valor: -1, unidade: 'kg', moeda: 'BRL' })).toBe('O custo do tecido não pode ser negativo.');
+    expect(problemaDoCusto({ valor: Number.NaN, unidade: 'kg', moeda: 'BRL' })).toBe('O custo do tecido precisa ser um número.');
+    expect(problemaDoCusto({ valor: Number.POSITIVE_INFINITY, unidade: 'kg', moeda: 'BRL' })).toBe('O custo do tecido precisa ser um número.');
+    expect(problemaDoCusto({ valor: '10', unidade: 'kg', moeda: 'BRL' })).toBe('O custo do tecido precisa ser um número.');
+    expect(problemaDoCusto({ valor: 1.005, unidade: 'kg', moeda: 'BRL' })).toContain('no máximo 2 casas decimais');
+    expect(problemaDoCusto({ valor: 10, unidade: 'm2', moeda: 'BRL' })).toBe('Diga se o custo do tecido é por metro linear ou por quilo.');
+    expect(problemaDoCusto({ valor: 10, unidade: 'kg', moeda: 'USD' })).toBe('O custo do tecido precisa estar em reais (R$).');
+    expect(problemaDoCusto(null)).toBe('O custo do tecido não pôde ser lido.');
+    expect(ehCustoDoTecido({ valor: 0.1 + 0.2, unidade: 'kg', moeda: 'BRL' })).toBe(true); // 0,30 com o erro do ponto flutuante
+  });
+});
+
+describe('criarTecido — o tipo, o custo e o rendimento (opcionais)', () => {
+  const base: DadosDeNovoTecido = { nome: 'Malha', referencia: 'M1', larguraTotalMm: 1600, larguraUtilMm: 1500 };
+
+  it('sem eles, o tecido é como antes (nenhum campo novo aparece)', () => {
+    const tecido = criarTecido(base, 't');
+    expect('tipoDeTecido' in tecido || 'custo' in tecido || 'rendimentoMmPorG' in tecido).toBe(false);
+  });
+
+  it('com eles, guarda como foram informados', () => {
+    const tecido = criarTecido({ ...base, tipoDeTecido: 'tubular', custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' }, rendimentoMmPorG: 3.2 }, 't');
+    expect(tecido).toMatchObject({ tipoDeTecido: 'tubular', custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' }, rendimentoMmPorG: 3.2 });
+  });
+
+  it('recusa o custo inválido, o rendimento zero ou negativo e o tipo desconhecido, dizendo o motivo', () => {
+    expect(() => criarTecido({ ...base, custo: { valor: -2, unidade: 'kg', moeda: 'BRL' } }, 't')).toThrow('O custo do tecido não pode ser negativo.');
+    expect(() => criarTecido({ ...base, custo: { valor: 2.345, unidade: 'kg', moeda: 'BRL' } }, 't')).toThrow('no máximo 2 casas decimais');
+    expect(() => criarTecido({ ...base, rendimentoMmPorG: 0 }, 't')).toThrow('o rendimento precisa ser > 0');
+    expect(() => criarTecido({ ...base, rendimentoMmPorG: Number.NaN }, 't')).toThrow('o rendimento precisa ser > 0');
+    expect(() => criarTecido({ ...base, tipoDeTecido: 'aberto' as never }, 't')).toThrow('ramado ou tubular');
+  });
+});
 
 function dadosBase(sobrescrever: Partial<DadosDeNovoTecido> = {}): DadosDeNovoTecido {
   return {

@@ -8,6 +8,7 @@ import { CONFIGURACAO_PADRAO_DO_PLANEJAMENTO } from '../domain/planoDeEnfesto';
 import { executarBusca } from '../domain/buscaDeRiscos';
 import { confirmarPlano, type PlanoDeCorteV2 } from '../domain/planejamento';
 import { calcularPlanoDeCorte, CONFIGURACAO_PADRAO_DO_PLANO, escreverM, impressaoDigitalDoMolde, VERSAO_DO_CALCULO, type PlanoDeCorte } from '../domain/planoDeCorte';
+import { criarTecido } from '../domain/tecido';
 import { PainelDePlanejamento, type BuscarRiscos, type PainelDePlanejamentoProps } from './PainelDePlanejamento';
 
 afterEach(() => cleanup());
@@ -537,5 +538,88 @@ describe('PainelDePlanejamento — encolhimento e casamento', () => {
     abrir();
     expect(screen.getByText('Limitações conhecidas')).toBeInTheDocument();
     expect(screen.getByText(/Login: o programa não tem/)).toBeInTheDocument();
+    expect(screen.getByText(/Custo: uma estimativa só do tecido/)).toBeInTheDocument();
+  });
+});
+
+describe('PainelDePlanejamento — o custo do tecido', () => {
+  /** Faz o plano pela tela (a primeira alternativa) e o confirma; devolve o plano e o texto do custo na revisão. */
+  async function confirmarUmPlano(extras: Partial<PainelDePlanejamentoProps> = {}) {
+    const { onConfirmar } = abrir(extras);
+    preencherOrdemEMalha();
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
+    await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
+    const naAlternativa = screen.getByRole('region', { name: 'Custo do tecido' }).textContent;
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
+    const naRevisao = screen.getByRole('region', { name: 'Custo do tecido' }).textContent;
+    escrever(/Responsável/, 'Bruno');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, confirmar' }));
+    const plano = onConfirmar.mock.calls[0]![0];
+    cleanup();
+    return { plano, naAlternativa, naRevisao };
+  }
+
+  it('na malha, o tipo de tecido é escolhido (não informado, ramado ou tubular) e o custo vem com a unidade; o "Malha tubular" saiu', () => {
+    abrir();
+    etapa('3. Malha e rolos');
+    expect(screen.queryByRole('checkbox', { name: 'Malha tubular' })).toBeNull();
+    const tipo = screen.getByLabelText('Tipo de tecido') as HTMLSelectElement;
+    expect([...tipo.options].map((o) => o.textContent)).toEqual(['Não informado', 'Ramado (aberto)', 'Tubular']);
+    expect(tipo.value).toBe('');
+    const unidade = screen.getByLabelText('Unidade do custo') as HTMLSelectElement;
+    expect([...unidade.options].map((o) => o.textContent)).toEqual(['(escolha, se informar o custo)', 'por metro linear (R$/m)', 'por quilo (R$/kg)']);
+    escrever('Descrição da malha', 'Malha');
+    escrever('Largura útil (m)', '1,6');
+    escrever('Custo da malha (R$, opcional)', '-3');
+    etapa('4. Risco e enfesto');
+    expect(screen.getByRole('alert')).toHaveTextContent('O custo do tecido não pode ser negativo.');
+  });
+
+  it('sem custo, o plano sai como antes; com o custo do tecido do projeto, sai o mesmo plano — e a estimativa vai guardada com ele', async () => {
+    const sem = await confirmarUmPlano();
+    expect(sem.plano.entrada.malha).not.toHaveProperty('custo');
+    expect(sem.naRevisao).toContain('Custo informado: Não informado.');
+    expect(sem.naRevisao).not.toContain('R$ 0,00');
+    expect(sem.plano.custoDoTecido).toMatchObject({ custoInformado: null, custoTotal: null, custoMedioPorUnidade: null });
+    expect(sem.plano.custoDoTecido!.faltas[0]).toContain('O custo do tecido não foi informado');
+
+    // O tecido do projeto, ramado, a R$ 32,50 o metro: o planejamento já o traz na malha.
+    const tecido = criarTecido({ nome: 'Malha teste', referencia: 'M1', larguraTotalMm: 1600, larguraUtilMm: 1600, tipoDeTecido: 'ramado', custo: { valor: 32.5, unidade: 'metro-linear', moeda: 'BRL' } }, 't1');
+    const com = await confirmarUmPlano({ tecidoDoProjeto: tecido });
+    expect(com.plano.entrada.malha).toMatchObject({ tubular: false, tipoDeTecido: 'ramado', custo: { valor: 32.5, unidade: 'metro-linear', moeda: 'BRL' } });
+    // O custo não mexe no plano: o consumo, as camadas e a produção são os mesmos.
+    expect(com.plano.resultado).toEqual(sem.plano.resultado);
+    expect(com.naAlternativa).toContain('Custo informado: R$ 32,50 por metro linear (R$/m).');
+    expect(com.naRevisao).toContain('Tipo de tecido: Ramado (aberto).');
+
+    const e = com.plano.custoDoTecido!;
+    expect(e.faltas).toEqual([]);
+    // As roupas: no P, a frente de 400 × 600 mm e o bolso de 150 × 150; no M, a frente de 420 × 620 e o bolso.
+    expect(e.porTamanho.map((t) => [t.tamanho, t.areaPorUnidadeMm2])).toEqual([
+      ['P', 262_500],
+      ['M', 282_900],
+    ]);
+    expect(e.custoTotal).toBeCloseTo((com.plano.resultado.consumoMm / 1000) * 32.5, 9);
+    expect(e.custoPorM2).toBeCloseTo(32.5 / 1.6, 9);
+    expect(e.unidadesProduzidas).toBe(4);
+    expect(e.custoMedioPorUnidade).toBeCloseTo(e.custoTotal! / 4, 9);
+  });
+
+  it('o plano confirmado mostra a estimativa de então; o plano de antes dela diz que não a tem (e não é recalculado)', async () => {
+    const tecido = criarTecido({ nome: 'Malha teste', referencia: 'M1', larguraTotalMm: 1600, larguraUtilMm: 1600, custo: { valor: 40, unidade: 'metro-linear', moeda: 'BRL' } }, 't1');
+    const { plano } = await confirmarUmPlano({ tecidoDoProjeto: tecido });
+    // Um plano como os guardados antes da estimativa: sem ela.
+    const antigo: { -readonly [K in keyof PlanoDeCorteV2]: PlanoDeCorteV2[K] } = { ...plano };
+    delete antigo.custoDoTecido;
+    const projeto = confirmarPlano(confirmarPlano(PROJETO, plano, '2026-10-20T12:30:00.000Z'), { ...antigo, id: 'antigo', entrada: { ...antigo.entrada, ordem: { ...antigo.entrada.ordem, codigo: 'OP-49' } } }, '2026-10-20T12:31:00.000Z');
+    abrir({ projeto, tecidoDoProjeto: tecido });
+    etapa('Planos deste projeto');
+    fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-50/ }));
+    expect(screen.getByRole('region', { name: 'Custo do tecido' })).toHaveTextContent('Custo informado: R$ 40,00 por metro linear (R$/m).');
+    fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-50/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-49/ }));
+    expect(screen.getByRole('region', { name: 'Custo do tecido' })).toHaveTextContent('Este plano é de antes da estimativa de custo do tecido');
   });
 });

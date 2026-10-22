@@ -42,6 +42,48 @@ describe('formulários do planejamento', () => {
   it('a malha a partir do tecido do projeto: largura, gramatura, sentido e padrão', () => {
     const tecido = criarTecido({ nome: 'Moletom', referencia: 'R1', larguraTotalMm: 1800, larguraUtilMm: 1700, gramaturaGm2: 320, temPelo: true, padrao: 'listrado' }, 't1');
     expect(malhaDoTecido(tecido)).toMatchObject({ descricao: 'Moletom', larguraUtil: '1,7', larguraNominal: '1,8', gramatura: '320', sentidoUnico: true, padrao: 'listrado', rendimento: '' });
+    // Sem o tipo e o custo no tecido, eles ficam sem informar na malha do plano.
+    expect(malhaDoTecido(tecido)).toMatchObject({ tipoDeTecido: '', custo: '', unidadeDoCusto: '' });
+  });
+
+  it('o tecido do projeto com o tipo, o custo e o rendimento leva os três para a malha do plano', () => {
+    const tecido = criarTecido(
+      { nome: 'Ribana', referencia: 'R2', larguraTotalMm: 950, larguraUtilMm: 900, tipoDeTecido: 'tubular', custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' }, rendimentoMmPorG: 3.2 },
+      't2',
+    );
+    const formulario = malhaDoTecido(tecido);
+    expect(formulario).toMatchObject({ tipoDeTecido: 'tubular', custo: '41,9', unidadeDoCusto: 'kg', rendimento: '3,2' });
+    expect(malhaDoFormulario(formulario, 'malha-do-plano').malha).toMatchObject({ tubular: true, tipoDeTecido: 'tubular', custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' }, rendimentoMmPorG: 3.2 });
+  });
+
+  it('a malha: o tipo de tecido e o custo vão e voltam; vazios, ficam sem informar (e a malha é aberta, como antes)', () => {
+    const base = { ...MALHA_VAZIA, descricao: 'Malha', larguraUtil: '1,6' };
+    const vazia = malhaDoFormulario(base, 'm1');
+    expect(vazia.erros).toEqual([]);
+    expect(vazia.malha).not.toHaveProperty('tipoDeTecido');
+    expect(vazia.malha).not.toHaveProperty('custo');
+    expect(vazia.malha!.tubular).toBe(false);
+
+    const cheia = malhaDoFormulario({ ...base, tipoDeTecido: 'ramado', custo: '32,50', unidadeDoCusto: 'metro-linear' }, 'm1');
+    expect(cheia.malha).toMatchObject({ tubular: false, tipoDeTecido: 'ramado', custo: { valor: 32.5, unidade: 'metro-linear', moeda: 'BRL' } });
+    expect(malhaNoFormulario(cheia.malha!)).toMatchObject({ tipoDeTecido: 'ramado', custo: '32,5', unidadeDoCusto: 'metro-linear' });
+
+    const tubular = malhaDoFormulario({ ...base, tipoDeTecido: 'tubular' }, 'm1');
+    expect(tubular.malha).toMatchObject({ tubular: true, tipoDeTecido: 'tubular' });
+  });
+
+  it('a malha de antes (só "tubular", sem o tipo) aparece como tubular; a não marcada, como não informado', () => {
+    const antiga = malhaDoFormulario({ ...MALHA_VAZIA, descricao: 'Malha', larguraUtil: '1,6' }, 'm1').malha!;
+    expect(malhaNoFormulario(antiga).tipoDeTecido).toBe('');
+    expect(malhaNoFormulario({ ...antiga, tubular: true }).tipoDeTecido).toBe('tubular');
+  });
+
+  it('a malha: o custo inválido ou sem a unidade é dito, e a malha não sai', () => {
+    const base = { ...MALHA_VAZIA, descricao: 'Malha', larguraUtil: '1,6' };
+    expect(malhaDoFormulario({ ...base, custo: '-3', unidadeDoCusto: 'kg' }, 'm1')).toEqual({ malha: null, erros: ['O custo do tecido não pode ser negativo.'] });
+    expect(malhaDoFormulario({ ...base, custo: '3,333', unidadeDoCusto: 'kg' }, 'm1').erros).toEqual(['O custo do tecido pode ter no máximo 2 casas decimais (os centavos).']);
+    expect(malhaDoFormulario({ ...base, custo: '30' }, 'm1').erros).toEqual(['Diga se o custo do tecido é por metro linear ou por quilo.']);
+    expect(malhaDoFormulario({ ...base, custo: 'R$ 30', unidadeDoCusto: 'kg' }, 'm1').erros[0]).toContain('precisa ser um número');
   });
 
   it('o rolo: kg e m na tela; precisa do peso ou do comprimento; o defeito precisa da perda', () => {

@@ -1,7 +1,7 @@
-import type { MalhaDoCadastro, OrdemDeProducao, RoloDeEstoque, TipoDeDefeito } from '../domain/cadastroDeProducao';
+import { tipoDeTecidoDaMalha, type MalhaDoCadastro, type OrdemDeProducao, type RoloDeEstoque, type TipoDeDefeito } from '../domain/cadastroDeProducao';
 import type { FonteDoEncolhimento } from '../domain/encolhimento';
 import type { ConfiguracaoDoPlanejamento, OrdemNoPlano } from '../domain/planoDeEnfesto';
-import type { PadraoDoTecido, Tecido } from '../domain/tecido';
+import { CASAS_DECIMAIS_DO_CUSTO, lerCustoDoTecido, type PadraoDoTecido, type Tecido, type TipoDeTecido, type UnidadeDoCusto } from '../domain/tecido';
 import { lerMedida } from './medidas';
 
 /**
@@ -54,7 +54,11 @@ export interface FormularioDaMalha {
   readonly larguraNominal: string;
   readonly larguraUtil: string;
   readonly rendimento: string;
-  readonly tubular: boolean;
+  /** Ramado, tubular, ou '' (não informado: a malha é tratada como aberta, como antes). */
+  readonly tipoDeTecido: TipoDeTecido | '';
+  /** O custo (R$), opcional; com ele, a unidade precisa ser escolhida. */
+  readonly custo: string;
+  readonly unidadeDoCusto: UnidadeDoCusto | '';
   readonly sentidoUnico: boolean;
   readonly padrao: PadraoDoTecido;
   readonly encolhimentoComprimento: string;
@@ -78,7 +82,9 @@ export const MALHA_VAZIA: FormularioDaMalha = {
   larguraNominal: '',
   larguraUtil: '',
   rendimento: '',
-  tubular: false,
+  tipoDeTecido: '',
+  custo: '',
+  unidadeDoCusto: '',
   sentidoUnico: false,
   padrao: 'liso',
   encolhimentoComprimento: '',
@@ -103,7 +109,9 @@ export function malhaNoFormulario(m: MalhaDoCadastro): FormularioDaMalha {
     larguraNominal: noCampo(m.larguraNominalMm === undefined ? undefined : m.larguraNominalMm / 1000),
     larguraUtil: noCampo(m.larguraUtilMm / 1000),
     rendimento: noCampo(m.rendimentoMmPorG),
-    tubular: m.tubular,
+    tipoDeTecido: tipoDeTecidoDaMalha(m) ?? '',
+    custo: noCampo(m.custo?.valor, CASAS_DECIMAIS_DO_CUSTO),
+    unidadeDoCusto: m.custo?.unidade ?? '',
     sentidoUnico: m.sentidoUnico,
     padrao: m.padrao,
     encolhimentoComprimento: noCampo(m.encolhimentoComprimentoPercentual),
@@ -120,7 +128,7 @@ export function malhaNoFormulario(m: MalhaDoCadastro): FormularioDaMalha {
   };
 }
 
-/** A malha a partir do tecido do projeto (aba Tecido): o que ele tem. O rendimento não está lá. */
+/** A malha a partir do tecido do projeto (aba Tecido): o que ele tem, com o tipo, o custo e o rendimento quando informados. */
 export function malhaDoTecido(tecido: Tecido): FormularioDaMalha {
   return {
     ...MALHA_VAZIA,
@@ -129,6 +137,10 @@ export function malhaDoTecido(tecido: Tecido): FormularioDaMalha {
     gramatura: noCampo(tecido.gramaturaGm2),
     larguraNominal: noCampo(tecido.larguraTotalMm / 1000),
     larguraUtil: noCampo(tecido.larguraUtilMm / 1000),
+    rendimento: noCampo(tecido.rendimentoMmPorG),
+    tipoDeTecido: tecido.tipoDeTecido ?? '',
+    custo: noCampo(tecido.custo?.valor, CASAS_DECIMAIS_DO_CUSTO),
+    unidadeDoCusto: tecido.custo?.unidade ?? '',
     sentidoUnico: tecido.direcional || tecido.temPelo,
     padrao: tecido.padrao,
     observacoes: tecido.observacoes ?? '',
@@ -150,6 +162,8 @@ export function malhaDoFormulario(f: FormularioDaMalha, id: string): { readonly 
   const rapportLargura = lerNumero(f.rapportLargura, 'Repetição do desenho na largura (cm)', erros);
   const faseComprimento = lerNumero(f.faseComprimento, 'Fase do desenho no comprimento (cm)', erros, { zeroVale: true });
   const faseLargura = lerNumero(f.faseLargura, 'Fase do desenho na largura (cm)', erros, { zeroVale: true });
+  const custo = lerCustoDoTecido(f.custo, f.unidadeDoCusto);
+  if (custo.erro) erros.push(custo.erro);
   if (erros.length > 0 || larguraUtil === undefined) return { malha: null, erros };
   const texto = (v: string): string | undefined => (v.trim() === '' ? undefined : v.trim());
   const opcionais = {
@@ -173,10 +187,12 @@ export function malhaDoFormulario(f: FormularioDaMalha, id: string): { readonly 
     id,
     descricao: f.descricao.trim(),
     larguraUtilMm: mm(larguraUtil)!,
-    tubular: f.tubular,
+    tubular: f.tipoDeTecido === 'tubular',
     sentidoUnico: f.sentidoUnico,
     padrao: f.padrao,
     encolhimentoCompensadoNoMolde: f.compensadoNoMolde,
+    ...(f.tipoDeTecido !== '' ? { tipoDeTecido: f.tipoDeTecido } : {}),
+    ...(custo.custo ? { custo: custo.custo } : {}),
     ...Object.fromEntries(Object.entries(opcionais).filter(([, v]) => v !== undefined)),
   };
   return { malha, erros };

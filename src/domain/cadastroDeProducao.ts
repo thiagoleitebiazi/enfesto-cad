@@ -1,4 +1,4 @@
-import type { PadraoDoTecido } from './tecido';
+import { ehTipoDeTecido, problemaDoCusto, type CustoDoTecido, type PadraoDoTecido, type TipoDeTecido } from './tecido';
 
 /**
  * O cadastro de produção do planejamento de corte: as malhas que a fábrica usa, os rolos em estoque e as ordens de
@@ -29,7 +29,15 @@ export interface MalhaDoCadastro {
   readonly larguraUtilMm: number;
   /** O rendimento informado pelo fornecedor ou medido (mm/g = m/kg). */
   readonly rendimentoMmPorG?: number;
+  /** A malha é tubular: é o que o plano usa (a largura na mesa, os avisos). Com o tipo informado, os dois conferem. */
   readonly tubular: boolean;
+  /**
+   * Ramado ou tubular, quando informado. As malhas de antes não têm: a marcada como tubular é tubular, e a não marcada
+   * fica "não informado" (não é tomada por ramada).
+   */
+  readonly tipoDeTecido?: TipoDeTecido;
+  /** O custo da malha; ausente: não informado. Só a estimativa de custo do plano o usa. */
+  readonly custo?: CustoDoTecido;
   /** Pelo ou estampa com sentido: nenhuma peça vira 180°, e o zigue-zague vira o tecido. */
   readonly sentidoUnico: boolean;
   readonly padrao: PadraoDoTecido;
@@ -182,6 +190,8 @@ function ehMalha(v: unknown): v is MalhaDoCadastro {
     m.descricao.trim() !== '' &&
     numeroPositivo(m.larguraUtilMm) &&
     typeof m.tubular === 'boolean' &&
+    (m.tipoDeTecido === undefined || (ehTipoDeTecido(m.tipoDeTecido) && (m.tipoDeTecido === 'tubular') === m.tubular)) &&
+    (m.custo === undefined || problemaDoCusto(m.custo) === null) &&
     typeof m.sentidoUnico === 'boolean' &&
     (m.padrao === 'liso' || m.padrao === 'listrado' || m.padrao === 'xadrez') &&
     typeof m.encolhimentoCompensadoNoMolde === 'boolean' &&
@@ -358,7 +368,19 @@ export function validarMalha(malha: MalhaDoCadastro, outras: readonly MalhaDoCad
   }
   textoCurto(malha.composicao, 'Composição', erros);
   textoCurto(malha.tituloDoFio, 'Título do fio', erros);
+  if (malha.tipoDeTecido !== undefined && (!ehTipoDeTecido(malha.tipoDeTecido) || (malha.tipoDeTecido === 'tubular') !== malha.tubular)) {
+    erros.push('O tipo de tecido é ramado ou tubular, e precisa conferir com a malha tubular.');
+  }
+  if (malha.custo !== undefined) {
+    const problema = problemaDoCusto(malha.custo);
+    if (problema) erros.push(problema);
+  }
   return erros;
+}
+
+/** O tipo da malha: o informado; nas malhas de antes, a marcada como tubular é tubular e a outra não está informada. */
+export function tipoDeTecidoDaMalha(malha: Pick<MalhaDoCadastro, 'tubular' | 'tipoDeTecido'>): TipoDeTecido | null {
+  return malha.tipoDeTecido ?? (malha.tubular ? 'tubular' : null);
 }
 
 export function validarRolo(rolo: RoloDeEstoque, cadastro: CadastroDeProducao): string[] {

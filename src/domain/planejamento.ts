@@ -1,5 +1,6 @@
 import { espessurasFisicasPorCamada, type TipoDeEnfesto } from './enfesto';
 import { gerarComposicoes, gradesDasComposicoes, type Composicao } from './composicaoDeRiscos';
+import type { EstimativaDeCustoDoTecido } from './custoDoTecido';
 import type { ModeloDoPlano } from './modeloDoPlano';
 import type { PlanoDeCorte } from './planoDeCorte';
 import {
@@ -81,6 +82,11 @@ export interface PlanoDeCorteV2 {
   readonly substituiPlanoId?: string;
   /** O plano de que este foi copiado ("duplicar" ou "recalcular como novo"). */
   readonly copiaDePlanoId?: string;
+  /**
+   * A estimativa do custo do tecido, como saiu ao guardar o plano (com o custo e a malha de então): não é refeita
+   * depois. Ausente nos planos de antes dela, que continuam sem estimativa.
+   */
+  readonly custoDoTecido?: EstimativaDeCustoDoTecido;
 }
 
 /** Um plano no projeto: os da primeira versão do cálculo (um risco só) continuam como foram guardados. */

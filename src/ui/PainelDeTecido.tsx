@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
-import { criarTecido, type Tecido, type PadraoDoTecido, type DadosDeNovoTecido } from '../domain/tecido';
+import {
+  criarTecido,
+  lerCustoDoTecido,
+  ROTULO_DA_UNIDADE_DO_CUSTO,
+  ROTULO_DO_TIPO_DE_TECIDO,
+  type Tecido,
+  type PadraoDoTecido,
+  type DadosDeNovoTecido,
+  type TipoDeTecido,
+  type UnidadeDoCusto,
+} from '../domain/tecido';
+import { lerMedida } from './medidas';
 
 interface PainelDeTecidoProps {
   readonly tecidoAtual: Tecido | null;
@@ -21,6 +32,10 @@ function paraCampo(dados: DadosDeNovoTecido) {
     gramaturaGm2: dados.gramaturaGm2 !== undefined ? String(dados.gramaturaGm2) : '',
     quantidadeDisponivelKg: dados.quantidadeDisponivelKg !== undefined ? String(dados.quantidadeDisponivelKg) : '',
     observacoes: dados.observacoes ?? '',
+    tipoDeTecido: dados.tipoDeTecido ?? ('' as TipoDeTecido | ''),
+    custo: dados.custo ? dados.custo.valor.toFixed(2).replace('.', ',') : '',
+    unidadeDoCusto: dados.custo?.unidade ?? ('' as UnidadeDoCusto | ''),
+    rendimento: dados.rendimentoMmPorG !== undefined ? String(dados.rendimentoMmPorG).replace('.', ',') : '',
   };
 }
 
@@ -38,6 +53,17 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
   const [erro, setErro] = useState<string | null>(null);
 
   function salvar(): void {
+    // Os opcionais novos: vazio fica sem informar; o que não é número não é convertido por conta própria.
+    const custo = lerCustoDoTecido(campos.custo, campos.unidadeDoCusto);
+    if (custo.erro) {
+      setErro(custo.erro);
+      return;
+    }
+    const rendimento = campos.rendimento.trim() === '' ? undefined : lerMedida(campos.rendimento);
+    if (rendimento === null) {
+      setErro('O rendimento precisa ser um número (m/kg), com vírgula nas casas decimais.');
+      return;
+    }
     try {
       const tecido = criarTecido(
         {
@@ -54,6 +80,9 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
             ? { quantidadeDisponivelKg: Number.parseFloat(campos.quantidadeDisponivelKg) }
             : {}),
           ...(campos.observacoes ? { observacoes: campos.observacoes } : {}),
+          ...(campos.tipoDeTecido !== '' ? { tipoDeTecido: campos.tipoDeTecido } : {}),
+          ...(custo.custo ? { custo: custo.custo } : {}),
+          ...(rendimento !== undefined ? { rendimentoMmPorG: rendimento } : {}),
         },
         props.tecidoAtual?.id ?? `tecido-${Date.now().toString(36)}`,
       );
@@ -123,6 +152,56 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
             onChange={(e) => setCampos({ ...campos, quantidadeDisponivelKg: e.target.value })}
           />
         </label>
+        <label>
+          Tipo de tecido
+          <select
+            value={campos.tipoDeTecido}
+            onChange={(e) => setCampos({ ...campos, tipoDeTecido: e.target.value as TipoDeTecido | '' })}
+          >
+            <option value="">Não informado</option>
+            {(Object.keys(ROTULO_DO_TIPO_DE_TECIDO) as TipoDeTecido[]).map((t) => (
+              <option key={t} value={t}>
+                {ROTULO_DO_TIPO_DE_TECIDO[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Custo do tecido (R$, opcional)
+          <input
+            type="text"
+            inputMode="decimal"
+            value={campos.custo}
+            onChange={(e) => setCampos({ ...campos, custo: e.target.value })}
+          />
+        </label>
+        <label>
+          Unidade do custo
+          <select
+            value={campos.unidadeDoCusto}
+            onChange={(e) => setCampos({ ...campos, unidadeDoCusto: e.target.value as UnidadeDoCusto | '' })}
+          >
+            <option value="">(escolha, se informar o custo)</option>
+            {(Object.keys(ROTULO_DA_UNIDADE_DO_CUSTO) as UnidadeDoCusto[]).map((u) => (
+              <option key={u} value={u}>
+                {ROTULO_DA_UNIDADE_DO_CUSTO[u]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Rendimento (m/kg, opcional)
+          <input
+            type="text"
+            inputMode="decimal"
+            value={campos.rendimento}
+            onChange={(e) => setCampos({ ...campos, rendimento: e.target.value })}
+          />
+        </label>
+        <p className="nota-do-formulario">
+          O tipo, o custo e o rendimento são opcionais: em branco, nada muda. O custo entra só na estimativa de custo
+          do Planejamento de corte.
+        </p>
         <label>
           Padrão
           <select

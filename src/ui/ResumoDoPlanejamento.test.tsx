@@ -9,6 +9,7 @@ import {
   type EntradaDoPlanejamento,
   type RiscoDoPlanejamento,
 } from '../domain/planoDeEnfesto';
+import { estimarCustoDoTecido, type RoupaDoTamanho } from '../domain/custoDoTecido';
 import { ResumoDoPlanejamento } from './ResumoDoPlanejamento';
 
 afterEach(() => cleanup());
@@ -83,5 +84,63 @@ describe('ResumoDoPlanejamento — o que é novo no plano', () => {
     const marcado: RiscoDoPlanejamento = { ...RISCO, compensado: { comprimento: 1 / 0.95, largura: 1 }, casamento: { rapportComprimentoMm: 100, faseComprimentoMm: 0, faseLarguraMm: 0, conferido: true } };
     mostrar(entrada({}), CONFIGURACAO_PADRAO_DO_PLANEJAMENTO, [marcado]);
     expect(within(screen.getByRole('table', { name: 'Riscos' })).getAllByRole('row')[1]).toHaveTextContent('(encolhimento compensado) (desenho casado)');
+  });
+});
+
+describe('ResumoDoPlanejamento — o custo do tecido', () => {
+  // Uma roupa de 0,5 m² no P, 0,6 m² no M e 0,7 m² no G; 3 camadas de 3,02 m = 9,06 m de malha; 12 roupas.
+  const roupa = (tamanho: string, areaMm2: number): RoupaDoTamanho => ({ tamanho, areaMm2, pecas: [{ pecaId: 'f', nome: 'Frente', areaMm2, quantidadePorRoupa: 1, emPar: false }] });
+  const ROUPAS = [roupa('P', 500_000), roupa('M', 600_000), roupa('G', 700_000)];
+
+  function mostrarComCusto(malha: MalhaDoCadastro) {
+    const e = entrada({ malha });
+    const c = calcularPlanejamento(e, [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIGURACAO_PADRAO_DO_PLANEJAMENTO);
+    if (!c.ok) throw new Error(c.erros.join(' | '));
+    const estimativa = estimarCustoDoTecido({ entrada: e, resultado: c.resultado, riscos: [RISCO], roupas: ROUPAS });
+    render(<ResumoDoPlanejamento entrada={e} configuracao={CONFIGURACAO_PADRAO_DO_PLANEJAMENTO} resultado={c.resultado} alertas={c.alertas} premissas={c.premissas} riscos={[RISCO]} tamanhos={['P', 'M', 'G']} custoDoTecido={estimativa} />);
+    return screen.getByRole('region', { name: 'Custo do tecido' });
+  }
+
+  it('com o custo: os dados usados com as unidades, o custo por unidade de cada tamanho, os totais e o critério do rateio', () => {
+    const custo = mostrarComCusto({ ...MALHA, tipoDeTecido: 'ramado', custo: { valor: 32, unidade: 'metro-linear', moeda: 'BRL' } });
+    expect(custo).toHaveTextContent('Tipo de tecido: Ramado (aberto).');
+    expect(custo).toHaveTextContent('Custo informado: R$ 32,00 por metro linear (R$/m).');
+    expect(custo).toHaveTextContent('Largura: 1,60 m útil; 1,60 m na mesa × 1 folha(s) por camada = 1,60 m² de malha por metro.');
+    expect(custo).toHaveTextContent('Comprimento: 9,06 m de malha');
+    expect(custo).toHaveTextContent('Custo por metro: R$ 32,00; por m²: R$ 20,00.');
+    const porTamanho = within(custo).getByRole('table', { name: 'Por unidade (uma roupa), por tamanho' });
+    expect(within(porTamanho).getAllByRole('row')[1]).toHaveTextContent('P0,5000 m²R$ 10,00R$ 20,13');
+    const enfesto = within(custo).getByRole('table', { name: 'O enfesto inteiro' });
+    expect(within(enfesto).getByRole('row', { name: /Malha do enfesto/ })).toHaveTextContent('14,50 m²R$ 289,92');
+    expect(within(enfesto).getByRole('row', { name: /Peças cortadas/ })).toHaveTextContent('7,20 m²R$ 144,00');
+    expect(within(enfesto).getByRole('row', { name: /Área não aproveitada estimada/ })).toHaveTextContent('7,30 m²R$ 145,92');
+    expect(within(enfesto).getByRole('row', { name: /Custo médio por unidade/ })).toHaveTextContent('custo total ÷ 12 unidades produzidas');
+    expect(within(enfesto).getByRole('row', { name: /Custo médio por unidade/ })).toHaveTextContent('R$ 24,16');
+    expect(within(custo).queryByRole('note', { name: 'O que falta para o custo' })).toBeNull();
+    expect(custo).toHaveTextContent('a perda não é contada duas vezes');
+  });
+
+  it('sem o custo: "Não informado", e nada aparece como R$ 0,00 — cada valor que não saiu diz "não calculado", e o porquê', () => {
+    const custo = mostrarComCusto(MALHA);
+    expect(custo).toHaveTextContent('Tipo de tecido: Não informado.');
+    expect(custo).toHaveTextContent('Custo informado: Não informado.');
+    expect(custo).not.toHaveTextContent('R$ 0,00');
+    expect(within(custo).getByRole('note', { name: 'O que falta para o custo' })).toHaveTextContent('O custo do tecido não foi informado');
+    const porTamanho = within(custo).getByRole('table', { name: 'Por unidade (uma roupa), por tamanho' });
+    expect(within(porTamanho).getAllByRole('row')[1]).toHaveTextContent('P0,5000 m²não calculadonão calculado3');
+    // As áreas saem (são da geometria): o que não aproveita é estimado em m², sem o custo.
+    const enfesto = within(custo).getByRole('table', { name: 'O enfesto inteiro' });
+    expect(within(enfesto).getByRole('row', { name: /Área não aproveitada estimada/ })).toHaveTextContent('7,30 m²não calculado');
+  });
+
+  it('o plano guardado antes da estimativa diz que não a tem; sem a estimativa, a parte do custo não aparece', () => {
+    const e = entrada({});
+    const c = calcularPlanejamento(e, [RISCO], [{ chave: RISCO.chave, camadas: 3 }], CONFIGURACAO_PADRAO_DO_PLANEJAMENTO);
+    if (!c.ok) throw new Error(c.erros.join(' | '));
+    const { unmount } = render(<ResumoDoPlanejamento entrada={e} configuracao={CONFIGURACAO_PADRAO_DO_PLANEJAMENTO} resultado={c.resultado} alertas={c.alertas} premissas={c.premissas} riscos={[RISCO]} tamanhos={['P', 'M', 'G']} custoDoTecido="sem-estimativa" />);
+    expect(screen.getByRole('region', { name: 'Custo do tecido' })).toHaveTextContent('Este plano é de antes da estimativa de custo do tecido');
+    unmount();
+    mostrar(e);
+    expect(screen.queryByRole('region', { name: 'Custo do tecido' })).toBeNull();
   });
 });

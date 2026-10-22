@@ -46,7 +46,8 @@ import { revisaoAtualDoMolde, type Projeto } from '../domain/projeto';
 import { escreverM, riscoDaMesa } from '../domain/planoDeCorte';
 import { ROTULO_DO_TIPO, type TipoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente } from '../core/geometria';
-import type { Tecido } from '../domain/tecido';
+import { ROTULO_DA_UNIDADE_DO_CUSTO, ROTULO_DO_TIPO_DE_TECIDO, type Tecido, type TipoDeTecido, type UnidadeDoCusto } from '../domain/tecido';
+import { estimarCustoDoTecido, roupasPorTamanho } from '../domain/custoDoTecido';
 import {
   calcularPlanejamento,
   camadasDeUmRisco,
@@ -58,6 +59,7 @@ import {
   type ConfiguracaoDoPlanejamento,
   type EntradaDoPlanejamento,
   type RendimentoPrincipal,
+  type ResultadoDoPlanejamento,
   type RiscoDoPlanejamento,
 } from '../domain/planoDeEnfesto';
 import {
@@ -203,6 +205,7 @@ const LIMITACOES = [
   'Emendas só nas linhas do risco que não cortam peça (riscos gerados ou da mesa), e só se a configuração permitir.',
   'Listras e xadrez: o casamento automático alinha o ponto "casamento" de cada peça à repetição; ele precisa da repetição e da fase no cadastro da malha e das camadas estendidas com o desenho alinhado (mesa de agulhas). Casamento por mais de um ponto da peça não é feito.',
   'Encolhimento: compensado só no risco, por decisão; a peça não muda no projeto.',
+  'Custo: uma estimativa só do tecido (sem aviamentos, mão de obra e outros custos), em reais, com o consumo planejado (o programa não registra consumo medido); a malha tubular só no enfesto tubular, e a largura aberta de uma malha tubular não é presumida.',
   'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos e com dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm); a importação é direta, com o nome do arquivo e o fio na horizontal.',
 ];
 
@@ -256,6 +259,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     return { quantidades: lidas.quantidades, erros: [...erros, ...lidas.erros] };
   }, [modelo, quantidadesTexto]);
   const errosDoMolde = useMemo(() => [...modelo.problemas.filter((p) => p.nivel === 'erro').map((p) => p.texto), ...quantidades.erros], [modelo, quantidades]);
+  // Uma roupa de cada tamanho, com a área real das peças: a base da estimativa de custo do tecido.
+  const roupas = useMemo(() => roupasPorTamanho(modelo, quantidades.quantidades), [modelo, quantidades]);
 
   // ---- 2. Ordem
   const [ordemEscolhida, setOrdemEscolhida] = useState<string>(NOVA);
@@ -472,6 +477,10 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     const naoSairam = new Map(busca.resultado.naoSairam.map((n) => [n.chave, n.motivo]));
     return montarAlternativas(entrada.entrada, busca.composicoes, feitos, naoSairam, config);
   }, [fonte, busca, entrada.entrada, config]);
+  const alternativaEscolhida = montadas?.alternativas[escolhida] ?? null;
+  const riscosDaEscolhida = alternativaEscolhida && busca ? alternativaEscolhida.composicao.riscos.map((r) => riscoDaBusca(busca, r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco)) : [];
+  const estimativaDeCusto = (doPlano: EntradaDoPlanejamento, resultado: ResultadoDoPlanejamento, riscos: readonly RiscoDoPlanejamento[]) =>
+    estimarCustoDoTecido({ entrada: doPlano, resultado, riscos, roupas });
 
   const calcularAlternativas = (): void => {
     setMensagem(null);
@@ -602,6 +611,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       premissas: final.premissas,
       busca: base.busca,
       ...(planoEmEdicao?.copiaDePlanoId ? { copiaDePlanoId: planoEmEdicao.copiaDePlanoId } : {}),
+      // A estimativa vai guardada com o plano, como saiu agora: o plano confirmado não é recalculado depois.
+      custoDoTecido: estimarCustoDoTecido({ entrada: entrada.entrada, resultado: final.resultado, riscos: base.riscos, roupas }),
     };
   };
 
@@ -1073,6 +1084,29 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               <Campo rotulo="Largura nominal (m)" valor={formMalha.larguraNominal} onMudar={(v) => setFormMalha({ ...formMalha, larguraNominal: v })} />
               <Campo rotulo="Largura útil (m)" valor={formMalha.larguraUtil} onMudar={(v) => setFormMalha({ ...formMalha, larguraUtil: v })} />
               <Campo rotulo="Rendimento (m/kg)" valor={formMalha.rendimento} onMudar={(v) => setFormMalha({ ...formMalha, rendimento: v })} />
+              <label>
+                Tipo de tecido
+                <select value={formMalha.tipoDeTecido} onChange={(e) => setFormMalha({ ...formMalha, tipoDeTecido: e.target.value as TipoDeTecido | '' })}>
+                  <option value="">Não informado</option>
+                  {(Object.keys(ROTULO_DO_TIPO_DE_TECIDO) as TipoDeTecido[]).map((t) => (
+                    <option key={t} value={t}>
+                      {ROTULO_DO_TIPO_DE_TECIDO[t]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Campo rotulo="Custo da malha (R$, opcional)" valor={formMalha.custo} onMudar={(v) => setFormMalha({ ...formMalha, custo: v })} dica="Só para a estimativa de custo do plano. Em branco, nada muda." />
+              <label>
+                Unidade do custo
+                <select value={formMalha.unidadeDoCusto} onChange={(e) => setFormMalha({ ...formMalha, unidadeDoCusto: e.target.value as UnidadeDoCusto | '' })}>
+                  <option value="">(escolha, se informar o custo)</option>
+                  {(Object.keys(ROTULO_DA_UNIDADE_DO_CUSTO) as UnidadeDoCusto[]).map((u) => (
+                    <option key={u} value={u}>
+                      {ROTULO_DA_UNIDADE_DO_CUSTO[u]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <Campo rotulo="Espessura da folha (mm)" valor={formMalha.espessura} onMudar={(v) => setFormMalha({ ...formMalha, espessura: v })} />
               <Campo rotulo="Encolhimento no comprimento (%)" valor={formMalha.encolhimentoComprimento} onMudar={(v) => setFormMalha({ ...formMalha, encolhimentoComprimento: v })} />
               <Campo rotulo="Encolhimento na largura (%)" valor={formMalha.encolhimentoLargura} onMudar={(v) => setFormMalha({ ...formMalha, encolhimentoLargura: v })} />
@@ -1097,10 +1131,6 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                 </select>
               </label>
             </div>
-            <label className="opcao-em-linha">
-              <input type="checkbox" checked={formMalha.tubular} onChange={(e) => setFormMalha({ ...formMalha, tubular: e.target.checked })} />
-              Malha tubular
-            </label>
             <label className="opcao-em-linha">
               <input type="checkbox" checked={formMalha.sentidoUnico} onChange={(e) => setFormMalha({ ...formMalha, sentidoUnico: e.target.checked })} />
               Sentido único (pelo ou estampa com sentido)
@@ -1339,13 +1369,13 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
             />
             <p className="nota-do-formulario">
               {larguraPadraoDoRiscoMm !== null
-                ? `Em branco, vale ${escreverM(larguraPadraoDoRiscoMm)} (a largura útil da malha${tipo === 'par' && !formMalha.tubular ? ', dobrada ao meio no enfesto par' : ''}).`
+                ? `Em branco, vale ${escreverM(larguraPadraoDoRiscoMm)} (a largura útil da malha${tipo === 'par' && formMalha.tipoDeTecido !== 'tubular' ? ', dobrada ao meio no enfesto par' : ''}).`
                 : 'Informe a largura útil da malha (etapa 3).'}{' '}
               {material === 'rolos' && rolosSelecionados.some((r) => r.larguraUtilMedidaMm !== undefined) && (
                 <button
                   type="button"
                   onClick={() => {
-                    const menor = Math.min(...rolosSelecionados.filter((r) => r.larguraUtilMedidaMm !== undefined).map((r) => larguraNaMesa(r.larguraUtilMedidaMm!, tipo, formMalha.tubular)));
+                    const menor = Math.min(...rolosSelecionados.filter((r) => r.larguraUtilMedidaMm !== undefined).map((r) => larguraNaMesa(r.larguraUtilMedidaMm!, tipo, formMalha.tipoDeTecido === 'tubular')));
                     setLarguraDoRiscoTexto(noCampo(menor / 1000));
                   }}
                 >
@@ -1579,17 +1609,18 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     </ul>
                   </details>
                 )}
-                {montadas?.alternativas[escolhida] && entrada.entrada && config && (
+                {alternativaEscolhida && entrada.entrada && config && (
                   <>
                     <ResumoDoPlanejamento
                       entrada={entrada.entrada}
                       configuracao={config}
-                      resultado={montadas.alternativas[escolhida]!.calculo.resultado}
-                      alertas={montadas.alternativas[escolhida]!.calculo.alertas}
-                      premissas={montadas.alternativas[escolhida]!.calculo.premissas}
-                      riscos={montadas.alternativas[escolhida]!.composicao.riscos.map((r) => riscoDaBusca(busca, r.chave, busca.resultado.feitos.find((f) => f.chave === r.chave)!.risco))}
+                      resultado={alternativaEscolhida.calculo.resultado}
+                      alertas={alternativaEscolhida.calculo.alertas}
+                      premissas={alternativaEscolhida.calculo.premissas}
+                      riscos={riscosDaEscolhida}
                       tamanhos={tamanhosDaTela}
                       comDesenho
+                      custoDoTecido={estimativaDeCusto(entrada.entrada, alternativaEscolhida.calculo.resultado, riscosDaEscolhida)}
                     />
                     <button type="button" disabled={buscaDesatualizada} onClick={() => navegar('revisar')}>
                       Revisar e confirmar esta alternativa
@@ -1651,6 +1682,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     premissas={final.premissas}
                     riscos={base.riscos}
                     tamanhos={tamanhosDaTela}
+                    custoDoTecido={estimativaDeCusto(entrada.entrada, final.resultado, base.riscos)}
                   />
                 )}
                 <div className="confirmacao-do-plano">
@@ -1763,6 +1795,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                                 riscos={p.riscos}
                                 tamanhos={Object.keys(p.resultado.producaoPorTamanho)}
                                 comDesenho
+                                custoDoTecido={p.custoDoTecido ?? 'sem-estimativa'}
                               />
                               <EstoqueDoPlano plano={p} cadastro={cadastro} responsavelSugerido={responsavel} agoraIso={props.agoraIso} novoId={props.novoId} onMudar={mudarCadastro} />
                             </>

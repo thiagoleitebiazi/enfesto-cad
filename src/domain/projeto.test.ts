@@ -300,6 +300,24 @@ describe('formato do projeto: versão, migração e projetos antigos', () => {
     expect(lerProjeto({ arquivoIlegivel: 'x.json' })).toEqual({ ok: false, erro: 'O arquivo "x.json" não pôde ser lido (está quebrado).' });
   });
 
+  it('o projeto de antes do custo do tecido abre igual, sem campo novo; o de agora, com o tipo e o custo, volta igual do disco', () => {
+    // O tecido como era gravado antes (sem o tipo, o custo e o rendimento), num projeto da versão 2.
+    const tecidoAntigo = { id: 't1', nome: 'Malha', referencia: 'R1', larguraTotalMm: 1600, larguraUtilMm: 1500, direcional: false, temPelo: false, padrao: 'liso', gramaturaGm2: 180 };
+    const estado = { pecas: [], tecido: tecidoAntigo, enfesto: null };
+    const antigo = { ...ANTIGO, versaoDoFormato: 2, estadoAtual: estado, historico: [{ ...ANTIGO.historico[0]!, estado }] };
+    const lido = lerProjeto(JSON.parse(JSON.stringify(antigo)));
+    if (!lido.ok) throw new Error(lido.erro);
+    expect(lido.migrado).toBe(false);
+    expect(lido.projeto).toEqual(antigo);
+    expect(lido.projeto.estadoAtual.tecido).not.toHaveProperty('custo');
+    expect(lido.projeto.estadoAtual.tecido).not.toHaveProperty('tipoDeTecido');
+
+    const tecidoNovo = { ...tecidoAntigo, tipoDeTecido: 'tubular', custo: { valor: 41.9, unidade: 'kg', moeda: 'BRL' }, rendimentoMmPorG: 3.2 };
+    const novo = { ...antigo, estadoAtual: { ...estado, tecido: tecidoNovo } };
+    const relido = lerProjeto(JSON.parse(JSON.stringify(novo)));
+    expect(relido.ok && relido.projeto.estadoAtual.tecido).toEqual(tecidoNovo);
+  });
+
   it('a biblioteca lê todos, diz o que ficou de fora e o que é de versão mais nova', () => {
     const lida = lerBiblioteca([ANTIGO, { arquivoIlegivel: 'quebrado.json' }, { ...ANTIGO, id: 'p2', nome: 'Calça', versaoDoFormato: 9 }]);
     expect(lida.projetos.map((p) => p.id)).toEqual(['projeto-antigo', 'p2']);

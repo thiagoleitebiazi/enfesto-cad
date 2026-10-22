@@ -2,6 +2,8 @@ import { escreverKg, escreverM, escreverM2, escreverRendimento } from '../domain
 import { DEFINICOES, type AlertaDoPlanejamento, type ConfiguracaoDoPlanejamento, type EntradaDoPlanejamento, type ResultadoDoPlanejamento, type RiscoDoPlanejamento } from '../domain/planoDeEnfesto';
 import { ROTULO_DO_TIPO } from '../domain/enfesto';
 import { escreverGrade } from '../domain/risco';
+import type { EstimativaDeCustoDoTecido } from '../domain/custoDoTecido';
+import { CustoDoTecidoNoPlano } from './CustoDoTecidoNoPlano';
 import { DesenhoDoRisco } from './DesenhoDoRisco';
 
 /**
@@ -18,6 +20,8 @@ export function ResumoDoPlanejamento(props: {
   readonly tamanhos: readonly string[];
   /** Com o desenho de cada risco. */
   readonly comDesenho?: boolean;
+  /** A estimativa do custo do tecido; 'sem-estimativa': plano guardado antes dela. Ausente, a parte do custo não aparece. */
+  readonly custoDoTecido?: EstimativaDeCustoDoTecido | 'sem-estimativa';
 }): React.JSX.Element {
   const { entrada: e, resultado: r } = props;
   const tamanhos = props.tamanhos.filter((t) => t in r.producaoPorTamanho || t in r.pedidoPorTamanho);
@@ -238,6 +242,8 @@ export function ResumoDoPlanejamento(props: {
           ))}
         </ul>
       )}
+
+      {props.custoDoTecido !== undefined && <CustoDoTecidoNoPlano estimativa={props.custoDoTecido} />}
 
       {props.comDesenho && props.riscos.map((risco) => <DesenhoDoRisco key={risco.chave} risco={risco} tamanhos={props.tamanhos} />)}
 

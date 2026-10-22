@@ -17,6 +17,7 @@ import {
   salvarMalha,
   salvarOrdem,
   salvarRolo,
+  tipoDeTecidoDaMalha,
   validarMalha,
   validarOrdem,
   validarRolo,
@@ -137,6 +138,44 @@ describe('malhas', () => {
     expect(depois.malhas.map((m) => m.descricao)).toEqual(['Malha algodão 30/1', 'Ribana']);
     expect(depois.malhas[1]).toMatchObject({ encolhimentoComprimentoPercentual: 4, encolhimentoCompensadoNoMolde: false, padrao: 'liso' });
     expect(incluirMalhasAntigas(depois, antigas)).toEqual(depois);
+  });
+});
+
+describe('malhas — o tipo de tecido e o custo (opcionais)', () => {
+  const custo = { valor: 41.9, unidade: 'kg', moeda: 'BRL' } as const;
+
+  it('a malha de antes, sem o tipo e sem o custo, abre igual; a marcada como tubular é tubular, a outra não está informada', () => {
+    const lido = lerCadastroDeProducao(JSON.parse(JSON.stringify({ versaoDoFormato: 2, malhas: [MALHA, { ...MALHA, id: 'm2', descricao: 'Ribana', tubular: true }] })));
+    expect(lido.descartados).toEqual([]);
+    expect(lido.cadastro.malhas[0]).toEqual(MALHA);
+    expect(lido.cadastro.malhas.map(tipoDeTecidoDaMalha)).toEqual([null, 'tubular']);
+  });
+
+  it('com o tipo e o custo, guarda e volta igual', () => {
+    const malha: MalhaDoCadastro = { ...MALHA, tipoDeTecido: 'ramado', custo };
+    expect(validarMalha(malha, [])).toEqual([]);
+    const cadastro = salvarMalha(CADASTRO_VAZIO, malha);
+    expect(lerCadastroDeProducao(JSON.parse(JSON.stringify(cadastro))).cadastro).toEqual(cadastro);
+    expect(tipoDeTecidoDaMalha(malha)).toBe('ramado');
+  });
+
+  it('o custo negativo, com mais de 2 casas, ou o tipo que não confere com o tubular são recusados ao salvar', () => {
+    expect(validarMalha({ ...MALHA, custo: { ...custo, valor: -1 } }, [])).toEqual(['O custo do tecido não pode ser negativo.']);
+    expect(validarMalha({ ...MALHA, custo: { ...custo, valor: 1.234 } }, [])).toEqual(['O custo do tecido pode ter no máximo 2 casas decimais (os centavos).']);
+    expect(validarMalha({ ...MALHA, tipoDeTecido: 'tubular' }, [])).toEqual(['O tipo de tecido é ramado ou tubular, e precisa conferir com a malha tubular.']);
+  });
+
+  it('no arquivo, a malha com o custo ou o tipo estragado fica de fora (dito), e as outras entram', () => {
+    const lido = lerCadastroDeProducao({
+      versaoDoFormato: 2,
+      malhas: [
+        { ...MALHA, custo: { valor: 'caro', unidade: 'kg', moeda: 'BRL' } },
+        { ...MALHA, id: 'm3', descricao: 'Outra', tipoDeTecido: 'tubular', tubular: false },
+        { ...MALHA, id: 'm4', descricao: 'Boa', tipoDeTecido: 'tubular', tubular: true, custo },
+      ],
+    });
+    expect(lido.cadastro.malhas.map((m) => m.id)).toEqual(['m4']);
+    expect(lido.descartados).toEqual(['2 registro(s) de malhas com dados inválidos ficaram de fora.']);
   });
 });
 

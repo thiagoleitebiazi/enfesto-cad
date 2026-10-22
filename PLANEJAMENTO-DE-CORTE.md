@@ -20,7 +20,8 @@ guarda tudo em mm e g.
    próximos planos.
 3. **Malha e rolos** — a malha (largura útil, rendimento ou gramatura,
    encolhimento por direção e a fonte do valor, padrão e, se listrado ou
-   xadrez, a repetição e a fase do desenho) e o material: um peso disponível,
+   xadrez, a repetição e a fase do desenho; o tipo de tecido e o custo, os
+   dois opcionais — ver "Custo do tecido") e o material: um peso disponível,
    ou os rolos do estoque.
 4. **Risco e enfesto** — o tipo de enfesto, de onde vem o risco (gerado
    pelo programa, tirado da mesa, ou informado à mão), a configuração, a
@@ -228,6 +229,51 @@ sem o casamento e sem a decisão, compensação incoerente com os riscos.
 compensado, defeitos não evitados, emendas, enfesto com lotes misturados.
 **Estimativa** (dita como tal): comprimento pelo peso, consumo, sobra.
 
+## Custo do tecido (estimativa)
+
+Opcional: sem o custo, o plano é o mesmo, e a parte do custo diz "Não
+informado" (nenhum valor aparece como R$ 0,00).
+
+- **Onde informar:** no tecido do projeto (**Encaixe → Tecido**: tipo de
+  tecido, custo, unidade do custo e rendimento, todos opcionais) ou na malha
+  do planejamento (etapa 3). O tecido do projeto já entra na malha.
+- **O custo:** em reais, até 2 casas (os centavos), de 0 para cima, **por
+  metro linear** (o metro da malha como é comprada — na tubular, o metro de
+  tubo) **ou por quilo**. A unidade tem de ser escolhida: o programa não
+  presume. O custo por quilo vira custo por metro pelo rendimento (m/kg) do
+  plano; numa malha tubular, só com o rendimento informado (o calculado pela
+  gramatura conta uma folha, e o tubo tem duas).
+- **O tipo de tecido:** "Não informado", "Ramado (aberto)" ou "Tubular" (é
+  o tipo do tecido, não o do enfesto). Ele substitui a antiga caixa "Malha
+  tubular": a malha antiga marcada como tubular aparece como "Tubular"; a não
+  marcada, como "Não informado".
+- **A área:** a área real do contorno de cada peça (a linha de corte, com a
+  costura), na forma de cada tamanho — não o retângulo em volta. Uma roupa
+  tem as peças com a quantidade por roupa (o par conta as duas); cada tamanho
+  tem a sua.
+- **As contas** (aparecem em "Como o custo foi estimado", no plano):
+  - malha por metro = largura na mesa × folhas por camada (aberta: a largura
+    útil; no par, 2 folhas de meia largura; na tubular, 2 folhas do tubo
+    achatado — só no enfesto tubular);
+  - custo por m² = custo por metro ÷ malha por metro;
+  - custo direto por roupa = área da roupa × custo por m²;
+  - custo do enfesto = consumo das camadas (com as pontas) × custo por metro;
+  - área não aproveitada = malha do enfesto − peças cortadas: as pontas, a
+    faixa da largura fora do risco e os espaços entre as peças. Não é sobra
+    reaproveitável;
+  - **custo médio por unidade** = custo do enfesto ÷ unidades produzidas;
+    **por tamanho**, o custo direto da roupa mais a parte da área não
+    aproveitada, na proporção da área. Os dois somam o custo do enfesto: a
+    perda não é contada duas vezes.
+- **Fora do custo do enfesto** (mostradas à parte): perda dos rolos,
+  trechos pulados por defeitos, sobreposição das emendas. A sobra dos rolos
+  volta para o estoque.
+- **Quando não calcula** (e diz por quê): sem o custo; por quilo sem
+  rendimento; malha tubular em enfesto que não é tubular (ou o contrário);
+  tipo não informado no enfesto tubular; peças passando a área do risco.
+- O plano guardado leva a estimativa de então; os planos de antes dela dizem
+  que não a têm (não são recalculados).
+
 ## Onde ficam os dados
 
 - **Projetos** e **planos**: os arquivos da Biblioteca, como antes.
@@ -250,6 +296,8 @@ compensado, defeitos não evitados, emendas, enfesto com lotes misturados.
   quando há). Os da primeira versão do cálculo só podem ser vistos.
 - Nenhum plano antigo movimenta o estoque sozinho: a reserva e a baixa são
   feitas no plano confirmado, pelo botão.
+- Os planos de antes da estimativa de custo dizem que não a têm; as malhas e
+  os tecidos de antes abrem sem o tipo e sem o custo ("Não informado").
 
 ## Limitações conhecidas
 
@@ -262,6 +310,9 @@ compensado, defeitos não evitados, emendas, enfesto com lotes misturados.
 - Defeito: a largura afetada não é usada para aproveitar o resto da largura.
 - Emenda só nas linhas do risco sem peça cortada (riscos gerados ou da mesa).
 - Casamento por um ponto por peça; mais de um ponto não é feito.
+- **Custo:** estimativa só do tecido, em reais, com o consumo planejado (não
+  há consumo medido por peça); a largura aberta de uma malha tubular não é
+  presumida.
 - **Formatos de molde:** DXF (LWPOLYLINE, POLYLINE clássica, LINE e ARC
   soltos que fecham, CIRCLE como furo, SPLINE, blocos com INSERT e escala;
   unidade pelo `$INSUNITS` — mm, cm, m, polegada, pé —, a desconhecida
