@@ -221,14 +221,16 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
 
         {diagrama && <DiagramaDeEnfesto config={diagrama} />}
 
-        {erro && <p className="mensagem-de-erro">{erro}</p>}
-        <div className="acoes-da-sobreposicao">
-          <button type="button" onClick={props.onFechar}>
-            Cancelar
-          </button>
-          <button type="button" onClick={salvar} className="botao-primario">
-            Salvar enfesto
-          </button>
+        <div className="rodape-do-formulario">
+          {erro && <p className="mensagem-de-erro">{erro}</p>}
+          <div className="acoes-da-sobreposicao">
+            <button type="button" onClick={props.onFechar}>
+              Cancelar
+            </button>
+            <button type="button" onClick={salvar} className="botao-primario">
+              Salvar enfesto
+            </button>
+          </div>
         </div>
       </form>
     </Sobreposicao>

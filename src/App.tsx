@@ -343,7 +343,7 @@ import {
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
-import { TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
+import { estadoDaValidacao, TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
 import type { MetodoDoNesting, ResultadoDeNesting } from './domain/nesting';
@@ -5290,7 +5290,7 @@ export default function App(): React.JSX.Element {
         </div>
       )}
       {mensagensImportacao && (
-        <div className="faixa-de-avisos" role="alert">
+        <div className="faixa-de-avisos faixa-da-importacao" role="alert">
           <strong>Avisos da importação:</strong>
           <ul>
             {mensagensImportacao.map((m, i) => (
@@ -5394,7 +5394,7 @@ export default function App(): React.JSX.Element {
         </Sobreposicao>
       )}
       {mostrarValidacao && (
-        <div className="faixa-de-validacao" role="alert">
+        <div className={`faixa-de-validacao ${estadoDaValidacao(problemasDeValidacao)}`} role="alert">
           <strong>Validação do projeto:</strong>
           <label
             className="folga-da-validacao"

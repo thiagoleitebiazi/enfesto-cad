@@ -64,13 +64,13 @@ export function ResumoDoPlanejamento(props: {
         <thead>
           <tr>
             <th scope="col">Risco (roupas por folha)</th>
-            <th scope="col">Comprimento</th>
-            <th scope="col">Largura ocupada</th>
-            <th scope="col">Eficiência</th>
-            <th scope="col">Camadas</th>
-            <th scope="col">Folhas</th>
+            <th scope="col" className="coluna-numerica">Comprimento</th>
+            <th scope="col" className="coluna-numerica">Largura ocupada</th>
+            <th scope="col" className="coluna-numerica">Eficiência</th>
+            <th scope="col" className="coluna-numerica">Camadas</th>
+            <th scope="col" className="coluna-numerica">Folhas</th>
             <th scope="col">Enfestos</th>
-            <th scope="col">Consumo</th>
+            <th scope="col" className="coluna-numerica">Consumo</th>
           </tr>
         </thead>
         <tbody>
@@ -84,15 +84,15 @@ export function ResumoDoPlanejamento(props: {
                   {desenhado?.compensado ? ' (encolhimento compensado)' : ''}
                   {desenhado?.casamento?.conferido ? ' (desenho casado)' : ''}
                 </td>
-                <td>{escreverM(x.comprimentoMm)}</td>
-                <td>{escreverM(x.larguraMm)}</td>
-                <td>{x.eficienciaPercentual !== null ? `${x.eficienciaPercentual.toFixed(1).replace('.', ',')}%` : '—'}</td>
-                <td>{x.camadas}</td>
-                <td>{x.folhas}</td>
+                <td className="coluna-numerica">{escreverM(x.comprimentoMm)}</td>
+                <td className="coluna-numerica">{escreverM(x.larguraMm)}</td>
+                <td className="coluna-numerica">{x.eficienciaPercentual !== null ? `${x.eficienciaPercentual.toFixed(1).replace('.', ',')}%` : '—'}</td>
+                <td className="coluna-numerica">{x.camadas}</td>
+                <td className="coluna-numerica">{x.folhas}</td>
                 <td>
                   {x.enfestos.length} ({x.enfestos.join(' + ')} camadas; até {x.camadasPorEnfestoMax} por enfesto)
                 </td>
-                <td>{escreverM(x.consumoMm)}</td>
+                <td className="coluna-numerica">{escreverM(x.consumoMm)}</td>
               </tr>
             );
           })}
@@ -104,22 +104,22 @@ export function ResumoDoPlanejamento(props: {
         <thead>
           <tr>
             <th scope="col">Tamanho</th>
-            <th scope="col">Pedido</th>
-            <th scope="col">Planejado</th>
-            <th scope="col">Excedente</th>
-            <th scope="col">Falta</th>
-            {r.possivelPorTamanho && <th scope="col">Com o material que há</th>}
+            <th scope="col" className="coluna-numerica">Pedido</th>
+            <th scope="col" className="coluna-numerica">Planejado</th>
+            <th scope="col" className="coluna-numerica">Excedente</th>
+            <th scope="col" className="coluna-numerica">Falta</th>
+            {r.possivelPorTamanho && <th scope="col" className="coluna-numerica">Com o material que há</th>}
           </tr>
         </thead>
         <tbody>
           {tamanhos.map((t) => (
             <tr key={t}>
               <th scope="row">{t}</th>
-              <td>{r.pedidoPorTamanho[t] ?? 0}</td>
-              <td>{r.producaoPorTamanho[t] ?? 0}</td>
-              <td>{r.excedentePorTamanho[t] ?? 0}</td>
-              <td>{r.faltaPorTamanho[t] ?? 0}</td>
-              {r.possivelPorTamanho && <td>{r.possivelPorTamanho[t] ?? 0}</td>}
+              <td className="coluna-numerica">{r.pedidoPorTamanho[t] ?? 0}</td>
+              <td className="coluna-numerica">{r.producaoPorTamanho[t] ?? 0}</td>
+              <td className="coluna-numerica">{r.excedentePorTamanho[t] ?? 0}</td>
+              <td className="coluna-numerica">{r.faltaPorTamanho[t] ?? 0}</td>
+              {r.possivelPorTamanho && <td className="coluna-numerica">{r.possivelPorTamanho[t] ?? 0}</td>}
             </tr>
           ))}
         </tbody>
@@ -129,12 +129,12 @@ export function ResumoDoPlanejamento(props: {
         <caption>Enfestos</caption>
         <thead>
           <tr>
-            <th scope="col">Enfesto</th>
+            <th scope="col" className="coluna-numerica">Enfesto</th>
             <th scope="col">Risco</th>
-            <th scope="col">Camadas</th>
-            <th scope="col">Folhas</th>
-            <th scope="col">Altura</th>
-            <th scope="col">Peso</th>
+            <th scope="col" className="coluna-numerica">Camadas</th>
+            <th scope="col" className="coluna-numerica">Folhas</th>
+            <th scope="col" className="coluna-numerica">Altura</th>
+            <th scope="col" className="coluna-numerica">Peso</th>
             <th scope="col">Lote · tonalidade</th>
           </tr>
         </thead>
@@ -143,12 +143,12 @@ export function ResumoDoPlanejamento(props: {
             const risco = r.riscos.find((y) => y.chave === x.chave);
             return (
               <tr key={x.numero}>
-                <td>{x.numero}</td>
+                <td className="coluna-numerica">{x.numero}</td>
                 <td>{risco ? escreverGrade(risco.grade) : x.chave}</td>
-                <td>{x.camadas}</td>
-                <td>{x.folhas}</td>
-                <td>{x.alturaMm !== null ? `${(x.alturaMm / 10).toFixed(1).replace('.', ',')} cm` : '—'}</td>
-                <td>{x.pesoG !== null ? escreverKg(x.pesoG) : '—'}</td>
+                <td className="coluna-numerica">{x.camadas}</td>
+                <td className="coluna-numerica">{x.folhas}</td>
+                <td className="coluna-numerica">{x.alturaMm !== null ? `${(x.alturaMm / 10).toFixed(1).replace('.', ',')} cm` : '—'}</td>
+                <td className="coluna-numerica">{x.pesoG !== null ? escreverKg(x.pesoG) : '—'}</td>
                 <td>{x.grupos.length > 0 ? x.grupos.join('; ') : '—'}</td>
               </tr>
             );
@@ -164,14 +164,14 @@ export function ResumoDoPlanejamento(props: {
               <th scope="col">Rolo</th>
               <th scope="col">Lote · tonalidade</th>
               <th scope="col">Comprimento</th>
-              <th scope="col">Largura na mesa</th>
-              {comJaUsado && <th scope="col">Já usado por outros planos</th>}
-              <th scope="col">Perda e defeitos</th>
-              {comPuladoPorDefeito && <th scope="col">Pulado por defeito (com posição)</th>}
-              <th scope="col">Camadas</th>
-              {comEmendas && <th scope="col">Emendas</th>}
-              <th scope="col">Usado</th>
-              <th scope="col">Sobra do rolo</th>
+              <th scope="col" className="coluna-numerica">Largura na mesa</th>
+              {comJaUsado && <th scope="col" className="coluna-numerica">Já usado por outros planos</th>}
+              <th scope="col" className="coluna-numerica">Perda e defeitos</th>
+              {comPuladoPorDefeito && <th scope="col" className="coluna-numerica">Pulado por defeito (com posição)</th>}
+              <th scope="col" className="coluna-numerica">Camadas</th>
+              {comEmendas && <th scope="col" className="coluna-numerica">Emendas</th>}
+              <th scope="col" className="coluna-numerica">Usado</th>
+              <th scope="col" className="coluna-numerica">Sobra do rolo</th>
             </tr>
           </thead>
           <tbody>
@@ -182,14 +182,14 @@ export function ResumoDoPlanejamento(props: {
                 <td>
                   {escreverM(x.comprimentoMm)} ({x.origemDoComprimento === 'medido' ? 'medido' : 'estimado pelo peso'})
                 </td>
-                <td>{escreverM(x.larguraMm)}</td>
-                {comJaUsado && <td>{escreverM(x.jaUsadoMm ?? 0)}</td>}
-                <td>{escreverM(x.perdasMm + x.defeitosMm)}</td>
-                {comPuladoPorDefeito && <td>{escreverM(x.perdaPorDefeitoMm ?? 0)}</td>}
-                <td>{Object.values(x.camadasPorRisco).reduce((s, n) => s + n, 0)}</td>
-                {comEmendas && <td>{x.emendas ?? 0}</td>}
-                <td>{escreverM(x.usadoMm)}</td>
-                <td>{escreverM(x.sobraMm)}</td>
+                <td className="coluna-numerica">{escreverM(x.larguraMm)}</td>
+                {comJaUsado && <td className="coluna-numerica">{escreverM(x.jaUsadoMm ?? 0)}</td>}
+                <td className="coluna-numerica">{escreverM(x.perdasMm + x.defeitosMm)}</td>
+                {comPuladoPorDefeito && <td className="coluna-numerica">{escreverM(x.perdaPorDefeitoMm ?? 0)}</td>}
+                <td className="coluna-numerica">{Object.values(x.camadasPorRisco).reduce((s, n) => s + n, 0)}</td>
+                {comEmendas && <td className="coluna-numerica">{x.emendas ?? 0}</td>}
+                <td className="coluna-numerica">{escreverM(x.usadoMm)}</td>
+                <td className="coluna-numerica">{escreverM(x.sobraMm)}</td>
               </tr>
             ))}
           </tbody>
@@ -204,8 +204,8 @@ export function ResumoDoPlanejamento(props: {
               <th scope="col">Risco</th>
               <th scope="col">Do rolo</th>
               <th scope="col">Para o rolo</th>
-              <th scope="col">Onde (do começo do risco)</th>
-              <th scope="col">Sobreposição</th>
+              <th scope="col" className="coluna-numerica">Onde (do começo do risco)</th>
+              <th scope="col" className="coluna-numerica">Sobreposição</th>
             </tr>
           </thead>
           <tbody>
@@ -217,8 +217,8 @@ export function ResumoDoPlanejamento(props: {
                   <td>{risco ? escreverGrade(risco.grade) : x.chave}</td>
                   <td>{nome(x.roloDe)}</td>
                   <td>{nome(x.roloPara)}</td>
-                  <td>{escreverM(x.posicaoNoRiscoMm)}</td>
-                  <td>{escreverM(x.sobreposicaoMm)}</td>
+                  <td className="coluna-numerica">{escreverM(x.posicaoNoRiscoMm)}</td>
+                  <td className="coluna-numerica">{escreverM(x.sobreposicaoMm)}</td>
                 </tr>
               );
             })}

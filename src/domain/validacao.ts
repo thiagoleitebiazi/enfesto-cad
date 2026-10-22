@@ -44,6 +44,12 @@ export interface ProblemaDeValidacao {
   readonly pecasEnvolvidasIds: readonly string[];
 }
 
+/** O estado geral da validação (a cor da faixa na tela): nenhum problema, só avisos, ou algum erro. */
+export function estadoDaValidacao(problemas: readonly Pick<ProblemaDeValidacao, 'severidade'>[]): 'sem-problemas' | 'com-avisos' | 'com-erros' {
+  if (problemas.length === 0) return 'sem-problemas';
+  return problemas.some((p) => p.severidade === 'erro') ? 'com-erros' : 'com-avisos';
+}
+
 export interface ToleranciasDeValidacao {
   /** Peças com maior dimensão abaixo disto disparam aviso de escala suspeita (mm). */
   readonly dimensaoMinimaPlausivelMm: number;

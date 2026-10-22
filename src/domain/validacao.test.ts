@@ -3,7 +3,23 @@ import { ponto } from '../core/geometria';
 import { dobrarMolde } from './corteEUniao';
 import { criarMolde, rotacionarMolde, type Molde } from './molde';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
-import { FUNDURA_MINIMA_DA_SOBREPOSICAO_MM, interioresSeSobrepoem, validarProjeto, projetoTemErrosCriticos, TOLERANCIAS_PADRAO, type ProblemaDeValidacao } from './validacao';
+import {
+  estadoDaValidacao,
+  FUNDURA_MINIMA_DA_SOBREPOSICAO_MM,
+  interioresSeSobrepoem,
+  validarProjeto,
+  projetoTemErrosCriticos,
+  TOLERANCIAS_PADRAO,
+  type ProblemaDeValidacao,
+} from './validacao';
+
+describe('estadoDaValidacao — o estado da faixa da validação', () => {
+  it('sem problema, só avisos, ou algum erro (antes, a faixa ficava vermelha mesmo sem problema)', () => {
+    expect(estadoDaValidacao([])).toBe('sem-problemas');
+    expect(estadoDaValidacao([{ severidade: 'aviso' }, { severidade: 'aviso' }])).toBe('com-avisos');
+    expect(estadoDaValidacao([{ severidade: 'aviso' }, { severidade: 'erro' }])).toBe('com-erros');
+  });
+});
 import { criarTecido, type DadosDeNovoTecido, type Tecido } from './tecido';
 
 function pecaRetangular(

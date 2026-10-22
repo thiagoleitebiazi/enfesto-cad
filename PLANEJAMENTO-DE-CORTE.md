@@ -39,6 +39,11 @@ O programa nunca muda a ordem sozinho: o que falta ou sobra por tamanho é
 mostrado (pedido, planejado, excedente, falta, e o que dá com o material
 que há).
 
+Na tela: cada etapa mostra se está com os dados completos (✓) ou se falta
+dado (⚠); os campos obrigatórios têm *; o erro de um campo aparece logo
+abaixo dele (depois que se passa por ele), além da lista do que falta na
+etapa; e o botão em azul é a ação principal da etapa.
+
 ## Importar ordens por CSV
 
 Uma linha de cabeçalho e uma linha por ordem. O separador é ponto e vírgula

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useId, useMemo, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { DesenhoDoRisco } from './DesenhoDoRisco';
 import { ResumoDoPlanejamento } from './ResumoDoPlanejamento';
@@ -212,12 +212,47 @@ const LIMITACOES = [
 /** Uma medida em cm, como é digitada no cadastro da malha. */
 const emCm = (mm: number): string => `${(mm / 10).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} cm`;
 
-function Campo(props: { readonly rotulo: string; readonly valor: string; readonly onMudar: (v: string) => void; readonly tipo?: string; readonly dica?: string }): React.JSX.Element {
+/**
+ * O que falta ou não confere no plano (as mesmas mensagens das listas "falta" de cada etapa). Cada campo mostra,
+ * logo abaixo dele, a mensagem que o cita pelo nome entre aspas — depois que a pessoa passou por ele, para o
+ * formulário não abrir todo marcado de vermelho.
+ */
+const ErrosDosCampos = createContext<readonly string[]>([]);
+
+function Campo(props: {
+  readonly rotulo: string;
+  readonly valor: string;
+  readonly onMudar: (v: string) => void;
+  readonly tipo?: string;
+  readonly dica?: string;
+  /** Marcado com * (a legenda fica no alto da janela). */
+  readonly obrigatorio?: boolean;
+}): React.JSX.Element {
+  const erros = useContext(ErrosDosCampos);
+  const [visitado, setVisitado] = useState(false);
+  const idDoErro = useId();
+  const erro = visitado ? erros.find((e) => e.includes(`"${props.rotulo}"`)) : undefined;
   return (
-    <label title={props.dica}>
-      {props.rotulo}
-      <input type={props.tipo ?? 'text'} inputMode={props.tipo ? undefined : 'decimal'} value={props.valor} onChange={(e) => props.onMudar(e.target.value)} />
-    </label>
+    <div className={props.obrigatorio ? 'campo-do-plano campo-obrigatorio' : 'campo-do-plano'}>
+      <label title={props.dica}>
+        <span className="rotulo-do-campo">{props.rotulo}</span>
+        <input
+          type={props.tipo ?? 'text'}
+          inputMode={props.tipo ? undefined : 'decimal'}
+          value={props.valor}
+          onChange={(e) => props.onMudar(e.target.value)}
+          onBlur={() => setVisitado(true)}
+          aria-required={props.obrigatorio ? true : undefined}
+          aria-invalid={erro ? true : undefined}
+          aria-describedby={erro ? idDoErro : undefined}
+        />
+      </label>
+      {erro && (
+        <span id={idDoErro} className="erro-do-campo">
+          {erro}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -455,7 +490,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       return compensacaoEmUso ? riscoCompensado(r, compensacaoEmUso, larguraDoRisco.mm) : r;
     }
     const comprimento = lerNumero(informado.comprimento, 'Comprimento do risco (m)', errosDaFonte, { obrigatorio: true });
-    const largura = lerNumero(informado.largura, 'Largura do risco (m)', errosDaFonte, { obrigatorio: true });
+    // O nome é o do campo do risco informado ("Largura do risco (m)" é o outro campo da etapa, o da largura da malha).
+    const largura = lerNumero(informado.largura, 'Largura ocupada do risco (m)', errosDaFonte, { obrigatorio: true });
     const g = grade(informado.grade, 'Risco informado', errosDaFonte);
     if (errosDaFonte.length > 0 || comprimento === undefined || largura === undefined) return null;
     return {
@@ -821,20 +857,45 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     setConfirmando(false);
     setEtapa(alvo);
   };
+  // O estado de cada etapa, pelas mesmas listas "falta" que ela mostra: só para o caminho ficar à vista.
+  const estadoDasEtapas: Partial<Record<Etapa, 'completa' | 'falta'>> = {
+    molde: errosDoMolde.length === 0 ? 'completa' : 'falta',
+    ordem: ordemLida.erros.length === 0 && tamanhosForaDoMolde.length === 0 ? 'completa' : 'falta',
+    malha: malhaLida.erros.length === 0 && (material === 'peso' ? pesoLido.erros.length === 0 : rolosSelecionados.length > 0) ? 'completa' : 'falta',
+    risco: configLida.erros.length === 0 && larguraDoRisco.mm !== null && larguraDoRisco.erros.length === 0 && (fonte === 'gerar' || errosDaFonte.length === 0) ? 'completa' : 'falta',
+    alternativas: base ? 'completa' : 'falta',
+  };
+  const errosDosCampos = [...entrada.faltas, ...errosDaFonte, ...ajustesLidos.erros];
 
   return (
     <Sobreposicao titulo="Planejamento de corte" onFechar={() => {
       cancelarRef.current?.();
       props.onFechar();
     }}>
+      <ErrosDosCampos.Provider value={errosDosCampos}>
       <div className="painel-de-planejamento">
         <nav aria-label="Etapas do planejamento" className="etapas-do-planejamento">
-          {ETAPAS.map(([id, rotulo]) => (
-            <button key={id} type="button" aria-current={etapa === id ? 'step' : undefined} className={etapa === id ? 'etapa-atual' : undefined} onClick={() => navegar(id)}>
-              {rotulo}
-            </button>
-          ))}
+          {ETAPAS.map(([id, rotulo]) => {
+            const estado = estadoDasEtapas[id];
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-current={etapa === id ? 'step' : undefined}
+                className={etapa === id ? 'etapa-atual' : undefined}
+                title={estado === 'completa' ? 'Etapa com os dados completos' : estado === 'falta' ? 'Falta dado nesta etapa (a lista está nela)' : undefined}
+                onClick={() => navegar(id)}
+              >
+                {estado && <span className={`estado-da-etapa ${estado === 'completa' ? 'etapa-completa' : 'etapa-com-falta'}`} aria-hidden="true" />}
+                {rotulo}
+              </button>
+            );
+          })}
         </nav>
+        <p className="nota-do-formulario legenda-dos-obrigatorios">
+          Campos com * são obrigatórios. Nas etapas: <span className="estado-da-etapa etapa-completa" aria-hidden="true" /> dados completos,{' '}
+          <span className="estado-da-etapa etapa-com-falta" aria-hidden="true" /> falta dado.
+        </p>
         {props.avisosDoCadastro.map((a) => (
           <p key={a} className="nota-do-formulario" role="status">
             {a}
@@ -974,7 +1035,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </select>
             </label>
             <div className="grade-do-plano">
-              <Campo rotulo="Código da ordem" valor={formOrdem.codigo} onMudar={(v) => setFormOrdem({ ...formOrdem, codigo: v })} />
+              <Campo obrigatorio rotulo="Código da ordem" valor={formOrdem.codigo} onMudar={(v) => setFormOrdem({ ...formOrdem, codigo: v })} />
               <Campo rotulo="Produto" valor={formOrdem.produto} onMudar={(v) => setFormOrdem({ ...formOrdem, produto: v })} />
               <Campo rotulo="Cor" valor={formOrdem.cor} onMudar={(v) => setFormOrdem({ ...formOrdem, cor: v })} />
               <Campo rotulo="Prazo" tipo="date" valor={formOrdem.prazo} onMudar={(v) => setFormOrdem({ ...formOrdem, prazo: v })} />
@@ -1077,12 +1138,12 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </select>
             </label>
             <div className="grade-do-plano">
-              <Campo rotulo="Descrição da malha" tipo="text" valor={formMalha.descricao} onMudar={(v) => setFormMalha({ ...formMalha, descricao: v })} />
+              <Campo obrigatorio rotulo="Descrição da malha" tipo="text" valor={formMalha.descricao} onMudar={(v) => setFormMalha({ ...formMalha, descricao: v })} />
               <Campo rotulo="Composição" tipo="text" valor={formMalha.composicao} onMudar={(v) => setFormMalha({ ...formMalha, composicao: v })} />
               <Campo rotulo="Título do fio" tipo="text" valor={formMalha.tituloDoFio} onMudar={(v) => setFormMalha({ ...formMalha, tituloDoFio: v })} />
               <Campo rotulo="Gramatura (g/m²)" valor={formMalha.gramatura} onMudar={(v) => setFormMalha({ ...formMalha, gramatura: v })} />
               <Campo rotulo="Largura nominal (m)" valor={formMalha.larguraNominal} onMudar={(v) => setFormMalha({ ...formMalha, larguraNominal: v })} />
-              <Campo rotulo="Largura útil (m)" valor={formMalha.larguraUtil} onMudar={(v) => setFormMalha({ ...formMalha, larguraUtil: v })} />
+              <Campo obrigatorio rotulo="Largura útil (m)" valor={formMalha.larguraUtil} onMudar={(v) => setFormMalha({ ...formMalha, larguraUtil: v })} />
               <Campo rotulo="Rendimento (m/kg)" valor={formMalha.rendimento} onMudar={(v) => setFormMalha({ ...formMalha, rendimento: v })} />
               <label>
                 Tipo de tecido
@@ -1099,7 +1160,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               <label>
                 Unidade do custo
                 <select value={formMalha.unidadeDoCusto} onChange={(e) => setFormMalha({ ...formMalha, unidadeDoCusto: e.target.value as UnidadeDoCusto | '' })}>
-                  <option value="">(escolha, se informar o custo)</option>
+                  <option value="">(escolha)</option>
                   {(Object.keys(ROTULO_DA_UNIDADE_DO_CUSTO) as UnidadeDoCusto[]).map((u) => (
                     <option key={u} value={u}>
                       {ROTULO_DA_UNIDADE_DO_CUSTO[u]}
@@ -1174,7 +1235,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               <label className="opcao-em-linha">
                 <input type="radio" checked={material === 'peso'} onChange={() => setMaterial('peso')} /> Peso total (sem rolos)
               </label>
-              {material === 'peso' && <Campo rotulo="Peso disponível (kg)" valor={pesoTexto} onMudar={setPesoTexto} />}
+              {material === 'peso' && <Campo obrigatorio rotulo="Peso disponível (kg)" valor={pesoTexto} onMudar={setPesoTexto} />}
               {material === 'rolos' && (
                 <>
                   {rolosDaMalha.length === 0 ? (
@@ -1352,8 +1413,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               )}
               {fonte === 'informado' && (
                 <>
-                  <Campo rotulo="Comprimento do risco (m)" valor={informado.comprimento} onMudar={(v) => setInformado({ ...informado, comprimento: v })} />
-                  <Campo rotulo="Largura ocupada do risco (m)" valor={informado.largura} onMudar={(v) => setInformado({ ...informado, largura: v })} />
+                  <Campo obrigatorio rotulo="Comprimento do risco (m)" valor={informado.comprimento} onMudar={(v) => setInformado({ ...informado, comprimento: v })} />
+                  <Campo obrigatorio rotulo="Largura ocupada do risco (m)" valor={informado.largura} onMudar={(v) => setInformado({ ...informado, largura: v })} />
                   {tamanhosDaTela.map((t) => (
                     <Campo key={t} rotulo={`Roupas do ${t} por folha`} valor={informado.grade[t] ?? ''} onMudar={(v) => setInformado({ ...informado, grade: { ...informado.grade, [t]: v } })} />
                   ))}
@@ -1386,20 +1447,20 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
             <fieldset className="grupo-de-opcoes-do-formulario">
               <legend>Configuração (fica guardada neste computador)</legend>
               <div className="grade-do-plano">
-                <Campo rotulo="Margem no começo da mesa (cm)" valor={formConfig.margemInicial} onMudar={(v) => setFormConfig({ ...formConfig, margemInicial: v })} />
-                <Campo rotulo="Margem no fim da mesa (cm)" valor={formConfig.margemFinal} onMudar={(v) => setFormConfig({ ...formConfig, margemFinal: v })} />
-                <Campo rotulo="Pontas por camada (cm)" valor={formConfig.sobra} onMudar={(v) => setFormConfig({ ...formConfig, sobra: v })} />
-                <Campo rotulo="Perda por rolo (cm)" valor={formConfig.perdaPorRolo} onMudar={(v) => setFormConfig({ ...formConfig, perdaPorRolo: v })} />
-                <Campo rotulo="Folhas por enfesto (máximo)" valor={formConfig.folhas} onMudar={(v) => setFormConfig({ ...formConfig, folhas: v })} />
+                <Campo obrigatorio rotulo="Margem no começo da mesa (cm)" valor={formConfig.margemInicial} onMudar={(v) => setFormConfig({ ...formConfig, margemInicial: v })} />
+                <Campo obrigatorio rotulo="Margem no fim da mesa (cm)" valor={formConfig.margemFinal} onMudar={(v) => setFormConfig({ ...formConfig, margemFinal: v })} />
+                <Campo obrigatorio rotulo="Pontas por camada (cm)" valor={formConfig.sobra} onMudar={(v) => setFormConfig({ ...formConfig, sobra: v })} />
+                <Campo obrigatorio rotulo="Perda por rolo (cm)" valor={formConfig.perdaPorRolo} onMudar={(v) => setFormConfig({ ...formConfig, perdaPorRolo: v })} />
+                <Campo obrigatorio rotulo="Folhas por enfesto (máximo)" valor={formConfig.folhas} onMudar={(v) => setFormConfig({ ...formConfig, folhas: v })} />
                 <Campo rotulo="Altura máxima do enfesto (cm)" valor={formConfig.alturaMaxima} onMudar={(v) => setFormConfig({ ...formConfig, alturaMaxima: v })} />
                 <Campo rotulo="Peso máximo do enfesto (kg)" valor={formConfig.pesoMaximo} onMudar={(v) => setFormConfig({ ...formConfig, pesoMaximo: v })} />
-                <Campo rotulo="Comprimento da mesa (m)" valor={formConfig.comprimentoDaMesa} onMudar={(v) => setFormConfig({ ...formConfig, comprimentoDaMesa: v })} />
+                <Campo obrigatorio rotulo="Comprimento da mesa (m)" valor={formConfig.comprimentoDaMesa} onMudar={(v) => setFormConfig({ ...formConfig, comprimentoDaMesa: v })} />
                 <Campo rotulo="Largura da mesa (m)" valor={formConfig.larguraDaMesa} onMudar={(v) => setFormConfig({ ...formConfig, larguraDaMesa: v })} />
-                <Campo rotulo="Roupas por risco (máximo)" valor={formConfig.roupasPorRisco} onMudar={(v) => setFormConfig({ ...formConfig, roupasPorRisco: v })} />
-                <Campo rotulo="Distância entre as peças (mm)" valor={formConfig.distancia} onMudar={(v) => setFormConfig({ ...formConfig, distancia: v })} />
-                <Campo rotulo="Tolerância de rendimento (%)" valor={formConfig.tolerancia} onMudar={(v) => setFormConfig({ ...formConfig, tolerancia: v })} />
-                <Campo rotulo="Tempo da busca dos riscos (s)" valor={formConfig.tempo} onMudar={(v) => setFormConfig({ ...formConfig, tempo: v })} />
-                <Campo rotulo="Sobreposição da emenda (cm)" valor={formConfig.sobreposicaoDaEmenda} onMudar={(v) => setFormConfig({ ...formConfig, sobreposicaoDaEmenda: v })} />
+                <Campo obrigatorio rotulo="Roupas por risco (máximo)" valor={formConfig.roupasPorRisco} onMudar={(v) => setFormConfig({ ...formConfig, roupasPorRisco: v })} />
+                <Campo obrigatorio rotulo="Distância entre as peças (mm)" valor={formConfig.distancia} onMudar={(v) => setFormConfig({ ...formConfig, distancia: v })} />
+                <Campo obrigatorio rotulo="Tolerância de rendimento (%)" valor={formConfig.tolerancia} onMudar={(v) => setFormConfig({ ...formConfig, tolerancia: v })} />
+                <Campo obrigatorio rotulo="Tempo da busca dos riscos (s)" valor={formConfig.tempo} onMudar={(v) => setFormConfig({ ...formConfig, tempo: v })} />
+                <Campo obrigatorio rotulo="Sobreposição da emenda (cm)" valor={formConfig.sobreposicaoDaEmenda} onMudar={(v) => setFormConfig({ ...formConfig, sobreposicaoDaEmenda: v })} />
               </div>
               <label className="opcao-em-linha">
                 <input type="checkbox" checked={formConfig.permitirEmendas} onChange={(e) => setFormConfig({ ...formConfig, permitirEmendas: e.target.checked })} />
@@ -1488,7 +1549,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </fieldset>
             )}
             <Faltas titulo="Para calcular, falta:" itens={[...entrada.faltas, ...errosDaFonte]} />
-            <button type="button" disabled={!entrada.entrada || errosDaFonte.length > 0} onClick={calcularAlternativas}>
+            <button type="button" className="botao-primario" disabled={!entrada.entrada || errosDaFonte.length > 0} onClick={calcularAlternativas}>
               {fonte === 'gerar' ? 'Calcular as alternativas' : 'Calcular o plano'}
             </button>
           </section>
@@ -1622,7 +1683,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                       comDesenho
                       custoDoTecido={estimativaDeCusto(entrada.entrada, alternativaEscolhida.calculo.resultado, riscosDaEscolhida)}
                     />
-                    <button type="button" disabled={buscaDesatualizada} onClick={() => navegar('revisar')}>
+                    <button type="button" className="botao-primario" disabled={buscaDesatualizada} onClick={() => navegar('revisar')}>
                       Revisar e confirmar esta alternativa
                     </button>
                   </>
@@ -1686,30 +1747,34 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                   />
                 )}
                 <div className="confirmacao-do-plano">
-                  <Campo rotulo="Responsável (informado — o programa não tem login)" tipo="text" valor={responsavel} onMudar={setResponsavel} />
+                  <Campo rotulo="Responsável (informado — o programa não tem login)" tipo="text" valor={responsavel} onMudar={setResponsavel} obrigatorio />
                   <label className="opcao-em-linha">
                     <input type="checkbox" checked={aplicarAoEnfesto} onChange={(e) => setAplicarAoEnfesto(e.target.checked)} />
                     Ajustar o enfesto do projeto ao plano (tipo, largura, mesa e camadas do maior enfesto)
                   </label>
-                  <button type="button" disabled={!final?.ok} onClick={guardarRascunho}>
-                    Salvar rascunho
-                  </button>{' '}
-                  <button type="button" disabled={!final?.ok} onClick={() => setConfirmando(true)}>
-                    Confirmar o plano
-                  </button>
+                  <div className="acoes-em-linha">
+                    <button type="button" disabled={!final?.ok} onClick={guardarRascunho}>
+                      Salvar rascunho
+                    </button>{' '}
+                    <button type="button" className="botao-primario" disabled={!final?.ok} onClick={() => setConfirmando(true)}>
+                      Confirmar o plano
+                    </button>
+                  </div>
                   {confirmando && final?.ok && (
-                    <div role="alertdialog" aria-label="Confirmar o plano" className="faltas-do-plano">
+                    <div role="alertdialog" aria-label="Confirmar o plano" className="confirmacao-pendente">
                       <p>
                         Confirmar o plano da ordem {entrada.entrada?.ordem.codigo}: {final.resultado.camadas} camada(s) em {final.resultado.enfestos.length} enfesto(s), consumo estimado de{' '}
                         {escreverM(final.resultado.consumoMm)}
                         {final.resultado.materialSuficiente ? '' : ` (o material não dá tudo: faltam ${escreverM(final.resultado.deficitMm)})`}? Confirmado, ele fica guardado como está e não muda mais.
                       </p>
-                      <button type="button" onClick={confirmar}>
-                        Sim, confirmar
-                      </button>{' '}
-                      <button type="button" onClick={() => setConfirmando(false)}>
-                        Voltar
-                      </button>
+                      <div className="acoes-em-linha">
+                        <button type="button" className="botao-primario" onClick={confirmar}>
+                          Sim, confirmar
+                        </button>{' '}
+                        <button type="button" onClick={() => setConfirmando(false)}>
+                          Voltar
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1831,6 +1896,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
           {etapa !== 'planos' && etapa !== 'revisar' && (
             <button
               type="button"
+              // A ação principal das primeiras etapas; da 4 em diante, a principal é a da própria etapa (calcular, revisar).
+              className={etapa === 'molde' || etapa === 'ordem' || etapa === 'malha' ? 'botao-primario' : undefined}
               onClick={() => {
                 const i = ETAPAS.findIndex(([id]) => id === etapa);
                 const proxima = ETAPAS[i + 1]![0];
@@ -1843,6 +1910,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
           )}
         </div>
       </div>
+      </ErrosDosCampos.Provider>
     </Sobreposicao>
   );
 }

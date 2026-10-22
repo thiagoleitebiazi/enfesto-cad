@@ -59,18 +59,18 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
             <thead>
               <tr>
                 <th>Tamanho</th>
-                <th>Modelos distintos</th>
-                <th>Quantidade total</th>
-                <th>Peso estimado</th>
+                <th className="coluna-numerica">Modelos distintos</th>
+                <th className="coluna-numerica">Quantidade total</th>
+                <th className="coluna-numerica">Peso estimado</th>
               </tr>
             </thead>
             <tbody>
               {r.pecasPorTamanho.map((linha) => (
                 <tr key={linha.tamanho}>
                   <td>{linha.tamanho}</td>
-                  <td>{linha.quantidadeDeModelos}</td>
-                  <td>{linha.quantidadeTotal}</td>
-                  <td>{linha.pesoEstimadoKg !== null ? `${linha.pesoEstimadoKg.toFixed(3)} kg` : '—'}</td>
+                  <td className="coluna-numerica">{linha.quantidadeDeModelos}</td>
+                  <td className="coluna-numerica">{linha.quantidadeTotal}</td>
+                  <td className="coluna-numerica">{linha.pesoEstimadoKg !== null ? `${linha.pesoEstimadoKg.toFixed(3)} kg` : '—'}</td>
                 </tr>
               ))}
             </tbody>

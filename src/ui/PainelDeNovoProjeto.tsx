@@ -104,7 +104,7 @@ export function PainelDeNovoProjeto(props: PainelDeNovoProjetoProps): React.JSX.
           Comprimento da mesa (mm)
           <input type="number" min={0} value={comprimentoMm} onChange={(e) => setComprimentoMm(e.target.value)} />
         </label>
-        <p className="legenda-inline">
+        <p className="nota-do-formulario">
           As medidas da mesa definem o enfesto inicial (tipo Ímpar, sem margens) — ajuste depois pelo botão
           "Enfesto" se precisar de outro tipo ou de margens.
         </p>
@@ -150,14 +150,16 @@ export function PainelDeNovoProjeto(props: PainelDeNovoProjetoProps): React.JSX.
           />
         </label>
 
-        {erro && <p className="mensagem-de-erro">{erro}</p>}
-        <div className="acoes-da-sobreposicao">
-          <button type="button" onClick={props.onFechar}>
-            Cancelar
-          </button>
-          <button type="button" onClick={criar} className="botao-primario">
-            Criar projeto
-          </button>
+        <div className="rodape-do-formulario">
+          {erro && <p className="mensagem-de-erro">{erro}</p>}
+          <div className="acoes-da-sobreposicao">
+            <button type="button" onClick={props.onFechar}>
+              Cancelar
+            </button>
+            <button type="button" onClick={criar} className="botao-primario">
+              Criar projeto
+            </button>
+          </div>
         </div>
       </form>
     </Sobreposicao>

@@ -63,20 +63,20 @@ export function CustoDoTecidoNoPlano(props: { readonly estimativa: EstimativaDeC
         <thead>
           <tr>
             <th scope="col">Tamanho</th>
-            <th scope="col">Área de uma roupa</th>
-            <th scope="col">Custo direto (as peças)</th>
-            <th scope="col">Com a perda rateada pela área</th>
-            <th scope="col">Unidades produzidas</th>
+            <th scope="col" className="coluna-numerica">Área de uma roupa</th>
+            <th scope="col" className="coluna-numerica">Custo direto (as peças)</th>
+            <th scope="col" className="coluna-numerica">Com a perda rateada pela área</th>
+            <th scope="col" className="coluna-numerica">Unidades produzidas</th>
           </tr>
         </thead>
         <tbody>
           {e.porTamanho.map((t) => (
             <tr key={t.tamanho}>
               <th scope="row">{t.tamanho}</th>
-              <td>{t.areaPorUnidadeMm2 > 0 ? escreverM2(t.areaPorUnidadeMm2, 4) : NAO_CALCULADO}</td>
-              <td>{emReais(t.custoDiretoPorUnidade)}</td>
-              <td>{emReais(t.custoPorUnidadeComPerda)}</td>
-              <td>{t.unidadesProduzidas}</td>
+              <td className="coluna-numerica">{t.areaPorUnidadeMm2 > 0 ? escreverM2(t.areaPorUnidadeMm2, 4) : NAO_CALCULADO}</td>
+              <td className="coluna-numerica">{emReais(t.custoDiretoPorUnidade)}</td>
+              <td className="coluna-numerica">{emReais(t.custoPorUnidadeComPerda)}</td>
+              <td className="coluna-numerica">{t.unidadesProduzidas}</td>
             </tr>
           ))}
         </tbody>
@@ -87,37 +87,37 @@ export function CustoDoTecidoNoPlano(props: { readonly estimativa: EstimativaDeC
         <thead>
           <tr>
             <th scope="col"> </th>
-            <th scope="col">Área</th>
-            <th scope="col">Custo</th>
+            <th scope="col" className="coluna-numerica">Área</th>
+            <th scope="col" className="coluna-numerica">Custo</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <th scope="row">Malha do enfesto (custo total)</th>
-            <td>{emM2(e.areaTotalMm2)}</td>
-            <td>{emReais(e.custoTotal)}</td>
+            <td className="coluna-numerica">{emM2(e.areaTotalMm2)}</td>
+            <td className="coluna-numerica">{emReais(e.custoTotal)}</td>
           </tr>
           <tr>
             <th scope="row">Peças cortadas (custo direto)</th>
-            <td>{emM2(e.areaDasPecasMm2)}</td>
-            <td>{emReais(e.custoDiretoTotal)}</td>
+            <td className="coluna-numerica">{emM2(e.areaDasPecasMm2)}</td>
+            <td className="coluna-numerica">{emReais(e.custoDiretoTotal)}</td>
           </tr>
           <tr>
             <th scope="row">Área não aproveitada estimada</th>
-            <td>{emM2(e.naoAproveitada?.totalMm2 ?? null)}</td>
-            <td>{emReais(e.custoNaoAproveitado)}</td>
+            <td className="coluna-numerica">{emM2(e.naoAproveitada?.totalMm2 ?? null)}</td>
+            <td className="coluna-numerica">{emReais(e.custoNaoAproveitado)}</td>
           </tr>
           {e.naoAproveitada?.partes.map((p) => (
             <tr key={p.rotulo} className="parte-nao-aproveitada">
               <td>— {p.rotulo}</td>
-              <td>{escreverM2(p.areaMm2)}</td>
-              <td>{emReais(p.custo)}</td>
+              <td className="coluna-numerica">{escreverM2(p.areaMm2)}</td>
+              <td className="coluna-numerica">{emReais(p.custo)}</td>
             </tr>
           ))}
           <tr>
             <th scope="row">Custo médio por unidade (custo total ÷ {e.unidadesProduzidas} unidades produzidas)</th>
             <td> </td>
-            <td>{emReais(e.custoMedioPorUnidade)}</td>
+            <td className="coluna-numerica">{emReais(e.custoMedioPorUnidade)}</td>
           </tr>
         </tbody>
       </table>
@@ -146,9 +146,9 @@ export function CustoDoTecidoNoPlano(props: { readonly estimativa: EstimativaDeC
             <tr>
               <th scope="col">Tamanho</th>
               <th scope="col">Peça</th>
-              <th scope="col">Área de uma peça</th>
-              <th scope="col">Por roupa</th>
-              <th scope="col">Área na roupa</th>
+              <th scope="col" className="coluna-numerica">Área de uma peça</th>
+              <th scope="col" className="coluna-numerica">Por roupa</th>
+              <th scope="col" className="coluna-numerica">Área na roupa</th>
             </tr>
           </thead>
           <tbody>
@@ -157,12 +157,12 @@ export function CustoDoTecidoNoPlano(props: { readonly estimativa: EstimativaDeC
                 <tr key={`${t.tamanho}-${p.pecaId}`}>
                   <td>{t.tamanho}</td>
                   <td>{p.nome}</td>
-                  <td>{escreverM2(p.areaMm2 * e.fatorDeArea, 4)}</td>
-                  <td>
+                  <td className="coluna-numerica">{escreverM2(p.areaMm2 * e.fatorDeArea, 4)}</td>
+                  <td className="coluna-numerica">
                     {p.quantidadePorRoupa}
                     {p.emPar ? ' (em par)' : ''}
                   </td>
-                  <td>{escreverM2(p.areaMm2 * e.fatorDeArea * p.quantidadePorRoupa, 4)}</td>
+                  <td className="coluna-numerica">{escreverM2(p.areaMm2 * e.fatorDeArea * p.quantidadePorRoupa, 4)}</td>
                 </tr>
               )),
             )}

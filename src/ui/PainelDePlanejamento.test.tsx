@@ -569,7 +569,7 @@ describe('PainelDePlanejamento — o custo do tecido', () => {
     expect([...tipo.options].map((o) => o.textContent)).toEqual(['Não informado', 'Ramado (aberto)', 'Tubular']);
     expect(tipo.value).toBe('');
     const unidade = screen.getByLabelText('Unidade do custo') as HTMLSelectElement;
-    expect([...unidade.options].map((o) => o.textContent)).toEqual(['(escolha, se informar o custo)', 'por metro linear (R$/m)', 'por quilo (R$/kg)']);
+    expect([...unidade.options].map((o) => o.textContent)).toEqual(['(escolha)', 'por metro linear (R$/m)', 'por quilo (R$/kg)']);
     escrever('Descrição da malha', 'Malha');
     escrever('Largura útil (m)', '1,6');
     escrever('Custo da malha (R$, opcional)', '-3');
@@ -621,5 +621,51 @@ describe('PainelDePlanejamento — o custo do tecido', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-50/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Confirmado — ordem OP-49/ }));
     expect(screen.getByRole('region', { name: 'Custo do tecido' })).toHaveTextContent('Este plano é de antes da estimativa de custo do tecido');
+  });
+});
+
+describe('PainelDePlanejamento — os campos e as etapas na tela', () => {
+  it('o obrigatório é marcado; o erro do campo aparece junto dele depois de visitado, e some quando corrigido', () => {
+    abrir();
+    etapa('2. Ordem');
+    const codigo = screen.getByLabelText('Código da ordem');
+    expect(codigo).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByLabelText('Produto')).not.toHaveAttribute('aria-required');
+    // Antes de passar pelo campo, nada de vermelho nele (a lista "falta" da etapa já diz o que falta).
+    expect(codigo).not.toHaveAttribute('aria-invalid');
+    fireEvent.blur(codigo);
+    expect(codigo).toHaveAttribute('aria-invalid', 'true');
+    expect(codigo).toHaveAccessibleDescription('Preencha "Código da ordem".');
+    escrever('Código da ordem', 'OP-9');
+    expect(codigo).not.toHaveAttribute('aria-invalid');
+    expect(codigo).not.toHaveAccessibleDescription();
+  });
+
+  it('as etapas mostram o estado (dados completos ou falta dado) na dica, sem mudar o nome do botão', () => {
+    abrir();
+    expect(screen.getByRole('button', { name: '1. Molde' })).toHaveAttribute('title', 'Etapa com os dados completos');
+    expect(screen.getByRole('button', { name: '2. Ordem' })).toHaveAttribute('title', 'Falta dado nesta etapa (a lista está nela)');
+    preencherOrdemEMalha();
+    expect(screen.getByRole('button', { name: '2. Ordem' })).toHaveAttribute('title', 'Etapa com os dados completos');
+    expect(screen.getByRole('button', { name: '3. Malha e rolos' })).toHaveAttribute('title', 'Etapa com os dados completos');
+    expect(screen.getByRole('button', { name: '6. Revisar e confirmar' })).not.toHaveAttribute('title');
+  });
+
+  it('o risco informado sem a largura: a mensagem cita o campo certo, "Largura ocupada do risco (m)"', () => {
+    abrir();
+    preencherOrdemEMalha();
+    etapa('4. Risco e enfesto');
+    fireEvent.click(screen.getByLabelText(/Informar um risco existente/));
+    escrever('Comprimento do risco (m)', '1,3');
+    expect(screen.getByRole('alert')).toHaveTextContent('Preencha "Largura ocupada do risco (m)".');
+  });
+
+  it('uma ação principal por etapa: o Seguir nas primeiras, o Calcular na etapa 4', () => {
+    abrir();
+    expect(screen.getByRole('button', { name: 'Seguir' })).toHaveClass('botao-primario');
+    preencherOrdemEMalha();
+    etapa('4. Risco e enfesto');
+    expect(screen.getByRole('button', { name: 'Calcular as alternativas' })).toHaveClass('botao-primario');
+    expect(screen.getByRole('button', { name: 'Seguir' })).not.toHaveClass('botao-primario');
   });
 });

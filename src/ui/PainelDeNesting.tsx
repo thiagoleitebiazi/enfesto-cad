@@ -132,7 +132,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                   placeholder="Máximo possível"
                 />
               </label>
-              <p className="legenda-inline">
+              <p className="nota-do-formulario">
                 O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por
                 posicionar.
               </p>
@@ -142,7 +142,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                     <input type="checkbox" checked={abrirSimetrias} onChange={(e) => setAbrirSimetrias(e.target.checked)} />
                     Abrir as peças com linha de simetria
                   </label>
-                  <p className="legenda-inline">
+                  <p className="nota-do-formulario">
                     {abrirSimetrias
                       ? 'A peça dobrada entra no encaixe aberta, inteira. Ao aplicar, passa a ser a peça inteira (Ctrl+Z desfaz).'
                       : 'A peça com linha de simetria entra como está desenhada: meia peça.'}
@@ -155,7 +155,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                     <input type="checkbox" checked={todosOsTamanhos} onChange={(e) => setTodosOsTamanhos(e.target.checked)} />
                     Encaixar todos os tamanhos das peças graduadas
                   </label>
-                  <p className="legenda-inline">
+                  <p className="nota-do-formulario">
                     {todosOsTamanhos
                       ? 'Cada tamanho entra como uma peça própria. Ao aplicar o encaixe, as peças graduadas passam a ser essas peças, sem graduação (Ctrl+Z desfaz).'
                       : 'Só o tamanho base de cada peça graduada entra no encaixe.'}
@@ -188,11 +188,11 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                   ))}
                 </tbody>
               </table>
-              <p className="legenda-inline">
+              <p className="nota-do-formulario">
                 Só informativo — ajuste pelo painel "Propriedades" antes de calcular, se precisar.
               </p>
               {props.sentidoDoTecido && (
-                <p className="legenda-inline">
+                <p className="nota-do-formulario">
                   O tecido “{props.sentidoDoTecido.nome}” {props.sentidoDoTecido.sentido}: o encaixe não vira peças 180° nem 270°,
                   para todas ficarem no mesmo sentido.
                 </p>

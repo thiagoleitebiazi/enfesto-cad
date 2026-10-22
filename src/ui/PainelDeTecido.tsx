@@ -181,7 +181,7 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
             value={campos.unidadeDoCusto}
             onChange={(e) => setCampos({ ...campos, unidadeDoCusto: e.target.value as UnidadeDoCusto | '' })}
           >
-            <option value="">(escolha, se informar o custo)</option>
+            <option value="">(escolha)</option>
             {(Object.keys(ROTULO_DA_UNIDADE_DO_CUSTO) as UnidadeDoCusto[]).map((u) => (
               <option key={u} value={u}>
                 {ROTULO_DA_UNIDADE_DO_CUSTO[u]}
@@ -236,14 +236,16 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
             onChange={(e) => setCampos({ ...campos, observacoes: e.target.value })}
           />
         </label>
-        {erro && <p className="mensagem-de-erro">{erro}</p>}
-        <div className="acoes-da-sobreposicao">
-          <button type="button" onClick={props.onFechar}>
-            Cancelar
-          </button>
-          <button type="button" onClick={salvar} className="botao-primario">
-            Salvar tecido
-          </button>
+        <div className="rodape-do-formulario">
+          {erro && <p className="mensagem-de-erro">{erro}</p>}
+          <div className="acoes-da-sobreposicao">
+            <button type="button" onClick={props.onFechar}>
+              Cancelar
+            </button>
+            <button type="button" onClick={salvar} className="botao-primario">
+              Salvar tecido
+            </button>
+          </div>
         </div>
       </form>
     </Sobreposicao>
