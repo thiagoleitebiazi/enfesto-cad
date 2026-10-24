@@ -6,6 +6,7 @@ import type { PlanoDeCorte } from './planoDeCorte';
 import type { PlanoGuardado } from './planejamento';
 import type { FichaTecnica } from './fichaTecnica';
 import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
+import type { Montagem3D } from './montagem3d';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -102,6 +103,8 @@ export interface Projeto {
   readonly fichaTecnica?: FichaTecnica;
   /** As regras de caimento da recomendação de tamanho (a folga de cada ponto de medida, ADR 0110). */
   readonly regrasDeCaimento?: RegrasDeCaimento;
+  /** O provador 3D: o manequim, onde vai cada peça, as costuras, o tecido e as cores (ADR 0111). */
+  readonly montagem3d?: Montagem3D;
 }
 
 /**
@@ -196,6 +199,11 @@ export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, ago
 }
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;
+
+/** O projeto com a montagem do provador 3D. */
+export function definirMontagem3d(projeto: Projeto, montagem: Montagem3D, agoraIso: string): Projeto {
+  return { ...projeto, montagem3d: montagem, modificadoEmIso: agoraIso };
+}
 
 /** O projeto com as regras de caimento da recomendação de tamanho. */
 export function definirRegrasDeCaimento(projeto: Projeto, regras: RegrasDeCaimento, agoraIso: string): Projeto {

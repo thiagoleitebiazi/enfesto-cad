@@ -158,7 +158,8 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor, definirFichaTecnica, definirRegrasDeCaimento } from './domain/projeto';
+import { definirAutor, definirFichaTecnica, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { lerMontagem3d, type Montagem3D } from './domain/montagem3d';
 import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
 import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica } from './domain/fichaTecnica';
 import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
@@ -169,6 +170,7 @@ import { PainelDeColecoes, type ParteDaColecao } from './ui/PainelDeColecoes';
 import { avisoDePrazos, diaDe } from './domain/colecoes';
 import { PainelDaFotoParaMolde } from './ui/PainelDaFotoParaMolde';
 import { PainelDeRecomendacaoDeTamanho, type ParteDaRecomendacao } from './ui/PainelDeRecomendacaoDeTamanho';
+import { PainelDoProvador3D } from './ui/PainelDoProvador3D';
 import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
 import { paraODesenho, type MoldeReconhecido } from './domain/digitalizacao';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
@@ -1764,6 +1766,27 @@ export default function App(): React.JSX.Element {
     },
     [persistirProjeto],
   );
+
+  // ---- O provador 3D (aba Conferência › 3D, ADR 0111): a montagem vai para o projeto; a simulação, não.
+  const [mostrarProvador3D, setMostrarProvador3D] = useState(false);
+  const guardarMontagem3d = useCallback(
+    (montagem: Montagem3D) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirMontagem3d(atual, montagem, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+  const salvarArquivoDoProvador = useCallback(async (nome: string, bytes: ArrayBuffer): Promise<string | null> => {
+    const api = window.enfestoCad;
+    if (!api) {
+      window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+      return null;
+    }
+    return api.salvarArquivo(nome, bytes);
+  }, []);
 
   // ---- O molde da foto (aba Produção, ADR 0109): a peça nova vai depois das outras, com os furos, os piques e o fio.
   const [mostrarMoldeDaFoto, setMostrarMoldeDaFoto] = useState(false);
@@ -4490,6 +4513,7 @@ export default function App(): React.JSX.Element {
         onAbrirDesenhoTecnico={() => abrirDesenhoTecnico()}
         onAbrirColecoes={() => abrirColecoes('mix')}
         onAbrirRecomendacaoDeTamanho={setRecomendacaoAberta}
+        onAbrirProvador3D={() => setMostrarProvador3D(true)}
         onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
@@ -4650,6 +4674,20 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {mostrarProvador3D && (
+        <PainelDoProvador3D
+          pecas={pecas}
+          montagemGuardada={lerMontagem3d(projetoAtual.montagem3d)}
+          ficha={lerFichaTecnica(projetoAtual.fichaTecnica)}
+          regrasDeCaimento={lerRegrasDeCaimento(projetoAtual.regrasDeCaimento)}
+          imagens={imagensDoProjeto(projetoAtual)}
+          nomeDoModelo={projetoAtual.nome}
+          onGuardar={guardarMontagem3d}
+          onSalvarArquivo={salvarArquivoDoProvador}
+          novoId={() => `costura-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          onFechar={() => setMostrarProvador3D(false)}
         />
       )}
       {recomendacaoAberta && (

@@ -135,6 +135,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirColecoes: () => void;
   /** Modelo > Loja: a recomendação de tamanho e o guia de medidas (ADR 0110) — a mesma janela, na aba pedida. */
   readonly onAbrirRecomendacaoDeTamanho: (parte: 'recomendar' | 'guia') => void;
+  /** Conferência > 3D: o provador 3D — as peças num manequim, costuradas e caindo pelo tecido (ADR 0111). */
+  readonly onAbrirProvador3D: () => void;
   /** Modelo > Desenho técnico: o croqui de frente e costas da ficha (ADR 0107). */
   readonly onAbrirDesenhoTecnico: () => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
@@ -1776,6 +1778,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={props.onEntrarModoCotaRaio}
                   />
                 </div>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="3D">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Provador', '3D']}
+                  icone="provador-3d"
+                  dica="Provador 3D: as peças num manequim feito pelas medidas, costuradas e caindo pelo peso, pela elasticidade e pela rigidez do tecido — com as cores, as estampas, o mapa de tensão e a imagem para o catálogo"
+                  falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                  onClick={props.onAbrirProvador3D}
+                />
               </div>
             </>
           )}

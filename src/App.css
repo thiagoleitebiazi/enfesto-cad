@@ -3513,6 +3513,279 @@ input[type='radio'] {
   color: var(--erro-texto);
 }
 
+/* O provador 3D (ADR 0111): o manequim num fundo de estúdio à esquerda; os controles em abas à direita. */
+.sobreposicao-painel:has(.painel-do-provador) {
+  width: min(1280px, 97vw);
+  max-width: 97vw;
+}
+
+.painel-do-provador {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.05fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.vista-do-provador {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.barra-do-provador {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.separador-do-provador {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--cinza-300);
+}
+
+.opcao-do-provador {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.canvas-do-provador {
+  width: 100%;
+  height: min(58vh, 560px);
+  min-height: 300px;
+  border: 1px solid var(--marca-800);
+  border-radius: var(--raio-md);
+  background: radial-gradient(ellipse at 50% 35%, #ffffff 0%, #e9edf3 55%, #c9d1dc 100%);
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas-do-provador:active {
+  cursor: grabbing;
+}
+
+.status-do-provador {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 4px solid var(--cinza-400);
+  border-radius: var(--raio-sm);
+  background: var(--cinza-50);
+  font-size: 13px;
+}
+
+.status-do-provador.status-costurando,
+.status-do-provador.status-caindo {
+  border-left-color: var(--grupo-1);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.status-do-provador.status-assentou {
+  border-left-color: var(--grupo-6);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+  font-weight: 600;
+}
+
+.faixa-de-erro-do-provador {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--erro-borda);
+  border-left: 5px solid var(--erro-forte);
+  border-radius: var(--raio-md);
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+  font-weight: 600;
+}
+
+.legenda-da-tensao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.legenda-da-tensao span {
+  padding: 2px 8px;
+  border-radius: var(--raio-sm);
+  color: #1d2128;
+}
+
+.controles-do-provador {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+
+.secao-do-provador {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.secao-do-provador h4 {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--marca-800);
+}
+
+.cartao-da-peca-3d {
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-200);
+  border-left: 5px solid var(--grupo-1);
+  border-radius: var(--raio-md);
+  background: var(--cinza-0);
+}
+
+.cartao-da-peca-3d.peca-fora {
+  border-left-color: var(--cinza-300);
+  background: var(--cinza-50);
+  color: var(--cinza-600);
+}
+
+.titulo-da-peca-3d {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.titulo-da-peca-3d input[type='color'] {
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-sm);
+}
+
+.campos-da-peca-3d {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 10px;
+}
+
+.campos-da-peca-3d label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--cinza-700);
+}
+
+.campos-da-peca-3d input[type='number'],
+.campos-da-peca-3d input:not([type]),
+.campos-da-peca-3d input[inputmode='decimal'] {
+  width: 76px;
+}
+
+.lista-de-costuras {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.lista-de-costuras li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.lista-de-costuras li small {
+  flex-basis: 100%;
+  color: var(--erro-texto);
+}
+
+.lista-de-costuras li.costura-com-problema > span {
+  color: var(--erro-texto);
+}
+
+.nova-costura {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lado-da-nova-costura {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--cinza-200);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.lado-da-nova-costura label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.contorno-para-costura {
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  border-radius: var(--raio-sm);
+}
+
+.ponto-para-costura {
+  cursor: pointer;
+}
+
+.pontos-da-nova-costura {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.pontos-da-nova-costura input {
+  width: 64px;
+}
+
+.campos-do-manequim,
+.campos-do-tecido {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.regua-do-tecido input[type='range'] {
+  width: 100%;
+}
+
+.pontas-da-regua {
+  display: flex;
+  justify-content: space-between;
+  color: var(--cinza-600);
+}
+
+@media (max-width: 900px) {
+  .painel-do-provador {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .controles-do-provador {
+    max-height: none;
+  }
+}
+
 /* A recomendação de tamanho (ADR 0110): a faixa dos tamanhos colorida, a letra grande e a comparação por ponto. */
 .sobreposicao-painel:has(.painel-da-recomendacao) {
   width: min(1120px, 96vw);

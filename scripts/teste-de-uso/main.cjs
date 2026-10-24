@@ -2,7 +2,8 @@
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
  * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
- * uma coleção, cria uma peça pela foto e recomenda o tamanho pelas medidas do corpo (com o guia de medidas) — com
+ * uma coleção, cria uma peça pela foto, recomenda o tamanho pelas medidas do corpo (com o guia de medidas) e veste
+ * uma saia no provador 3D (costurada, caída, com o mapa de tensão, a estampa e a imagem) — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -20,6 +21,9 @@ const path = require('path');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const SAIDA = path.resolve(process.env.SAIDA_DO_TESTE || path.join(process.cwd(), 'uso'));
 const DXF = path.join(__dirname, 'molde-de-teste.dxf');
+const SAIA_DXF = path.join(__dirname, 'saia-de-teste.dxf');
+/** O arquivo que a janela de abrir devolve (o DXF de teste; a saia, na etapa do provador 3D). */
+let arquivoParaAbrir = DXF;
 const NO_MAC = process.platform === 'darwin';
 const TECLA_DE_COMANDO = NO_MAC ? 'meta' : 'control';
 
@@ -67,7 +71,7 @@ function aplicarHomografiaDoTeste(h, x, y) {
 // Uma pasta de dados só do teste, antes de o programa começar (ele lê o estado da abertura ao carregar).
 const DADOS = fs.mkdtempSync(path.join(os.tmpdir(), 'enfesto-cad-uso-'));
 app.setPath('userData', DADOS);
-dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [DXF] });
+dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [arquivoParaAbrir] });
 dialog.showSaveDialog = async (opcoes) => ({ canceled: false, filePath: path.join(SAIDA, path.basename((opcoes && opcoes.defaultPath) || 'saida.pdf')) });
 require(path.join(RAIZ, 'dist-electron', 'main.js'));
 
@@ -794,6 +798,78 @@ async function principal() {
   await foto('33-modelo-em-1280.png');
   win.setBounds({ x: 0, y: 0, width: 1440, height: 900 });
   await espera(800);
+
+  // 13. O provador 3D (ADR 0111): a saia de teste (frente e costas) importada; Conferência › Provador 3D; as peças na
+  // frente e nas costas; as costuras sugeridas (as duas laterais); simular até assentar; o mapa de tensão; a foto como
+  // estampa localizada; a imagem das três vistas; a montagem guardada no projeto.
+  arquivoParaAbrir = SAIA_DXF;
+  await aba('Início');
+  await botao('Importar DXF');
+  await espera(2500);
+  conferir('a saia de teste entra (2 peças)', (await lista()).filter((n) => n.startsWith('saia-de-teste-')).length === 2, JSON.stringify(await lista()));
+  await aba('Conferência');
+  await botao('Provador 3D');
+  await espera(2000);
+  conferir('abre o provador 3D', (await janela()) === 'Provador 3D', await janela());
+  await noCampo('Onde vai saia-de-teste-1', 'frente');
+  await noCampo('Onde vai saia-de-teste-2', 'costas');
+  await noCampo('Onde vai Frente da foto', 'fora');
+  await espera(800);
+  await foto('34-provador-arrumado.png');
+  await parteDaJanela('Costuras');
+  await botaoNaJanela('Sugerir costuras');
+  await espera(500);
+  const costurasNaLista = await js(`Array.from(document.querySelectorAll('[role=dialog] .lista-de-costuras li > span')).map(s => s.textContent).join(' | ')`);
+  conferir('as costuras sugeridas: as duas laterais da saia', costurasNaLista.split(' | ').length === 2 && costurasNaLista.includes('saia-de-teste-1') && costurasNaLista.includes('saia-de-teste-2'), costurasNaLista.slice(0, 200));
+  await botaoNaJanela('Simular');
+  let statusDoProvador = '';
+  for (let i = 0; i < 90; i++) {
+    await espera(500);
+    statusDoProvador = await js(`((document.querySelector('[role=dialog] .status-do-provador') || {}).textContent || '')`);
+    if (/^(Assentou|Parou)/.test(statusDoProvador)) break;
+  }
+  const aberturaDaCostura = Number((statusDoProvador.match(/maior abertura é de (\d+) mm/) || [])[1]);
+  const [, deCm, ateCm] = (statusDoProvador.match(/vai de (\d+) a (\d+) cm do chão/) || []).map(Number);
+  const avisoDeQueda = await js(`((document.querySelector('[role=dialog] .faixa-de-erro-do-provador') || {}).textContent || '')`);
+  conferir(
+    'simula até assentar: as costuras fechadas (até 6 mm) e a saia no corpo — da cintura (até 106 cm) para baixo, sem passar do quadril (o alto acima de 85 cm)',
+    statusDoProvador.startsWith('Assentou') && aberturaDaCostura <= 6 && ateCm > 85 && ateCm <= 106 && deCm < ateCm && avisoDeQueda === '',
+    `${statusDoProvador} ${avisoDeQueda}`,
+  );
+  await foto('35-provador-saia.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.trim() === 'Mapa de tensão').querySelector('input')`);
+  await espera(800);
+  const legenda = await js(`((document.querySelector('[role=dialog] .legenda-da-tensao') || {}).textContent || '')`);
+  conferir('o mapa de tensão, com a legenda', legenda.includes('repuxando'), legenda);
+  await foto('36-mapa-de-tensao.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.trim() === 'Mapa de tensão').querySelector('input')`);
+  await parteDaJanela('Peças');
+  const idDaImagem = await js(`((document.querySelector('[role=dialog] select[aria-label="Estampa de saia-de-teste-1"]') || { options: [] }).options[1] || {}).value || ''`);
+  await noCampo('Estampa de saia-de-teste-1', idDaImagem);
+  await espera(300);
+  await noCampo('Como vai a estampa de saia-de-teste-1', 'localizada');
+  await noCampo('Largura da estampa de saia-de-teste-1', '220');
+  await espera(1500);
+  await foto('37-provador-estampa.png');
+  await parteDaJanela('Imagem');
+  await botaoNaJanela('Salvar frente, lado e costas (PNG)');
+  await espera(2500);
+  const pngs = fs.readdirSync(SAIDA).filter((f) => f.startsWith('provador-3d-') && f.endsWith('-frente-lado-costas.png'));
+  const png = pngs[0] ? fs.readFileSync(path.join(SAIDA, pngs[0])) : null;
+  conferir('a imagem das três vistas foi gravada (PNG, 1800 de largura)', !!png && png.length > 20000 && png.subarray(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1800, `${JSON.stringify(pngs)} ${png ? png.length : 0} bytes`);
+  await fecharJanela();
+  await espera(1200);
+  const montagemGravada = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', f), 'utf8')))
+    .find((p) => p.montagem3d)?.montagem3d;
+  const posicoesGravadas = montagemGravada ? Object.values(montagemGravada.pecas).map((c) => c.posicao).filter((p) => p !== 'fora').sort() : [];
+  conferir(
+    'a montagem ficou no projeto: a frente e as costas, as 2 costuras, a estampa localizada',
+    !!montagemGravada && JSON.stringify(posicoesGravadas) === '["costas","frente"]' && montagemGravada.costuras.length === 2 && Object.values(montagemGravada.pecas).some((c) => c.estampa && c.estampa.modo === 'localizada'),
+    montagemGravada ? `${JSON.stringify(posicoesGravadas)}, ${montagemGravada.costuras.length} costura(s)` : 'sem montagem',
+  );
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

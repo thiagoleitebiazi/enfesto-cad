@@ -98,13 +98,13 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Manequim 3D com medidas ajustáveis (público-alvo, tabela de medidas) | ⬜ | L |
-| Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ⬜ | P (montagem e caimento aproximados) |
-| Simulação de caimento pelo peso, densidade e elasticidade; vincos e pontos de tensão | ⬜ | P (física simplificada — não substitui a peça-piloto) |
-| Editor das propriedades do tecido | ⬜ | L |
-| Cores, estampas (inclusive localizada), texturas, aviamentos no 3D | ⬜ | L |
-| Mudança no molde 2D refletida no 3D | ⬜ | P |
-| Imagens renderizadas para catálogo e aprovação | ⬜ | L (renderização simples) |
+| Manequim 3D com medidas ajustáveis (público-alvo, tabela de medidas) | ✅ (Conferência › Provador 3D: público, 10 medidas, o tamanho da ficha, ADR 0111) | — |
+| Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ✅ (as laterais e os ombros sugeridos; as outras clicando nos pontos; montagem aproximada, ADR 0111) | — |
+| Simulação de caimento pelo peso, densidade e elasticidade; vincos e pontos de tensão | 🟡 (física simplificada: peso, elasticidade, rigidez, atrito; o mapa de tensão; sem o tecido colidir consigo mesmo, vincos só na escala da malha, ADR 0111) | P (o resto da física — não substitui a peça-piloto) |
+| Editor das propriedades do tecido | ✅ (seis prontos e o personalizado, ADR 0111) | — |
+| Cores, estampas (inclusive localizada), texturas, aviamentos no 3D | ✅ (a cor por peça; a estampa corrida ou localizada pelas imagens do modelo; os furos como botões; a textura é uma imagem corrida, ADR 0111) | — |
+| Mudança no molde 2D refletida no 3D | ✅ (o provador monta pelas peças de agora; a costura avisa quando o molde mudou, ADR 0111) | — |
+| Imagens renderizadas para catálogo e aprovação | ✅ (PNG de uma vista, ou frente, lado e costas, ADR 0111) | — |
 
 ## 7. Sala de corte
 

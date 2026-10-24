@@ -90,6 +90,7 @@ function propsBase(): Props {
     onAbrirDesenhoTecnico: vi.fn(),
     onAbrirColecoes: vi.fn(),
     onAbrirRecomendacaoDeTamanho: vi.fn(),
+    onAbrirProvador3D: vi.fn(),
     onAbrirMoldeDaFoto: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
@@ -249,13 +250,16 @@ describe('BarraDeFerramentas: abas', () => {
     });
   });
 
-  it('Conferência: Perímetro e Distância', () => {
-    renderizar('Conferência');
+  it('Conferência: Perímetro, Distância e o provador 3D', () => {
+    const props = renderizar('Conferência');
 
     expect(gruposDaAba()).toEqual({
       Perímetro: ['Conferir', 'Cota perímetro', 'Perímetro', 'Comparar perímetros'],
       Distância: ['Cota distância', 'Distância', 'Comparar distância', 'Horizontal / Vertical', 'Ângulo', 'Raio'],
+      '3D': ['Provador 3D'],
     });
+    fireEvent.click(botao('Provador 3D'));
+    expect(props.onAbrirProvador3D).toHaveBeenCalledTimes(1);
   });
 
   it('Modelo: Informações, Operações, Ficha técnica e Loja', () => {
