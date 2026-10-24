@@ -26,13 +26,13 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Coleções (estação, ano, datas), vários projetos dentro de uma estrutura | ⬜ (só a Biblioteca de projetos) | L |
-| Mix de produtos num quadro (cores, formas, tecidos, categorias) | ⬜ | L |
-| Fluxo por etapas (criação → modelagem → piloto → aprovação → produção), responsáveis e prazos por modelo | ⬜ (projeto só "em edição/arquivado") | L |
-| Tarefas e pendências por pessoa; avisos de prazo | ⬜ | L (avisos dentro do programa; e-mail/celular: S) |
-| Aprovação da peça-piloto (aprovar / pedir alteração), comentários e revisões com histórico | 🟡 (histórico de versões do projeto) | L |
-| Painéis de andamento e atrasos; linha do tempo do lançamento | ⬜ | L |
-| Ligação da coleção com o desenho, o molde e o encaixe | 🟡 (o projeto já liga molde, encaixe e corte) | L |
+| Coleções (estação, ano, datas), vários projetos dentro de uma estrutura | ✅ (ADR 0108) | — |
+| Mix de produtos num quadro (cores, formas, tecidos, categorias) | ✅ (cartões com o croqui, resumo e filtros, ADR 0108) | — |
+| Fluxo por etapas (criação → modelagem → piloto → aprovação → produção), responsáveis e prazos por modelo | ✅ (com o quadro das etapas, ADR 0108) | — |
+| Tarefas e pendências por pessoa; avisos de prazo | ✅ (avisos dentro do programa, na barra de status, ADR 0108) | S (e-mail/celular) |
+| Aprovação da peça-piloto (aprovar / pedir alteração), comentários e revisões com histórico | ✅ (ADR 0108; e a aprovação da ficha, ADR 0105) | — |
+| Painéis de andamento e atrasos; linha do tempo do lançamento | ✅ (ADR 0108) | — |
+| Ligação da coleção com o desenho, o molde e o encaixe | ✅ (o modelo liga ao projeto: molde, encaixe, ficha e croqui, ADR 0108) | — |
 | 100% na nuvem, colaboração simultânea entre pessoas | ⬜ | S (exige servidor; o programa é local) |
 
 ## 2. Desenho técnico, ficha técnica e pré-custo

@@ -23,6 +23,9 @@ interface BarraDeStatusProps {
   /** A fila de encaixes (ADR 0102): quantos calculando, aguardando e prontos para aplicar; sem nada, não aparece. */
   readonly fila?: { readonly calculando: number; readonly aguardando: number; readonly prontos: number } | null;
   readonly onAbrirFila?: () => void;
+  /** Os prazos das coleções (ADR 0108): atrasados e nos próximos 7 dias; sem nenhum, não aparece. */
+  readonly prazos?: { readonly atrasados: number; readonly naSemana: number } | null;
+  readonly onAbrirPrazos?: () => void;
 }
 
 /** Medida em mm escrita na unidade das réguas, com vírgula; em cm, duas casas dão a mesma precisão de 0,1 mm. */
@@ -92,6 +95,19 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
             props.fila.aguardando > 0 ? `${props.fila.aguardando} aguardando` : null,
             props.fila.prontos > 0 ? `${props.fila.prontos} pronto(s) para aplicar` : null,
           ]
+            .filter((x) => x !== null)
+            .join(' · ')}
+        </button>
+      )}
+      {props.prazos && props.prazos.atrasados + props.prazos.naSemana > 0 && (
+        <button
+          type="button"
+          className={`indicador-de-prazos ${props.prazos.atrasados > 0 ? 'prazos-atrasados' : ''}`}
+          title="Abrir os prazos e as tarefas das coleções"
+          onClick={props.onAbrirPrazos}
+        >
+          Prazos:{' '}
+          {[props.prazos.atrasados > 0 ? `${props.prazos.atrasados} atrasado(s)` : null, props.prazos.naSemana > 0 ? `${props.prazos.naSemana} na semana` : null]
             .filter((x) => x !== null)
             .join(' · ')}
         </button>

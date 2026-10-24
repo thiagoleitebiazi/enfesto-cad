@@ -159,7 +159,8 @@ export type NomeDoIcone =
   | 'materiais'
   | 'ficha-tecnica'
   | 'pre-custo'
-  | 'desenho-tecnico';
+  | 'desenho-tecnico'
+  | 'colecoes';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -1028,6 +1029,13 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M4.5 2.5h8l3 3v12h-11z" />
       <path d="M12.5 2.5v3h3" />
       <path d="M7 8.5h6M7 11.5h6M7 14.5h4" />
+    </>
+  ),
+  colecoes: (
+    <>
+      <rect x="2.5" y="3" width="4.5" height="14" rx="0.8" />
+      <rect x="7.8" y="3" width="4.5" height="9" rx="0.8" />
+      <rect x="13.1" y="3" width="4.5" height="11.5" rx="0.8" />
     </>
   ),
   'desenho-tecnico': (

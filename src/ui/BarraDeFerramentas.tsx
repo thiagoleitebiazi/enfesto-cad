@@ -131,6 +131,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirVariantes: () => void;
   /** Modelo > Ficha técnica (ADR 0105) e Pré-custo (ADR 0106): a mesma janela, na aba pedida. */
   readonly onAbrirFichaTecnica: (parte: 'descricao' | 'precusto') => void;
+  /** Modelo > Coleções: o PLM local — o mix, as etapas, os prazos, a peça-piloto (ADR 0108). */
+  readonly onAbrirColecoes: () => void;
   /** Modelo > Desenho técnico: o croqui de frente e costas da ficha (ADR 0107). */
   readonly onAbrirDesenhoTecnico: () => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
@@ -1843,6 +1845,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={props.onAbrirBiblioteca}
                   />
                 </div>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Coleção">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Coleções"
+                  icone="colecoes"
+                  dica="Coleções: o mix de cada coleção, o fluxo por etapas (criação → produção), a aprovação da peça-piloto, as tarefas e os prazos, o andamento e a linha do tempo"
+                  onClick={props.onAbrirColecoes}
+                />
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Ficha técnica">

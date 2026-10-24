@@ -30,6 +30,7 @@ import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
 import { lerFilaDeEncaixes, VERSAO_DA_FILA } from '../src/domain/filaDeEncaixes';
 import { lerBibliotecaDeMateriais, VERSAO_DA_BIBLIOTECA_DE_MATERIAIS } from '../src/domain/materiais';
+import { lerColecoes, VERSAO_DAS_COLECOES } from '../src/domain/colecoes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
@@ -821,6 +822,40 @@ ipcMain.handle('materiais-gravar', async (_evento, bruto: unknown) => {
     gravarComAnterior(arquivoDosMateriais(), JSON.stringify(lido.biblioteca, null, 2), {
       idDoArquivo: 'biblioteca-de-materiais',
       versaoNova: VERSAO_DA_BIBLIOTECA_DE_MATERIAIS,
+      pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
+      agoraIso: new Date().toISOString(),
+    }),
+  );
+  return true;
+});
+
+/**
+ * As coleções (ADR 0108), em <userData>/colecoes.json: o PLM local. Lidas e gravadas como o cadastro e a biblioteca
+ * (a versão anterior ao lado; o arquivo ilegível vai para as cópias de segurança na primeira gravação).
+ */
+function arquivoDasColecoes(): string {
+  return path.join(app.getPath('userData'), 'colecoes.json');
+}
+
+ipcMain.handle('colecoes-ler', async () => {
+  const lido = await lerComRecuperacao(arquivoDasColecoes());
+  if (lido.situacao === 'ausente') return null;
+  if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivoDasColecoes()) };
+  if (lido.situacao === 'recuperado') {
+    registrarDiagnostico(`colecoes-recuperadas-da-versao-anterior motivo=${lido.motivo}`);
+    return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
+  }
+  return lido.conteudo;
+});
+
+ipcMain.handle('colecoes-gravar', async (_evento, bruto: unknown) => {
+  const lido = lerColecoes(bruto);
+  if (lido.descartados.length > 0) throw new Error(`As coleções não foram gravadas: ${lido.descartados.join(' ')}`);
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await filaDeGravacao('colecoes', () =>
+    gravarComAnterior(arquivoDasColecoes(), JSON.stringify(lido.arquivo, null, 2), {
+      idDoArquivo: 'colecoes',
+      versaoNova: VERSAO_DAS_COLECOES,
       pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
       agoraIso: new Date().toISOString(),
     }),

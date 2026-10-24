@@ -1,7 +1,8 @@
 /*
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
- * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe — com
+ * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
+ * uma coleção — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -530,6 +531,55 @@ async function principal() {
     'o desenho ficou guardado na ficha do projeto (versão 2, em rascunho)',
     !!fichaComDesenho && fichaComDesenho.versao === 2 && fichaComDesenho.desenho.elementos.length === 8,
     fichaComDesenho ? `versão ${fichaComDesenho.versao}, ${fichaComDesenho.desenho.elementos.length} elementos` : 'sem desenho',
+  );
+
+  // 10. As coleções (ADR 0108): uma coleção nova; um modelo ligado ao projeto aberto (o croqui aparece no cartão);
+  // uma tarefa atrasada; o aviso de prazos na barra de status abre os prazos; tudo gravado em colecoes.json.
+  await botao('Coleções');
+  await espera(800);
+  conferir('abre as coleções', (await janela()) === 'Coleções', await janela());
+  await botaoNaJanela('Nova coleção');
+  await noCampo('Nome da coleção *', 'Coleção do teste');
+  await noCampo('Lançamento', '2027-01-15');
+  await botaoNaJanela('Guardar a coleção');
+  await espera(500);
+  await botaoNaJanela('Novo modelo');
+  await espera(500);
+  await noCampo('Categoria', 'Camiseta');
+  await botaoNaJanela('Guardar o modelo');
+  await espera(300);
+  await botaoNaJanela('Ligar o projeto aberto');
+  await espera(300);
+  await noCampo('Nova tarefa', 'Comprar o aviamento');
+  await noCampo('Prazo da tarefa', '2026-01-02');
+  await botaoNaJanela('Pôr a tarefa');
+  await espera(500);
+  const croquiNoModelo = Number(await js(`document.querySelectorAll('[role=dialog] .detalhe-do-modelo .previa-do-desenho svg').length`));
+  conferir('o modelo ligado ao projeto aberto mostra o croqui da ficha', croquiNoModelo === 1, `${croquiNoModelo} croqui(s)`);
+  await foto('24-modelo-da-colecao.png');
+  await botaoNaJanela('← Voltar ao mix');
+  await espera(300);
+  const cartao = await js(`((document.querySelector('[role=dialog] .cartao-do-modelo') || {}).textContent || '')`);
+  const croquiNoCartao = Number(await js(`document.querySelectorAll('[role=dialog] .cartao-do-modelo svg').length`));
+  conferir('o mix mostra o cartão com o croqui, a categoria e a etapa', croquiNoCartao === 1 && cartao.includes('Camiseta') && cartao.includes('Criação'), cartao.slice(0, 120));
+  await foto('25-mix-da-colecao.png');
+  await fecharJanela();
+  await espera(500);
+  const prazosNaBarra = await js(`((document.querySelector('.barra-de-status .indicador-de-prazos') || {}).textContent || '')`);
+  conferir('a barra de status avisa o prazo atrasado', prazosNaBarra === 'Prazos: 1 atrasado(s)', prazosNaBarra);
+  await clicarEm(`document.querySelector('.barra-de-status .indicador-de-prazos')`);
+  await espera(600);
+  const linhaDoPrazo = await js(`((document.querySelector('[role=dialog] table tbody tr') || {}).textContent || '')`);
+  conferir('o aviso abre os prazos da coleção, com a tarefa atrasada', (await janela()) === 'Coleções' && linhaDoPrazo.includes('Comprar o aviamento') && linhaDoPrazo.includes('atrasado'), linhaDoPrazo.slice(0, 120));
+  await foto('26-prazos.png');
+  await fecharJanela();
+  await espera(300);
+  const colecoesGravadas = JSON.parse(fs.readFileSync(path.join(DADOS, 'colecoes.json'), 'utf8'));
+  const modeloGravado = colecoesGravadas.colecoes[0] && colecoesGravadas.colecoes[0].modelos[0];
+  conferir(
+    'a coleção ficou gravada: o modelo com a categoria, o projeto ligado e a tarefa',
+    colecoesGravadas.colecoes.length === 1 && !!modeloGravado && modeloGravado.categoria === 'Camiseta' && !!modeloGravado.projetoId && modeloGravado.tarefas.length === 1,
+    JSON.stringify(colecoesGravadas.colecoes.map((c) => ({ nome: c.nome, modelos: c.modelos.map((m) => [m.nome, m.categoria, !!m.projetoId, m.tarefas.length]) }))),
   );
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));

@@ -163,6 +163,9 @@ import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecni
 import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
 import { PainelDoDesenhoTecnico } from './ui/PainelDoDesenhoTecnico';
 import { svgDoDesenho } from './formats/desenho-exportacao';
+import { useColecoes } from './ui/useColecoes';
+import { PainelDeColecoes, type ParteDaColecao } from './ui/PainelDeColecoes';
+import { avisoDePrazos, diaDe } from './domain/colecoes';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './ui/PainelDaFichaTecnica';
 import { gerarPdfDaFichaTecnica } from './formats/ficha-exportacao';
@@ -393,6 +396,9 @@ import {
   type TipoDeEvento,
 } from './domain/projeto';
 import './App.css';
+
+/** O dia de hoje, no fuso do computador ("AAAA-MM-DD"), para os prazos das coleções. */
+const hojeLocal = (): string => diaDe(new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString());
 
 /** A hora e os ids da ficha técnica (fora do componente: a janela guarda pela mudança da função). */
 const agoraIsoDaFicha = (): string => new Date().toISOString();
@@ -733,6 +739,15 @@ export default function App(): React.JSX.Element {
   // A fila de encaixes (ADR 0102): lida do disco ao abrir e rodando em segundo plano enquanto o programa está aberto.
   const filaDeEncaixes = useFilaDeEncaixes(window.enfestoCad, criarWorkerDoEncaixe);
   const [mostrarFilaDeEncaixes, setMostrarFilaDeEncaixes] = useState(false);
+  // As coleções (ADR 0108): lidas ao abrir, para o aviso de prazos da barra de status.
+  const colecoes = useColecoes(window.enfestoCad);
+  const [colecoesAbertas, setColecoesAbertas] = useState<ParteDaColecao | null>(null);
+  // O dia de hoje muda com o programa aberto (de noite): conferido de hora em hora.
+  const [hoje, setHoje] = useState(hojeLocal);
+  useEffect(() => {
+    const t = setInterval(() => setHoje(hojeLocal()), 3_600_000);
+    return () => clearInterval(t);
+  }, []);
 
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   // O planejamento de corte: a janela e o cadastro de produção (lido ao abrir a janela).
@@ -1729,6 +1744,15 @@ export default function App(): React.JSX.Element {
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Desenho técnico (SVG) salvo em ${caminhoSalvo}`);
     },
     [projetoAtual, pecas, tecido, enfesto, registrarEventoEPersistir],
+  );
+
+  // ---- As coleções (aba Modelo, ADR 0108): a lista da Biblioteca para ligar os modelos aos projetos.
+  const abrirColecoes = useCallback(
+    (parte: ParteDaColecao = 'mix') => {
+      carregarListaDeProjetos();
+      setColecoesAbertas(parte);
+    },
+    [carregarListaDeProjetos],
   );
 
   // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
@@ -4407,6 +4431,7 @@ export default function App(): React.JSX.Element {
         onAbrirMateriais={abrirMateriais}
         onAbrirFichaTecnica={abrirFichaTecnica}
         onAbrirDesenhoTecnico={() => abrirDesenhoTecnico()}
+        onAbrirColecoes={() => abrirColecoes('mix')}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -4566,6 +4591,28 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {colecoesAbertas && (
+        <PainelDeColecoes
+          arquivo={colecoes.arquivo}
+          avisos={colecoes.avisos}
+          somenteLeitura={colecoes.somenteLeitura}
+          // O projeto aberto entra como está agora (a lista da Biblioteca pode ter a versão de antes dele).
+          projetos={[...projetos.filter((p) => p.id !== projetoAtual.id), projetoAtual]}
+          projetoAbertoId={projetoAtual.id}
+          hoje={hoje}
+          responsavelSugerido={projetoAtual.autor ?? ''}
+          parteInicial={colecoesAbertas}
+          agoraIso={agoraIsoDaFicha}
+          novoId={novoIdDaFicha}
+          onMudar={colecoes.mudar}
+          onAbrirProjeto={(id) => {
+            setColecoesAbertas(null);
+            abrirProjeto(id);
+          }}
+          onSalvarTexto={salvarTexto}
+          onFechar={() => setColecoesAbertas(null)}
         />
       )}
       {desenhoAberto && (
@@ -5907,6 +5954,8 @@ export default function App(): React.JSX.Element {
           prontos: concluidosSemAplicar(filaDeEncaixes.fila),
         }}
         onAbrirFila={abrirFilaDeEncaixes}
+        prazos={avisoDePrazos(colecoes.arquivo.colecoes, hoje)}
+        onAbrirPrazos={() => abrirColecoes('tarefas')}
         pontoReferencia={
           MODOS_COM_PONTO_DE_REFERENCIA.has(modo) && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!

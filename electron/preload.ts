@@ -71,6 +71,14 @@ const api = {
   async lerBibliotecaDeMateriais(): Promise<unknown> {
     return ipcRenderer.invoke('materiais-ler') as Promise<unknown>;
   },
+  /** As coleções como estão no disco (`null`: ainda não existem). Ler com `lerColecoes`. */
+  async lerColecoes(): Promise<unknown> {
+    return ipcRenderer.invoke('colecoes-ler') as Promise<unknown>;
+  },
+  /** Grava as coleções inteiras (o processo principal confere antes). */
+  async gravarColecoes(arquivo: unknown): Promise<boolean> {
+    return ipcRenderer.invoke('colecoes-gravar', arquivo) as Promise<boolean>;
+  },
   /** Grava a biblioteca de materiais inteira (o processo principal confere antes). */
   async gravarBibliotecaDeMateriais(biblioteca: unknown): Promise<boolean> {
     return ipcRenderer.invoke('materiais-gravar', biblioteca) as Promise<boolean>;

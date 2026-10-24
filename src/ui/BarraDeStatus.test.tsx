@@ -119,3 +119,29 @@ describe('motivoDoErroDeSalvar', () => {
     expect(screen.getByRole('button', { name: /^Fila:/ })).toHaveClass('fila-pronta');
   });
 });
+
+describe('BarraDeStatus — os prazos das coleções (ADR 0108)', () => {
+  it('aparece só com prazo atrasado ou na semana; vermelho com atraso; abre os prazos', () => {
+    let abriu = 0;
+    const base = {
+      cursorMundo: null,
+      transform: { escalaPxPorMm: 1, offsetXPx: 0, offsetYPx: 0 },
+      totalDePecas: 0,
+      pecasSelecionadas: 0,
+      problemas: [],
+      onAlternarValidacao: () => {},
+      unidade: 'mm' as const,
+      onAbrirPrazos: () => abriu++,
+    };
+    const { rerender } = render(<BarraDeStatus {...base} prazos={{ atrasados: 0, naSemana: 0 }} />);
+    expect(screen.queryByText(/^Prazos:/)).toBeNull();
+    rerender(<BarraDeStatus {...base} prazos={{ atrasados: 2, naSemana: 1 }} />);
+    const indicador = screen.getByRole('button', { name: /^Prazos:/ });
+    expect(indicador).toHaveTextContent('Prazos: 2 atrasado(s) · 1 na semana');
+    expect(indicador).toHaveClass('prazos-atrasados');
+    indicador.click();
+    expect(abriu).toBe(1);
+    rerender(<BarraDeStatus {...base} prazos={{ atrasados: 0, naSemana: 3 }} />);
+    expect(screen.getByRole('button', { name: /^Prazos:/ })).not.toHaveClass('prazos-atrasados');
+  });
+});
