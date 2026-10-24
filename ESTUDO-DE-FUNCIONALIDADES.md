@@ -88,10 +88,10 @@ inventa.
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
 | Foto do molde no desenho, com escala calibrada por dois pontos | ✅ (Imagens/Digitalizar) | — |
-| Correção de perspectiva e da lente | ⬜ | P (perspectiva pelas 4 marcas de um quadro; a lente, aproximada) |
-| Reconhecer sozinho o contorno e virar vetor editável | ⬜ | P (depende do contraste da foto) |
-| Reconhecer piques, furos e a linha do fio | ⬜ | P |
-| Vários moldes numa foto, cada um uma peça | ⬜ | P |
+| Correção de perspectiva e da lente | 🟡 (a perspectiva pelos 4 cantos da referência, ADR 0109; a lente, não) | P (a lente) |
+| Reconhecer sozinho o contorno e virar vetor editável | ✅ (o clique dentro do molde, com o limiar ajustável, ADR 0109) | — |
+| Reconhecer piques, furos e a linha do fio | ✅ (os piques em V, os furos redondos, o traço do fio; o fio também à mão, ADR 0109) | — |
+| Vários moldes numa foto, cada um uma peça | ✅ (um clique por molde, ADR 0109) | — |
 | Quadro de captura | ⬜ | H |
 
 ## 6. 3D

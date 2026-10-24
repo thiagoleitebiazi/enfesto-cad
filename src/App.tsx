@@ -166,6 +166,9 @@ import { svgDoDesenho } from './formats/desenho-exportacao';
 import { useColecoes } from './ui/useColecoes';
 import { PainelDeColecoes, type ParteDaColecao } from './ui/PainelDeColecoes';
 import { avisoDePrazos, diaDe } from './domain/colecoes';
+import { PainelDaFotoParaMolde } from './ui/PainelDaFotoParaMolde';
+import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
+import { paraODesenho, type MoldeReconhecido } from './domain/digitalizacao';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './ui/PainelDaFichaTecnica';
 import { gerarPdfDaFichaTecnica } from './formats/ficha-exportacao';
@@ -1744,6 +1747,44 @@ export default function App(): React.JSX.Element {
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Desenho técnico (SVG) salvo em ${caminhoSalvo}`);
     },
     [projetoAtual, pecas, tecido, enfesto, registrarEventoEPersistir],
+  );
+
+  // ---- O molde da foto (aba Produção, ADR 0109): a peça nova vai depois das outras, com os furos, os piques e o fio.
+  const [mostrarMoldeDaFoto, setMostrarMoldeDaFoto] = useState(false);
+  const criarPecaDaFoto = useCallback(
+    (d: { readonly nome: string; readonly tamanho: string; readonly quantidade: number; readonly molde: MoldeReconhecido }): string | null => {
+      try {
+        const ocupado = pecas.flatMap((p) => linhaDeCorteDaPeca(p));
+        const caixaDasPecas = ocupado.length > 0 ? retanguloEnvolvente(ocupado) : null;
+        const r = paraODesenho(d.molde, caixaDasPecas ? ponto(caixaDasPecas.minX, caixaDasPecas.maxY + 50) : ponto(20, 20));
+        const c = retanguloEnvolvente(r.contorno);
+        // Sem o fio achado nem marcado, ele fica deitado (na horizontal da tela), no meio da peça.
+        const fio = r.fio ?? { inicio: ponto((c.minX + c.maxX) / 2, c.minY + 0.15 * (c.maxY - c.minY)), fim: ponto((c.minX + c.maxX) / 2, c.maxY - 0.15 * (c.maxY - c.minY)) };
+        const molde = criarMolde(
+          {
+            nome: d.nome,
+            referencia: '',
+            tamanho: d.tamanho,
+            quantidade: d.quantidade,
+            contorno: r.contorno,
+            furos: r.furos,
+            piques: r.piques.map((p) => ({ id: proximoId(), posicao: p.posicao, indiceAresta: p.indiceAresta })),
+            linhaDeFio: fio,
+          },
+          proximoId(),
+        );
+        const novasPecas = [...pecas, molde];
+        aplicarMudanca(novasPecas);
+        setSelecionadoId(molde.id);
+        // A janela fica aberta: a mesma foto pode ter outros moldes (cada um uma peça).
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Molde da foto: “${molde.nome}”, ${r.furos.length} furo(s), ${r.piques.length} pique(s)`);
+        mudarVistaPara(enquadrarRetanguloDoMundo(retanguloEnvolvente(molde.contorno), tamanhoDaTela));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [pecas, tecido, enfesto, aplicarMudanca, registrarEventoEPersistir, mudarVistaPara, tamanhoDaTela],
   );
 
   // ---- As coleções (aba Modelo, ADR 0108): a lista da Biblioteca para ligar os modelos aos projetos.
@@ -4432,6 +4473,7 @@ export default function App(): React.JSX.Element {
         onAbrirFichaTecnica={abrirFichaTecnica}
         onAbrirDesenhoTecnico={() => abrirDesenhoTecnico()}
         onAbrirColecoes={() => abrirColecoes('mix')}
+        onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -4591,6 +4633,16 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {mostrarMoldeDaFoto && (
+        <PainelDaFotoParaMolde
+          imagens={imagens}
+          onTrazerFoto={() => arquivoDeImagemRef.current?.click()}
+          onCriarPeca={criarPecaDaFoto}
+          lerPixels={pixelsDaImagem}
+          paraDataUrl={dataUrlDosPixels}
+          onFechar={() => setMostrarMoldeDaFoto(false)}
         />
       )}
       {colecoesAbertas && (

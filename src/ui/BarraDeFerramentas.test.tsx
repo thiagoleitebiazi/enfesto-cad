@@ -89,6 +89,7 @@ function propsBase(): Props {
     onAbrirFichaTecnica: vi.fn(),
     onAbrirDesenhoTecnico: vi.fn(),
     onAbrirColecoes: vi.fn(),
+    onAbrirMoldeDaFoto: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
     onRestaurar: vi.fn(),
@@ -221,7 +222,7 @@ describe('BarraDeFerramentas: abas', () => {
     renderizar('Produção');
 
     expect(gruposDaAba()).toEqual({
-      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio'],
+      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Molde da foto'],
       'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar'],
       Costura: ['Costura', 'Remover costura', 'Converter em contorno', 'Converter em costura'],
       'Pregas e Pences': ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences'],

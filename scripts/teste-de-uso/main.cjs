@@ -2,7 +2,7 @@
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
  * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
- * uma coleção — com
+ * uma coleção, e cria uma peça pela foto — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -31,6 +31,38 @@ const log = (texto) => {
   console.log(texto);
 };
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** A homografia que leva os 4 pontos de `de` aos de `para` (para desenhar a foto torta do molde da foto). */
+function homografiaDoTeste(de, para) {
+  const a = [];
+  const b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = de[i];
+    const [u, v] = para[i];
+    a.push([x, y, 1, 0, 0, 0, -u * x, -u * y]);
+    b.push(u);
+    a.push([0, 0, 0, x, y, 1, -v * x, -v * y]);
+    b.push(v);
+  }
+  for (let c = 0; c < 8; c++) {
+    let piv = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(a[r][c]) > Math.abs(a[piv][c])) piv = r;
+    [a[c], a[piv]] = [a[piv], a[c]];
+    [b[c], b[piv]] = [b[piv], b[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = a[r][c] / a[c][c];
+      for (let k = c; k < 8; k++) a[r][k] -= f * a[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  return [...a.map((linha, i) => b[i] / linha[i]), 1];
+}
+
+function aplicarHomografiaDoTeste(h, x, y) {
+  const w = h[6] * x + h[7] * y + h[8];
+  return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];
+}
 
 // Uma pasta de dados só do teste, antes de o programa começar (ele lê o estado da abertura ao carregar).
 const DADOS = fs.mkdtempSync(path.join(os.tmpdir(), 'enfesto-cad-uso-'));
@@ -581,6 +613,111 @@ async function principal() {
     colecoesGravadas.colecoes.length === 1 && !!modeloGravado && modeloGravado.categoria === 'Camiseta' && !!modeloGravado.projetoId && modeloGravado.tarefas.length === 1,
     JSON.stringify(colecoesGravadas.colecoes.map((c) => ({ nome: c.nome, modelos: c.modelos.map((m) => [m.nome, m.categoria, !!m.projetoId, m.tarefas.length]) }))),
   );
+
+  // 11. O molde da foto (ADR 0109): uma foto desenhada aqui — a placa de 140 × 190 mm fotografada torta, com o papel
+  // de 100 × 150 mm (um furo, o traço do fio e um pique em V) — entra pelo campo de arquivo de verdade; os 4 cantos e
+  // o clique dentro do molde com o mouse; as medidas e os achados; a peça criada no projeto.
+  const CANTOS_DA_FOTO = [
+    [60, 40],
+    [520, 80],
+    [560, 690],
+    [30, 640],
+  ];
+  const h = homografiaDoTeste(
+    [
+      [0, 0],
+      [140, 0],
+      [140, 190],
+      [0, 190],
+    ],
+    CANTOS_DA_FOTO,
+  );
+  const projetar = (pontos) => pontos.map(([x, y]) => aplicarHomografiaDoTeste(h, x, y));
+  const camadasDaFoto = [
+    [projetar([[0, 0], [140, 0], [140, 190], [0, 190]]), 60],
+    [projetar([[20, 20], [68, 20], [70, 24], [72, 20], [120, 20], [120, 170], [20, 170]]), 220],
+    [projetar(Array.from({ length: 36 }, (_, i) => [50 + 4 * Math.cos((i * Math.PI) / 18), 60 + 4 * Math.sin((i * Math.PI) / 18)])), 60],
+    [projetar([[69.5, 50], [70.5, 50], [70.5, 140], [69.5, 140]]), 40],
+  ];
+  await js(
+    `(async () => {
+      const tela = document.createElement('canvas');
+      tela.width = 600;
+      tela.height = 720;
+      const ctx = tela.getContext('2d');
+      ctx.fillStyle = 'rgb(100,100,100)';
+      ctx.fillRect(0, 0, 600, 720);
+      for (const [pontos, tom] of ${JSON.stringify(camadasDaFoto)}) {
+        ctx.fillStyle = 'rgb(' + tom + ',' + tom + ',' + tom + ')';
+        ctx.beginPath();
+        pontos.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+        ctx.fill();
+      }
+      const blob = await new Promise((r) => tela.toBlob(r, 'image/png'));
+      const arquivo = new File([blob], 'molde-de-papel.png', { type: 'image/png' });
+      const transferencia = new DataTransfer();
+      transferencia.items.add(arquivo);
+      const campo = document.querySelector('input[aria-label="Arquivo de imagem do modelo"]');
+      campo.files = transferencia.files;
+      campo.dispatchEvent(new Event('change', { bubbles: true }));
+      return 1;
+    })()`,
+  );
+  await espera(1500);
+  await aba('Produção');
+  await espera(300);
+  await botao('Molde da foto');
+  await espera(1500);
+  conferir('abre o molde da foto, com a foto trazida', (await janela()) === 'Molde da foto' && Number(await js(`document.querySelectorAll('[role=dialog] svg[aria-label="Foto para marcar os cantos"]').length`)) === 1, await janela());
+  const naImagem = async (seletor, ix, iy, w, hh) =>
+    JSON.parse(
+      await js(
+        `(() => { const r = document.querySelector(${JSON.stringify(seletor)}).getBoundingClientRect(); const e = Math.min(r.width / ${w}, r.height / ${hh}); return JSON.stringify({ x: Math.round(r.left + (r.width - ${w} * e) / 2 + ${ix} * e), y: Math.round(r.top + (r.height - ${hh} * e) / 2 + ${iy} * e) }); })()`,
+      ),
+    );
+  const clicarNaImagem = async (seletor, ix, iy, w, hh) => {
+    const { x, y } = await naImagem(seletor, ix, iy, w, hh);
+    win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+    await espera(250);
+  };
+  for (const [x, y] of CANTOS_DA_FOTO) await clicarNaImagem('svg[aria-label="Foto para marcar os cantos"]', x, y, 600, 720);
+  await noCampo('Largura da referência', '140');
+  await noCampo('Altura da referência', '190');
+  await foto('27-cantos-da-foto.png');
+  await botaoNaJanela('Corrigir a perspectiva');
+  await espera(1500);
+  await clicarNaImagem('svg[aria-label="Foto corrigida"]', 140, 300, 280, 380);
+  await espera(1200);
+  const medidasDaFoto = await js(`((document.querySelector('[role=dialog] [aria-label="Medidas do molde"]') || {}).textContent || '')`);
+  const larguraLida = Number((medidasDaFoto.match(/Largura × altura([\d,]+) mm/) || [])[1]?.replace(',', '.'));
+  const alturaLida = Number((medidasDaFoto.match(/ × ([\d,]+) mmPer/) || [])[1]?.replace(',', '.'));
+  conferir(
+    'corrigida a perspectiva, o molde sai com 100 × 150 mm (até 1,5 mm), o furo e o fio',
+    Math.abs(larguraLida - 100) <= 1.5 && Math.abs(alturaLida - 150) <= 1.5 && medidasDaFoto.includes('1 furo(s)') && medidasDaFoto.includes('fio sugerido'),
+    medidasDaFoto.slice(0, 160),
+  );
+  await foto('28-molde-reconhecido.png');
+  await noCampo('Nome', 'Frente da foto');
+  await botaoNaJanela('Criar a peça');
+  await espera(1200);
+  const criadasDaFoto = await js(`((document.querySelector('[role=dialog] [role=status]') || {}).textContent || '')`);
+  conferir(
+    'a peça entra na lista, e a janela fica pronta para outro molde da mesma foto',
+    (await janela()) === 'Molde da foto' && criadasDaFoto.includes('Frente da foto') && (await lista()).some((n) => n.startsWith('Frente da foto')),
+    `${criadasDaFoto.slice(0, 80)} / ${JSON.stringify(await lista())}`,
+  );
+  await fecharJanela();
+  await espera(500);
+  const pecaDaFoto = (await pecasGravadas()).find((p) => p.nome === 'Frente da foto');
+  const caixaDaFoto = pecaDaFoto ? caixa(pecaDaFoto.contorno) : null;
+  conferir(
+    'no projeto: a peça de 150 × 100 mm (deitada como na foto), com o furo, o fio e o pique',
+    !!caixaDaFoto && Math.abs(caixaDaFoto.maxX - caixaDaFoto.minX - 150) <= 2 && Math.abs(caixaDaFoto.maxY - caixaDaFoto.minY - 100) <= 2 && pecaDaFoto.furos.length === 1 && pecaDaFoto.piques.length >= 1,
+    caixaDaFoto ? `${(caixaDaFoto.maxX - caixaDaFoto.minX).toFixed(1)} × ${(caixaDaFoto.maxY - caixaDaFoto.minY).toFixed(1)} mm, ${pecaDaFoto.furos.length} furo(s), ${pecaDaFoto.piques.length} pique(s)` : 'sem a peça',
+  );
+  await foto('29-peca-da-foto.png');
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

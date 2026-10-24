@@ -4114,3 +4114,122 @@ rect.destaque-do-desenho {
 .barra-de-status .indicador-de-prazos.prazos-atrasados {
   background: #d32f2f;
 }
+
+/* O molde da foto (ADR 0109): os passos à esquerda, a foto no meio (inteira na tela), o reconhecimento à direita; as
+   marcas por cima da foto com a espessura de tela (sem crescer com a resolução da foto). */
+.sobreposicao-painel:has(.painel-da-foto-para-molde) {
+  width: min(1240px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-da-foto-para-molde {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.area-da-foto-para-molde {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(0, 260px);
+  gap: 12px;
+  align-items: start;
+}
+
+.quadro-da-foto {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.foto-para-marcar {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 220px);
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-md);
+  background: #2b2f36;
+  cursor: crosshair;
+}
+
+.foto-para-marcar * {
+  vector-effect: non-scaling-stroke;
+}
+
+.cantos-marcados {
+  fill: rgba(230, 81, 0, 0.12);
+  stroke: #e65100;
+  stroke-width: 2;
+}
+
+.canto-marcado {
+  fill: #e65100;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.numero-do-canto {
+  fill: #fff;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #e65100;
+  stroke-width: 3;
+}
+
+.contorno-reconhecido {
+  fill: rgba(21, 101, 192, 0.18);
+  stroke: #1565c0;
+  stroke-width: 2;
+}
+
+.furo-reconhecido {
+  fill: rgba(255, 152, 0, 0.35);
+  stroke: #ef6c00;
+  stroke-width: 2;
+}
+
+.pique-reconhecido {
+  fill: #d32f2f;
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.fio-reconhecido {
+  stroke: #2e7d32;
+  stroke-width: 3;
+}
+
+.semente-marcada {
+  fill: #ffeb3b;
+  stroke: #000;
+  stroke-width: 1;
+}
+
+.medida-marcada {
+  fill: none;
+  stroke: #c2185b;
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+}
+
+.medidas-reconhecidas {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.medidas-reconhecidas dt {
+  color: var(--cinza-600);
+}
+
+.medidas-reconhecidas dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.propriedades-do-desenho .legenda-inline,
+.ferramentas-do-desenho .legenda-inline {
+  margin: 6px 0 0;
+}

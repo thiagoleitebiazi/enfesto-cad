@@ -159,6 +159,8 @@ interface BarraDeFerramentasProps {
   /** Atalhos para outros programas (aba Início). Só há como abri-los no programa instalado, não no navegador. */
   readonly onAbrirProgramas: () => void;
   readonly podeAbrirProgramas: boolean;
+  /** Produção > Molde da foto: a foto do molde de papel vira peça (a perspectiva, o contorno, os furos, os piques e o fio, ADR 0109). */
+  readonly onAbrirMoldeDaFoto: () => void;
   /** Abre as imagens do modelo: pelo "Imagens", ou pelo "Digitalizar" (com os passos para copiar um molde de papel). */
   readonly onAbrirImagens: (como: 'imagens' | 'digitalizar') => void;
   /** As ferramentas da aba Graduação, na peça selecionada. */
@@ -971,6 +973,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={props.onEntrarModoSentidoDoFio}
                   />
                 </div>
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Molde', 'da foto']}
+                  icone="molde-da-foto"
+                  dica="Molde da foto: a foto do molde de papel sobre uma folha ou placa de medida conhecida vira peça — os 4 cantos corrigem a perspectiva; o contorno, os furos, os piques e o fio saem sozinhos, para revisar e conferir"
+                  onClick={props.onAbrirMoldeDaFoto}
+                />
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Complementar moldes">
