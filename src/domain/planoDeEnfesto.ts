@@ -386,7 +386,7 @@ export function calcularPlanejamento(
 
   // ---- O rendimento: o informado, o calculado pela largura e gramatura, e o que vale.
   const informado = positivo(malha.rendimentoMmPorG) ? malha.rendimentoMmPorG : null;
-  const calculado = positivo(malha.gramaturaGm2) ? rendimentoPelaGramatura(malha.larguraUtilMm, malha.gramaturaGm2) : null;
+  const calculado = positivo(malha.gramaturaGm2) ? rendimentoPelaGramatura(malha.larguraUtilMm, malha.gramaturaGm2, malha.tubular) : null;
   let usado: number | null = null;
   let origem: RendimentoPrincipal | null = null;
   if (informado !== null && calculado !== null) {
