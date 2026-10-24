@@ -256,6 +256,19 @@ describe('calcularPlanejamento — ordem, ajustes e avisos da malha', () => {
     expect(textos(c)).toContain('O rendimento informado (4,00 m/kg) e o calculado pela largura e gramatura (2,02 m/kg) diferem 98,4%');
   });
 
+  it('malha tubular sem rendimento informado: o calculado conta as duas folhas do tubo, e o peso rende a metade dos metros de antes (ADR 0098)', () => {
+    const copia: { -readonly [K in keyof MalhaDoCadastro]?: MalhaDoCadastro[K] } = { ...MALHA, tubular: true, larguraUtilMm: 900, gramaturaGm2: 310 };
+    delete copia.rendimentoMmPorG;
+    const tubular = copia as MalhaDoCadastro;
+    const risco = { ...RISCO, larguraMm: 880, larguraDoRiscoMm: 900 };
+    const c = ok(calcularPlanejamento(entrada({ malha: tubular, tipoDeEnfesto: 'tubular', larguraDoRiscoMm: 900 }), [risco], [{ chave: risco.chave, camadas: 20 }], CONFIG));
+    const porGrama = 1_000_000 / (900 * 310 * 2);
+    expect(c.resultado.origemDoRendimento).toBe('calculado');
+    expect(c.resultado.rendimentoUsadoMmPorG).toBeCloseTo(porGrama, 9);
+    // 200 kg de tubo: 358 m (antes, 717 m — o dobro do tecido que existe).
+    expect(c.resultado.disponivelMm).toBeCloseTo(200_000 * porGrama, 3);
+  });
+
   it('listrado ou xadrez sem o casamento conferido no risco: só planeja com a decisão marcada, e avisa; com ele, sai', () => {
     const listrada = { ...MALHA, padrao: 'listrado' as const };
     expect(erros(calcularPlanejamento(entrada({ malha: listrada }), [RISCO], [{ chave: RISCO.chave, camadas: 40 }], CONFIG))[0]).toContain('o risco não tem o casamento automático das listras conferido');
