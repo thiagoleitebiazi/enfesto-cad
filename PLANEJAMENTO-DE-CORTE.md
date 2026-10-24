@@ -119,6 +119,43 @@ do começo dele: o plano novo começa depois (coluna "Já usado por outros
 planos"). A tabela dos rolos na etapa 3 mostra disponível / reservado /
 consumido.
 
+## Execução do corte (sala de corte)
+
+O plano confirmado é o **planejado**; a execução é o **feito**. Em **Planos
+deste projeto**, abra o plano confirmado: abaixo do estoque fica a seção
+**Execução do corte**, e o título do plano mostra a situação dela.
+
+1. **Liberar para o corte** — o plano vai para a sala de corte (guarda quem
+   liberou e quando).
+2. **Começar o corte** — guarda quem corta e a hora do começo.
+3. **Concluir o corte** — com o que de fato aconteceu:
+   - as **camadas enfestadas** (vem com as do plano);
+   - o **consumo real de cada rolo** — o que saiu dele: as camadas e as
+     pontas (vem com o que o plano usa; com vírgula, em metros). No plano por
+     peso, sem rolos, o consumo real é um total;
+   - **a sobra vira retalho** — marque nos rolos cuja sobra foi guardada como
+     retalho: o rolo continua no estoque, com o saldo dele, e aparece como
+     "(retalho)" na escolha dos rolos de um plano novo;
+   - observações (opcional).
+4. **Cancelar** (antes de concluir) — pede o motivo; a execução cancelada
+   fica no registro e o plano pode ser liberado de novo.
+
+Ao concluir um plano com rolos, a **baixa do estoque passa a ser a do consumo
+real**: se a baixa planejada já tinha sido dada, ela é estornada (com o motivo
+"Trocada pela baixa do consumo real") e a do real entra no lugar; a reserva de
+um rolo que o corte não usou (consumo real zero) é estornada. Nada é apagado:
+os movimentos ficam no histórico do estoque. Tudo ou nada: um consumo maior
+que o saldo do rolo, um número inválido ou camadas erradas não mudam nada, e a
+mensagem diz o quê.
+
+Concluído, aparece o **planejado × executado**: camadas, consumo de malha
+(com a diferença em metros e em %), consumo por camada e o tempo do corte
+(do começo à conclusão), e a tabela por rolo (planejado, real, saldo agora,
+retalho ou não). As horas, as camadas e o consumo são os **informados** por
+quem opera: o programa não se liga a máquina nenhuma (enfestadeira, faca,
+plotter) e não tem login. O corte concluído não se cancela (o estoque já
+saiu): para corrigir, estorne os movimentos no estoque.
+
 ## Defeitos dos rolos
 
 Cada defeito tem a **extensão** no comprimento do rolo (m), e pode ter a
@@ -282,20 +319,27 @@ informado" (nenhum valor aparece como R$ 0,00).
 ## Onde ficam os dados
 
 - **Projetos** e **planos**: os arquivos da Biblioteca, como antes.
-- **Cadastro de produção** (malhas, rolos, ordens, movimentos de estoque):
-  `cadastro-de-producao.json` na pasta de dados do programa. A gravação não
-  deixa o arquivo pela metade (vai para um temporário e troca); a versão
-  anterior fica em `cadastro-de-producao.json.anterior`. Se o arquivo sumir ou
-  quebrar, o programa abre a versão anterior e diz. O cadastro da versão 1
-  ganha uma cópia em `copias-de-seguranca` antes de ser gravado na versão 2; um
-  arquivo com registros que não se leem é copiado inteiro para lá antes de
-  eles ficarem de fora.
+- **Cadastro de produção** (malhas, rolos, ordens, movimentos de estoque,
+  execuções do corte): `cadastro-de-producao.json` na pasta de dados do
+  programa. A gravação não deixa o arquivo pela metade (vai para um temporário
+  e troca); a versão anterior fica em `cadastro-de-producao.json.anterior`. Se
+  o arquivo sumir ou quebrar, o programa abre a versão anterior e diz. O
+  cadastro de uma versão mais antiga do formato (1 ou 2) ganha uma cópia em
+  `copias-de-seguranca` antes de ser gravado na versão atual (3, com as
+  execuções do corte); um arquivo com registros que não se leem é copiado
+  inteiro para lá antes de eles ficarem de fora.
 
 ## Projetos e planos antigos
 
-- O cadastro antigo (versão 1) abre na versão 2 com o histórico de estoque
-  vazio; os defeitos sem posição continuam sem posição (o plano novo pede a
-  decisão).
+- O cadastro antigo (versão 1) abre com o histórico de estoque vazio; os
+  defeitos sem posição continuam sem posição (o plano novo pede a decisão). O
+  da versão 2 abre sem execuções do corte e sem rolos marcados como retalho.
+- **Rendimento da malha tubular pela gramatura** (corrigido, ADR 0098): ele
+  conta as duas folhas do tubo achatado — antes contava uma, e um quilo de
+  malha tubular rendia o dobro dos metros. Os planos novos e o comprimento dos
+  rolos pelo peso usam a conta certa; os planos já confirmados continuam como
+  foram guardados (não são recalculados): confira os que usaram malha tubular
+  sem o rendimento informado.
 - Os planos já guardados abrem como foram guardados, sem recalcular, e não
   ganham colunas vazias (emendas, uso anterior, trecho pulado só aparecem
   quando há). Os da primeira versão do cálculo só podem ser vistos.
@@ -318,6 +362,10 @@ informado" (nenhum valor aparece como R$ 0,00).
 - **Custo:** estimativa só do tecido, em reais, com o consumo planejado (não
   há consumo medido por peça); a largura aberta de uma malha tubular não é
   presumida.
+- **Execução do corte:** o consumo real é por rolo (ou o total, sem rolos),
+  não por peça; as horas são as dos cliques (começar, concluir), não as de uma
+  máquina; não há fila de cortes entre várias estações nem ligação com
+  enfestadeira, faca ou plotter.
 - **Formatos de molde:** DXF (LWPOLYLINE, POLYLINE clássica, LINE e ARC
   soltos que fecham, CIRCLE como furo, SPLINE, blocos com INSERT e escala;
   unidade pelo `$INSUNITS` — mm, cm, m, polegada, pé —, a desconhecida

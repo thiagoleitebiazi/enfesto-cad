@@ -40,6 +40,8 @@ import {
 import { ERP_NAO_CONFIGURADO, importarOrdensCsv } from '../domain/importacaoDeOrdens';
 import { fatoresDeCompensacao, medidasCompensadas, riscoCompensado, ROTULO_DA_FONTE_DO_ENCOLHIMENTO, type FatoresDeCompensacao, type FonteDoEncolhimento } from '../domain/encolhimento';
 import { EstoqueDoPlano } from './EstoqueDoPlano';
+import { ExecucaoDoPlano } from './ExecucaoDoPlano';
+import { execucaoAtualDoPlano, ROTULO_DA_SITUACAO } from '../domain/execucaoDoCorte';
 import { linhaDeCorteDaPeca, rotacoesPermitidas, type Molde } from '../domain/molde';
 import { modeloDoPlano, quantidadesPorRoupa } from '../domain/modeloDoPlano';
 import { revisaoAtualDoMolde, type Projeto } from '../domain/projeto';
@@ -191,6 +193,7 @@ const COMO_USAR = [
   '5. Alternativas: compare consumo, enfestos e excedente; o desenho mostra cada risco em escala.',
   '6. Revisar e confirmar: ajuste as camadas e a mesa (o sugerido e o escolhido ficam no plano), diga quem confirma e confirme.',
   'Planos deste projeto: o plano confirmado mostra os valores de então; nele, reserve os rolos e, depois do corte, dê a baixa. Um movimento errado se desfaz com o estorno (com o motivo), e tudo fica no histórico.',
+  'Execução do corte (no plano confirmado): libere para o corte, comece e conclua com as camadas enfestadas e o consumo real de cada rolo — a baixa passa a ser a do real, a sobra pode virar retalho, e aparece o planejado × executado.',
   'Configurável (etapa 4, guardado para os próximos planos): margens da mesa, pontas por camada, perda por rolo, folhas, altura e peso máximos do enfesto, comprimento e largura da mesa, roupas por risco, distância entre as peças, tolerância de rendimento, tempo da busca, se a emenda é permitida e a sobreposição dela.',
   'O que bloqueia não deixa calcular nem confirmar (está em "Para calcular, falta" ou "Nenhuma composição calcula"); o que é aviso aparece no plano e não impede; o que é estimativa (pelo peso, pelo rendimento) é dito como estimativa.',
 ];
@@ -205,7 +208,8 @@ const LIMITACOES = [
   'Emendas só nas linhas do risco que não cortam peça (riscos gerados ou da mesa), e só se a configuração permitir.',
   'Listras e xadrez: o casamento automático alinha o ponto "casamento" de cada peça à repetição; ele precisa da repetição e da fase no cadastro da malha e das camadas estendidas com o desenho alinhado (mesa de agulhas). Casamento por mais de um ponto da peça não é feito.',
   'Encolhimento: compensado só no risco, por decisão; a peça não muda no projeto.',
-  'Custo: uma estimativa só do tecido (sem aviamentos, mão de obra e outros custos), em reais, com o consumo planejado (o programa não registra consumo medido); a malha tubular só no enfesto tubular, e a largura aberta de uma malha tubular não é presumida.',
+  'Custo: uma estimativa só do tecido (sem aviamentos, mão de obra e outros custos), em reais, com o consumo planejado (o consumo real da execução do corte não entra nela); a malha tubular só no enfesto tubular, e a largura aberta de uma malha tubular não é presumida.',
+  'Execução do corte: guarda o que quem opera informa (nomes, horas dos cliques, camadas, consumo real por rolo — não por peça); o programa não se liga a enfestadeira, faca ou plotter, e não há fila de cortes entre várias estações.',
   'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos e com dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm); a importação é direta, com o nome do arquivo e o fio na horizontal.',
 ];
 
@@ -1273,7 +1277,10 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                                 }}
                               />
                             </td>
-                            <td>{r.identificacao}</td>
+                            <td>
+                              {r.identificacao}
+                              {r.retalho ? ' (retalho)' : ''}
+                            </td>
                             <td>{grupoDoRolo(r)}</td>
                             <td>{r.pesoLiquidoG !== undefined ? `${noCampo(r.pesoLiquidoG / 1000, 2)} kg` : '—'}</td>
                             <td>{r.comprimentoMedidoMm !== undefined ? escreverM(r.comprimentoMedidoMm) : '— (sai do peso)'}</td>
@@ -1791,7 +1798,10 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               <ul className="lista-de-planos">
                 {[...planos].reverse().map((p) => {
                   const v2 = ehPlanoV2(p);
-                  const situacao = v2 ? (p.situacao === 'rascunho' ? 'Rascunho' : 'Confirmado') : 'Confirmado (1ª versão do cálculo)';
+                  const execucao = v2 ? execucaoAtualDoPlano(cadastro, p.id) : null;
+                  const situacao =
+                    (v2 ? (p.situacao === 'rascunho' ? 'Rascunho' : 'Confirmado') : 'Confirmado (1ª versão do cálculo)') +
+                    (execucao ? ` · ${ROTULO_DA_SITUACAO[execucao.situacao]}` : '');
                   return (
                     <li key={p.id}>
                       <button type="button" onClick={() => setPlanoAberto(planoAberto === p.id ? null : p.id)} aria-expanded={planoAberto === p.id}>
@@ -1863,6 +1873,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                                 custoDoTecido={p.custoDoTecido ?? 'sem-estimativa'}
                               />
                               <EstoqueDoPlano plano={p} cadastro={cadastro} responsavelSugerido={responsavel} agoraIso={props.agoraIso} novoId={props.novoId} onMudar={mudarCadastro} />
+                              <ExecucaoDoPlano plano={p} cadastro={cadastro} responsavelSugerido={responsavel} agoraIso={props.agoraIso} novoId={props.novoId} onMudar={mudarCadastro} />
                             </>
                           ) : (
                             <PropostaDoPlano entrada={p.entrada} configuracao={p.configuracao} resultado={p.resultado} alertas={p.alertas} premissas={p.premissas} />

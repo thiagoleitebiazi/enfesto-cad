@@ -13,8 +13,16 @@ nenhum botão da interface finge fazer algo que não faz: os que ainda não têm
 lógica por trás aparecem desabilitados com uma explicação).
 
 O planejamento de corte (do molde e da ordem ao plano de enfesto, com o
-estoque dos rolos) tem o guia de uso em
-[PLANEJAMENTO-DE-CORTE.md](PLANEJAMENTO-DE-CORTE.md).
+estoque dos rolos e a execução do corte — planejado × executado) tem o guia
+de uso em [PLANEJAMENTO-DE-CORTE.md](PLANEJAMENTO-DE-CORTE.md).
+
+**O que o programa faz, o que faz em parte e o que não faz:** o inventário
+atual, com a evidência de cada área (modelagem, graduação, intercâmbio de
+moldes, encaixe, planejamento e sala de corte, equipamentos, integrações), está
+no [ADR 0098](ADR/0098-auditoria-de-capacidades-rendimento-tubular-e-execucao-do-corte.md).
+Em resumo, ele **não** tem: 3D, ficha técnica, coleções, IA, ERP, login,
+servidor, nem ligação com máquinas (enfestadeira, faca, plotter) — as saídas
+para produção são o PDF em escala 1:1 e o DXF.
 
 ## Baixar e instalar (usuário final, Windows)
 

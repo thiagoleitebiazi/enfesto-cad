@@ -10,9 +10,14 @@ import { rendimentoPelaGramatura } from './planoDeCorte';
  * faltando ou não confere.
  */
 
-/** 2: os defeitos com posição e os movimentos de estoque (reserva, baixa, estorno). */
-export const VERSAO_DO_CADASTRO = 2;
+/**
+ * 2: os defeitos com posição e os movimentos de estoque (reserva, baixa, estorno).
+ * 3: a execução do corte (situação, consumo real, camadas, tempos) e o rolo marcado como retalho (ADR 0098). O arquivo
+ * da versão 2 é lido como está (sem execuções), e é copiado para as cópias de segurança antes da primeira gravação.
+ */
+export const VERSAO_DO_CADASTRO = 3;
 export const MAXIMO_DE_MOVIMENTOS = 50_000;
+export const MAXIMO_DE_EXECUCOES = 5000;
 export const MAXIMO_DE_MALHAS = 200;
 export const MAXIMO_DE_ROLOS = 2000;
 export const MAXIMO_DE_ORDENS = 2000;
@@ -117,6 +122,8 @@ export interface RoloDeEstoque {
   readonly unidadeDoComprimento: UnidadeDeComprimento;
   /** Fora do estoque (usado, reservado, devolvido): não aparece para escolher num plano novo. */
   readonly indisponivel: boolean;
+  /** O que sobrou do rolo depois de um corte, guardado como retalho (ADR 0098): continua no estoque, com o saldo dele. */
+  readonly retalho?: boolean;
   readonly observacoes?: string;
 }
 
@@ -164,15 +171,57 @@ export interface MovimentoDeEstoque {
   readonly estornaId?: string;
 }
 
+/**
+ * A execução de um plano confirmado na sala de corte (ADR 0098): liberada → em corte → concluída (ou cancelada). O
+ * plano continua como foi confirmado; a execução guarda o que de fato aconteceu — quem liberou e quem cortou (os nomes
+ * são informados: o programa não tem login), as horas, as camadas enfestadas e o consumo real de malha.
+ */
+export type SituacaoDaExecucao = 'liberada' | 'em-corte' | 'concluida' | 'cancelada';
+
+/** O consumo de um rolo no corte: o do plano e o real (o que saiu do rolo: as camadas e as pontas). */
+export interface ConsumoRealDoRolo {
+  readonly roloId: string;
+  readonly planejadoMm: number;
+  readonly realMm: number;
+  /** O que sobrou do rolo foi guardado como retalho. */
+  readonly sobraViraRetalho: boolean;
+}
+
+export interface ExecucaoDoCorte {
+  readonly id: string;
+  readonly planoId: string;
+  readonly projetoId: string;
+  /** O código da ordem do plano (para a lista). */
+  readonly ordem: string;
+  readonly situacao: SituacaoDaExecucao;
+  readonly camadasPlanejadas: number;
+  readonly consumoPlanejadoMm: number;
+  readonly liberadaEmIso: string;
+  readonly liberadaPor: string;
+  readonly iniciadaEmIso?: string;
+  readonly operador?: string;
+  readonly concluidaEmIso?: string;
+  readonly concluidaPor?: string;
+  readonly camadasRealizadas?: number;
+  readonly consumoRealMm?: number;
+  /** Nos planos com rolos: o consumo de cada um. */
+  readonly consumoPorRolo?: readonly ConsumoRealDoRolo[];
+  readonly canceladaEmIso?: string;
+  readonly canceladaPor?: string;
+  readonly motivoDoCancelamento?: string;
+  readonly observacoes?: string;
+}
+
 export interface CadastroDeProducao {
   readonly versaoDoFormato: number;
   readonly malhas: readonly MalhaDoCadastro[];
   readonly rolos: readonly RoloDeEstoque[];
   readonly ordens: readonly OrdemDeProducao[];
   readonly movimentos: readonly MovimentoDeEstoque[];
+  readonly execucoes: readonly ExecucaoDoCorte[];
 }
 
-export const CADASTRO_VAZIO: CadastroDeProducao = { versaoDoFormato: VERSAO_DO_CADASTRO, malhas: [], rolos: [], ordens: [], movimentos: [] };
+export const CADASTRO_VAZIO: CadastroDeProducao = { versaoDoFormato: VERSAO_DO_CADASTRO, malhas: [], rolos: [], ordens: [], movimentos: [], execucoes: [] };
 
 // ---- Leitura tolerante: o que não dá para ler fica de fora, com o motivo; nada impede o programa de abrir.
 
@@ -236,6 +285,7 @@ function ehRolo(v: unknown): v is RoloDeEstoque {
     (r.unidadeDoPeso === 'kg' || r.unidadeDoPeso === 'g') &&
     (r.unidadeDoComprimento === 'm' || r.unidadeDoComprimento === 'cm' || r.unidadeDoComprimento === 'mm') &&
     typeof r.indisponivel === 'boolean' &&
+    (r.retalho === undefined || typeof r.retalho === 'boolean') &&
     positivoOuAusente(r.pesoLiquidoG) &&
     positivoOuAusente(r.comprimentoMedidoMm) &&
     positivoOuAusente(r.larguraUtilMedidaMm) &&
@@ -262,6 +312,41 @@ function ehMovimento(v: unknown): v is MovimentoDeEstoque {
     ehTexto(m.responsavel) &&
     textoOuAusente(m.motivo) &&
     (m.tipo === 'estorno' ? ehTexto(m.estornaId) : m.estornaId === undefined)
+  );
+}
+
+const naoNegativo = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+const inteiroNaoNegativo = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
+
+function ehExecucao(v: unknown): v is ExecucaoDoCorte {
+  if (typeof v !== 'object' || v === null) return false;
+  const e = v as Record<string, unknown>;
+  const situacoes: readonly unknown[] = ['liberada', 'em-corte', 'concluida', 'cancelada'];
+  const consumoOk =
+    e.consumoPorRolo === undefined ||
+    (Array.isArray(e.consumoPorRolo) &&
+      e.consumoPorRolo.every((c: unknown) => {
+        const x = c as Record<string, unknown> | null;
+        return typeof x === 'object' && x !== null && ehTexto(x.roloId) && naoNegativo(x.planejadoMm) && naoNegativo(x.realMm) && typeof x.sobraViraRetalho === 'boolean';
+      }));
+  return (
+    ehTexto(e.id) &&
+    ehTexto(e.planoId) &&
+    ehTexto(e.projetoId) &&
+    ehTexto(e.ordem) &&
+    situacoes.includes(e.situacao) &&
+    inteiroNaoNegativo(e.camadasPlanejadas) &&
+    naoNegativo(e.consumoPlanejadoMm) &&
+    ehTexto(e.liberadaEmIso) &&
+    ehTexto(e.liberadaPor) &&
+    (e.camadasRealizadas === undefined || inteiroNaoNegativo(e.camadasRealizadas)) &&
+    (e.consumoRealMm === undefined || naoNegativo(e.consumoRealMm)) &&
+    consumoOk &&
+    // Cada situação com o que ela tem de ter: em corte, quem corta e quando começou; concluída, também o consumo real.
+    (e.situacao === 'liberada' || e.situacao === 'cancelada' || (ehTexto(e.iniciadaEmIso) && ehTexto(e.operador))) &&
+    (e.situacao !== 'concluida' || (ehTexto(e.concluidaEmIso) && ehTexto(e.concluidaPor) && naoNegativo(e.consumoRealMm) && inteiroNaoNegativo(e.camadasRealizadas))) &&
+    (e.situacao !== 'cancelada' || (ehTexto(e.canceladaEmIso) && ehTexto(e.canceladaPor) && ehTexto(e.motivoDoCancelamento))) &&
+    [e.iniciadaEmIso, e.operador, e.concluidaEmIso, e.concluidaPor, e.canceladaEmIso, e.canceladaPor, e.motivoDoCancelamento, e.observacoes].every(textoOuAusente)
   );
 }
 
@@ -319,6 +404,8 @@ export function lerCadastroDeProducao(bruto: unknown): CadastroLido {
       ordens: filtrar(b.ordens, ehOrdem, 'ordens'),
       // Da versão 1 para a 2 só entram os movimentos (vazios) e os campos opcionais dos defeitos.
       movimentos: filtrar(b.movimentos, ehMovimento, 'movimentos de estoque'),
+      // Da 2 para a 3, as execuções do corte (vazias) e a marca de retalho do rolo (ausente).
+      execucoes: filtrar(b.execucoes, ehExecucao, 'execuções do corte'),
     },
     descartados,
     maisNovo: versao > VERSAO_DO_CADASTRO,

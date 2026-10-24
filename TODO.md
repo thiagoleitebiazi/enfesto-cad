@@ -3,6 +3,13 @@
 Rastreia as 10 etapas do plano original. "Feito" só é marcado quando existe
 código real, testado, por trás — não quando existe só a tela.
 
+> **Histórico.** Esta lista é a das etapas originais (setembro de 2026) e
+> vários "[ ]" daqui foram feitos depois, nos ADRs seguintes (multisseleção,
+> curvas, edição de pontos, entre outros). O estado atual de cada capacidade,
+> com a evidência, está no inventário do
+> [ADR 0098](ADR/0098-auditoria-de-capacidades-rendimento-tubular-e-execucao-do-corte.md);
+> os riscos abertos, em [MATRIZ_DE_RISCOS.md](MATRIZ_DE_RISCOS.md).
+
 ## Etapa 1 — Analisar repositório e preparar arquitetura
 **Feito.** Projeto novo (decisão do usuário), stack Electron + React + TS +
 Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver

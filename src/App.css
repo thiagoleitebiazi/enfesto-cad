@@ -2992,6 +2992,60 @@ input[type='radio'] {
   margin-top: 8px;
 }
 
+/* A execução do corte (ADR 0098): abaixo do estoque, separada por uma linha; a situação num selo com a cor dela. */
+.execucao-do-plano {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--cinza-200);
+}
+
+.execucao-do-plano h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--marca-800);
+}
+
+.execucao-do-plano .nota-do-formulario {
+  margin: 0;
+}
+
+.situacao-da-execucao {
+  display: inline-block;
+  padding: 1px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--cinza-300);
+  background: var(--cinza-100);
+  color: var(--cinza-800);
+}
+
+.situacao-da-execucao.situacao-liberada {
+  border-color: var(--info-borda);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.situacao-da-execucao.situacao-em-corte {
+  border-color: var(--aviso-borda);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.situacao-da-execucao.situacao-concluida {
+  border-color: var(--sucesso-borda);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.conclusao-do-corte {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .confirmacao-do-plano {
   display: flex;
   flex-direction: column;
