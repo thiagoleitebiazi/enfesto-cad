@@ -40,6 +40,8 @@ export interface PlanoParaExecutar {
   readonly consumoMm: number;
   /** O que o plano usa de cada rolo (vazio: o material é um peso, sem rolos). */
   readonly usos: readonly UsoDoRolo[];
+  /** A descrição da malha do plano. */
+  readonly malha?: string;
 }
 
 /** O que a execução precisa do plano confirmado: as camadas, o consumo e o que ele usa de cada rolo. */
@@ -51,6 +53,20 @@ export function planoParaExecutar(plano: PlanoDeCorteV2): PlanoParaExecutar {
     camadas: plano.resultado.camadas,
     consumoMm: plano.resultado.consumoMm,
     usos: (plano.resultado.rolos ?? []).filter((r) => r.usadoMm > 0).map((r) => ({ roloId: r.id, comprimentoMm: r.usadoMm })),
+    ...(plano.entrada.malha?.descricao ? { malha: plano.entrada.malha.descricao } : {}),
+  };
+}
+
+/** O plano que a execução guardou ao ser liberada: a sala de corte conclui com ele, sem abrir o projeto. */
+export function planoDaExecucao(execucao: ExecucaoDoCorte): PlanoParaExecutar {
+  return {
+    planoId: execucao.planoId,
+    projetoId: execucao.projetoId,
+    ordem: execucao.ordem,
+    camadas: execucao.camadasPlanejadas,
+    consumoMm: execucao.consumoPlanejadoMm,
+    usos: execucao.usosPlanejados ?? [],
+    ...(execucao.malha ? { malha: execucao.malha } : {}),
   };
 }
 
@@ -93,6 +109,8 @@ export function liberarParaOCorte(
     situacao: 'liberada',
     camadasPlanejadas: plano.camadas,
     consumoPlanejadoMm: plano.consumoMm,
+    ...(plano.usos.length > 0 ? { usosPlanejados: plano.usos.map((u) => ({ roloId: u.roloId, comprimentoMm: u.comprimentoMm })) } : {}),
+    ...(plano.malha ? { malha: plano.malha } : {}),
     liberadaEmIso: dados.agoraIso,
     liberadaPor: dados.responsavel.trim(),
   };

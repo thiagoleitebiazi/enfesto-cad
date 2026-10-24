@@ -148,6 +148,15 @@ os movimentos ficam no histórico do estoque. Tudo ou nada: um consumo maior
 que o saldo do rolo, um número inválido ou camadas erradas não mudam nada, e a
 mensagem diz o quê.
 
+A **sala de corte** inteira fica em **Encaixe › Sala de corte** (ADR 0100):
+todas as ordens liberadas, em corte, concluídas ou canceladas, de todos os
+projetos — e cada uma começa e conclui dali mesmo, sem abrir o projeto —, os
+indicadores do período (malha cortada, desvio, camadas, tempo, metros por
+hora, por operador), as **sugestões de correção** (consumo por camada fora da
+tolerância, com quanto mudar as pontas; camadas a menos; ordens paradas), os
+**retalhos** no estoque e os **relatórios** (consumo por malha para compras e
+o histórico de todas as ordens, em CSV).
+
 Concluído, aparece o **planejado × executado**: camadas, consumo de malha
 (com a diferença em metros e em %), consumo por camada e o tempo do corte
 (do começo à conclusão), e a tabela por rolo (planejado, real, saldo agora,

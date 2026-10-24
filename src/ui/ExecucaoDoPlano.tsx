@@ -10,6 +10,7 @@ import {
   liberarParaOCorte,
   planoParaExecutar,
   ROTULO_DA_SITUACAO,
+  type PlanoParaExecutar,
   type ResultadoDaConclusao,
 } from '../domain/execucaoDoCorte';
 import { escreverM } from '../domain/planoDeCorte';
@@ -28,19 +29,28 @@ const duracao = (min: number): string => (min < 60 ? `${Math.round(min)} min` : 
  * com o que de fato aconteceu (as camadas e o consumo real de cada rolo), e o comparativo planejado × executado.
  * Os nomes e as horas são os informados por quem opera; o programa não se liga a máquina nenhuma.
  */
-export function ExecucaoDoPlano(props: {
-  readonly plano: PlanoDeCorteV2;
+interface PropsDaExecucao {
   readonly cadastro: CadastroDeProducao;
   readonly responsavelSugerido: string;
   readonly agoraIso: () => string;
   readonly novoId: (prefixo: string) => string;
   /** Faz a mudança no cadastro e grava; devolve se deu certo (a mensagem aparece na janela). */
   readonly onMudar: (mudar: () => CadastroDeProducao, sucesso: string) => Promise<boolean>;
-}): React.JSX.Element {
-  const { plano, cadastro } = props;
-  const paraExecutar = planoParaExecutar(plano);
-  const execucao = execucaoAtualDoPlano(cadastro, plano.id);
-  const canceladas = execucoesDoPlano(cadastro, plano.id).filter((e) => e.situacao === 'cancelada');
+}
+
+export function ExecucaoDoPlano(props: PropsDaExecucao & { readonly plano: PlanoDeCorteV2 }): React.JSX.Element {
+  if (props.plano.situacao !== 'confirmado') return <p className="nota-do-formulario">A execução do corte começa depois que o plano é confirmado.</p>;
+  return <ExecucaoDoCorteNaTela {...props} paraExecutar={planoParaExecutar(props.plano)} />;
+}
+
+/**
+ * Os controles da execução de um plano: no plano confirmado (Planos deste projeto) e no painel da sala de corte, que
+ * usa o que a execução guardou ao ser liberada (ADR 0100).
+ */
+export function ExecucaoDoCorteNaTela(props: PropsDaExecucao & { readonly paraExecutar: PlanoParaExecutar; readonly semTitulo?: boolean }): React.JSX.Element {
+  const { cadastro, paraExecutar } = props;
+  const execucao = execucaoAtualDoPlano(cadastro, paraExecutar.planoId);
+  const canceladas = execucoesDoPlano(cadastro, paraExecutar.planoId).filter((e) => e.situacao === 'cancelada');
   const [quem, setQuem] = useState(props.responsavelSugerido);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState('');
@@ -49,8 +59,6 @@ export function ExecucaoDoPlano(props: {
   const [retalhos, setRetalhos] = useState<Record<string, boolean>>({});
   const [consumoTotal, setConsumoTotal] = useState(emMetros(paraExecutar.consumoMm));
   const [observacoes, setObservacoes] = useState('');
-
-  if (plano.situacao !== 'confirmado') return <p className="nota-do-formulario">A execução do corte começa depois que o plano é confirmado.</p>;
 
   const nomeDoRolo = (id: string): string => cadastro.rolos.find((r) => r.id === id)?.identificacao ?? id;
   const mudar = (fazer: () => CadastroDeProducao, sucesso: string): Promise<boolean> => props.onMudar(fazer, sucesso);
@@ -100,7 +108,7 @@ export function ExecucaoDoPlano(props: {
 
   return (
     <section className="execucao-do-plano" aria-label="Execução do corte">
-      <h4>Execução do corte</h4>
+      {!props.semTitulo && <h4>Execução do corte</h4>}
       <p className="nota-do-formulario">
         Situação: <strong className={`situacao-da-execucao situacao-${execucao?.situacao ?? 'nao-liberada'}`}>{execucao ? ROTULO_DA_SITUACAO[execucao.situacao] : 'Não liberada'}</strong>
         {execucao && ` — liberada em ${quando(execucao.liberadaEmIso)} por ${execucao.liberadaPor}`}

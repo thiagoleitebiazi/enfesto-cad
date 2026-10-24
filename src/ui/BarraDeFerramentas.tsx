@@ -101,6 +101,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirRelatorio: () => void;
   /** Encaixe > Planejamento de corte: a mesa, as camadas, os enfestos e o consumo, pelo risco, a ordem e a malha. */
   readonly onAbrirPlanoDeCorte: () => void;
+  /** Encaixe > Sala de corte: todas as ordens de corte, os indicadores, os retalhos e os relatórios (ADR 0100). */
+  readonly onAbrirSalaDeCorte: () => void;
   readonly onInverterSelecao: () => void;
   readonly onCriarPontoDeRestauracao: () => void;
   readonly onRestaurar: () => void;
@@ -1844,6 +1846,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 >
                   <Icone nome="plano-de-corte" />
                   <span>Planejamento de corte</span>
+                </button>
+                <button
+                  onClick={props.onAbrirSalaDeCorte}
+                  title="Sala de corte: todas as ordens de corte (começar e concluir com o consumo real), os indicadores, as sugestões de correção, os retalhos e os relatórios"
+                >
+                  <Icone nome="recortar" />
+                  <span>Sala de corte</span>
                 </button>
               </div>
 

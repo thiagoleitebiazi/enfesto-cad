@@ -82,6 +82,7 @@ function propsBase(): Props {
     onAbrirHistorico: vi.fn(),
     onAbrirRelatorio: vi.fn(),
     onAbrirPlanoDeCorte: vi.fn(),
+    onAbrirSalaDeCorte: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
     onRestaurar: vi.fn(),
@@ -573,7 +574,7 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
 
     expect(gruposDaAba()).toEqual({
       Relatórios: ['Relatórios'],
-      Planejamento: ['Planejamento de corte'],
+      Planejamento: ['Planejamento de corte', 'Sala de corte'],
       Configuração: ['Tecido', 'Enfesto'],
       Encaixe: ['Sugerir posição', 'Nesting Automático'],
     });

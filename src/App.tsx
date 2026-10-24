@@ -358,6 +358,7 @@ import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
 import { PainelDeRelatorio } from './ui/PainelDeRelatorio';
 import { PainelDeNovoProjeto, type DadosDeNovoProjeto } from './ui/PainelDeNovoProjeto';
+import { PainelDaSalaDeCorte } from './ui/PainelDaSalaDeCorte';
 import { PainelDeDimensionar } from './ui/PainelDeDimensionar';
 import {
   criarProjeto,
@@ -1565,6 +1566,35 @@ export default function App(): React.JSX.Element {
       armazenamento = null;
     }
     void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
+  }, []);
+
+  // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
+  const [mostrarSalaDeCorte, setMostrarSalaDeCorte] = useState(false);
+  const [nomesDosProjetos, setNomesDosProjetos] = useState<ReadonlyMap<string, string>>(new Map());
+  const abrirSalaDeCorte = useCallback(() => {
+    setMostrarSalaDeCorte(true);
+    let armazenamento: Storage | null = null;
+    try {
+      armazenamento = window.localStorage;
+    } catch {
+      armazenamento = null;
+    }
+    void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
+    void window.enfestoCad?.listarProjetos().then(
+      (bruta) => setNomesDosProjetos(new Map(lerBiblioteca(bruta).projetos.map((p) => [p.id, `${p.nome} (${p.codigo})`]))),
+      () => {},
+    );
+  }, []);
+
+  /** Um arquivo de texto (CSV) para a janela de salvar: UTF-8 com a marca do início, para a planilha ler os acentos. */
+  const salvarTexto = useCallback(async (sugestaoDeNome: string, conteudo: string): Promise<string | null> => {
+    const api = window.enfestoCad;
+    if (!api) {
+      window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+      return null;
+    }
+    const bytes = new TextEncoder().encode(String.fromCharCode(0xfeff) + conteudo);
+    return api.salvarArquivo(sugestaoDeNome, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   }, []);
 
   const configuracaoDoPlanejamento = useMemo(() => {
@@ -4057,6 +4087,7 @@ export default function App(): React.JSX.Element {
         onAbrirHistorico={() => setMostrarHistorico(true)}
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
         onAbrirPlanoDeCorte={abrirPlanejamento}
+        onAbrirSalaDeCorte={abrirSalaDeCorte}
         onEntrarModoMoverPonto={entrarModoMoverPonto}
         onEntrarModoModificar={entrarModoModificar}
         onEntrarModoRedefinirPerimetro={entrarModoRedefinirPerimetro}
@@ -4215,6 +4246,18 @@ export default function App(): React.JSX.Element {
           onGuardarConfiguracao={guardarConfiguracaoNoComputador}
           onAbrirPeca={abrirPecaDoPlanejamento}
           onFechar={() => setMostrarPlanoDeCorte(false)}
+        />
+      )}
+      {mostrarSalaDeCorte && cadastroDeProducao && (
+        <PainelDaSalaDeCorte
+          cadastro={cadastroDeProducao.cadastro}
+          somenteLeitura={cadastroDeProducao.somenteLeitura}
+          nomeDoProjeto={(id) => nomesDosProjetos.get(id) ?? (id === projetoAtual.id ? `${projetoAtual.nome} (${projetoAtual.codigo})` : 'projeto não encontrado na biblioteca')}
+          agoraIso={() => new Date().toISOString()}
+          novoId={(prefixo) => `${prefixo}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          onMudarCadastro={mudarCadastroDeProducao}
+          onSalvarTexto={salvarTexto}
+          onFechar={() => setMostrarSalaDeCorte(false)}
         />
       )}
       {relatorioAtual && (

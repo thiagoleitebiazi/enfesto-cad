@@ -3015,6 +3015,7 @@ input[type='radio'] {
 
 .situacao-da-execucao {
   display: inline-block;
+  white-space: nowrap;
   padding: 1px 9px;
   border-radius: 999px;
   border: 1px solid var(--cinza-300);
@@ -3044,6 +3045,101 @@ input[type='radio'] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* A sala de corte (ADR 0100): as partes em abas, os indicadores em quadros, a ordem aberta logo abaixo da linha dela. */
+/* A janela acompanha o painel, como a do planejamento: larga, mas nunca mais que a tela (sem rolar para o lado). */
+.sobreposicao-painel:has(.painel-da-sala-de-corte) {
+  width: min(1240px, 94vw);
+  max-width: 94vw;
+}
+
+.painel-da-sala-de-corte {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.painel-da-sala-de-corte .tabela-de-relatorio {
+  width: 100%;
+}
+
+.partes-da-sala-de-corte {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cinza-200);
+}
+
+.partes-da-sala-de-corte button {
+  padding: 5px 14px;
+  border: 1px solid var(--cinza-300);
+  border-radius: 999px;
+  background: var(--cinza-0);
+  color: var(--cinza-800);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.partes-da-sala-de-corte button.item-selecionado {
+  border-color: var(--azul-600);
+  background: var(--azul-600);
+  color: #fff;
+  font-weight: 600;
+}
+
+.painel-da-sala-de-corte section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.painel-da-sala-de-corte h4 {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--marca-800);
+}
+
+.indicadores-da-sala-de-corte {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.indicadores-da-sala-de-corte > div {
+  padding: 8px 12px;
+  border: 1px solid var(--cinza-200);
+  border-left: 3px solid var(--grupo-1);
+  border-radius: var(--raio-md);
+  background: var(--cinza-0);
+}
+
+.indicadores-da-sala-de-corte dt {
+  font-size: 11px;
+  color: var(--cinza-600);
+}
+
+.indicadores-da-sala-de-corte dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--marca-800);
+}
+
+.sugestoes-da-sala-de-corte {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detalhe-da-ordem > td {
+  background: var(--cinza-50);
 }
 
 .confirmacao-do-plano {

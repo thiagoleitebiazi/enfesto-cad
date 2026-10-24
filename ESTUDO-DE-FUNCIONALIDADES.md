@@ -111,10 +111,10 @@ inventa.
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
 | Ordem de corte a partir do encaixe e do planejamento | ✅ (plano confirmado) | — |
-| Situação de cada ordem, consumo planejado × executado, sugestão de correção | 🟡 (execução por plano, ADR 0098; sem painel geral nem sugestão) | L |
-| Indicadores: tempo de corte, metros, aproveitamento, por operador | 🟡 (por plano) | L |
-| Gestão de retalhos (estoque de retalhos) | 🟡 (o rolo marcado como retalho) | L |
-| Relatórios para compras e histórico para auditoria | 🟡 (relatório de produção do projeto) | L |
+| Situação de cada ordem, consumo planejado × executado, sugestão de correção | ✅ (ADR 0098, painel da sala de corte no ADR 0100) | — |
+| Indicadores: tempo de corte, metros, aproveitamento, por operador | ✅ (ADR 0100) | — |
+| Gestão de retalhos (estoque de retalhos) | ✅ (ADR 0098, 0100) | — |
+| Relatórios para compras e histórico para auditoria | ✅ (CSV, ADR 0100) | — |
 | Ligação com máquina de corte, enfestadeira, mesa | ⬜ | H (sem protocolo nem equipamento) |
 | Plotter de papel (risco 1:1) | 🟡 (PDF 1:1 em folhas; DXF) | L (arquivo PLT/HPGL; o plotter é H) |
 

@@ -196,6 +196,13 @@ export interface ExecucaoDoCorte {
   readonly situacao: SituacaoDaExecucao;
   readonly camadasPlanejadas: number;
   readonly consumoPlanejadoMm: number;
+  /**
+   * O que o plano usa de cada rolo, guardado ao liberar: é com isto que a sala de corte conclui o corte sem abrir o
+   * projeto (ausente: o plano é por peso, sem rolos — ou a execução é anterior a este campo, e conclui pelo plano).
+   */
+  readonly usosPlanejados?: readonly { readonly roloId: string; readonly comprimentoMm: number }[];
+  /** A malha do plano (a descrição), para os relatórios da sala de corte. */
+  readonly malha?: string;
   readonly liberadaEmIso: string;
   readonly liberadaPor: string;
   readonly iniciadaEmIso?: string;
@@ -329,11 +336,20 @@ function ehExecucao(v: unknown): v is ExecucaoDoCorte {
         const x = c as Record<string, unknown> | null;
         return typeof x === 'object' && x !== null && ehTexto(x.roloId) && naoNegativo(x.planejadoMm) && naoNegativo(x.realMm) && typeof x.sobraViraRetalho === 'boolean';
       }));
+  const usosOk =
+    e.usosPlanejados === undefined ||
+    (Array.isArray(e.usosPlanejados) &&
+      e.usosPlanejados.every((u: unknown) => {
+        const x = u as Record<string, unknown> | null;
+        return typeof x === 'object' && x !== null && ehTexto(x.roloId) && naoNegativo(x.comprimentoMm);
+      }));
   return (
     ehTexto(e.id) &&
     ehTexto(e.planoId) &&
     ehTexto(e.projetoId) &&
     ehTexto(e.ordem) &&
+    usosOk &&
+    textoOuAusente(e.malha) &&
     situacoes.includes(e.situacao) &&
     inteiroNaoNegativo(e.camadasPlanejadas) &&
     naoNegativo(e.consumoPlanejadoMm) &&
