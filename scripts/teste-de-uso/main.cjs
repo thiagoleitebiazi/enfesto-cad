@@ -4,7 +4,8 @@
  * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
  * uma coleção, cria uma peça pela foto, recomenda o tamanho pelas medidas do corpo (com o guia de medidas) e veste
  * uma saia no provador 3D (costurada, caída, com o mapa de tensão, a estampa e a imagem), monta o painel de inspiração
- * e cria um croqui com a IA (por um serviço de mentira: nada sai do computador) — com
+ * e cria um croqui com a IA (por um serviço de mentira: nada sai do computador), e estampa o encaixe para a impressão
+ * digital — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -1012,6 +1013,40 @@ async function principal() {
       !JSON.stringify(painelGravado).includes('sk-teste-do-uso'),
     painelGravado ? `${painelGravado.itens.length} imagem(ns), ${comRascunho} rascunho(s)` : 'sem painel',
   );
+
+  // 15. A estampa no encaixe (ADR 0113): Encaixe › Impressão › Estampa no encaixe; o tecido listrado do painel como a
+  // estampa de todas as peças; a prévia com cada molde estampado; o PDF 1:1 (a largura do tecido, a imagem, os recortes).
+  await aba('Encaixe');
+  await botao('Estampa no encaixe');
+  await espera(800);
+  conferir('abre a estampa no encaixe', (await janela()) === 'Estampa no encaixe', await janela());
+  const listrado = await js(`(Array.from(document.querySelectorAll('[role=dialog] select[aria-label="Imagem de todas as peças"] option')).find(o => o.textContent.startsWith('tecido-listrado')) || {}).value || ''`);
+  await noCampo('Imagem de todas as peças', listrado);
+  await espera(300);
+  await noCampo('Largura da estampa de todas as peças', '150');
+  await espera(800);
+  const resumo = await js(`((document.querySelector('[role=dialog] .resumo-da-impressao') || {}).textContent || '')`);
+  const padroesNaPrevia = Number(await js(`document.querySelectorAll('[role=dialog] .previa-da-impressao pattern').length`));
+  const [, comEstampa, todasAsPecas] = (resumo.match(/^(\d+) de (\d+) peça/) || []).map(Number);
+  conferir('a prévia: cada molde do encaixe estampado com o tecido listrado', comEstampa > 0 && comEstampa === todasAsPecas && padroesNaPrevia === comEstampa, `${resumo} / ${padroesNaPrevia} padrão(ões)`);
+  await foto('42-estampa-no-encaixe.png');
+  await botaoNaJanela('Exportar PDF para impressão (1:1)');
+  await espera(3000);
+  const pdfsDeImpressao = fs.readdirSync(SAIDA).filter((f) => f.startsWith('impressao-digital-') && f.endsWith('.pdf'));
+  const pdfDeImpressao = pdfsDeImpressao[0] ? fs.readFileSync(path.join(SAIDA, pdfsDeImpressao[0]), 'latin1') : '';
+  const larguraDoTecido = Number((resumo.match(/tecido de ([\d.]+) mm/) || [])[1]?.replace(/\./g, ''));
+  const caixaDaPagina = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(pdfDeImpressao);
+  conferir(
+    'o PDF para impressão: a página na largura do tecido (1:1), a imagem, um recorte por peça estampada',
+    pdfDeImpressao.startsWith('%PDF-') &&
+      !!caixaDaPagina &&
+      Math.abs(Number(caixaDaPagina[1]) - (larguraDoTecido * 72) / 25.4) < 0.01 &&
+      pdfDeImpressao.includes('/Subtype /Image') &&
+      (pdfDeImpressao.match(/W n/g) || []).length >= comEstampa,
+    `${JSON.stringify(pdfsDeImpressao)} ${caixaDaPagina ? caixaDaPagina[0] : 'sem página'}, ${(pdfDeImpressao.match(/W n/g) || []).length} recorte(s)`,
+  );
+  await fecharJanela();
+  await espera(1200);
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

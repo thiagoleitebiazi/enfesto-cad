@@ -8,6 +8,7 @@ import type { FichaTecnica } from './fichaTecnica';
 import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
 import type { Montagem3D } from './montagem3d';
 import type { PainelDeInspiracao } from './inspiracao';
+import type { ImpressaoDigital } from './impressaoDigital';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -108,6 +109,8 @@ export interface Projeto {
   readonly montagem3d?: Montagem3D;
   /** O painel de inspiração do modelo (as imagens, as notas, o conceito, a paleta; os rascunhos da IA), ADR 0112. */
   readonly inspiracao?: PainelDeInspiracao;
+  /** A estampa no encaixe, para a impressão digital do tecido (ADR 0113). */
+  readonly impressaoDigital?: ImpressaoDigital;
 }
 
 /**
@@ -202,6 +205,11 @@ export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, ago
 }
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;
+
+/** O projeto com a estampa no encaixe. */
+export function definirImpressaoDigital(projeto: Projeto, config: ImpressaoDigital, agoraIso: string): Projeto {
+  return { ...projeto, impressaoDigital: config, modificadoEmIso: agoraIso };
+}
 
 /** O projeto com o painel de inspiração. */
 export function definirInspiracao(projeto: Projeto, painel: PainelDeInspiracao, agoraIso: string): Projeto {

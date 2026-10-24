@@ -166,7 +166,8 @@ export type NomeDoIcone =
   | 'guia-de-medidas'
   | 'provador-3d'
   | 'inspiracao'
-  | 'criar-com-ia';
+  | 'criar-com-ia'
+  | 'estampa-no-encaixe';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -1062,6 +1063,14 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M2.5 10.2 9.6 3h7.4v7.4L9.8 17.5Z" />
       <circle cx="13.6" cy="6.4" r="1.2" />
       <path d="m6.6 10.6 2.1 2.1 3.6-3.6" />
+    </>
+  ),
+  'estampa-no-encaixe': (
+    <>
+      <rect x="2" y="4" width="16" height="12" rx="1" />
+      <path d="M4.5 6.5h4.5v7H4.5zM11 6.5h4.5v4H11z" />
+      <circle cx="6.7" cy="9" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="13.2" cy="8.5" r="0.9" fill="currentColor" stroke="none" />
     </>
   ),
   inspiracao: (

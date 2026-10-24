@@ -77,6 +77,8 @@ interface BarraDeFerramentasProps {
   readonly onNestingAutomatico: () => void;
   /** Encaixe > Fila de encaixes: os encaixes calculados em segundo plano, um de cada vez (ADR 0102). */
   readonly onAbrirFilaDeEncaixes: () => void;
+  /** Encaixe > Impressão: a estampa no encaixe, para a impressão digital do tecido (ADR 0113). */
+  readonly onAbrirImpressaoDigital: () => void;
   readonly podeExecutarNesting: boolean;
   readonly onEntrarModoMoverPonto: () => void;
   readonly onEntrarModoModificar: () => void;
@@ -2020,6 +2022,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <Icone nome="fila-de-encaixes" />
                   <span>Fila de encaixes</span>
                 </button>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Impressão">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Estampa no', 'encaixe']}
+                  icone="estampa-no-encaixe"
+                  dica="Estampa no encaixe: cada molde do encaixe preenchido com a estampa (corrida ou localizada), de pé no fio de cada peça — o PDF 1:1 para a impressão digital do tecido, com a sangria e a linha de corte"
+                  falta={props.podeSelecionarTudo ? null : SEM_PECAS}
+                  onClick={props.onAbrirImpressaoDigital}
+                />
               </div>
             </>
           )}

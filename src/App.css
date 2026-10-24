@@ -3513,6 +3513,90 @@ input[type='radio'] {
   color: var(--erro-texto);
 }
 
+/* A estampa no encaixe (ADR 0113): a prévia do tecido estampado em cima; a estampa de todas e a de cada peça embaixo. */
+.sobreposicao-painel:has(.painel-da-impressao) {
+  width: min(1180px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-da-impressao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.previa-da-impressao {
+  width: 100%;
+  height: min(28vh, 260px);
+  border: 1px solid var(--marca-800);
+  border-radius: var(--raio-md);
+  background: repeating-linear-gradient(45deg, #f4f5f7, #f4f5f7 8px, #eceef2 8px, #eceef2 16px);
+}
+
+.nome-na-previa {
+  fill: #1d2128;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px;
+}
+
+.resumo-da-impressao {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 4px solid var(--grupo-3);
+  border-radius: var(--raio-sm);
+  background: #f3effb;
+  font-size: 13px;
+}
+
+.controles-da-impressao {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  max-height: min(26vh, 260px);
+  overflow-y: auto;
+}
+
+.estampa-de-todas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--cinza-200);
+  border-left: 5px solid var(--grupo-3);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.estampa-de-todas label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
+.estampa-de-todas label.opcao-em-linha {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.estampa-por-peca h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--marca-800);
+}
+
+@media (max-width: 760px) {
+  .controles-da-impressao {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* A inspiração e a IA (ADR 0112): o painel em cartões com a cor da categoria, o selo de rascunho, o serviço. */
 .sobreposicao-painel:has(.painel-de-inspiracao) {
   width: min(1180px, 96vw);

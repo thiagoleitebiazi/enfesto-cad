@@ -261,17 +261,30 @@ export function PainelDoProvador3D(props: {
     desenhar();
   }, [desenhar]);
 
-  // A simulação: alguns passos por quadro (até 14 ms), desenha, e para quando o tecido assenta.
+  // A simulação: alguns passos de cada vez (até 14 ms), por um relógio próprio — o desenho espera a tela (que o
+  // sistema pausa com a janela coberta), a física não —, e para quando o tecido assenta.
   useEffect(() => {
     if (!simulando) return;
+    let parado = false;
+    let relogio: ReturnType<typeof setTimeout> | undefined;
     let quadro = 0;
+    const pedirDesenho = (): void => {
+      if (quadro === 0) {
+        quadro = requestAnimationFrame(() => {
+          quadro = 0;
+          desenhar();
+        });
+      }
+    };
     const passo = (): void => {
+      if (parado) return;
       const { sim } = obterMontada();
       const inicio = performance.now();
       do avancar(sim, 1 / 60, 8);
       while (performance.now() - inicio < 14 && !assentou(sim) && sim.tempo < TEMPO_MAXIMO_S);
-      desenhar();
       const fim = assentou(sim) || sim.tempo >= TEMPO_MAXIMO_S;
+      if (fim) desenhar();
+      else pedirDesenho();
       if (fim) {
         const t = tensoes(sim);
         let maxima = 0;
@@ -295,10 +308,14 @@ export function PainelDoProvador3D(props: {
         return;
       }
       setEstado({ fase: sim.tempo < TEMPO_DA_COSTURA_S ? 'costurando' : 'caindo', tempo: sim.tempo });
-      quadro = requestAnimationFrame(passo);
+      relogio = setTimeout(passo, 0);
     };
-    quadro = requestAnimationFrame(passo);
-    return () => cancelAnimationFrame(quadro);
+    relogio = setTimeout(passo, 0);
+    return () => {
+      parado = true;
+      clearTimeout(relogio);
+      cancelAnimationFrame(quadro);
+    };
   }, [simulando, obterMontada, desenhar, instancias]);
 
   const recomecar = (): void => {

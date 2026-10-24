@@ -158,7 +158,9 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor, definirFichaTecnica, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { definirAutor, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { lerImpressaoDigital, type ImpressaoDigital } from './domain/impressaoDigital';
+import { gerarPdfParaImpressaoDigital } from './formats/impressao-exportacao';
 import { lerPainelDeInspiracao, type PainelDeInspiracao as PainelDeInspiracaoDoModelo } from './domain/inspiracao';
 import { lerMontagem3d, type Montagem3D } from './domain/montagem3d';
 import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
@@ -172,6 +174,7 @@ import { avisoDePrazos, diaDe } from './domain/colecoes';
 import { PainelDaFotoParaMolde } from './ui/PainelDaFotoParaMolde';
 import { PainelDeRecomendacaoDeTamanho, type ParteDaRecomendacao } from './ui/PainelDeRecomendacaoDeTamanho';
 import { PainelDoProvador3D } from './ui/PainelDoProvador3D';
+import { PainelDaImpressaoDigital, type ImagemDeEstampa } from './ui/PainelDaImpressaoDigital';
 import { PainelDeInspiracao, type AcessoAoServicoDeIa, type ParteDaInspiracao } from './ui/PainelDeInspiracao';
 import { lerImagemParaInspiracao, pngDoSvg, reduzirParaInspiracao } from './ui/imagensDaInspiracao';
 import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
@@ -352,7 +355,7 @@ import { importarPdf, moldeDaPecaImportada } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pecas-vetoriais';
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
-import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
+import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { gerarPlt } from './formats/plt-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
@@ -1768,6 +1771,41 @@ export default function App(): React.JSX.Element {
       });
     },
     [persistirProjeto],
+  );
+
+  // ---- A estampa no encaixe (aba Encaixe › Impressão, ADR 0113): a configuração vai para o projeto; o PDF 1:1 sai
+  // pela janela de salvar.
+  const [mostrarImpressaoDigital, setMostrarImpressaoDigital] = useState(false);
+  const guardarImpressaoDigital = useCallback(
+    (config: ImpressaoDigital) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirImpressaoDigital(atual, config, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+  /** As imagens que podem virar estampa: as do modelo e as do painel de inspiração. */
+  const imagensDeEstampa = useMemo((): ImagemDeEstampa[] => {
+    const doModelo = imagensDoProjeto(projetoAtual).map((i) => ({ id: i.id, nome: i.nome, dados: i.dados, larguraPx: i.larguraPx, alturaPx: i.alturaPx }));
+    const doPainel = lerPainelDeInspiracao(projetoAtual.inspiracao).itens.map((i) => ({ id: i.id, nome: `${i.nome || 'Inspiração'} (painel)`, dados: i.dados, larguraPx: i.larguraPx, alturaPx: i.alturaPx }));
+    return [...doModelo, ...doPainel];
+  }, [projetoAtual]);
+  const exportarImpressaoDigital = useCallback(
+    async (config: ImpressaoDigital): Promise<string | null> => {
+      const api = window.enfestoCad;
+      if (!api || !enfesto) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return null;
+      }
+      const imagens = new Map(imagensDeEstampa.map((i) => [i.id, i]));
+      const blob = await gerarPdfParaImpressaoDigital(pecas, enfesto, imagens, config, `${projetoAtual.nome} — estampa no encaixe`);
+      const caminho = await api.salvarArquivo(`impressao-digital-${projetoAtual.codigo.replace(/[^A-Za-z0-9._-]+/g, '-')}.pdf`, await blob.arrayBuffer());
+      if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Estampa no encaixe (PDF 1:1 para impressão) salva em ${caminho}`);
+      return caminho;
+    },
+    [pecas, enfesto, tecido, imagensDeEstampa, projetoAtual, registrarEventoEPersistir],
   );
 
   // ---- A inspiração e a IA (aba Modelo › Criação, ADR 0112): o painel vai para o projeto; a chave da IA fica no
@@ -4543,6 +4581,7 @@ export default function App(): React.JSX.Element {
         onAbrirRecomendacaoDeTamanho={setRecomendacaoAberta}
         onAbrirProvador3D={() => setMostrarProvador3D(true)}
         onAbrirInspiracao={setInspiracaoAberta}
+        onAbrirImpressaoDigital={() => setMostrarImpressaoDigital(true)}
         onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
@@ -4703,6 +4742,17 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {mostrarImpressaoDigital && (
+        <PainelDaImpressaoDigital
+          pecas={pecas}
+          mesa={enfesto ? { larguraMm: enfesto.larguraUtilMm, comprimentoMm: comprimentoDoEncaixeAImprimirMm(pecas, enfesto) } : null}
+          imagens={imagensDeEstampa}
+          config={lerImpressaoDigital(projetoAtual.impressaoDigital)}
+          onGuardar={guardarImpressaoDigital}
+          onExportar={exportarImpressaoDigital}
+          onFechar={() => setMostrarImpressaoDigital(false)}
         />
       )}
       {inspiracaoAberta && (

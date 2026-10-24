@@ -223,9 +223,25 @@ export function configuracaoSugerida(instancia: InstanciaDaPeca, largura: number
  * direita de quem olha a face) e `v` (para cima), sem centrar.
  */
 function faceSemCentrar(instancia: InstanciaDaPeca, girarGraus: number, pontos: ArrayLike<number>): { u: Float64Array; v: Float64Array } {
-  const fio = instancia.peca.linhaDeFio;
-  // O fio na tela, apontando para cima; deitado, para a direita — o alto do desenho de um CAD (o y do arquivo), que
-  // entra assim, com o fio na horizontal.
+  const { cima, direita } = eixosDaFace(instancia.peca.linhaDeFio, girarGraus);
+  const n = pontos.length / 2;
+  const u = new Float64Array(n);
+  const v = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const sx = pontos[2 * i + 1]!;
+    const sy = -pontos[2 * i]!;
+    u[i] = (sx * direita.x + sy * direita.y) * (instancia.espelhada ? -1 : 1);
+    v[i] = sx * cima.x + sy * cima.y;
+  }
+  return { u, v };
+}
+
+/**
+ * Os eixos da peça vista pela face, na tela (o x para a direita, o y para cima): o alto pelo fio — o fio apontando
+ * para cima; deitado, para a direita, o alto do desenho de um CAD (o y do arquivo), que entra assim — mais o giro
+ * pedido (no sentido horário de quem olha); a direita, a 90° dele. Servem ao provador 3D e à estampa no encaixe.
+ */
+export function eixosDaFace(fio: { readonly inicio: Ponto2D; readonly fim: Ponto2D }, girarGraus = 0): { readonly cima: Ponto2D; readonly direita: Ponto2D } {
   let fx = fio.fim.y - fio.inicio.y;
   let fy = -(fio.fim.x - fio.inicio.x);
   const L = Math.hypot(fx, fy);
@@ -241,19 +257,8 @@ function faceSemCentrar(instancia: InstanciaDaPeca, girarGraus: number, pontos: 
     fy = -fy;
   }
   const ang = (girarGraus * Math.PI) / 180;
-  // Girar no sentido horário (de quem olha a face).
   const cima = { x: fx * Math.cos(ang) + fy * Math.sin(ang), y: -fx * Math.sin(ang) + fy * Math.cos(ang) };
-  const direita = { x: cima.y, y: -cima.x };
-  const n = pontos.length / 2;
-  const u = new Float64Array(n);
-  const v = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const sx = pontos[2 * i + 1]!;
-    const sy = -pontos[2 * i]!;
-    u[i] = (sx * direita.x + sy * direita.y) * (instancia.espelhada ? -1 : 1);
-    v[i] = sx * cima.x + sy * cima.y;
-  }
-  return { u, v };
+  return { cima, direita: { x: cima.y, y: -cima.x } };
 }
 
 /** O meio, a largura e a altura do contorno da peça vista pela face. */

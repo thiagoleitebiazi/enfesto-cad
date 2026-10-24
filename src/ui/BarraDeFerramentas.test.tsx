@@ -92,6 +92,7 @@ function propsBase(): Props {
     onAbrirRecomendacaoDeTamanho: vi.fn(),
     onAbrirProvador3D: vi.fn(),
     onAbrirInspiracao: vi.fn(),
+    onAbrirImpressaoDigital: vi.fn(),
     onAbrirMoldeDaFoto: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
@@ -613,6 +614,7 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
       Planejamento: ['Planejamento de corte', 'Sala de corte'],
       Configuração: ['Tecido', 'Enfesto'],
       Encaixe: ['Sugerir posição', 'Nesting Automático', 'Fila de encaixes'],
+      Impressão: ['Estampa no encaixe'],
     });
   });
 
