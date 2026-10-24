@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ponto } from '../core/geometria';
 import { criarMolde } from '../domain/molde';
 import { PainelDePecas, PainelDePropriedades } from './PainelLateral';
@@ -34,5 +34,26 @@ describe('PainelDePropriedades — os números em português', () => {
     expect(valor('Altura')).toBe('50,4 mm');
     expect(valor('Área')).toBe('50,6 cm²');
     expect(screen.getByText('Ângulo atual').closest('dl')!.textContent).not.toMatch(/\d\.\d/);
+  });
+});
+
+describe('o grupo do encaixe da peça (ADR 0103)', () => {
+  const peca = criarMolde({ nome: 'Gola', referencia: '', tamanho: 'M', contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 50), ponto(0, 50)], linhaDeFio: { inicio: ponto(10, 25), fim: ponto(90, 25) } }, 'g');
+
+  it('nas Propriedades: o campo com os grupos já usados sugeridos; mudar manda o texto como digitado', () => {
+    const mudancas: unknown[] = [];
+    render(<PainelDePropriedades peca={{ ...peca, grupoDoEncaixe: 'Entretela' }} gruposDoEncaixe={['Entretela', 'Forro']} onAlterar={(p) => mudancas.push(p)} onGirar={() => {}} />);
+    const campo = screen.getByLabelText('Grupo no encaixe');
+    expect(campo).toHaveValue('Entretela');
+    expect(Array.from(document.querySelectorAll('#grupos-do-encaixe option')).map((o) => o.getAttribute('value'))).toEqual(['Entretela', 'Forro']);
+    fireEvent.change(campo, { target: { value: 'Forro de bolso' } });
+    expect(mudancas).toEqual([{ grupoDoEncaixe: 'Forro de bolso' }]);
+  });
+
+  it('na lista de peças: o selo do grupo, fora do nome', () => {
+    render(<PainelDePecas pecas={[{ ...peca, grupoDoEncaixe: ' Entretela ' }, { ...peca, id: 'h', nome: 'Frente' }]} selecionadoId={null} onSelecionar={() => {}} />);
+    const selos = Array.from(document.querySelectorAll('.grupo-da-peca')).map((s) => s.textContent);
+    expect(selos).toEqual(['Entretela']);
+    expect(document.querySelector('.texto-do-item-de-peca')!.textContent).toBe('Gola (—, M)');
   });
 });

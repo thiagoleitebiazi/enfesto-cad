@@ -68,6 +68,11 @@ export function PainelDePecas(props: PainelDePecasProps): React.JSX.Element {
                 <span className="texto-do-item-de-peca">
                   {peca.nome} <span className="referencia">({peca.referencia || '—'}, {peca.tamanho || '—'})</span>
                 </span>
+                {peca.grupoDoEncaixe?.trim() && (
+                  <span className="grupo-da-peca" title="Grupo no encaixe: sai junto com as outras peças do grupo">
+                    {peca.grupoDoEncaixe.trim()}
+                  </span>
+                )}
                 <MiniaturaDoMolde contorno={peca.contorno} />
               </button>
             </li>
@@ -87,10 +92,14 @@ export interface PatchDeMolde {
   readonly restricaoDeRotacao?: RestricaoDeRotacao;
   /** Cortar em pares (direita e esquerda); `false` tira a marca. */
   readonly emPar?: boolean;
+  /** O grupo do encaixe (ADR 0103); só espaços tira o grupo. */
+  readonly grupoDoEncaixe?: string;
 }
 
 interface PainelDePropriedadesProps {
   readonly peca: Molde | null;
+  /** Os grupos do encaixe que as peças do projeto já usam (sugeridos no campo). */
+  readonly gruposDoEncaixe?: readonly string[];
   readonly onAlterar: (patch: PatchDeMolde) => void;
   readonly onGirar: (anguloGraus: number) => void;
 }
@@ -147,6 +156,21 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             Em pares, a quantidade precisa ser par (2 para um par, 4 para dois pares).
           </p>
         )}
+        <label title="As peças do mesmo grupo saem juntas no encaixe, num trecho só do comprimento, que pode ser cortado à parte (por exemplo, as que vão à entretela).">
+          Grupo no encaixe
+          <input
+            type="text"
+            list="grupos-do-encaixe"
+            value={peca.grupoDoEncaixe ?? ''}
+            placeholder="Sem grupo"
+            onChange={(e) => props.onAlterar({ grupoDoEncaixe: e.target.value })}
+          />
+        </label>
+        <datalist id="grupos-do-encaixe">
+          {(props.gruposDoEncaixe ?? []).map((g) => (
+            <option key={g} value={g} />
+          ))}
+        </datalist>
         <label>
           Margem de costura (mm)
           <input

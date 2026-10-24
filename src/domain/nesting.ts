@@ -3,6 +3,7 @@ import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
 import { fazerRisco, moldeOrientado, type PecaDoRisco } from './risco';
+import { blocosNaMesa, grupoDaPeca, indiceDoGrupo, ordemDosGrupos, type BlocoDoGrupo } from './gruposDoEncaixe';
 
 /**
  * Motor de NESTING automático (seção 6 do escopo). Usa os contornos reais
@@ -48,6 +49,8 @@ export interface ResultadoDeNesting {
   readonly paradaPorTempoLimite: boolean;
   /** Verdadeiro se o cálculo parou por já ter atingido `opcoes.aproveitamentoDesejadoPercentual` (peças restantes ficam em `pecasNaoColocadas`, não é uma falha). */
   readonly paradaPorMetaDeAproveitamento: boolean;
+  /** Com peças em grupos (ADR 0103): o trecho do comprimento de cada grupo, na ordem. */
+  readonly blocosDosGrupos?: readonly BlocoDoGrupo[];
 }
 
 export interface OpcoesDeNesting {
@@ -72,6 +75,8 @@ interface InstanciaParaColocar {
   readonly indiceCopia: number;
   readonly moldeNaOrigem: Molde;
   readonly areaMm2: number;
+  /** O grupo do encaixe (`''`: sem grupo). */
+  readonly grupo: string;
 }
 
 function construirInstancias(pecas: readonly Molde[]): InstanciaParaColocar[] {
@@ -87,11 +92,14 @@ function construirInstancias(pecas: readonly Molde[]): InstanciaParaColocar[] {
         indiceCopia: i,
         moldeNaOrigem,
         areaMm2: area(linhaDeCorteDaPeca(peca)),
+        grupo: grupoDaPeca(peca),
       });
     }
   }
-  // Maior área primeiro — heurística "largest-first" clássica de nesting/bin-packing.
-  return instancias.sort((a, b) => b.areaMm2 - a.areaMm2);
+  // Os grupos do encaixe na ordem (as sem grupo por último) e, em cada um, a maior área primeiro — heurística
+  // "largest-first" clássica de nesting/bin-packing. Sem grupos, só a área.
+  const ordem = ordemDosGrupos(pecas);
+  return instancias.sort((a, b) => indiceDoGrupo(ordem, a.grupo) - indiceDoGrupo(ordem, b.grupo) || b.areaMm2 - a.areaMm2);
 }
 
 /** O encaixe inteiro, de uma vez (sem pausas): ver `passosDoNesting`. */
@@ -145,7 +153,11 @@ export function* passosDoNesting(
   const maxTentativasPorPeca = opcoes.maxTentativasPorPeca ?? 20000;
 
   const instancias = construirInstancias(pecas);
-  const limites: LimitesDeArea = areaUtilDaMesa(enfesto);
+  const limitesDaMesa: LimitesDeArea = areaUtilDaMesa(enfesto);
+  // Cada grupo do encaixe começa depois de tudo o que já foi posto (à distância entre as peças): os grupos ficam em
+  // trechos separados do comprimento. Sem grupos, a mesa toda o tempo todo.
+  let limites: LimitesDeArea = limitesDaMesa;
+  let grupoAtual: string | null = null;
 
   const colocadas: PecaColocada[] = [];
   const naoColocadas: PecaNaoColocada[] = [];
@@ -185,6 +197,14 @@ export function* passosDoNesting(
         nome: instancia.moldeNaOrigem.nome,
       });
       continue;
+    }
+
+    if (instancia.grupo !== grupoAtual) {
+      if (grupoAtual !== null && contornosColocados.length > 0) {
+        const piso = Math.max(...contornosColocados.map((c) => retanguloEnvolvente(c).maxY)) + enfesto.distanciaMinimaEntrePecasMm;
+        limites = { ...limitesDaMesa, minY: Math.max(limitesDaMesa.minY, piso) };
+      }
+      grupoAtual = instancia.grupo;
     }
 
     const angulos = rotacoesNoEncaixe(instancia.moldeNaOrigem.restricaoDeRotacao, opcoes.tecidoDeSentidoUnico ?? false);
@@ -270,6 +290,7 @@ export function* passosDoNesting(
   const areaOcupadaMm2 = contornosColocados.reduce((soma, c) => soma + area(c), 0);
   const areaDisponivelMm2 = enfesto.larguraUtilMm * comprimentoUtilizadoMm;
   const aproveitamentoPercentual = areaDisponivelMm2 > 0 ? (areaOcupadaMm2 / areaDisponivelMm2) * 100 : 0;
+  const blocosDosGrupos = blocosNaMesa(colocadas.map((c) => c.molde));
 
   return {
     pecasColocadas: colocadas,
@@ -281,6 +302,7 @@ export function* passosDoNesting(
     interrompido,
     paradaPorTempoLimite,
     paradaPorMetaDeAproveitamento,
+    ...(blocosDosGrupos.length > 0 ? { blocosDosGrupos } : {}),
   };
 }
 
@@ -348,6 +370,7 @@ export function executarNestingPorPontosDeCanto(
   const comprimentoUtilizadoMm = cortes.length === 0 ? 0 : Math.max(...cortes.map((c) => retanguloEnvolvente(c).maxY));
   const areaOcupadaMm2 = cortes.reduce((soma, c) => soma + area(c), 0);
   const areaDisponivel = enfesto.larguraUtilMm * comprimentoUtilizadoMm;
+  const blocosDosGrupos = blocosNaMesa(colocadas.map((c) => c.molde));
   return {
     pecasColocadas: colocadas,
     pecasNaoColocadas: (risco.deFora ?? []).map((p) => ({ idOriginal: p.pecaId, indiceCopia: p.copia ?? 0, nome: p.nome })),
@@ -358,5 +381,6 @@ export function executarNestingPorPontosDeCanto(
     interrompido: false,
     paradaPorTempoLimite: false,
     paradaPorMetaDeAproveitamento: false,
+    ...(blocosDosGrupos.length > 0 ? { blocosDosGrupos } : {}),
   };
 }

@@ -1,3 +1,4 @@
+import type { BlocoDoGrupo } from './gruposDoEncaixe';
 import { comprimentoDoRolo, grupoDoRolo, type MalhaDoCadastro, type RoloDeEstoque } from './cadastroDeProducao';
 import { camadasParaFechar } from './composicaoDeRiscos';
 import { alocarCamadas, linhasDeEmendaDoRisco } from './alocacaoDosRolos';
@@ -146,6 +147,8 @@ export interface RiscoDoPlanejamento {
   readonly casamento?: { readonly rapportComprimentoMm?: number; readonly rapportLarguraMm?: number; readonly faseComprimentoMm: number; readonly faseLarguraMm: number; readonly conferido: boolean };
   /** O risco foi aumentado para compensar o encolhimento (os fatores usados). */
   readonly compensado?: { readonly comprimento: number; readonly largura: number };
+  /** Com peças em grupos do encaixe (ADR 0103): o trecho do comprimento de cada grupo. */
+  readonly blocosDosGrupos?: readonly BlocoDoGrupo[];
 }
 
 export interface CamadasDoRisco {

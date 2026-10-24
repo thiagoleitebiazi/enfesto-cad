@@ -67,6 +67,9 @@ export function riscoCompensado(risco: RiscoDoPlanejamento, fatores: FatoresDeCo
     areaDasPecasMm2: area,
     eficienciaPercentual: area === null ? null : (area / (comprimentoMm * larguraDoRiscoMm)) * 100,
     pecas: risco.pecas.map((p) => ({ ...p, contorno: p.contorno.map(levar), fio: { inicio: levar(p.fio.inicio), fim: levar(p.fio.fim) } })),
+    ...(risco.blocosDosGrupos
+      ? { blocosDosGrupos: risco.blocosDosGrupos.map((b) => ({ ...b, inicioMm: levar({ x: 0, y: b.inicioMm }).y, fimMm: levar({ x: 0, y: b.fimMm }).y })) }
+      : {}),
     compensado: { comprimento: fatores.comprimento, largura: fatores.largura },
   };
 }

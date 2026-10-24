@@ -26,6 +26,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { blocosNaMesa, nomeDoBloco } from '../domain/gruposDoEncaixe';
 import {
   aplicarZoom,
   enquadrarRetanguloDeTela,
@@ -65,6 +66,8 @@ const COR_ARESTA_EM_DESTAQUE = '#e65100';
 const COR_CERCA = '#e65100';
 const COR_PREENCHIMENTO_CERCA = 'rgba(230, 81, 0, 0.07)';
 const COR_JANELA_DE_ZOOM = '#5a6270';
+/** Os grupos do encaixe (ADR 0103): a divisa entre os trechos e o nome de cada um. */
+const COR_GRUPO_DO_ENCAIXE = '#c2185b';
 const COR_PREENCHIMENTO_JANELA_DE_ZOOM = 'rgba(90, 98, 112, 0.08)';
 const COR_GRADE = 'rgba(90, 98, 112, 0.38)';
 const COR_IMA = '#d81b60';
@@ -836,6 +839,35 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         cantoExternoOposto.x - cantoExterno.x,
         cantoExternoOposto.y - cantoExterno.y,
       );
+
+      // Os grupos do encaixe (ADR 0103): o nome de cada trecho no começo dele, acima da mesa (e dos números dos
+      // vértices das peças encostadas na borda), e a divisa tracejada
+      // entre um trecho e o seguinte (só quando eles não se misturam — misturados, a validação avisa).
+      const blocos = blocosNaMesa(pecas);
+      if (blocos.length > 0) {
+        ctx.save();
+        ctx.strokeStyle = COR_GRUPO_DO_ENCAIXE;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([8, 5]);
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        blocos.forEach((bloco, i) => {
+          const seguinte = blocos[i + 1];
+          if (seguinte && seguinte.inicioMm >= bloco.fimMm) {
+            const divisa = (bloco.fimMm + seguinte.inicioMm) / 2;
+            const de = mundoParaTela(ponto(0, divisa), transform);
+            const ate = mundoParaTela(ponto(enfesto.larguraUtilMm, divisa), transform);
+            ctx.beginPath();
+            ctx.moveTo(de.x, de.y);
+            ctx.lineTo(ate.x, ate.y);
+            ctx.stroke();
+          }
+          const nome = nomeDoBloco(bloco);
+          const canto = mundoParaTela(ponto(0, bloco.inicioMm), transform);
+          desenharRotuloComFundo(ctx, nome, canto.x + ctx.measureText(nome).width / 2 + 4, canto.y - 22, COR_GRUPO_DO_ENCAIXE);
+        });
+        ctx.restore();
+      }
     }
 
     // Grade de pontos em múltiplos redondos de mm (o mesmo passo em que o

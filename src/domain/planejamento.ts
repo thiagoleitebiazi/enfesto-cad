@@ -187,6 +187,7 @@ export function riscoGeradoNoPlano(chave: string, risco: RiscoGerado): RiscoDoPl
     eficienciaPercentual: risco.eficienciaPercentual,
     pecas: risco.pecas,
     ...(risco.casamento ? { casamento: risco.casamento } : {}),
+    ...(risco.blocosDosGrupos ? { blocosDosGrupos: risco.blocosDosGrupos } : {}),
   };
 }
 

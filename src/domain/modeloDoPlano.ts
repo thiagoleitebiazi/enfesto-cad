@@ -1,3 +1,4 @@
+import { grupoDaPeca } from './gruposDoEncaixe';
 import { area, retanguloEnvolvente, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
 import { abrirSimetrias } from './anotacoes';
 import { alteradaDesdeAImportacao, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, semGraduacao, transladarMolde, type Molde, type OrigemDaImportacao, type RestricaoDeRotacao } from './molde';
@@ -42,6 +43,8 @@ export interface PecaDoModelo {
   readonly quantidadeSugerida: number;
   readonly origemDaQuantidade: 'quantidade da peça' | 'cópias na mesa';
   readonly emPar: boolean;
+  /** O grupo do encaixe (ADR 0103; `''`: sem grupo). */
+  readonly grupo: string;
   readonly restricao: RestricaoDeRotacao;
   readonly larguraMm: number;
   readonly comprimentoMm: number;
@@ -235,6 +238,7 @@ export function modeloDoPlano(pecasDoProjeto: readonly Molde[]): ModeloDoPlano {
       quantidadeSugerida: g.daMesa ? g.copias : peca.quantidade,
       origemDaQuantidade: g.daMesa ? 'cópias na mesa' : 'quantidade da peça',
       emPar: peca.emPar === true,
+      grupo: grupoDaPeca(peca),
       restricao: peca.restricaoDeRotacao,
       larguraMm: caixa.largura,
       comprimentoMm: caixa.altura,

@@ -72,7 +72,7 @@ inventa.
 |---|---|---|
 | Encaixe automático com muitas combinações e relatório | ✅ heurístico (R-3: sem garantia de ótimo) | — |
 | Margens de segurança, restrição do fio, rotação por brilho/estampa, simetria | ✅ | — |
-| Grupos de peças que ficam juntas no encaixe (ex.: as que vão à entretela) | ⬜ (há os pares) | L |
+| Grupos de peças que ficam juntas no encaixe (ex.: as que vão à entretela) | ✅ (um trecho do comprimento por grupo, nos dois métodos e no planejamento, ADR 0103) | — |
 | Desviar de furos e manchas do tecido | ✅ (defeitos com posição, no plano) | — |
 | Listras e xadrez casados | 🟡 (casamento por um ponto por peça) | L (mais pontos) |
 | Combinação de tamanhos e o melhor tipo de enfesto sugeridos | ✅ (composição dos riscos no plano) | — |

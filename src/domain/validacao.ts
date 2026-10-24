@@ -17,6 +17,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
+import { blocosNaMesa, blocosQueSeMisturam, grupoDaPeca } from './gruposDoEncaixe';
 
 /**
  * Módulo independente de validação geométrica (seção 7 do escopo). Opera só
@@ -34,7 +35,8 @@ export type TipoDeProblema =
   | 'linha-solta'
   | 'linha-que-sai'
   | 'mais-largo-que-o-tecido'
-  | 'sentido-do-tecido';
+  | 'sentido-do-tecido'
+  | 'grupos-misturados';
 
 export type SeveridadeDoProblema = 'erro' | 'aviso';
 
@@ -393,6 +395,24 @@ function validarLinhasSoltas(pecas: readonly Molde[], folgaMm: number): Problema
   return problemas;
 }
 
+/**
+ * Os grupos do encaixe (ADR 0103) que se misturam no comprimento: peças de grupos diferentes (ou sem grupo) no
+ * mesmo trecho — o bloco de um grupo já não pode ser cortado à parte. É aviso: acontece ao mover peças à mão, ou
+ * antes de fazer o encaixe automático.
+ */
+function validarGruposDoEncaixe(pecas: readonly Molde[]): ProblemaDeValidacao[] {
+  return blocosQueSeMisturam(blocosNaMesa(pecas)).map(([a, b]) => {
+    const trecho = (bloco: typeof a): string =>
+      `${bloco.grupo === '' ? 'as peças sem grupo' : `“${bloco.grupo}”`} (de ${emMilimetros(bloco.inicioMm)} a ${emMilimetros(bloco.fimMm)} mm)`;
+    return {
+      tipo: 'grupos-misturados' as const,
+      severidade: 'aviso' as const,
+      mensagem: `Grupos do encaixe misturados no comprimento: ${trecho(a)} e ${trecho(b)} ocupam o mesmo trecho, e o bloco de cada grupo já não pode ser cortado à parte. Faça o encaixe automático de novo, ou afaste as peças.`,
+      pecasEnvolvidasIds: pecas.filter((p) => grupoDaPeca(p) === a.grupo || grupoDaPeca(p) === b.grupo).map((p) => p.id),
+    };
+  });
+}
+
 export function validarProjeto(
   pecas: readonly Molde[],
   enfesto: ConfiguracaoDeEnfesto | null,
@@ -405,6 +425,7 @@ export function validarProjeto(
     ...validarRotacoes(pecas),
     ...validarEscala(pecas, tolerancias),
     ...validarLinhasSoltas(pecas, tolerancias.folgaForaDaPecaMm),
+    ...validarGruposDoEncaixe(pecas),
   ];
   if (enfesto) {
     problemas.push(...validarLimitesDoTecido(pecas, enfesto, tolerancias.folgaNosLimitesMm));

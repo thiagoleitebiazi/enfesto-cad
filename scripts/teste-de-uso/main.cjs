@@ -1,7 +1,7 @@
 /*
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
- * dois encaixes na fila e aplica o melhor — com
+ * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -324,6 +324,41 @@ async function principal() {
     filaGravada.trabalhos.length === 2 && filaGravada.trabalhos.filter((t) => t.aplicadoEmIso).length === 1,
     filaGravada.trabalhos.map((t) => t.situacao + (t.aplicadoEmIso ? ' (aplicado)' : '')).join(', '),
   );
+
+  // 6. Os grupos do encaixe (ADR 0103): uma peça no grupo "Entretela", pela janela do Nesting automático; calcular e
+  // aplicar: o resultado diz o trecho de cada grupo, e a mesa mostra o nome do grupo e a divisa.
+  await botao('Nesting Automático');
+  await espera(800);
+  await js(
+    `(() => { const c = document.querySelector('[aria-label="Grupo de molde-de-teste-2"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, 'Entretela'); c.dispatchEvent(new Event('input', { bubbles: true })); })()`,
+  );
+  await espera(400);
+  const notaDosGrupos = await js(`Array.from(document.querySelectorAll('[role=dialog] .nota-do-formulario')).map(p => p.textContent).find(t => t.startsWith('Grupos:')) || ''`);
+  conferir('o grupo posto na janela do nesting entra na ordem dos grupos', notaDosGrupos.includes('nesta ordem: Entretela → as sem grupo'), notaDosGrupos.slice(0, 120));
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Calcular encaixe')`);
+  let trechosDosGrupos = [];
+  for (let i = 0; i < 60 && trechosDosGrupos.length === 0; i++) {
+    await espera(500);
+    trechosDosGrupos = JSON.parse(
+      await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=dialog] .trechos-dos-grupos li')).map(li => li.textContent))`),
+    );
+  }
+  conferir(
+    'o resultado diz o trecho da Entretela e o das sem grupo',
+    trechosDosGrupos.length === 2 && trechosDosGrupos[0].startsWith('Entretela: de ') && trechosDosGrupos[1].startsWith('Sem grupo: de '),
+    JSON.stringify(trechosDosGrupos),
+  );
+  await foto('15-nesting-com-grupos.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Aplicar ao projeto')`);
+  await espera(800);
+  const validacaoComGrupos = await js(`document.querySelector('.indicador-de-validacao').textContent`);
+  const selosDeGrupo = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('.lista-de-pecas .grupo-da-peca')).map(s => s.textContent))`));
+  conferir(
+    'aplicado: a lista mostra o grupo da peça, e a validação não acusa grupos misturados',
+    JSON.stringify(selosDeGrupo) === '["Entretela"]' && validacaoComGrupos === 'Validação: sem problemas',
+    `${JSON.stringify(selosDeGrupo)} / ${validacaoComGrupos}`,
+  );
+  await foto('16-grupos-na-mesa.png');
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

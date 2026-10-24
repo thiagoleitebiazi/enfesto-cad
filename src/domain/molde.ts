@@ -427,6 +427,11 @@ export interface Molde {
    * dela, metade sai espelhada. A quantidade tem de ser par. Ausente, todas as cópias saem iguais.
    */
   readonly emPar?: true;
+  /**
+   * O grupo do encaixe (por exemplo, "Entretela"): as peças do mesmo grupo saem juntas no encaixe, num trecho só do
+   * comprimento, que pode ser cortado à parte (ADR 0103; ver `gruposDoEncaixe.ts`). Ausente: sem grupo.
+   */
+  readonly grupoDoEncaixe?: string;
   /** De que arquivo a peça veio, e como ela era ao chegar (para dizer se foi mudada depois). */
   readonly origemDaImportacao?: OrigemDaImportacao;
 }

@@ -5,6 +5,7 @@ import { arestaDeSimetria } from '../domain/anotacoes';
 import { rotacoesNoEncaixe, type Molde } from '../domain/molde';
 import { numeroComVirgula } from '../core/numeros';
 import { lerMedida } from './medidas';
+import { grupoDaPeca, nomeDoBloco, ordemDosGrupos } from '../domain/gruposDoEncaixe';
 
 export interface OpcoesAvancadasDeNesting {
   readonly limiteDeTempoMinutos?: number;
@@ -31,6 +32,8 @@ interface PainelDeNestingProps {
   readonly onCalcular: (opcoesAvancadas: OpcoesAvancadasDeNesting) => void;
   /** Põe o encaixe com estas opções na fila de encaixes (ADR 0102), para ser calculado em segundo plano. */
   readonly onPorNaFila?: (opcoesAvancadas: OpcoesAvancadasDeNesting) => void;
+  /** Muda o grupo do encaixe de uma peça (ADR 0103); sem isto, a coluna só mostra. */
+  readonly onAlterarGrupo?: (pecaId: string, grupo: string) => void;
   readonly onCancelar: () => void;
   readonly onAplicar: () => void;
   readonly onFechar: () => void;
@@ -49,6 +52,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
   const [metodo, setMetodo] = useState<MetodoDoNesting>('grade');
+  const grupos = ordemDosGrupos(props.pecas);
   /** Os tamanhos com que a peça entra no encaixe: todos os da graduação, só o base, ou o dela. */
   const tamanhosDa = (p: Molde): string => {
     if (!p.graduacao) return p.tamanho.trim() === '' ? '—' : p.tamanho;
@@ -188,6 +192,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                     <th>Qtd</th>
                     <th>Rotação</th>
                     <th>Espelho</th>
+                    <th>Grupo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,12 +203,37 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                       <td>{p.quantidade}</td>
                       <td>{rotacoesNoEncaixe(p.restricaoDeRotacao, Boolean(props.sentidoDoTecido)).map((r) => `${r}°`).join(', ')}</td>
                       <td>{p.restricaoDeRotacao.permiteEspelhamento ? 'Sim' : 'Não'}</td>
+                      <td>
+                        {props.onAlterarGrupo ? (
+                          <input
+                            type="text"
+                            className="campo-do-grupo"
+                            list="grupos-do-encaixe-no-nesting"
+                            aria-label={`Grupo de ${p.nome}`}
+                            placeholder="—"
+                            value={p.grupoDoEncaixe ?? ''}
+                            onChange={(e) => props.onAlterarGrupo?.(p.id, e.target.value)}
+                          />
+                        ) : (
+                          grupoDaPeca(p) || '—'
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <datalist id="grupos-do-encaixe-no-nesting">
+                {grupos.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
               <p className="nota-do-formulario">
-                Só informativo — ajuste pelo painel "Propriedades" antes de calcular, se precisar.
+                {grupos.length === 0
+                  ? 'Grupo: as peças com o mesmo grupo (por exemplo, “Entretela”) saem juntas, num trecho só do comprimento, que pode ser cortado à parte. Sem grupo, o encaixe é o de sempre.'
+                  : `Grupos: as peças de cada grupo saem juntas, num trecho só do comprimento, nesta ordem: ${[...grupos, ...(props.pecas.some((p) => grupoDaPeca(p) === '') ? ['as sem grupo'] : [])].join(' → ')}. A ordem é a da lista de peças.`}
+              </p>
+              <p className="nota-do-formulario">
+                {props.onAlterarGrupo ? 'O grupo se muda aqui; as outras colunas, pelo painel "Propriedades" antes de calcular.' : 'Só informativo — ajuste pelo painel "Propriedades" antes de calcular, se precisar.'}
               </p>
               {props.sentidoDoTecido && (
                 <p className="nota-do-formulario">
@@ -268,6 +298,20 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               <dd>{numeroComVirgula(props.resultado.aproveitamentoPercentual, 1)}%</dd>
               <dt>Tempo de processamento</dt>
               <dd>{props.resultado.tempoDeProcessamentoMs} ms</dd>
+              {props.resultado.blocosDosGrupos && (
+                <>
+                  <dt>Trechos dos grupos</dt>
+                  <dd>
+                    <ul className="trechos-dos-grupos">
+                      {props.resultado.blocosDosGrupos.map((b) => (
+                        <li key={b.grupo}>
+                          {nomeDoBloco(b)}: de {numeroComVirgula(b.inicioMm, 1)} a {numeroComVirgula(b.fimMm, 1)} mm ({b.pecas} peça(s))
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </>
+              )}
               {props.resultado.interrompido && (
                 <>
                   <dt>Status</dt>

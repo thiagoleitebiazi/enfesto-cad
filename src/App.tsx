@@ -355,6 +355,7 @@ import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
 import { PainelDeNesting, type OpcoesAvancadasDeNesting } from './ui/PainelDeNesting';
 import { PainelDaFilaDeEncaixes } from './ui/PainelDaFilaDeEncaixes';
+import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
@@ -1554,10 +1555,22 @@ export default function App(): React.JSX.Element {
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
-      const { emPar, ...resto } = patch;
-      aplicarMudanca(pecas.map((p) => (p.id === selecionadoId ? comPar({ ...p, ...resto }, emPar ?? p.emPar === true) : p)));
+      const { emPar, grupoDoEncaixe, ...resto } = patch;
+      aplicarMudanca(
+        pecas.map((p) => {
+          if (p.id !== selecionadoId) return p;
+          const mudada = comPar({ ...p, ...resto }, emPar ?? p.emPar === true);
+          return grupoDoEncaixe === undefined ? mudada : comGrupoDoEncaixe(mudada, grupoDoEncaixe);
+        }),
+      );
     },
     [pecas, selecionadoId, aplicarMudanca],
+  );
+
+  /** O grupo do encaixe de uma peça, mudado na janela do Nesting automático (ADR 0103). */
+  const alterarGrupoDaPeca = useCallback(
+    (pecaId: string, grupo: string) => aplicarMudanca(pecas.map((p) => (p.id === pecaId ? comGrupoDoEncaixe(p, grupo) : p))),
+    [pecas, aplicarMudanca],
   );
 
   /** Diz, na faixa de mensagens, o que uma ação acabou de fazer — até a próxima mudança nas peças ou na seleção. */
@@ -4311,6 +4324,7 @@ export default function App(): React.JSX.Element {
           resultado={resultadoNesting}
           onCalcular={calcularNestingAutomatico}
           onPorNaFila={porNaFila}
+          onAlterarGrupo={alterarGrupoDaPeca}
           onCancelar={cancelarNestingAutomatico}
           onAplicar={aplicarResultadoNesting}
           onFechar={fecharPainelDeNesting}
@@ -5597,7 +5611,12 @@ export default function App(): React.JSX.Element {
       </div>
       {mostrarPropriedadesDaPeca && pecaSelecionada && (
         <Sobreposicao titulo="Propriedades da peça" onFechar={() => setMostrarPropriedadesDaPeca(false)}>
-          <PainelDePropriedades peca={pecaSelecionada} onAlterar={alterarPecaSelecionada} onGirar={girarPecaSelecionada} />
+          <PainelDePropriedades
+            peca={pecaSelecionada}
+            gruposDoEncaixe={ordemDosGrupos(pecas)}
+            onAlterar={alterarPecaSelecionada}
+            onGirar={girarPecaSelecionada}
+          />
         </Sobreposicao>
       )}
       {mostrarValidacao && (

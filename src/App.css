@@ -3360,3 +3360,26 @@ input[type='radio'] {
 .barra-de-status .indicador-da-fila:hover {
   filter: brightness(1.1);
 }
+
+/* Os grupos do encaixe (ADR 0103): o selo do grupo na lista de peças e o campo na janela do Nesting. */
+.lista-de-pecas .grupo-da-peca {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--grupo-5);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.tabela-de-pecas-nesting .campo-do-grupo {
+  width: 110px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.trechos-dos-grupos {
+  margin: 0;
+  padding-left: 18px;
+}

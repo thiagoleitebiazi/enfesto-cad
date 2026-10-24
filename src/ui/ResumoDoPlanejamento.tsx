@@ -2,6 +2,7 @@ import { escreverKg, escreverM, escreverM2, escreverRendimento } from '../domain
 import { DEFINICOES, type AlertaDoPlanejamento, type ConfiguracaoDoPlanejamento, type EntradaDoPlanejamento, type ResultadoDoPlanejamento, type RiscoDoPlanejamento } from '../domain/planoDeEnfesto';
 import { ROTULO_DO_TIPO } from '../domain/enfesto';
 import { escreverGrade } from '../domain/risco';
+import { nomeDoBloco } from '../domain/gruposDoEncaixe';
 import type { EstimativaDeCustoDoTecido } from '../domain/custoDoTecido';
 import { CustoDoTecidoNoPlano } from './CustoDoTecidoNoPlano';
 import { DesenhoDoRisco } from './DesenhoDoRisco';
@@ -83,6 +84,12 @@ export function ResumoDoPlanejamento(props: {
                   {x.origem === 'mesa' ? ' (da mesa)' : x.origem === 'informado' ? ' (informado)' : ''}
                   {desenhado?.compensado ? ' (encolhimento compensado)' : ''}
                   {desenhado?.casamento?.conferido ? ' (desenho casado)' : ''}
+                  {desenhado?.blocosDosGrupos && (
+                    <span className="trechos-no-risco">
+                      {' '}
+                      — grupos: {desenhado.blocosDosGrupos.map((b) => `${nomeDoBloco(b)} de ${escreverM(b.inicioMm)} a ${escreverM(b.fimMm)}`).join('; ')}
+                    </span>
+                  )}
                 </td>
                 <td className="coluna-numerica">{escreverM(x.comprimentoMm)}</td>
                 <td className="coluna-numerica">{escreverM(x.larguraMm)}</td>

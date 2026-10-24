@@ -41,7 +41,7 @@ describe('PainelDeNesting: tamanhos das peças graduadas', () => {
 
     expect(screen.queryByLabelText(/Encaixar todos os tamanhos/)).not.toBeInTheDocument();
     expect(within(linhaDa('Frente')).getByText('M')).toBeInTheDocument();
-    expect(within(linhaDa('Bolso')).getByText('—')).toBeInTheDocument();
+    expect(within(linhaDa('Bolso')).getAllByRole('cell')[1]).toHaveTextContent('—');
 
     calcular();
     expect(onCalcular).toHaveBeenCalledWith({ distanciaEntreMoldesMm: 3 });
@@ -238,5 +238,66 @@ describe('PainelDeNesting: pôr na fila (ADR 0102)', () => {
 
     fireEvent.change(screen.getByLabelText('Distância entre os moldes (mm)'), { target: { value: '-1' } });
     expect(screen.getByRole('button', { name: 'Pôr na fila' })).toBeDisabled();
+  });
+});
+
+describe('PainelDeNesting: os grupos do encaixe (ADR 0103)', () => {
+  afterEach(() => cleanup());
+
+  const comGrupo = (m: Molde, grupo: string): Molde => ({ ...m, grupoDoEncaixe: grupo });
+  const base = {
+    distanciaEntreMoldesMm: 3,
+    executando: false,
+    progresso: null,
+    resultado: null,
+    onCalcular: () => {},
+    onCancelar: () => {},
+    onAplicar: () => {},
+    onFechar: () => {},
+  };
+
+  it('a coluna Grupo muda o grupo da peça; a nota diz a ordem dos grupos (as sem grupo por último)', () => {
+    const onAlterarGrupo = vi.fn();
+    render(<PainelDeNesting {...base} pecas={[molde('Frente', 'f', 'M'), comGrupo(molde('Gola', 'g', 'M'), 'Entretela')]} onAlterarGrupo={onAlterarGrupo} />);
+    expect(screen.getByLabelText('Grupo de Gola')).toHaveValue('Entretela');
+    fireEvent.change(screen.getByLabelText('Grupo de Frente'), { target: { value: 'Forro' } });
+    expect(onAlterarGrupo).toHaveBeenCalledWith('f', 'Forro');
+    expect(screen.getByText(/nesta ordem: Entretela → as sem grupo/)).toBeInTheDocument();
+  });
+
+  it('sem grupos, a nota explica o que é o grupo; sem quem mude, a coluna só mostra', () => {
+    render(<PainelDeNesting {...base} pecas={[molde('Frente', 'f', 'M')]} />);
+    expect(screen.getByText(/as peças com o mesmo grupo \(por exemplo, “Entretela”\) saem juntas/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Grupo de Frente')).toBeNull();
+    expect(within(linhaDa('Frente')).getAllByRole('cell').at(-1)).toHaveTextContent('—');
+  });
+
+  it('o resultado diz o trecho de cada grupo', () => {
+    render(
+      <PainelDeNesting
+        {...base}
+        pecas={[molde('Frente', 'f', 'M')]}
+        resultado={{
+          pecasColocadas: [],
+          pecasNaoColocadas: [],
+          comprimentoUtilizadoMm: 1500,
+          areaOcupadaMm2: 0,
+          aproveitamentoPercentual: 70,
+          tempoDeProcessamentoMs: 12,
+          interrompido: false,
+          paradaPorTempoLimite: false,
+          paradaPorMetaDeAproveitamento: false,
+          blocosDosGrupos: [
+            { grupo: 'Entretela', inicioMm: 4, fimMm: 612.5, pecas: 4 },
+            { grupo: '', inicioMm: 617.5, fimMm: 1500, pecas: 2 },
+          ],
+        }}
+      />,
+    );
+    const trechos = screen.getByText('Trechos dos grupos', { selector: 'dt' }).nextElementSibling!;
+    expect(within(trechos as HTMLElement).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Entretela: de 4,0 a 612,5 mm (4 peça(s))',
+      'Sem grupo: de 617,5 a 1500,0 mm (2 peça(s))',
+    ]);
   });
 });

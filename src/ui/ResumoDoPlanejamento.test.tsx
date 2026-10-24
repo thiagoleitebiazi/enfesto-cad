@@ -85,6 +85,18 @@ describe('ResumoDoPlanejamento — o que é novo no plano', () => {
     mostrar(entrada({}), CONFIGURACAO_PADRAO_DO_PLANEJAMENTO, [marcado]);
     expect(within(screen.getByRole('table', { name: 'Riscos' })).getAllByRole('row')[1]).toHaveTextContent('(encolhimento compensado) (desenho casado)');
   });
+
+  it('o risco com grupos do encaixe diz o trecho de cada grupo (ADR 0103)', () => {
+    const comGrupos: RiscoDoPlanejamento = {
+      ...RISCO,
+      blocosDosGrupos: [
+        { grupo: 'Entretela', inicioMm: 0, fimMm: 1400, pecas: 1 },
+        { grupo: '', inicioMm: 1500, fimMm: 3000, pecas: 1 },
+      ],
+    };
+    mostrar(entrada({}), CONFIGURACAO_PADRAO_DO_PLANEJAMENTO, [comGrupos]);
+    expect(within(screen.getByRole('table', { name: 'Riscos' })).getAllByRole('row')[1]).toHaveTextContent('— grupos: Entretela de 0,00 m a 1,40 m; Sem grupo de 1,50 m a 3,00 m');
+  });
 });
 
 describe('ResumoDoPlanejamento — o custo do tecido', () => {

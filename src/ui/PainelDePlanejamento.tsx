@@ -43,6 +43,7 @@ import { EstoqueDoPlano } from './EstoqueDoPlano';
 import { ExecucaoDoPlano } from './ExecucaoDoPlano';
 import { execucaoAtualDoPlano, ROTULO_DA_SITUACAO } from '../domain/execucaoDoCorte';
 import { linhaDeCorteDaPeca, rotacoesPermitidas, type Molde } from '../domain/molde';
+import { blocosNaMesa } from '../domain/gruposDoEncaixe';
 import { modeloDoPlano, quantidadesPorRoupa } from '../domain/modeloDoPlano';
 import { revisaoAtualDoMolde, type Projeto } from '../domain/projeto';
 import { escreverM, riscoDaMesa } from '../domain/planoDeCorte';
@@ -157,6 +158,8 @@ function riscoDaMesaNoPlano(pecas: readonly Molde[], grade: GradeDoRisco, tamanh
   const cortes = pecas.map((p) => ({ p, corte: linhaDeCorteDaPeca(p) })).filter((x) => x.corte.length >= 3);
   const caixa = retanguloEnvolvente(cortes.flatMap((x) => x.corte));
   const levar = (q: { readonly x: number; readonly y: number }) => ({ x: q.x - caixa.minX, y: q.y - caixa.minY });
+  // Os trechos dos grupos do encaixe, como as peças estão na mesa (ADR 0103).
+  const blocos = blocosNaMesa(pecas);
   return {
     chave: chaveDaGrade(grade, tamanhos),
     grade,
@@ -175,6 +178,7 @@ function riscoDaMesaNoPlano(pecas: readonly Molde[], grade: GradeDoRisco, tamanh
       anguloGraus: p.anguloDeRotacaoGraus,
       espelhada: false,
     })),
+    ...(blocos.length > 0 ? { blocosDosGrupos: blocos.map((b) => ({ ...b, inicioMm: b.inicioMm - caixa.minY, fimMm: b.fimMm - caixa.minY })) } : {}),
   };
 }
 
@@ -946,6 +950,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                   <th scope="col">Tamanhos</th>
                   <th scope="col">Por roupa</th>
                   <th scope="col">Par</th>
+                  <th scope="col">Grupo</th>
                   <th scope="col">Rotações permitidas</th>
                   <th scope="col">Medida (linha de corte)</th>
                   <th scope="col">Origem</th>
@@ -971,6 +976,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                       <span className="nota-do-formulario"> ({p.origemDaQuantidade})</span>
                     </td>
                     <td>{p.emPar ? 'sim (dir. e esq.)' : 'não'}</td>
+                    <td>{p.grupo || '—'}</td>
                     <td>
                       {rotacoesPermitidas(p.restricao).join('°, ')}°{p.restricao.permiteEspelhamento && !p.emPar ? ', espelhar' : ''}
                     </td>

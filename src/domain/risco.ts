@@ -2,6 +2,7 @@ import { area, distancia, retanguloEnvolvente, simplificarContorno, transladarCo
 import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, type Molde } from './molde';
 import type { ModeloDoPlano } from './modeloDoPlano';
 import { caixaDe, encostar, FOLGA_DO_ENCOSTO_MM, lugarLivre, type Caixa, type LimitesDeArea } from './posicionamento';
+import { blocosDasPostas, grupoDaPeca, indiceDoGrupo, ordemDosGrupos, type BlocoDoGrupo } from './gruposDoEncaixe';
 
 /**
  * O risco do planejamento de corte: as peças de uma grade (quantas roupas de cada tamanho numa folha) postas na
@@ -107,6 +108,8 @@ export interface RiscoGerado {
   readonly deFora?: ReadonlyArray<{ readonly pecaId: string; readonly nome: string; readonly tamanho: string; readonly copia?: number }>;
   /** O casamento usado, e se a conferência depois de posto achou todas as peças na fase. */
   readonly casamento?: Casamento & { readonly conferido: boolean };
+  /** Com peças em grupos do encaixe (ADR 0103): o trecho do comprimento de cada grupo, na ordem. */
+  readonly blocosDosGrupos?: readonly BlocoDoGrupo[];
 }
 
 export interface RiscoQueNaoSai {
@@ -243,7 +246,11 @@ function porNaOrdem(
   // vírgula podiam dar um fio a menos e o lugar seria recusado. Sem distância, a folga também: bordas que se
   // tocam contam como sobrepostas.
   const afastamento = d + FOLGA_DO_ENCOSTO_MM;
-  const limites: LimitesDeArea = { minX: 0, maxX: opcoes.larguraMm, minY: 0, maxY: opcoes.comprimentoMaximoMm };
+  let limites: LimitesDeArea = { minX: 0, maxX: opcoes.larguraMm, minY: 0, maxY: opcoes.comprimentoMaximoMm };
+  // Os grupos do encaixe (ADR 0103) vêm um depois do outro na ordem: cada grupo novo começa depois de tudo o que já
+  // foi posto (o piso), e nenhuma peça dele volta para o trecho do grupo de antes.
+  let piso = 0;
+  let grupoAtual: string | null = null;
   const postas: Posta[] = [];
   const cortes: Contorno[] = [];
   const caixas: Caixa[] = [];
@@ -253,6 +260,15 @@ function porNaOrdem(
   const deFora: PecaDoRisco[] = [];
   for (const peca of ordem) {
     if (opcoes.deveParar?.()) return { cancelado: true };
+    const grupo = grupoDaPeca(peca.molde);
+    if (grupo !== grupoAtual) {
+      if (grupoAtual !== null && postas.length > 0) {
+        piso = fimDoComprimento + afastamento;
+        limites = { ...limites, minY: piso };
+        pontos = [{ x: 0, y: piso }];
+      }
+      grupoAtual = grupo;
+    }
     let melhor: Posta | null = null;
     for (const o of orientacoes.get(peca)!) {
       const largura = o.caixa.maxX;
@@ -300,7 +316,7 @@ function porNaOrdem(
     caixas.push(melhor.caixa);
     fimDoComprimento = Math.max(fimDoComprimento, melhor.caixa.maxY);
     const c = melhor.caixa;
-    pontos = [...pontos, { x: c.maxX + afastamento, y: c.minY }, { x: c.minX, y: c.maxY + afastamento }, { x: 0, y: c.maxY + afastamento }, { x: c.maxX + afastamento, y: 0 }]
+    pontos = [...pontos, { x: c.maxX + afastamento, y: c.minY }, { x: c.minX, y: c.maxY + afastamento }, { x: 0, y: c.maxY + afastamento }, { x: c.maxX + afastamento, y: piso }]
       .filter((p) => p.x < opcoes.larguraMm && p.y < opcoes.comprimentoMaximoMm)
       .sort((a, b) => a.y - b.y || a.x - b.x);
   }
@@ -352,6 +368,7 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
   }
   // As duas peças vizinhas podem estar simplificadas: a diferença das duas entra na distância.
   const folgaDaSimplificacao = 2 * Math.max(0, ...[...orientacoes.values()].flat().map((o) => o.desvioMm));
+  const gruposDoRisco = ordemDosGrupos(pecas.map((p) => p.molde));
   let melhor: { postas: Posta[]; deFora: PecaDoRisco[]; ordem: string } | null = null;
   let naoCoube: PecaDoRisco | null = null;
   const tentadas: string[] = [];
@@ -360,7 +377,11 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
     tentadas.push(nome);
     const chave = (p: PecaDoRisco): number => Math.max(...orientacoes.get(p)!.map(medida));
     // Estável: as cópias da mesma peça ficam juntas, na ordem em que vieram.
-    const ordem = pecas.map((p, i) => ({ p, i, v: chave(p) })).sort((a, b) => b.v - a.v || a.i - b.i).map((x) => x.p);
+    // Os grupos do encaixe na ordem (as sem grupo por último); em cada grupo, a medida desta ordem de entrada.
+    const ordem = pecas
+      .map((p, i) => ({ p, i, g: indiceDoGrupo(gruposDoRisco, grupoDaPeca(p.molde)), v: chave(p) }))
+      .sort((a, b) => a.g - b.g || b.v - a.v || a.i - b.i)
+      .map((x) => x.p);
     const passada = porNaOrdem(ordem, orientacoes, opcoes, folgaDaSimplificacao, tentadas.length === 1);
     if ('cancelado' in passada) return { ok: false, grade, motivo: 'A busca foi cancelada.', cancelado: true };
     if ('naoCoube' in passada) {
@@ -390,6 +411,10 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
   const comprimentoMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxY)));
   const larguraOcupadaMm = noCentesimo(Math.max(...melhor.postas.map((x) => x.caixa.maxX)));
   const areaDasPecasMm2 = melhor.postas.reduce((s, x) => s + area(x.corte), 0);
+  const blocosDosGrupos = blocosDasPostas(
+    melhor.postas.map((x) => ({ grupo: grupoDaPeca(x.peca.molde), corte: x.corte })),
+    gruposDoRisco,
+  );
   const saida: PecaPostaNoRisco[] = melhor.postas.map((x) => ({
       pecaId: x.peca.pecaId,
       nome: x.peca.nome,
@@ -422,6 +447,7 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
     ...(opcoes.deixarDeFora
       ? { deFora: [...largasDemais, ...melhor.deFora].map((p) => ({ pecaId: p.pecaId, nome: p.nome, tamanho: p.tamanho, ...(p.copia !== undefined ? { copia: p.copia } : {}) })) }
       : {}),
+    ...(blocosDosGrupos.length > 0 ? { blocosDosGrupos } : {}),
   };
 }
 
