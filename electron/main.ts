@@ -29,6 +29,7 @@ import { copiaUnica, criarFilaDeGravacao, gravarComAnterior, gravarProjetoComCop
 import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
 import { lerFilaDeEncaixes, VERSAO_DA_FILA } from '../src/domain/filaDeEncaixes';
+import { lerBibliotecaDeMateriais, VERSAO_DA_BIBLIOTECA_DE_MATERIAIS } from '../src/domain/materiais';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
@@ -785,6 +786,41 @@ ipcMain.handle('fila-gravar', async (_evento, bruto: unknown) => {
     gravarComAnterior(arquivoDaFila(), JSON.stringify(lido.fila), {
       idDoArquivo: 'fila-de-encaixes',
       versaoNova: VERSAO_DA_FILA,
+      pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
+      agoraIso: new Date().toISOString(),
+    }),
+  );
+  return true;
+});
+
+/**
+ * A biblioteca de materiais e aviamentos (ADR 0104), em <userData>/biblioteca-de-materiais.json: os materiais e os
+ * padrões de custo da empresa. Lida e gravada como o cadastro e a fila (a versão anterior ao lado; o arquivo
+ * ilegível vai para as cópias de segurança na primeira gravação).
+ */
+function arquivoDosMateriais(): string {
+  return path.join(app.getPath('userData'), 'biblioteca-de-materiais.json');
+}
+
+ipcMain.handle('materiais-ler', async () => {
+  const lido = await lerComRecuperacao(arquivoDosMateriais());
+  if (lido.situacao === 'ausente') return null;
+  if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivoDosMateriais()) };
+  if (lido.situacao === 'recuperado') {
+    registrarDiagnostico(`materiais-recuperados-da-versao-anterior motivo=${lido.motivo}`);
+    return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
+  }
+  return lido.conteudo;
+});
+
+ipcMain.handle('materiais-gravar', async (_evento, bruto: unknown) => {
+  const lido = lerBibliotecaDeMateriais(bruto);
+  if (lido.descartados.length > 0) throw new Error(`A biblioteca de materiais não foi gravada: ${lido.descartados.join(' ')}`);
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await filaDeGravacao('biblioteca-de-materiais', () =>
+    gravarComAnterior(arquivoDosMateriais(), JSON.stringify(lido.biblioteca, null, 2), {
+      idDoArquivo: 'biblioteca-de-materiais',
+      versaoNova: VERSAO_DA_BIBLIOTECA_DE_MATERIAIS,
       pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
       agoraIso: new Date().toISOString(),
     }),

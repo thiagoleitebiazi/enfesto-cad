@@ -360,6 +360,36 @@ async function principal() {
   );
   await foto('16-grupos-na-mesa.png');
 
+  // 7. A biblioteca de materiais e aviamentos (ADR 0104): Modelo > Materiais e aviamentos, um material novo pelo
+  // formulário, guardado na lista e no arquivo da pasta de dados.
+  const digitar = (rotulo, valor) =>
+    js(
+      `(() => { const l = Array.from(document.querySelectorAll('[role=dialog] label')).find(x => Array.from(x.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim() === ${JSON.stringify(rotulo)}); const c = l.querySelector('input, select, textarea'); const p = c.tagName === 'SELECT' ? HTMLSelectElement.prototype : c.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p, 'value').set.call(c, ${JSON.stringify(valor)}); c.dispatchEvent(new Event(c.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); })()`,
+    );
+  await aba('Modelo');
+  await espera(300);
+  await botao('Materiais e aviamentos');
+  await espera(800);
+  conferir('abre a biblioteca de materiais', (await janela()) === 'Materiais e aviamentos', await janela());
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Novo material')`);
+  await digitar('Descrição *', 'Botão de pressão 12 mm');
+  await digitar('Código', 'BOT-12');
+  await digitar('Preço por un (R$)', '0,35');
+  await digitar('Fornecedor', 'Aviamentos do teste');
+  await foto('17-material-novo.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Guardar')`);
+  await espera(800);
+  const naListaDeMateriais = await js(`((document.querySelector('[role=dialog] .tabela-de-materiais tbody tr') || {}).textContent || '')`);
+  const bibliotecaGravada = JSON.parse(fs.readFileSync(path.join(DADOS, 'biblioteca-de-materiais.json'), 'utf8'));
+  conferir(
+    'o material novo aparece na lista (com o preço com vírgula) e fica gravado na pasta de dados',
+    naListaDeMateriais.includes('BOT-12') && naListaDeMateriais.includes('R$ 0,35/un') && bibliotecaGravada.materiais.length === 1 && bibliotecaGravada.materiais[0].precoPorUnidade === 0.35,
+    `${naListaDeMateriais} / ${JSON.stringify(bibliotecaGravada.materiais.map((m) => [m.codigo, m.precoPorUnidade]))}`,
+  );
+  await foto('18-materiais.png');
+  await fecharJanela();
+  await espera(300);
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   log(`falhas: ${falhas}`);

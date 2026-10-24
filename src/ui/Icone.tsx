@@ -155,7 +155,10 @@ export type NomeDoIcone =
   | 'arco-tangente-arco-reta'
   | 'arco-tangente-2-arcos'
   | 'programas'
-  | 'fila-de-encaixes';
+  | 'fila-de-encaixes'
+  | 'materiais'
+  | 'ficha-tecnica'
+  | 'pre-custo';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -1008,6 +1011,28 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <circle cx="10" cy="7" r="3.3" />
       <path d="M3.5 17.5c.6-3.8 3.2-5.8 6.5-5.8s5.9 2 6.5 5.8" />
+    </>
+  ),
+  materiais: (
+    <>
+      <circle cx="6.5" cy="6.5" r="3.5" />
+      <circle cx="5.5" cy="5.5" r="0.6" />
+      <circle cx="7.5" cy="7.5" r="0.6" />
+      <rect x="11" y="3" width="6" height="7" rx="1" />
+      <path d="M11 5.5h6M3 13.5h14v3.5H3z" />
+    </>
+  ),
+  'ficha-tecnica': (
+    <>
+      <path d="M4.5 2.5h8l3 3v12h-11z" />
+      <path d="M12.5 2.5v3h3" />
+      <path d="M7 8.5h6M7 11.5h6M7 14.5h4" />
+    </>
+  ),
+  'pre-custo': (
+    <>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M12.6 7.4c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 2s1.1 1.7 2.6 2 2.6.8 2.6 2-1.1 2-2.6 2c-1.1 0-2.1-.5-2.6-1.4M10 4.5v11" />
     </>
   ),
   'informacoes-dos-moldes': (

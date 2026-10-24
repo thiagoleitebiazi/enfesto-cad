@@ -67,6 +67,14 @@ const api = {
   async gravarFilaDeEncaixes(fila: unknown): Promise<boolean> {
     return ipcRenderer.invoke('fila-gravar', fila) as Promise<boolean>;
   },
+  /** A biblioteca de materiais e aviamentos como está no disco (`null`: ainda não existe). Ler com `lerBibliotecaDeMateriais`. */
+  async lerBibliotecaDeMateriais(): Promise<unknown> {
+    return ipcRenderer.invoke('materiais-ler') as Promise<unknown>;
+  },
+  /** Grava a biblioteca de materiais inteira (o processo principal confere antes). */
+  async gravarBibliotecaDeMateriais(biblioteca: unknown): Promise<boolean> {
+    return ipcRenderer.invoke('materiais-gravar', biblioteca) as Promise<boolean>;
+  },
   /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
   avisarInterfacePronta(): void {
     ipcRenderer.send('interface-pronta');

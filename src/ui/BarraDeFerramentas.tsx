@@ -129,6 +129,8 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoCotaPerimetro: () => void;
   readonly onConverterEmContorno: () => void;
   readonly onAbrirVariantes: () => void;
+  /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
+  readonly onAbrirMateriais: () => void;
   readonly onEntrarModoCurva: () => void;
   readonly onEntrarModoArco2Pontos: () => void;
   readonly onEntrarModoArco3Pontos: () => void;
@@ -1837,6 +1839,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={props.onAbrirBiblioteca}
                   />
                 </div>
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Ficha técnica">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Materiais e', 'aviamentos']}
+                  icone="materiais"
+                  dica="Materiais e aviamentos: a biblioteca da empresa (tecidos, aviamentos, embalagens, com a unidade e o preço) e os padrões de custo (custo do minuto, indiretos, impostos, comissão, margem)"
+                  onClick={props.onAbrirMateriais}
+                />
               </div>
             </>
           )}

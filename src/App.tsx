@@ -9,6 +9,9 @@ import { ehCampoDeDigitar } from './ui/campoDeDigitar';
 import { confirmarPlano, guardarRascunho, removerRascunho, type PlanoDeCorteV2 } from './domain/planejamento';
 import { PainelDePlanejamento, type BuscarRiscos } from './ui/PainelDePlanejamento';
 import { carregarCadastro, gravarCadastro, type CadastroCarregado } from './ui/cadastroNoDisco';
+import { carregarBibliotecaDeMateriais, gravarBibliotecaDeMateriais, type BibliotecaCarregada } from './ui/materiaisNoDisco';
+import { PainelDeMateriais } from './ui/PainelDeMateriais';
+import type { BibliotecaDeMateriais } from './domain/materiais';
 import { gravarConfiguracaoDoPlanejamento, lerConfiguracaoDoPlanejamento } from './ui/configuracaoDoPlanejamento';
 import { executarBusca } from './domain/buscaDeRiscos';
 import { escreverM as escreverEmMetros, enfestoDoPlano, impressaoDigitalDoMolde } from './domain/planoDeCorte';
@@ -1589,6 +1592,32 @@ export default function App(): React.JSX.Element {
       armazenamento = null;
     }
     void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
+  }, []);
+
+  // ---- A biblioteca de materiais e aviamentos (aba Modelo, ADR 0104): lida ao abrir, com o cadastro (as malhas).
+  const [bibliotecaDeMateriais, setBibliotecaDeMateriais] = useState<BibliotecaCarregada | null>(null);
+  const [mostrarMateriais, setMostrarMateriais] = useState(false);
+  const abrirMateriais = useCallback(() => {
+    setMostrarMateriais(true);
+    let armazenamento: Storage | null = null;
+    try {
+      armazenamento = window.localStorage;
+    } catch {
+      armazenamento = null;
+    }
+    void carregarBibliotecaDeMateriais(window.enfestoCad, armazenamento).then(setBibliotecaDeMateriais);
+    void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
+  }, []);
+  const mudarBibliotecaDeMateriais = useCallback(async (nova: BibliotecaDeMateriais): Promise<string | null> => {
+    let armazenamento: Storage | null = null;
+    try {
+      armazenamento = window.localStorage;
+    } catch {
+      armazenamento = null;
+    }
+    const erro = await gravarBibliotecaDeMateriais(window.enfestoCad, armazenamento, nova);
+    if (erro === null) setBibliotecaDeMateriais((atual) => ({ avisos: atual?.avisos ?? [], somenteLeitura: atual?.somenteLeitura ?? false, biblioteca: nova }));
+    return erro;
   }, []);
 
   // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
@@ -4264,6 +4293,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoCotaPerimetro={() => entrarModoDeCota('cota-perimetro')}
         onConverterEmContorno={converterEmContorno}
         onAbrirVariantes={abrirVariantes}
+        onAbrirMateriais={abrirMateriais}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -4405,6 +4435,19 @@ export default function App(): React.JSX.Element {
           onMudarCadastro={mudarCadastroDeProducao}
           onSalvarTexto={salvarTexto}
           onFechar={() => setMostrarSalaDeCorte(false)}
+        />
+      )}
+      {mostrarMateriais && bibliotecaDeMateriais && (
+        <PainelDeMateriais
+          biblioteca={bibliotecaDeMateriais.biblioteca}
+          avisos={bibliotecaDeMateriais.avisos}
+          somenteLeitura={bibliotecaDeMateriais.somenteLeitura}
+          malhasDoCadastro={cadastroDeProducao?.cadastro.malhas ?? []}
+          onMudar={mudarBibliotecaDeMateriais}
+          onSalvarTexto={salvarTexto}
+          agoraIso={() => new Date().toISOString()}
+          novoId={() => `material-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          onFechar={() => setMostrarMateriais(false)}
         />
       )}
       {mostrarFilaDeEncaixes && (

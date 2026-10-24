@@ -85,6 +85,7 @@ function propsBase(): Props {
     onAbrirPlanoDeCorte: vi.fn(),
     onAbrirSalaDeCorte: vi.fn(),
     onAbrirFilaDeEncaixes: vi.fn(),
+    onAbrirMateriais: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
     onRestaurar: vi.fn(),
@@ -252,13 +253,16 @@ describe('BarraDeFerramentas: abas', () => {
     });
   });
 
-  it('Modelo: Informações e Operações', () => {
-    renderizar('Modelo');
+  it('Modelo: Informações, Operações e Ficha técnica', () => {
+    const props = renderizar('Modelo');
 
     expect(gruposDaAba()).toEqual({
       Informações: ['Propriedades', 'Informações', 'Tecidos', 'Autor', 'Informações dos moldes'],
       Operações: ['Variantes', 'Relacionamento piques', 'Imagens', 'Localizar modelos'],
+      'Ficha técnica': ['Materiais e aviamentos'],
     });
+    fireEvent.click(botao('Materiais e aviamentos'));
+    expect(props.onAbrirMateriais).toHaveBeenCalledTimes(1);
   });
 
   it('Marcações tem os grupos da referência — Piques, Editar piques e Linhas auxiliares — e, à parte, o Furo', () => {
