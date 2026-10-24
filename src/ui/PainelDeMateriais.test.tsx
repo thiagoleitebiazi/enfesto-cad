@@ -143,3 +143,34 @@ describe('PainelDeMateriais', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Padrões de custo guardados'));
   });
 });
+
+describe('PainelDeMateriais — os custos dos modelos (ADR 0106)', () => {
+  it('cada modelo com o custo de agora, o aprovado e a diferença; remover avisa quem usa', async () => {
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(
+      <PainelDeMateriais
+        biblioteca={BOTAO}
+        avisos={[]}
+        somenteLeitura={false}
+        malhasDoCadastro={[]}
+        custosDosModelos={[
+          { projetoId: 'p1', nome: 'Camisa', codigo: 'ENF-1', referencia: 'CAM-01', versao: 2, situacao: 'aprovada', custoAtual: 23.1, completo: true, precoSugerido: 38.5, custoAprovado: 21, diferencaPercentual: 10, materiaisIds: ['b1'] },
+          { projetoId: 'p2', nome: 'Bermuda', codigo: 'ENF-2', referencia: '', versao: 1, situacao: 'rascunho', custoAtual: 5, completo: false, precoSugerido: null, custoAprovado: null, diferencaPercentual: null, materiaisIds: [] },
+        ]}
+        onMudar={async () => null}
+        onSalvarTexto={async () => null}
+        agoraIso={() => '2026-10-24T12:00:00.000Z'}
+        novoId={() => 'x'}
+        onFechar={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Custos dos modelos (2)' }));
+    const linhasDosModelos = within(screen.getByRole('table', { name: 'Custos dos modelos' })).getAllByRole('row').slice(1);
+    expect(linhasDosModelos[0]).toHaveTextContent('Camisa ENF-1CAM-01v2 · AprovadaR$ 23,10R$ 21,00+10,0%R$ 38,50');
+    expect(linhasDosModelos[1]).toHaveTextContent('R$ 5,00 (parcial)');
+    fireEvent.click(screen.getByRole('tab', { name: /^Materiais/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover Botão 12 mm' }));
+    expect(confirmar.mock.calls[0]![0]).toMatch(/usado na ficha técnica de: Camisa \(ENF-1\)/);
+    confirmar.mockRestore();
+  });
+});

@@ -129,6 +129,8 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoCotaPerimetro: () => void;
   readonly onConverterEmContorno: () => void;
   readonly onAbrirVariantes: () => void;
+  /** Modelo > Ficha técnica (ADR 0105) e Pré-custo (ADR 0106): a mesma janela, na aba pedida. */
+  readonly onAbrirFichaTecnica: (parte: 'descricao' | 'precusto') => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
   readonly onAbrirMateriais: () => void;
   readonly onEntrarModoCurva: () => void;
@@ -1842,6 +1844,20 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Ficha técnica">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Ficha', 'técnica']}
+                  icone="ficha-tecnica"
+                  dica="Ficha técnica: descrição, tamanhos, tabela de medidas com tolerâncias, materiais com o consumo, sequência operacional, instruções, aprovação e o PDF"
+                  onClick={() => props.onAbrirFichaTecnica('descricao')}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Pré-custo"
+                  icone="pre-custo"
+                  dica="Pré-custo: materiais + mão de obra + indiretos = custo da peça, o preço sugerido pelo markup e o simulador de meta"
+                  onClick={() => props.onAbrirFichaTecnica('precusto')}
+                />
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Materiais e', 'aviamentos']}

@@ -390,6 +390,69 @@ async function principal() {
   await fecharJanela();
   await espera(300);
 
+  // 8. A ficha técnica e o pré-custo (ADR 0105 e 0106): Modelo > Ficha técnica; a coleção, o botão da biblioteca
+  // como material (6 por peça), uma operação; o pré-custo; enviar e aprovar; o PDF; a ficha guardada no projeto.
+  const noCampo = (rotulo, valor) =>
+    js(
+      `(() => { const c = document.querySelector('[role=dialog] [aria-label=${JSON.stringify(rotulo).replace(/"/g, '\\"')}]') || Array.from(document.querySelectorAll('[role=dialog] label')).find(x => Array.from(x.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim() === ${JSON.stringify(rotulo)}).querySelector('input, select, textarea'); const p = c.tagName === 'SELECT' ? HTMLSelectElement.prototype : c.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p, 'value').set.call(c, ${JSON.stringify(valor)}); c.dispatchEvent(new Event(c.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); })()`,
+    );
+  const botaoNaJanela = (texto) => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === ${JSON.stringify(texto)})`);
+  const parteDaJanela = (texto) => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] [role=tab]')).find(b => b.textContent.trim().startsWith(${JSON.stringify(texto)}))`);
+  await botao('Ficha técnica');
+  await espera(1000);
+  conferir('abre a ficha técnica', (await janela()) === 'Ficha técnica', await janela());
+  await noCampo('Coleção', 'Verão do teste');
+  await parteDaJanela('Materiais');
+  await botaoNaJanela('Adicionar material');
+  await noCampo('Consumo de Botão de pressão 12 mm', 'informado');
+  await noCampo('Quantidade de Botão de pressão 12 mm', '6');
+  await espera(300);
+  await foto('19-ficha-materiais.png');
+  await parteDaJanela('Operações');
+  await botaoNaJanela('Adicionar operação');
+  await noCampo('Operação 1', 'Pregar botões');
+  await noCampo('Tempo da operação 1', '1,5');
+  await parteDaJanela('Pré-custo');
+  await espera(300);
+  const custoNaFicha = await js(`(() => { const dt = Array.from(document.querySelectorAll('[role=dialog] dt')).find(d => d.textContent.startsWith('Custo total')); return dt ? dt.textContent + ' = ' + dt.nextElementSibling.textContent : ''; })()`);
+  const faltaNoCusto = await js(`((document.querySelector('[role=dialog] .faixa-do-custo-parcial') || {}).textContent || '')`);
+  conferir(
+    'o pré-custo: os 6 botões a R$ 0,35 (R$ 2,10); sem o custo do minuto, sai parcial e diz o que falta',
+    custoNaFicha === 'Custo total (parcial) = R$ 2,10' && faltaNoCusto.includes('Falta o custo do minuto'),
+    `${custoNaFicha} / ${faltaNoCusto.slice(0, 90)}`,
+  );
+  await foto('20-pre-custo.png');
+  await parteDaJanela('Aprovação');
+  await noCampo('Responsável', 'Pessoa do teste');
+  await botaoNaJanela('Enviar para aprovação');
+  await botaoNaJanela('Aprovar');
+  await espera(300);
+  const situacaoDaFicha = await js(`((document.querySelector('[role=dialog] .cabecalho-da-ficha .situacao-da-execucao') || {}).textContent || '')`);
+  conferir('enviada e aprovada: o cabeçalho diz "Aprovada · versão 1"', situacaoDaFicha === 'Aprovada · versão 1', situacaoDaFicha);
+  await foto('21-ficha-aprovada.png');
+  await botaoNaJanela('Exportar PDF');
+  await espera(2500);
+  const pdfsDaFicha = fs.readdirSync(SAIDA).filter((f) => f.startsWith('ficha-tecnica-') && f.endsWith('.pdf'));
+  const pdfDaFicha = pdfsDaFicha[0] ? fs.readFileSync(path.join(SAIDA, pdfsDaFicha[0]), 'latin1') : '';
+  conferir('o PDF da ficha técnica foi gravado', pdfDaFicha.startsWith('%PDF-') && pdfDaFicha.length > 3000, `${JSON.stringify(pdfsDaFicha)} ${pdfDaFicha.length} bytes`);
+  await fecharJanela();
+  await espera(1200);
+  const projetoComFicha = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', f), 'utf8')))
+    .find((p) => p.fichaTecnica);
+  conferir(
+    'a ficha ficou guardada no projeto: aprovada, com a coleção, o material, a operação e o histórico',
+    !!projetoComFicha &&
+      projetoComFicha.fichaTecnica.situacao === 'aprovada' &&
+      projetoComFicha.fichaTecnica.colecao === 'Verão do teste' &&
+      projetoComFicha.fichaTecnica.materiais.length === 1 &&
+      projetoComFicha.fichaTecnica.operacoes[0].tempoMin === 1.5 &&
+      projetoComFicha.fichaTecnica.decisoes.map((d) => d.acao).join(',') === 'enviada,aprovada',
+    projetoComFicha ? JSON.stringify({ situacao: projetoComFicha.fichaTecnica.situacao, colecao: projetoComFicha.fichaTecnica.colecao, decisoes: projetoComFicha.fichaTecnica.decisoes.map((d) => d.acao) }) : 'nenhum projeto com ficha',
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   log(`falhas: ${falhas}`);

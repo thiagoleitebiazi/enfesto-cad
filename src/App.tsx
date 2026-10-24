@@ -158,7 +158,11 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor } from './domain/projeto';
+import { definirAutor, definirFichaTecnica } from './domain/projeto';
+import { encaixeParaConsumo, lerFichaTecnica, novaFichaTecnica, type FichaTecnica } from './domain/fichaTecnica';
+import { custosDosModelos, type PreCusto } from './domain/preCusto';
+import { PainelDaFichaTecnica, type ParteDaFicha } from './ui/PainelDaFichaTecnica';
+import { gerarPdfDaFichaTecnica } from './formats/ficha-exportacao';
 import type { FerramentaDeAnotacao } from './ui/BarraDeFerramentas';
 import {
   adicionarImagem,
@@ -386,6 +390,10 @@ import {
   type TipoDeEvento,
 } from './domain/projeto';
 import './App.css';
+
+/** A hora e os ids da ficha técnica (fora do componente: a janela guarda pela mudança da função). */
+const agoraIsoDaFicha = (): string => new Date().toISOString();
+const novoIdDaFicha = (): string => `ficha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** O Worker da fila de encaixes (ADR 0102): o mesmo do Nesting automático. */
 const criarWorkerDoEncaixe = (): WorkerDoEncaixe => new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
@@ -1607,7 +1615,9 @@ export default function App(): React.JSX.Element {
     }
     void carregarBibliotecaDeMateriais(window.enfestoCad, armazenamento).then(setBibliotecaDeMateriais);
     void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
-  }, []);
+    // Os projetos da Biblioteca: o custo de cada modelo com ficha técnica (aba Custos dos modelos).
+    carregarListaDeProjetos();
+  }, [carregarListaDeProjetos]);
   const mudarBibliotecaDeMateriais = useCallback(async (nova: BibliotecaDeMateriais): Promise<string | null> => {
     let armazenamento: Storage | null = null;
     try {
@@ -1619,6 +1629,54 @@ export default function App(): React.JSX.Element {
     if (erro === null) setBibliotecaDeMateriais((atual) => ({ avisos: atual?.avisos ?? [], somenteLeitura: atual?.somenteLeitura ?? false, biblioteca: nova }));
     return erro;
   }, []);
+
+  // ---- A ficha técnica e o pré-custo (aba Modelo, ADR 0105 e 0106): a do projeto, ou uma nova; a biblioteca lida ao abrir.
+  const [fichaAberta, setFichaAberta] = useState<{ readonly ficha: FichaTecnica; readonly parte: ParteDaFicha } | null>(null);
+  const abrirFichaTecnica = useCallback(
+    (parte: ParteDaFicha) => {
+      let armazenamento: Storage | null = null;
+      try {
+        armazenamento = window.localStorage;
+      } catch {
+        armazenamento = null;
+      }
+      void carregarBibliotecaDeMateriais(window.enfestoCad, armazenamento).then(setBibliotecaDeMateriais);
+      const ficha =
+        lerFichaTecnica(projetoAtual.fichaTecnica) ??
+        novaFichaTecnica({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, ...(projetoAtual.autor ? { autor: projetoAtual.autor } : {}), pecas }, new Date().toISOString());
+      setFichaAberta({ ficha, parte });
+    },
+    [projetoAtual, pecas],
+  );
+  /** A ficha mudada vai para o projeto e é gravada (a janela chama meio segundo depois da última mudança). */
+  const guardarFichaTecnica = useCallback(
+    (ficha: FichaTecnica) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirFichaTecnica(atual, ficha, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+  const exportarPdfDaFicha = useCallback(
+    async (ficha: FichaTecnica, preCusto: PreCusto) => {
+      const api = window.enfestoCad;
+      if (!api) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return;
+      }
+      try {
+        const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, pecas, new Date().toISOString());
+        const nome = `ficha-tecnica-${(ficha.referencia || projetoAtual.codigo).replace(/[^A-Za-z0-9._-]+/g, '-')}.pdf`;
+        const caminhoSalvo = await api.salvarArquivo(nome, await blob.arrayBuffer());
+        if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Ficha técnica (PDF, versão ${ficha.versao}) salva em ${caminhoSalvo}`);
+      } catch (e) {
+        window.alert(`Falha ao gerar o PDF da ficha técnica: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [pecas, tecido, enfesto, projetoAtual.codigo, registrarEventoEPersistir],
+  );
 
   // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
   const [mostrarSalaDeCorte, setMostrarSalaDeCorte] = useState(false);
@@ -4294,6 +4352,7 @@ export default function App(): React.JSX.Element {
         onConverterEmContorno={converterEmContorno}
         onAbrirVariantes={abrirVariantes}
         onAbrirMateriais={abrirMateriais}
+        onAbrirFichaTecnica={abrirFichaTecnica}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -4437,12 +4496,33 @@ export default function App(): React.JSX.Element {
           onFechar={() => setMostrarSalaDeCorte(false)}
         />
       )}
+      {fichaAberta && bibliotecaDeMateriais && (
+        <PainelDaFichaTecnica
+          ficha={fichaAberta.ficha}
+          parteInicial={fichaAberta.parte}
+          pecas={pecas}
+          encaixe={encaixeParaConsumo(pecas, enfesto?.larguraUtilMm ?? null)}
+          biblioteca={bibliotecaDeMateriais.biblioteca}
+          responsavelSugerido={projetoAtual.autor ?? ''}
+          onGuardar={guardarFichaTecnica}
+          onExportarPdf={(f, c) => void exportarPdfDaFicha(f, c)}
+          onAbrirMateriais={abrirMateriais}
+          agoraIso={agoraIsoDaFicha}
+          novoId={novoIdDaFicha}
+          onFechar={() => setFichaAberta(null)}
+        />
+      )}
       {mostrarMateriais && bibliotecaDeMateriais && (
         <PainelDeMateriais
           biblioteca={bibliotecaDeMateriais.biblioteca}
           avisos={bibliotecaDeMateriais.avisos}
           somenteLeitura={bibliotecaDeMateriais.somenteLeitura}
           malhasDoCadastro={cadastroDeProducao?.cadastro.malhas ?? []}
+          custosDosModelos={custosDosModelos(
+            // O projeto aberto entra como está agora (a lista da Biblioteca pode ter a versão de antes dele).
+            [...projetos.filter((p) => p.id !== projetoAtual.id), { ...projetoAtual, estadoAtual: { pecas, tecido, enfesto } }],
+            bibliotecaDeMateriais.biblioteca,
+          )}
           onMudar={mudarBibliotecaDeMateriais}
           onSalvarTexto={salvarTexto}
           agoraIso={() => new Date().toISOString()}

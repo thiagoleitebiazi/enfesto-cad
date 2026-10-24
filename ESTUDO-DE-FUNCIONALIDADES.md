@@ -44,14 +44,14 @@ inventa.
 | Biblioteca de formas (golas, punhos, bolsos) e de bases técnicas; manequins técnicos | ⬜ | L |
 | Linhas de costura e acabamento no desenho (pespontos, instruções) | ⬜ | L |
 | Estampas aplicadas no desenho (posição, escala, rotação) | ⬜ | L |
-| Ficha técnica ligada ao desenho e aos materiais (muda junto) | ⬜ | L |
-| Cadastro de materiais e aviamentos reutilizável entre coleções | 🟡 (cadastro de malhas e rolos, para o corte) | L |
-| Tabela de medidas com tolerâncias por tamanho | 🟡 (a graduação tem as medidas dos moldes) | L |
-| Sequência operacional (operações, máquina, tempo) | ⬜ | L |
-| Consumo de tecido estimado pelo desenho | 🟡 (consumo pelo encaixe e pelo plano de corte, mais preciso) | L |
-| Pré-custo (tecido + aviamentos + mão de obra + indiretos → custo e preço) e simulador de meta de custo | 🟡 (só o custo do tecido, ADR 0092) | L |
-| Atualizar vários produtos do mix de uma vez | ⬜ | L |
-| Exportar a ficha (PDF) | ⬜ | L |
+| Ficha técnica ligada ao desenho e aos materiais (muda junto) | 🟡 (ligada aos materiais, ao encaixe e ao custo, ADR 0105; o desenho técnico é a fase 3) | L |
+| Cadastro de materiais e aviamentos reutilizável entre coleções | ✅ (biblioteca de materiais, ADR 0104) | — |
+| Tabela de medidas com tolerâncias por tamanho | ✅ (ficha técnica, com a colagem da planilha, ADR 0105) | — |
+| Sequência operacional (operações, máquina, tempo) | ✅ (ficha técnica, ADR 0105) | — |
+| Consumo de tecido estimado pelo desenho | 🟡 (pelo encaixe da mesa na ficha, ADR 0105, e pelo plano de corte — mais preciso que pelo croqui) | L |
+| Pré-custo (tecido + aviamentos + mão de obra + indiretos → custo e preço) e simulador de meta de custo | ✅ (ADR 0106) | — |
+| Atualizar vários produtos do mix de uma vez | ✅ (o preço na biblioteca muda o custo de todos; aba Custos dos modelos, ADR 0106) | — |
+| Exportar a ficha (PDF) | ✅ (ADR 0105) | — |
 
 ## 3. Modelagem e graduação
 

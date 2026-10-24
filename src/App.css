@@ -3446,3 +3446,159 @@ input[type='radio'] {
   font-size: 12px;
   color: var(--cinza-700);
 }
+
+/* A ficha técnica e o pré-custo (ADR 0105 e 0106): larga; o cabeçalho com a situação; tabelas com campos curtos. */
+.sobreposicao-painel:has(.painel-da-ficha-tecnica) {
+  width: min(1240px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-da-ficha-tecnica {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.painel-da-ficha-tecnica section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.painel-da-ficha-tecnica h4 {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--marca-800);
+}
+
+.cabecalho-da-ficha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border-left: 4px solid var(--grupo-3);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.cabecalho-da-ficha strong {
+  font-size: 15px;
+  color: var(--marca-900);
+}
+
+.situacao-da-execucao.situacao-ficha-rascunho {
+  border-color: var(--info-borda);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.situacao-da-execucao.situacao-ficha-em-aprovacao {
+  border-color: var(--aviso-borda);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.situacao-da-execucao.situacao-ficha-aprovada {
+  border-color: var(--sucesso-borda);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+  font-weight: 600;
+}
+
+.situacao-da-execucao.situacao-ficha-alteracao-pedida {
+  border-color: var(--erro-borda);
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
+.faixa-da-ficha-fechada,
+.faixa-do-custo-parcial {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--aviso-borda);
+  border-radius: var(--raio-md);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.faixa-do-custo-parcial ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.tabela-da-ficha {
+  width: 100%;
+}
+
+.tabela-da-ficha td {
+  vertical-align: top;
+}
+
+.tabela-da-ficha input:not([type='checkbox']):not([type='radio']),
+.tabela-da-ficha select {
+  width: 100%;
+  min-width: 70px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.tabela-da-ficha small {
+  display: block;
+  color: var(--cinza-600);
+}
+
+.tabela-da-ficha .campo-curto,
+.painel-da-ficha-tecnica .campo-curto {
+  width: 72px;
+  min-width: 56px;
+}
+
+.item-digitado,
+.consumo-pelo-encaixe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.colagem-de-medidas {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resumo-do-custo .destaque-do-custo {
+  border-left-color: var(--destaque);
+  background: var(--aviso-fundo);
+}
+
+.resultado-da-meta {
+  padding: 8px 12px;
+  border-radius: var(--raio-md);
+  border: 1px solid var(--info-borda);
+  background: var(--info-fundo);
+}
+
+.resultado-da-meta.meta-dentro {
+  border-color: var(--sucesso-borda);
+  background: var(--sucesso-fundo);
+}
+
+.resultado-da-meta.meta-fora {
+  border-color: var(--aviso-borda);
+  background: var(--aviso-fundo);
+}
+
+.resultado-da-meta p {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.resultado-da-meta ul {
+  margin: 0;
+  padding-left: 18px;
+}

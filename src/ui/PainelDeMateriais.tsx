@@ -19,8 +19,10 @@ import {
   type UnidadeDoMaterial,
 } from '../domain/materiais';
 import { numeroComVirgula } from '../core/numeros';
+import { centavos, csvDosCustosDosModelos, type CustoDoModelo } from '../domain/preCusto';
+import { ROTULO_DA_SITUACAO_DA_FICHA } from '../domain/fichaTecnica';
 
-type Parte = 'materiais' | 'padroes';
+type Parte = 'materiais' | 'padroes' | 'modelos';
 
 const DATA = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' });
 const quando = (iso: string): string => DATA.format(new Date(iso));
@@ -91,7 +93,9 @@ export function PainelDeMateriais(props: {
   readonly somenteLeitura: boolean;
   /** As malhas do cadastro de produção (para trazer como tecidos). */
   readonly malhasDoCadastro: readonly MalhaDoCadastro[];
-  /** Os modelos (projetos) que usam o material, pelo nome — para avisar antes de remover. */
+  /** O custo de cada modelo com ficha técnica, com os preços de agora (ADR 0106). */
+  readonly custosDosModelos?: readonly CustoDoModelo[];
+  /** Os modelos (projetos) que usam o material, pelo nome — para avisar antes de remover (sem isto, pelos custos). */
   readonly modelosQueUsam?: (materialId: string) => readonly string[];
   /** Grava a biblioteca mudada; devolve a mensagem do erro, ou `null`. */
   readonly onMudar: (nova: BibliotecaDeMateriais) => Promise<string | null>;
@@ -163,7 +167,7 @@ export function PainelDeMateriais(props: {
   };
 
   const remover = async (m: Material): Promise<void> => {
-    const usam = props.modelosQueUsam?.(m.id) ?? [];
+    const usam = props.modelosQueUsam?.(m.id) ?? (props.custosDosModelos ?? []).filter((c) => c.materiaisIds.includes(m.id)).map((c) => `${c.nome} (${c.codigo})`);
     const aviso = usam.length > 0 ? `\n\nEle é usado na ficha técnica de: ${usam.join(', ')}. Nelas, o item fica com a descrição, sem o preço da biblioteca.` : '';
     if (!window.confirm(`Remover “${m.descricao}” da biblioteca?${aviso}`)) return;
     await mudar(() => removerMaterial(biblioteca, m.id), `“${m.descricao}” removido da biblioteca.`);
@@ -181,6 +185,7 @@ export function PainelDeMateriais(props: {
   const PARTES: ReadonlyArray<readonly [Parte, string]> = [
     ['materiais', `Materiais (${biblioteca.materiais.length})`],
     ['padroes', 'Padrões de custo'],
+    ['modelos', `Custos dos modelos (${props.custosDosModelos?.length ?? 0})`],
   ];
 
   return (
@@ -387,6 +392,65 @@ export function PainelDeMateriais(props: {
                 Guardar
               </button>
             </div>
+          </section>
+        )}
+
+        {parte === 'modelos' && (
+          <section aria-label="Custos dos modelos">
+            <p className="nota-do-formulario">
+              O custo de cada modelo com ficha técnica sai com os preços de agora da biblioteca: mudar o preço de um material
+              atualiza, de uma vez, o custo de todos os modelos que o usam. A diferença é para o custo da última aprovação.
+            </p>
+            {(props.custosDosModelos ?? []).length === 0 ? (
+              <p className="nota-do-formulario">Nenhum modelo com ficha técnica ainda (Modelo › Ficha técnica).</p>
+            ) : (
+              <>
+                <table className="tabela-de-relatorio tabela-de-materiais">
+                  <caption>Custos dos modelos</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Modelo</th>
+                      <th scope="col">Referência</th>
+                      <th scope="col">Ficha</th>
+                      <th scope="col" className="coluna-numerica">Custo agora</th>
+                      <th scope="col" className="coluna-numerica">Aprovado</th>
+                      <th scope="col" className="coluna-numerica">Diferença</th>
+                      <th scope="col" className="coluna-numerica">Preço sugerido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {props.custosDosModelos!.map((c) => (
+                      <tr key={c.projetoId}>
+                        <td>
+                          {c.nome} <small>{c.codigo}</small>
+                        </td>
+                        <td>{c.referencia || '—'}</td>
+                        <td>
+                          v{c.versao} · {ROTULO_DA_SITUACAO_DA_FICHA[c.situacao]}
+                        </td>
+                        <td className="coluna-numerica">
+                          R$ {numeroComVirgula(centavos(c.custoAtual), 2)}
+                          {c.completo ? '' : <small> (parcial)</small>}
+                        </td>
+                        <td className="coluna-numerica">{c.custoAprovado === null ? '—' : `R$ ${numeroComVirgula(centavos(c.custoAprovado), 2)}`}</td>
+                        <td className={`coluna-numerica ${c.diferencaPercentual !== null && c.diferencaPercentual > 0.05 ? 'texto-de-erro' : ''}`}>
+                          {c.diferencaPercentual === null ? '—' : `${c.diferencaPercentual > 0 ? '+' : c.diferencaPercentual < 0 ? '−' : ''}${numeroComVirgula(Math.abs(c.diferencaPercentual), 1)}%`}
+                        </td>
+                        <td className="coluna-numerica">{c.precoSugerido === null ? '—' : `R$ ${numeroComVirgula(centavos(c.precoSugerido), 2)}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="acoes-em-linha">
+                  <button
+                    type="button"
+                    onClick={() => void props.onSalvarTexto('custos-dos-modelos.csv', csvDosCustosDosModelos(props.custosDosModelos!)).then((c) => c && setMensagem(`Salvo em ${c}.`))}
+                  >
+                    Exportar CSV
+                  </button>
+                </div>
+              </>
+            )}
           </section>
         )}
 
