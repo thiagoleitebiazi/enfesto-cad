@@ -116,7 +116,7 @@ inventa.
 | Gestão de retalhos (estoque de retalhos) | ✅ (ADR 0098, 0100) | — |
 | Relatórios para compras e histórico para auditoria | ✅ (CSV, ADR 0100) | — |
 | Ligação com máquina de corte, enfestadeira, mesa | ⬜ | H (sem protocolo nem equipamento) |
-| Plotter de papel (risco 1:1) | 🟡 (PDF 1:1 em folhas; DXF) | L (arquivo PLT/HPGL; o plotter é H) |
+| Plotter de papel (risco 1:1) | ✅ (arquivo PLT/HPGL, ADR 0101; PDF 1:1 em folhas; DXF) | H (o plotter físico: não testado num) |
 
 ## 8. IA de criação
 

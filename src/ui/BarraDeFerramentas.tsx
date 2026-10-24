@@ -94,6 +94,8 @@ interface BarraDeFerramentasProps {
   readonly podeExportarPdf: boolean;
   /** Grava as peças, como estão na mesa, num arquivo DXF (ADR 0096). */
   readonly onExportarDxf: () => void;
+  /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
+  readonly onExportarPlt: () => void;
   readonly onSalvar: () => void;
   readonly onSalvarComo: () => void;
   readonly onAbrirBiblioteca: () => void;
@@ -510,6 +512,14 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Exportar PDF vetorial em escala 1:1 (Ctrl+E)"
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onAbrirExportacaoPdf}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Exportar', 'PLT']}
+                  icone="exportar"
+                  dica="Exportar PLT (plotter): o encaixe em escala 1:1, em HPGL, para riscar no plotter de papel — confira a escala no primeiro risco (não testado num plotter físico)"
+                  falta={props.podeExportarPdf ? null : SEM_PECAS}
+                  onClick={props.onExportarPlt}
                 />
               </div>
 

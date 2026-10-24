@@ -331,6 +331,7 @@ import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pe
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
+import { gerarPlt } from './formats/plt-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import {
@@ -2574,6 +2575,22 @@ export default function App(): React.JSX.Element {
     }
   }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
 
+  // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
+  const exportarPlt = useCallback(async () => {
+    const api = window.enfestoCad;
+    if (!api) {
+      window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+      return;
+    }
+    try {
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}));
+      const caminhoSalvo = await api.salvarArquivo('encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+      if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
+    } catch (e) {
+      window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
+
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
   // Só é montado com o painel aberto, e a hora é a de quando foi aberto (ou de quando as peças mudaram).
   const relatorioAtual = useMemo(
@@ -4081,6 +4098,7 @@ export default function App(): React.JSX.Element {
         onAbrirExportacaoPdf={() => setMostrarExportacaoPdf(true)}
         podeExportarPdf={pecas.length > 0}
         onExportarDxf={() => void exportarDxf()}
+        onExportarPlt={() => void exportarPlt()}
         onSalvar={salvarProjetoAtual}
         onSalvarComo={salvarComo}
         onAbrirBiblioteca={abrirBiblioteca}
