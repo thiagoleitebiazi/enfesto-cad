@@ -453,6 +453,85 @@ async function principal() {
     projetoComFicha ? JSON.stringify({ situacao: projetoComFicha.fichaTecnica.situacao, colecao: projetoComFicha.fichaTecnica.colecao, decisoes: projetoComFicha.fichaTecnica.decisoes.map((d) => d.acao) }) : 'nenhum projeto com ficha',
   );
 
+  // 9. O desenho técnico (ADR 0107): com a ficha aprovada, só para ver; aberta a nova versão, a base da camiseta, um
+  // pesponto desenhado com o mouse (aparece espelhado) e um bolso; o SVG; a prévia na ficha e o croqui no PDF.
+  const pontoDaFolhaNaTela = async (fx, fy) =>
+    JSON.parse(
+      await js(
+        `(() => { const r = document.querySelector('.folha-do-desenho').getBoundingClientRect(); const e = Math.min(r.width / 400, r.height / 500); return JSON.stringify({ x: Math.round(r.left + (r.width - 400 * e) / 2 + ${fx} * e), y: Math.round(r.top + (r.height - 500 * e) / 2 + ${fy} * e) }); })()`,
+      ),
+    );
+  const clicarNaFolha = async (fx, fy, vezes = 1) => {
+    const { x, y } = await pontoDaFolhaNaTela(fx, fy);
+    for (let k = 1; k <= vezes; k++) {
+      win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: k });
+      win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: k });
+    }
+    await espera(250);
+  };
+  await botao('Desenho técnico');
+  await espera(800);
+  const avisoDoDesenho = await js(`((document.querySelector('[role=dialog] .cabecalho-da-ficha .nota-do-formulario') || {}).textContent || '')`);
+  conferir('com a ficha aprovada, o desenho técnico abre só para ver', (await janela()) === 'Desenho técnico' && avisoDoDesenho.includes('só pode ser visto'), avisoDoDesenho.slice(0, 100));
+  await fecharJanela();
+  await espera(300);
+  await botao('Ficha técnica');
+  await espera(800);
+  await parteDaJanela('Aprovação');
+  await noCampo('Responsável', 'Pessoa do teste');
+  await botaoNaJanela('Abrir nova versão');
+  await espera(300);
+  await fecharJanela();
+  await espera(800);
+  await botao('Desenho técnico');
+  await espera(800);
+  await botaoNaJanela('Pôr a base (frente e costas)');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] [role=toolbar] button')).find(b => b.textContent.trim() === 'Pesponto')`);
+  await clicarNaFolha(124, 300);
+  await clicarNaFolha(170, 300, 2);
+  await noCampo('Forma', 'bolso-chapa');
+  await botaoNaJanela('Pôr a forma');
+  await espera(300);
+  const naFolhaDoDesenho = JSON.parse(
+    await js(`JSON.stringify({ tracejados: document.querySelectorAll('.folha-do-desenho path[stroke-dasharray="4 3"]').length, frente: (Array.from(document.querySelectorAll('[role=dialog] [role=tab]')).find(b => b.textContent.startsWith('Frente')) || {}).textContent })`),
+  );
+  conferir(
+    'a base, o pesponto desenhado com o mouse (e o espelho dele) e o bolso na folha da frente',
+    naFolhaDoDesenho.frente === 'Frente (6)' && naFolhaDoDesenho.tracejados >= 6,
+    JSON.stringify(naFolhaDoDesenho),
+  );
+  await foto('22-desenho-tecnico.png');
+  await botaoNaJanela('Exportar SVG');
+  await espera(1200);
+  const svgs = fs.readdirSync(SAIDA).filter((f) => f.startsWith('desenho-tecnico-') && f.endsWith('.svg'));
+  const svgDoDesenho = svgs[0] ? fs.readFileSync(path.join(SAIDA, svgs[0]), 'utf8') : '';
+  conferir('o SVG do desenho foi gravado, com a frente e as costas', svgDoDesenho.includes('<svg') && svgDoDesenho.includes('>Frente</text>') && svgDoDesenho.includes('>Costas</text>'), `${JSON.stringify(svgs)} ${svgDoDesenho.length} letras`);
+  await fecharJanela();
+  await espera(1200);
+  await botao('Ficha técnica');
+  await espera(800);
+  const previas = Number(await js(`document.querySelectorAll('[role=dialog] .previa-do-desenho svg').length`));
+  conferir('a ficha (versão 2) mostra o desenho técnico na Descrição', previas === 2, `${previas} vista(s)`);
+  await foto('23-ficha-com-desenho.png');
+  await botaoNaJanela('Exportar PDF');
+  await espera(2500);
+  const pdfComDesenho = fs.readFileSync(path.join(SAIDA, fs.readdirSync(SAIDA).find((f) => f.startsWith('ficha-tecnica-') && f.endsWith('.pdf'))), 'latin1');
+  // O texto do PDF (sem compressão) vem em hexadecimal: decodificado, as palavras aparecem.
+  const textoDoPdf = [...pdfComDesenho.matchAll(/<([0-9a-f]+)>/g)].map((m) => String.fromCharCode(...m[1].match(/../g).map((h) => parseInt(h, 16)))).join('');
+  conferir('o PDF da ficha leva o desenho técnico', textoDoPdf.includes('Desenho t') && textoDoPdf.includes('Costas'), `${pdfComDesenho.length} bytes`);
+  await fecharJanela();
+  await espera(1200);
+  const fichaComDesenho = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', f), 'utf8')))
+    .find((p) => p.fichaTecnica && p.fichaTecnica.desenho)?.fichaTecnica;
+  conferir(
+    'o desenho ficou guardado na ficha do projeto (versão 2, em rascunho)',
+    !!fichaComDesenho && fichaComDesenho.versao === 2 && fichaComDesenho.desenho.elementos.length === 8,
+    fichaComDesenho ? `versão ${fichaComDesenho.versao}, ${fichaComDesenho.desenho.elementos.length} elementos` : 'sem desenho',
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   log(`falhas: ${falhas}`);

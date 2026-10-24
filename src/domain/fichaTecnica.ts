@@ -2,6 +2,7 @@ import type { Molde } from './molde';
 import type { Material, PadroesDeCusto, UnidadeDoMaterial } from './materiais';
 import { problemaDosPadroes, ROTULO_DA_UNIDADE } from './materiais';
 import { riscoDaMesa } from './planoDeCorte';
+import { lerDesenhoTecnico, type DesenhoTecnico } from './desenhoTecnico';
 import { numeroComVirgula } from '../core/numeros';
 
 /**
@@ -119,6 +120,8 @@ export interface FichaTecnica {
   readonly decisoes: readonly DecisaoDaFicha[];
   /** Os padrões de custo próprios desta ficha (ADR 0106); ausente: os da empresa (a biblioteca de materiais). */
   readonly padroesDeCusto?: PadroesDeCusto;
+  /** O desenho técnico (o croqui de frente e costas, ADR 0107); ausente: ainda não feito. */
+  readonly desenho?: DesenhoTecnico;
   readonly atualizadaEmIso: string;
 }
 
@@ -390,6 +393,7 @@ export function lerFichaTecnica(bruto: unknown): FichaTecnica | null {
     situacao: bruto.situacao as SituacaoDaFicha,
     decisoes: lista<DecisaoDaFicha>(bruto.decisoes, (d) => typeof d.versao === 'number' && typeof d.dataIso === 'string' && typeof d.acao === 'string'),
     ...(padroesValidos(bruto.padroesDeCusto) ? { padroesDeCusto: bruto.padroesDeCusto } : {}),
+    ...(lerDesenhoTecnico(bruto.desenho) ? { desenho: lerDesenhoTecnico(bruto.desenho)! } : {}),
     atualizadaEmIso: texto(bruto.atualizadaEmIso),
   };
 }
@@ -413,4 +417,10 @@ export function definirPadroesDeCustoDaFicha(ficha: FichaTecnica, padroes: Padro
   const copia: Partial<Record<keyof FichaTecnica, unknown>> = { ...ficha, atualizadaEmIso: agoraIso };
   delete copia.padroesDeCusto;
   return copia as FichaTecnica;
+}
+
+/** O desenho técnico da ficha (a ficha aprovada não muda: só com nova versão). */
+export function definirDesenhoDaFicha(ficha: FichaTecnica, desenho: DesenhoTecnico, agoraIso: string): FichaTecnica {
+  if (!fichaEditavel(ficha)) throw new Error(`A ficha está ${ROTULO_DA_SITUACAO_DA_FICHA[ficha.situacao].toLowerCase()} (versão ${ficha.versao}): para mudar o desenho, abra uma nova versão (Ficha técnica › Aprovação).`);
+  return { ...ficha, desenho, atualizadaEmIso: agoraIso };
 }

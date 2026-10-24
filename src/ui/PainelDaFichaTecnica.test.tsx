@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto, type BibliotecaDeMateriais } from '../domain/materiais';
 import { novaFichaTecnica, type FichaTecnica } from '../domain/fichaTecnica';
+import { adicionarElemento, DESENHO_VAZIO, tracosDaBase } from '../domain/desenhoTecnico';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './PainelDaFichaTecnica';
 
 afterEach(() => cleanup());
@@ -165,5 +166,35 @@ describe('PainelDaFichaTecnica', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
     expect(onExportarPdf).toHaveBeenCalledTimes(1);
     expect(onExportarPdf.mock.calls[0]![1]).toMatchObject({ completo: false });
+  });
+});
+
+describe('PainelDaFichaTecnica — o desenho técnico na ficha (ADR 0107)', () => {
+  it('sem croqui: o convite para fazer; com croqui: as vistas na Descrição, e o botão abre o editor com a ficha de agora', () => {
+    const onAbrirDesenho = vi.fn();
+    let n = 0;
+    const base = { ...novaFichaTecnica({ nome: 'Camiseta', codigo: 'ENF-1', pecas: [] }, AGORA), desenho: adicionarElemento(DESENHO_VAZIO, tracosDaBase('regata', () => `d${++n}`)) };
+    render(
+      <PainelDaFichaTecnica
+        ficha={base}
+        pecas={[]}
+        encaixe={null}
+        biblioteca={biblioteca()}
+        responsavelSugerido=""
+        onGuardar={() => {}}
+        onExportarPdf={() => {}}
+        onAbrirMateriais={() => {}}
+        imagens={[]}
+        onAbrirDesenho={onAbrirDesenho}
+        agoraIso={() => AGORA}
+        novoId={() => 'x'}
+        onFechar={() => {}}
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Desenho técnico — Frente' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Desenho técnico — Costas' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Coleção'), { target: { value: 'Inverno' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir o desenho técnico' }));
+    expect(onAbrirDesenho.mock.calls[0]![0]).toMatchObject({ colecao: 'Inverno' });
   });
 });

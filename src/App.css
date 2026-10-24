@@ -3602,3 +3602,158 @@ input[type='radio'] {
   margin: 0;
   padding-left: 18px;
 }
+
+/* O desenho técnico (ADR 0107): ferramentas à esquerda, a folha no meio (sempre inteira na tela), as propriedades à
+   direita; a folha em 4 × 5, com o eixo tracejado, o manequim em cinza-claro e o elemento escolhido em azul. */
+.sobreposicao-painel:has(.painel-do-desenho-tecnico) {
+  width: min(1240px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-do-desenho-tecnico {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  outline: none;
+}
+
+.area-do-desenho-tecnico {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) minmax(0, 250px);
+  gap: 12px;
+  align-items: start;
+}
+
+.ferramentas-do-desenho,
+.propriedades-do-desenho {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ferramentas-do-desenho label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ferramentas-do-desenho label.opcao-em-linha {
+  flex-direction: row;
+  align-items: center;
+}
+
+.grade-de-ferramentas-do-desenho {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.grade-de-ferramentas-do-desenho button {
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
+.grade-de-ferramentas-do-desenho button.item-selecionado {
+  border-color: var(--azul-600);
+  background: var(--azul-600);
+  color: #fff;
+  font-weight: 600;
+}
+
+.folha-do-desenho {
+  display: block;
+  /* A moldura tem o tamanho da folha (4 × 5): a altura que cabe na tela, e a largura pela proporção. */
+  height: min(calc(100vh - 230px), 660px);
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 4 / 5;
+  margin: 0 auto;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-md);
+  background: #fff;
+  box-shadow: var(--sombra-leve);
+  touch-action: none;
+  user-select: none;
+}
+
+.folha-do-desenho.ferramenta-reta,
+.folha-do-desenho.ferramenta-curva,
+.folha-do-desenho.ferramenta-costura,
+.folha-do-desenho.ferramenta-pesponto,
+.folha-do-desenho.ferramenta-texto {
+  cursor: crosshair;
+}
+
+.manequim-do-desenho path {
+  fill: none;
+  stroke: #c9ced6;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.eixo-do-desenho {
+  stroke: #b6bdc8;
+  stroke-width: 0.6;
+  stroke-dasharray: 6 4;
+}
+
+.destaque-do-desenho path,
+rect.destaque-do-desenho {
+  fill: none;
+  stroke: #1565c0;
+  stroke-width: 1.4;
+  stroke-dasharray: 5 3;
+}
+
+.destaque-do-desenho rect {
+  fill: #ffffff;
+  stroke: #1565c0;
+  stroke-width: 1;
+}
+
+.traco-em-desenho {
+  fill: none;
+  stroke: #e65100;
+  stroke-width: 1.5;
+}
+
+.ponto-em-desenho {
+  fill: #e65100;
+}
+
+.previa-do-desenho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.vistas-da-previa {
+  display: flex;
+  gap: 10px;
+}
+
+.folha-do-desenho-pequena {
+  width: 150px;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-sm);
+  background: #fff;
+}
+
+/* As propriedades cabem na coluna delas (os campos não passam da janela). */
+.propriedades-do-desenho .formulario-de-sobreposicao,
+.ferramentas-do-desenho {
+  min-width: 0;
+}
+
+.propriedades-do-desenho input:not([type='checkbox']):not([type='color']),
+.propriedades-do-desenho select,
+.ferramentas-do-desenho select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}

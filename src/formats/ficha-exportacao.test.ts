@@ -5,6 +5,7 @@ import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto } from '../domai
 import { aprovarFicha, enviarParaAprovacao, mudarFicha, novaFichaTecnica } from '../domain/fichaTecnica';
 import { calcularPreCusto } from '../domain/preCusto';
 import { conteudoDaFichaEmPdf, gerarPdfDaFichaTecnica } from './ficha-exportacao';
+import { adicionarElemento, DESENHO_VAZIO, tracosDaBase } from '../domain/desenhoTecnico';
 
 const AGORA = '2026-10-24T17:00:00.000Z';
 
@@ -71,5 +72,23 @@ describe('a ficha técnica em PDF — o arquivo', () => {
     // O texto do PDF (sem compressão) vem em hexadecimal: decodificado, as palavras aparecem.
     const decodificado = [...texto.matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
     for (const palavra of ['FICHA', 'Tabela de medidas', 'Sequ', 'Hist', 'Moldes', 'Pre']) expect(decodificado).toContain(palavra);
+  });
+});
+
+describe('a ficha técnica em PDF — o desenho técnico (ADR 0107)', () => {
+  it('com o croqui na ficha, o PDF ganha a parte "Desenho técnico" com as vistas', async () => {
+    const { ficha, preCusto } = exemplo();
+    let n = 0;
+    const comDesenho = { ...ficha, desenho: adicionarElemento(DESENHO_VAZIO, tracosDaBase('camiseta', () => `d${++n}`)) };
+    const blob = await gerarPdfDaFichaTecnica(comDesenho, preCusto, [], AGORA, []);
+    const texto = Buffer.from(await blob.arrayBuffer()).toString('latin1');
+    const decodificado = [...texto.matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
+    expect(decodificado).toContain('Desenho t');
+    expect(decodificado).toContain('Frente');
+    expect(decodificado).toContain('Costas');
+    // Sem o croqui, a parte não aparece.
+    const semDesenho = await gerarPdfDaFichaTecnica(ficha, preCusto, [], AGORA, []);
+    const textoSem = [...Buffer.from(await semDesenho.arrayBuffer()).toString('latin1').matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
+    expect(textoSem).not.toContain('Desenho t');
   });
 });

@@ -39,12 +39,12 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Desenho técnico vetorial (croqui frente e costas) | ⬜ | L |
-| Espelhamento automático (desenha um lado, o outro sai) | ⬜ | L |
-| Biblioteca de formas (golas, punhos, bolsos) e de bases técnicas; manequins técnicos | ⬜ | L |
-| Linhas de costura e acabamento no desenho (pespontos, instruções) | ⬜ | L |
-| Estampas aplicadas no desenho (posição, escala, rotação) | ⬜ | L |
-| Ficha técnica ligada ao desenho e aos materiais (muda junto) | 🟡 (ligada aos materiais, ao encaixe e ao custo, ADR 0105; o desenho técnico é a fase 3) | L |
+| Desenho técnico vetorial (croqui frente e costas) | ✅ (ADR 0107; exporta SVG e vai no PDF da ficha) | — |
+| Espelhamento automático (desenha um lado, o outro sai) | ✅ (ADR 0107) | — |
+| Biblioteca de formas (golas, punhos, bolsos) e de bases técnicas; manequins técnicos | ✅ (13 formas, 6 bases, 2 manequins, ADR 0107) | — |
+| Linhas de costura e acabamento no desenho (pespontos, instruções) | ✅ (estilos costura e pesponto, e textos, ADR 0107) | — |
+| Estampas aplicadas no desenho (posição, escala, rotação) | ✅ (as imagens do projeto, ADR 0107) | — |
+| Ficha técnica ligada ao desenho e aos materiais (muda junto) | ✅ (o desenho mora na ficha e trava com ela; materiais, encaixe e custo, ADR 0105 e 0107) | — |
 | Cadastro de materiais e aviamentos reutilizável entre coleções | ✅ (biblioteca de materiais, ADR 0104) | — |
 | Tabela de medidas com tolerâncias por tamanho | ✅ (ficha técnica, com a colagem da planilha, ADR 0105) | — |
 | Sequência operacional (operações, máquina, tempo) | ✅ (ficha técnica, ADR 0105) | — |

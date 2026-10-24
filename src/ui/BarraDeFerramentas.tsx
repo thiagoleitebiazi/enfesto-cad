@@ -131,6 +131,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirVariantes: () => void;
   /** Modelo > Ficha técnica (ADR 0105) e Pré-custo (ADR 0106): a mesma janela, na aba pedida. */
   readonly onAbrirFichaTecnica: (parte: 'descricao' | 'precusto') => void;
+  /** Modelo > Desenho técnico: o croqui de frente e costas da ficha (ADR 0107). */
+  readonly onAbrirDesenhoTecnico: () => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
   readonly onAbrirMateriais: () => void;
   readonly onEntrarModoCurva: () => void;
@@ -1850,6 +1852,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   icone="ficha-tecnica"
                   dica="Ficha técnica: descrição, tamanhos, tabela de medidas com tolerâncias, materiais com o consumo, sequência operacional, instruções, aprovação e o PDF"
                   onClick={() => props.onAbrirFichaTecnica('descricao')}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Desenho', 'técnico']}
+                  icone="desenho-tecnico"
+                  dica="Desenho técnico: o croqui de frente e costas, com o espelho automático, as bases, as formas, os pespontos e as estampas — vai na ficha técnica e no PDF dela"
+                  onClick={props.onAbrirDesenhoTecnico}
                 />
                 <Ferramenta
                   tamanho="grande"

@@ -36,6 +36,10 @@ import {
 } from '../domain/fichaTecnica';
 import { calcularPreCusto, centavos, ROTULO_DO_GRUPO_DA_LINHA, simularMeta, totaisPorGrupo, type MetaDeCusto, type PreCusto } from '../domain/preCusto';
 import { numeroComVirgula } from '../core/numeros';
+import type { ImagemDoModelo } from '../domain/imagens';
+import { FolhaDoDesenho } from './FolhaDoDesenho';
+import { vistasComDesenho } from '../formats/desenho-exportacao';
+import { ROTULO_DA_VISTA } from '../domain/desenhoTecnico';
 
 export type ParteDaFicha = 'descricao' | 'medidas' | 'materiais' | 'operacoes' | 'instrucoes' | 'precusto' | 'aprovacao';
 
@@ -71,6 +75,10 @@ export function PainelDaFichaTecnica(props: {
   readonly onGuardar: (ficha: FichaTecnica) => void;
   readonly onExportarPdf: (ficha: FichaTecnica, preCusto: PreCusto) => void;
   readonly onAbrirMateriais: () => void;
+  /** As imagens do projeto (as estampas do desenho técnico). */
+  readonly imagens?: readonly ImagemDoModelo[];
+  /** Abre o desenho técnico (ADR 0107), com a ficha de agora (já guardada). */
+  readonly onAbrirDesenho?: (ficha: FichaTecnica) => void;
   readonly agoraIso: () => string;
   readonly novoId: () => string;
   readonly onFechar: () => void;
@@ -156,7 +164,23 @@ export function PainelDaFichaTecnica(props: {
           </p>
         )}
 
-        {parte === 'descricao' && <ParteDescricao ficha={ficha} pecas={props.pecas} editavel={editavel} campo={campo} />}
+        {parte === 'descricao' && (
+          <ParteDescricao
+            ficha={ficha}
+            pecas={props.pecas}
+            editavel={editavel}
+            campo={campo}
+            imagens={props.imagens ?? []}
+            {...(props.onAbrirDesenho
+              ? {
+                  onAbrirDesenho: () => {
+                    if (ficha !== guardadaRef.current) props.onGuardar(ficha);
+                    props.onAbrirDesenho!(ficha);
+                  },
+                }
+              : {})}
+          />
+        )}
         {parte === 'medidas' && <ParteMedidas ficha={ficha} editavel={editavel} campo={campo} novoId={props.novoId} setMensagem={setMensagem} />}
         {parte === 'materiais' && (
           <ParteMateriais ficha={ficha} editavel={editavel} campo={campo} biblioteca={props.biblioteca} encaixe={props.encaixe} preCusto={preCusto} novoId={props.novoId} onAbrirMateriais={props.onAbrirMateriais} />
@@ -182,7 +206,14 @@ export function PainelDaFichaTecnica(props: {
 
 // ---- Descrição
 
-function ParteDescricao(props: { readonly ficha: FichaTecnica; readonly pecas: readonly Molde[]; readonly editavel: boolean; readonly campo: (m: Partial<FichaTecnica>) => void }): React.JSX.Element {
+function ParteDescricao(props: {
+  readonly ficha: FichaTecnica;
+  readonly pecas: readonly Molde[];
+  readonly editavel: boolean;
+  readonly campo: (m: Partial<FichaTecnica>) => void;
+  readonly imagens: readonly ImagemDoModelo[];
+  readonly onAbrirDesenho?: () => void;
+}): React.JSX.Element {
   const { ficha } = props;
   const [tamanhosTexto, setTamanhosTexto] = useState(ficha.tamanhos.join(', '));
   const doMolde = tamanhosDasPecas(props.pecas);
@@ -192,8 +223,25 @@ function ParteDescricao(props: { readonly ficha: FichaTecnica; readonly pecas: r
       <input value={ficha[chave]} disabled={!props.editavel} onChange={(e) => props.campo({ [chave]: e.target.value })} />
     </label>
   );
+  const temDesenho = (ficha.desenho?.elementos.length ?? 0) > 0;
   return (
     <section aria-label="Descrição">
+      <div className="previa-do-desenho">
+        {temDesenho ? (
+          <div className="vistas-da-previa">
+            {vistasComDesenho(ficha.desenho!).map((v) => (
+              <FolhaDoDesenho key={v} desenho={ficha.desenho!} vista={v} imagens={props.imagens} rotulo={`Desenho técnico — ${ROTULO_DA_VISTA[v]}`} />
+            ))}
+          </div>
+        ) : (
+          <p className="nota-do-formulario">Ainda sem o desenho técnico (o croqui de frente e costas).</p>
+        )}
+        {props.onAbrirDesenho && (
+          <button type="button" onClick={props.onAbrirDesenho}>
+            {temDesenho ? 'Abrir o desenho técnico' : 'Fazer o desenho técnico'}
+          </button>
+        )}
+      </div>
       <form className="formulario-de-sobreposicao formulario-do-material" onSubmit={(e) => e.preventDefault()}>
         {texto('Referência', 'referencia')}
         {texto('Nome do modelo', 'nomeDoModelo')}

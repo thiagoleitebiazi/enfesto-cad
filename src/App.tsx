@@ -159,7 +159,10 @@ import {
   textoPerto,
 } from './domain/anotacoes';
 import { definirAutor, definirFichaTecnica } from './domain/projeto';
-import { encaixeParaConsumo, lerFichaTecnica, novaFichaTecnica, type FichaTecnica } from './domain/fichaTecnica';
+import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica } from './domain/fichaTecnica';
+import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
+import { PainelDoDesenhoTecnico } from './ui/PainelDoDesenhoTecnico';
+import { svgDoDesenho } from './formats/desenho-exportacao';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './ui/PainelDaFichaTecnica';
 import { gerarPdfDaFichaTecnica } from './formats/ficha-exportacao';
@@ -1667,7 +1670,7 @@ export default function App(): React.JSX.Element {
         return;
       }
       try {
-        const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, pecas, new Date().toISOString());
+        const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, pecas, new Date().toISOString(), imagensDoProjeto(projetoAtual));
         const nome = `ficha-tecnica-${(ficha.referencia || projetoAtual.codigo).replace(/[^A-Za-z0-9._-]+/g, '-')}.pdf`;
         const caminhoSalvo = await api.salvarArquivo(nome, await blob.arrayBuffer());
         if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Ficha técnica (PDF, versão ${ficha.versao}) salva em ${caminhoSalvo}`);
@@ -1675,7 +1678,57 @@ export default function App(): React.JSX.Element {
         window.alert(`Falha ao gerar o PDF da ficha técnica: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [pecas, tecido, enfesto, projetoAtual.codigo, registrarEventoEPersistir],
+    [pecas, tecido, enfesto, projetoAtual, registrarEventoEPersistir],
+  );
+
+  // ---- O desenho técnico (aba Modelo, ADR 0107): o croqui da ficha técnica; a ficha aprovada só deixa ver.
+  const [desenhoAberto, setDesenhoAberto] = useState<{ readonly desenho: DesenhoTecnico; readonly somenteLeitura: string | null } | null>(null);
+  const abrirDesenhoTecnico = useCallback(
+    (fichaDada?: FichaTecnica) => {
+      const ficha =
+        fichaDada ??
+        lerFichaTecnica(projetoAtual.fichaTecnica) ??
+        novaFichaTecnica({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, ...(projetoAtual.autor ? { autor: projetoAtual.autor } : {}), pecas }, new Date().toISOString());
+      setFichaAberta(null);
+      setDesenhoAberto({
+        desenho: ficha.desenho ?? DESENHO_VAZIO,
+        somenteLeitura: fichaEditavel(ficha)
+          ? null
+          : `A ficha está ${ROTULO_DA_SITUACAO_DA_FICHA[ficha.situacao].toLowerCase()} (versão ${ficha.versao}): o desenho só pode ser visto. Para mudar, abra uma nova versão (Ficha técnica › Aprovação).`,
+      });
+    },
+    [projetoAtual, pecas],
+  );
+  /** O desenho vai para a ficha do projeto (criada, se ainda não há) e é gravado. */
+  const guardarDesenhoTecnico = useCallback(
+    (desenho: DesenhoTecnico) => {
+      setProjetoAtual((atual) => {
+        const agora = new Date().toISOString();
+        const ficha =
+          lerFichaTecnica(atual.fichaTecnica) ??
+          novaFichaTecnica({ nome: atual.nome, codigo: atual.codigo, ...(atual.autor ? { autor: atual.autor } : {}), pecas: atual.estadoAtual.pecas }, agora);
+        if (!fichaEditavel(ficha)) return atual;
+        const atualizado = definirFichaTecnica(atual, definirDesenhoDaFicha(ficha, desenho, agora), agora);
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+  const exportarSvgDoDesenho = useCallback(
+    async (desenho: DesenhoTecnico) => {
+      const api = window.enfestoCad;
+      if (!api) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return;
+      }
+      const ficha = lerFichaTecnica(projetoAtual.fichaTecnica);
+      const referencia = ficha?.referencia || projetoAtual.codigo;
+      const bytes = new TextEncoder().encode(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual), `${referencia} — ${ficha?.nomeDoModelo ?? projetoAtual.nome}`));
+      const caminhoSalvo = await api.salvarArquivo(`desenho-tecnico-${referencia.replace(/[^A-Za-z0-9._-]+/g, '-')}.svg`, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+      if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Desenho técnico (SVG) salvo em ${caminhoSalvo}`);
+    },
+    [projetoAtual, pecas, tecido, enfesto, registrarEventoEPersistir],
   );
 
   // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
@@ -4353,6 +4406,7 @@ export default function App(): React.JSX.Element {
         onAbrirVariantes={abrirVariantes}
         onAbrirMateriais={abrirMateriais}
         onAbrirFichaTecnica={abrirFichaTecnica}
+        onAbrirDesenhoTecnico={() => abrirDesenhoTecnico()}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -4507,9 +4561,22 @@ export default function App(): React.JSX.Element {
           onGuardar={guardarFichaTecnica}
           onExportarPdf={(f, c) => void exportarPdfDaFicha(f, c)}
           onAbrirMateriais={abrirMateriais}
+          imagens={imagensDoProjeto(projetoAtual)}
+          onAbrirDesenho={(f) => abrirDesenhoTecnico(f)}
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {desenhoAberto && (
+        <PainelDoDesenhoTecnico
+          desenho={desenhoAberto.desenho}
+          somenteLeitura={desenhoAberto.somenteLeitura}
+          imagens={imagensDoProjeto(projetoAtual)}
+          onGuardar={guardarDesenhoTecnico}
+          onExportarSvg={(d) => void exportarSvgDoDesenho(d)}
+          novoId={novoIdDaFicha}
+          onFechar={() => setDesenhoAberto(null)}
         />
       )}
       {mostrarMateriais && bibliotecaDeMateriais && (

@@ -11,6 +11,9 @@ import { retanguloEnvolvente } from '../core/geometria';
 import { linhaDeCorteDaPeca, type Molde } from '../domain/molde';
 import { ROTULO_DA_ACAO_DA_FICHA, ROTULO_DA_SITUACAO_DA_FICHA, medidaComTolerancia, tempoTotalDasOperacoes, type FichaTecnica } from '../domain/fichaTecnica';
 import { centavos, ROTULO_DO_GRUPO_DA_LINHA, totaisPorGrupo, type PreCusto } from '../domain/preCusto';
+import { ALTURA_DA_FOLHA, caminhoDoTraco, elementosDaVista, LARGURA_DA_FOLHA, ROTULO_DA_VISTA, TRACEJADO_DO_ESTILO, type DesenhoTecnico, type VistaDoDesenho } from '../domain/desenhoTecnico';
+import type { ImagemDoModelo } from '../domain/imagens';
+import { vistasComDesenho } from './desenho-exportacao';
 
 if (typeof registerStdFonts === 'function') {
   registerStdFonts(Helvetica, HelveticaBold);
@@ -123,7 +126,49 @@ export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | n
 
 const MARGEM = 40;
 
-export async function gerarPdfDaFichaTecnica(ficha: FichaTecnica, preCusto: PreCusto | null, pecas: readonly Molde[], agoraIso: string): Promise<Blob> {
+/** Uma vista do desenho técnico na página: a folha de 400 × 500 encaixada na caixa (x, y, largura). */
+function desenharVista(doc: PDFKit.PDFDocument, desenho: DesenhoTecnico, vista: VistaDoDesenho, imagens: readonly ImagemDoModelo[], x: number, y: number, largura: number): void {
+  const escala = largura / LARGURA_DA_FOLHA;
+  doc.rect(x, y, largura, ALTURA_DA_FOLHA * escala).lineWidth(0.4).strokeColor('#c5cad3').stroke();
+  for (const e of elementosDaVista(desenho, vista)) {
+    doc.save();
+    doc.translate(x, y).scale(escala);
+    if (e.tipo === 'traco') {
+      const tracejado = TRACEJADO_DO_ESTILO[e.estilo];
+      doc.path(caminhoDoTraco(e.pontos, e.curvo, e.fechado)).lineWidth(e.espessura).lineJoin('round').lineCap('round');
+      if (tracejado) doc.dash(tracejado[0], { space: tracejado[1] });
+      if (e.fechado && e.preenchimento) doc.fillAndStroke(e.preenchimento, e.cor);
+      else doc.stroke(e.cor);
+      doc.undash();
+    } else if (e.tipo === 'texto') {
+      doc.fillColor(e.cor).font('Helvetica').fontSize(e.tamanho).text(e.texto, e.posicao.x, e.posicao.y - e.tamanho * 0.85, { lineBreak: false });
+    } else {
+      const imagem = imagens.find((i) => i.id === e.imagemId);
+      if (imagem) {
+        const altura = e.largura * (imagem.alturaPx / imagem.larguraPx);
+        doc.rotate(e.rotacaoGraus, { origin: [e.centro.x, e.centro.y] });
+        if (e.id.endsWith('~')) doc.scale(-1, 1, { origin: [e.centro.x, e.centro.y] });
+        doc.opacity(e.opacidade);
+        try {
+          doc.image(imagem.dados, e.centro.x - e.largura / 2, e.centro.y - altura / 2, { width: e.largura, height: altura });
+        } catch {
+          // A imagem num formato que o PDF não lê (só PNG e JPEG): a estampa fica de fora do PDF, não o resto.
+        }
+      }
+    }
+    doc.restore();
+  }
+  doc.fillColor('#5a6270').font('Helvetica').fontSize(9).text(ROTULO_DA_VISTA[vista], x, y + ALTURA_DA_FOLHA * escala + 3, { width: largura, align: 'center' });
+  doc.fillColor('black');
+}
+
+export async function gerarPdfDaFichaTecnica(
+  ficha: FichaTecnica,
+  preCusto: PreCusto | null,
+  pecas: readonly Molde[],
+  agoraIso: string,
+  imagens: readonly ImagemDoModelo[] = [],
+): Promise<Blob> {
   const c = conteudoDaFichaEmPdf(ficha, preCusto, agoraIso);
   const doc = new PDFDocument({ size: 'A4', margin: MARGEM, compress: false });
   const largura = doc.page.width - MARGEM * 2;
@@ -155,6 +200,18 @@ export async function gerarPdfDaFichaTecnica(ficha: FichaTecnica, preCusto: PreC
   if (c.descricao.trim()) {
     secao('Descrição');
     doc.fontSize(10).font('Helvetica').text(c.descricao, { width: largura });
+  }
+
+  // O desenho técnico (ADR 0107): as vistas lado a lado, com 230 pt de altura.
+  if (ficha.desenho && ficha.desenho.elementos.length > 0) {
+    secao('Desenho técnico');
+    const vistas = vistasComDesenho(ficha.desenho);
+    const larguraDaVista = Math.min((largura - 20 * (vistas.length - 1)) / vistas.length, (230 * LARGURA_DA_FOLHA) / ALTURA_DA_FOLHA);
+    garantir((larguraDaVista * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA + 18);
+    const y0 = doc.y;
+    vistas.forEach((v, i) => desenharVista(doc, ficha.desenho!, v, imagens, MARGEM + i * (larguraDaVista + 20), y0, larguraDaVista));
+    doc.y = y0 + (larguraDaVista * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA + 16;
+    doc.x = MARGEM;
   }
 
   // O desenho das peças, como estão na mesa, numa caixa de 160 pt de altura.
