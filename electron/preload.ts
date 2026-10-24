@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
 import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
+import type { EstadoDaIa } from './chaveDaIa';
+import type { PedidoDeImagem, RespostaDaIa } from '../src/domain/servicoDeIa';
 
 /** A lista de atalhos depois de um pedido, e a mensagem do que o impediu (ou `null`). */
 export interface ResultadoDeProgramas {
@@ -82,6 +84,24 @@ const api = {
   /** Grava a biblioteca de materiais inteira (o processo principal confere antes). */
   async gravarBibliotecaDeMateriais(biblioteca: unknown): Promise<boolean> {
     return ipcRenderer.invoke('materiais-gravar', biblioteca) as Promise<boolean>;
+  },
+  /** O serviço de IA: se há chave guardada (nunca a chave), o serviço e o modelo. */
+  async estadoDaIa(): Promise<EstadoDaIa> {
+    return ipcRenderer.invoke('ia-estado') as Promise<EstadoDaIa>;
+  },
+  /** Guarda a chave, cifrada pelo cofre do sistema; devolve o motivo de não guardar, ou `null`. */
+  async guardarChaveDaIa(chave: string, modelo: string): Promise<string | null> {
+    return ipcRenderer.invoke('ia-guardar-chave', { chave, modelo }) as Promise<string | null>;
+  },
+  async mudarModeloDaIa(modelo: string): Promise<string | null> {
+    return ipcRenderer.invoke('ia-mudar-modelo', modelo) as Promise<string | null>;
+  },
+  async esquecerChaveDaIa(): Promise<boolean> {
+    return ipcRenderer.invoke('ia-esquecer-chave') as Promise<boolean>;
+  },
+  /** Manda o pedido ao serviço (com a chave guardada); as imagens em base64, ou o erro. */
+  async gerarImagensComIa(pedido: PedidoDeImagem): Promise<RespostaDaIa & { readonly modelo?: string }> {
+    return ipcRenderer.invoke('ia-gerar', pedido) as Promise<RespostaDaIa & { readonly modelo?: string }>;
   },
   /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
   avisarInterfacePronta(): void {

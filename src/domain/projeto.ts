@@ -7,6 +7,7 @@ import type { PlanoGuardado } from './planejamento';
 import type { FichaTecnica } from './fichaTecnica';
 import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
 import type { Montagem3D } from './montagem3d';
+import type { PainelDeInspiracao } from './inspiracao';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -105,6 +106,8 @@ export interface Projeto {
   readonly regrasDeCaimento?: RegrasDeCaimento;
   /** O provador 3D: o manequim, onde vai cada peça, as costuras, o tecido e as cores (ADR 0111). */
   readonly montagem3d?: Montagem3D;
+  /** O painel de inspiração do modelo (as imagens, as notas, o conceito, a paleta; os rascunhos da IA), ADR 0112. */
+  readonly inspiracao?: PainelDeInspiracao;
 }
 
 /**
@@ -199,6 +202,11 @@ export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, ago
 }
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;
+
+/** O projeto com o painel de inspiração. */
+export function definirInspiracao(projeto: Projeto, painel: PainelDeInspiracao, agoraIso: string): Projeto {
+  return { ...projeto, inspiracao: painel, modificadoEmIso: agoraIso };
+}
 
 /** O projeto com a montagem do provador 3D. */
 export function definirMontagem3d(projeto: Projeto, montagem: Montagem3D, agoraIso: string): Projeto {

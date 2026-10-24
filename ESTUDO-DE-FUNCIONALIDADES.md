@@ -122,11 +122,11 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Painel de inspiração (imagens de modelagem, tecido, cor, aviamento, estampa) | ⬜ | L (o painel) |
-| Gerar a imagem de uma peça a partir das inspirações; variações | ⬜ | S (serviço de geração de imagem + conta e chave do usuário) |
-| Croqui preliminar frente e costas gerado | ⬜ | S |
-| Variações a partir de um desenho | ⬜ | S |
-| Fotos comerciais da peça num modelo virtual | ⬜ | S |
+| Painel de inspiração (imagens de modelagem, tecido, cor, aviamento, estampa) | ✅ (Modelo › Criação › Inspiração: as imagens por categoria, as notas, as cores tiradas de cada uma, o conceito e a paleta, ADR 0112) | — |
+| Gerar a imagem de uma peça a partir das inspirações; variações | 🟡 (pronto para o serviço de imagens da OpenAI com a conta e a chave do usuário (cifrada pelo cofre do sistema), o resultado marcado como rascunho; sem chave, "não configurada"; testado por um serviço de mentira — falta a chave para o de verdade, ADR 0112) | S (a chave do usuário) |
+| Croqui preliminar frente e costas gerado | 🟡 (o mesmo serviço; o pedido do croqui em traço preto, ADR 0112) | S (a chave do usuário) |
+| Variações a partir de um desenho | 🟡 (o mesmo serviço; o desenho técnico da ficha vai como referência, ADR 0112) | S (a chave do usuário) |
+| Fotos comerciais da peça num modelo virtual | 🟡 (o mesmo serviço; o pedido da foto de catálogo, ADR 0112) | S (a chave do usuário) |
 
 ## 9. Vendas
 

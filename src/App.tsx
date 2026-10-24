@@ -158,7 +158,8 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor, definirFichaTecnica, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { definirAutor, definirFichaTecnica, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { lerPainelDeInspiracao, type PainelDeInspiracao as PainelDeInspiracaoDoModelo } from './domain/inspiracao';
 import { lerMontagem3d, type Montagem3D } from './domain/montagem3d';
 import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
 import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica } from './domain/fichaTecnica';
@@ -171,6 +172,8 @@ import { avisoDePrazos, diaDe } from './domain/colecoes';
 import { PainelDaFotoParaMolde } from './ui/PainelDaFotoParaMolde';
 import { PainelDeRecomendacaoDeTamanho, type ParteDaRecomendacao } from './ui/PainelDeRecomendacaoDeTamanho';
 import { PainelDoProvador3D } from './ui/PainelDoProvador3D';
+import { PainelDeInspiracao, type AcessoAoServicoDeIa, type ParteDaInspiracao } from './ui/PainelDeInspiracao';
+import { lerImagemParaInspiracao, pngDoSvg, reduzirParaInspiracao } from './ui/imagensDaInspiracao';
 import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
 import { paraODesenho, type MoldeReconhecido } from './domain/digitalizacao';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
@@ -1766,6 +1769,31 @@ export default function App(): React.JSX.Element {
     },
     [persistirProjeto],
   );
+
+  // ---- A inspiração e a IA (aba Modelo › Criação, ADR 0112): o painel vai para o projeto; a chave da IA fica no
+  // processo principal (cifrada), e a tela só pede por ele.
+  const [inspiracaoAberta, setInspiracaoAberta] = useState<ParteDaInspiracao | null>(null);
+  const guardarInspiracao = useCallback(
+    (painel: PainelDeInspiracaoDoModelo) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirInspiracao(atual, painel, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+  const servicoDeIa = useMemo((): AcessoAoServicoDeIa | null => {
+    const api = window.enfestoCad;
+    if (!api) return null;
+    return {
+      estado: () => api.estadoDaIa(),
+      guardarChave: (chave, modelo) => api.guardarChaveDaIa(chave, modelo),
+      mudarModelo: (modelo) => api.mudarModeloDaIa(modelo),
+      esquecerChave: () => api.esquecerChaveDaIa(),
+      gerar: (pedido) => api.gerarImagensComIa(pedido),
+    };
+  }, []);
 
   // ---- O provador 3D (aba Conferência › 3D, ADR 0111): a montagem vai para o projeto; a simulação, não.
   const [mostrarProvador3D, setMostrarProvador3D] = useState(false);
@@ -4514,6 +4542,7 @@ export default function App(): React.JSX.Element {
         onAbrirColecoes={() => abrirColecoes('mix')}
         onAbrirRecomendacaoDeTamanho={setRecomendacaoAberta}
         onAbrirProvador3D={() => setMostrarProvador3D(true)}
+        onAbrirInspiracao={setInspiracaoAberta}
         onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
@@ -4674,6 +4703,32 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {inspiracaoAberta && (
+        <PainelDeInspiracao
+          painel={lerPainelDeInspiracao(projetoAtual.inspiracao)}
+          parteInicial={inspiracaoAberta}
+          contexto={(() => {
+            const ficha = lerFichaTecnica(projetoAtual.fichaTecnica);
+            return {
+              nomeDoModelo: ficha?.nomeDoModelo || projetoAtual.nome,
+              ...(ficha?.descricao ? { descricao: ficha.descricao } : {}),
+              ...(tecido?.nome ? { tecido: tecido.nome } : {}),
+            };
+          })()}
+          desenhoComoPng={(() => {
+            const desenho = lerFichaTecnica(projetoAtual.fichaTecnica)?.desenho;
+            return desenho && desenho.elementos.length > 0 ? () => pngDoSvg(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual)), 1024) : null;
+          })()}
+          lerImagem={lerImagemParaInspiracao}
+          reduzirImagem={reduzirParaInspiracao}
+          servico={servicoDeIa}
+          onGuardar={guardarInspiracao}
+          onSalvarArquivo={salvarArquivoDoProvador}
+          novoId={() => `inspiracao-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          agoraIso={() => new Date().toISOString()}
+          onFechar={() => setInspiracaoAberta(null)}
         />
       )}
       {mostrarProvador3D && (

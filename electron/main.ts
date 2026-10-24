@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, protocol, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -33,6 +33,7 @@ import { lerBibliotecaDeMateriais, VERSAO_DA_BIBLIOTECA_DE_MATERIAIS } from '../
 import { lerColecoes, VERSAO_DAS_COLECOES } from '../src/domain/colecoes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
+import { esquecerChave, estadoDaIa, gerarImagens, guardarChave, mudarModelo, type CofreDoSistema } from './chaveDaIa';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -861,6 +862,43 @@ ipcMain.handle('colecoes-gravar', async (_evento, bruto: unknown) => {
     }),
   );
   return true;
+});
+
+/**
+ * O serviço de IA (ADR 0112): a chave cifrada pelo cofre do sistema em <userData>/servico-de-ia.json, usada só aqui
+ * (a tela sabe se há chave, nunca qual é). O pedido sai só quando a pessoa clica em Gerar. O diagnóstico registra
+ * que houve um pedido e como acabou — nunca a chave nem o texto do pedido.
+ */
+function arquivoDaIa(): string {
+  return path.join(app.getPath('userData'), 'servico-de-ia.json');
+}
+const cofreDoSistema: CofreDoSistema = {
+  disponivel: () => safeStorage.isEncryptionAvailable(),
+  cifrar: (texto) => safeStorage.encryptString(texto),
+  decifrar: (cifrado) => safeStorage.decryptString(cifrado),
+};
+
+ipcMain.handle('ia-estado', () => estadoDaIa(arquivoDaIa(), cofreDoSistema));
+
+ipcMain.handle('ia-guardar-chave', async (_evento, dados: { chave?: unknown; modelo?: unknown }) => {
+  await mkdir(app.getPath('userData'), { recursive: true });
+  const erro = await guardarChave(arquivoDaIa(), cofreDoSistema, dados?.chave, dados?.modelo, new Date().toISOString());
+  registrarDiagnostico(erro ? 'ia-chave-recusada' : 'ia-chave-guardada');
+  return erro;
+});
+
+ipcMain.handle('ia-mudar-modelo', (_evento, modelo: unknown) => mudarModelo(arquivoDaIa(), modelo));
+
+ipcMain.handle('ia-esquecer-chave', async () => {
+  await esquecerChave(arquivoDaIa());
+  registrarDiagnostico('ia-chave-esquecida');
+  return true;
+});
+
+ipcMain.handle('ia-gerar', async (_evento, pedido: unknown) => {
+  const resposta = await gerarImagens(arquivoDaIa(), cofreDoSistema, pedido, (url, init) => net.fetch(url, init), 180_000);
+  registrarDiagnostico(resposta.ok ? `ia-gerar ok imagens=${resposta.imagens.length}` : 'ia-gerar erro');
+  return resposta;
 });
 
 ipcMain.handle('programas-adicionar-arquivo', async (_evento, nome: unknown) => {

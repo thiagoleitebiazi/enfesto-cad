@@ -137,6 +137,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirRecomendacaoDeTamanho: (parte: 'recomendar' | 'guia') => void;
   /** Conferência > 3D: o provador 3D — as peças num manequim, costuradas e caindo pelo tecido (ADR 0111). */
   readonly onAbrirProvador3D: () => void;
+  /** Modelo > Criação: o painel de inspiração e a criação com IA (ADR 0112) — a mesma janela, na aba pedida. */
+  readonly onAbrirInspiracao: (parte: 'painel' | 'ia') => void;
   /** Modelo > Desenho técnico: o croqui de frente e costas da ficha (ADR 0107). */
   readonly onAbrirDesenhoTecnico: () => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
@@ -1909,6 +1911,23 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   icone="materiais"
                   dica="Materiais e aviamentos: a biblioteca da empresa (tecidos, aviamentos, embalagens, com a unidade e o preço) e os padrões de custo (custo do minuto, indiretos, impostos, comissão, margem)"
                   onClick={props.onAbrirMateriais}
+                />
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Criação">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo="Inspiração"
+                  icone="inspiracao"
+                  dica="Inspiração: o painel do modelo — imagens de modelagem, tecido, cor, aviamento e estampa, com notas, as cores tiradas de cada imagem, o conceito e a paleta"
+                  onClick={() => props.onAbrirInspiracao('painel')}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Criar', 'com IA']}
+                  icone="criar-com-ia"
+                  dica="Criar com IA: a imagem da peça pelas inspirações, o croqui de frente e costas, variações de um desenho, a foto num modelo virtual — com o serviço e a chave da sua conta; o resultado é rascunho"
+                  onClick={() => props.onAbrirInspiracao('ia')}
                 />
               </div>
 

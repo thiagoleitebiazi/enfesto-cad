@@ -3,7 +3,8 @@
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
  * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
  * uma coleção, cria uma peça pela foto, recomenda o tamanho pelas medidas do corpo (com o guia de medidas) e veste
- * uma saia no provador 3D (costurada, caída, com o mapa de tensão, a estampa e a imagem) — com
+ * uma saia no provador 3D (costurada, caída, com o mapa de tensão, a estampa e a imagem), monta o painel de inspiração
+ * e cria um croqui com a IA (por um serviço de mentira: nada sai do computador) — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -13,7 +14,7 @@
  * As fotos e o registro (uso.txt) vão para a pasta de SAIDA_DO_TESTE (ou ./uso). Os dados ficam numa pasta
  * temporária: os projetos de quem roda o teste não são tocados. Sai com 0 se tudo conferiu, e 1 se não.
  */
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, net } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -73,6 +74,27 @@ const DADOS = fs.mkdtempSync(path.join(os.tmpdir(), 'enfesto-cad-uso-'));
 app.setPath('userData', DADOS);
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [arquivoParaAbrir] });
 dialog.showSaveDialog = async (opcoes) => ({ canceled: false, filePath: path.join(SAIDA, path.basename((opcoes && opcoes.defaultPath) || 'saida.pdf')) });
+/**
+ * O serviço de IA de mentira (ADR 0112): o pedido que iria à internet fica aqui — o teste confere o que iria (o
+ * endereço, a chave no cabeçalho, as imagens de referência) e responde com uma foto da janela. Nada sai do computador.
+ */
+const pedidosAoServicoDeIa = [];
+const buscarDeVerdade = net.fetch.bind(net);
+net.fetch = async (url, init) => {
+  if (String(url).startsWith('https://api.openai.com/')) {
+    const corpo = init && init.body;
+    pedidosAoServicoDeIa.push({
+      url: String(url),
+      autorizacao: init && init.headers ? init.headers.Authorization : undefined,
+      imagens: corpo && typeof corpo.getAll === 'function' ? corpo.getAll('image[]').length : 0,
+      modelo: corpo && typeof corpo.get === 'function' ? corpo.get('model') : null,
+    });
+    const janela = BrowserWindow.getAllWindows()[0];
+    const imagem = (await janela.webContents.capturePage()).resize({ width: 400 });
+    return new globalThis.Response(JSON.stringify({ data: [{ b64_json: imagem.toPNG().toString('base64') }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  return buscarDeVerdade(url, init);
+};
 require(path.join(RAIZ, 'dist-electron', 'main.js'));
 
 let falhas = 0;
@@ -869,6 +891,126 @@ async function principal() {
     'a montagem ficou no projeto: a frente e as costas, as 2 costuras, a estampa localizada',
     !!montagemGravada && JSON.stringify(posicoesGravadas) === '["costas","frente"]' && montagemGravada.costuras.length === 2 && Object.values(montagemGravada.pecas).some((c) => c.estampa && c.estampa.modo === 'localizada'),
     montagemGravada ? `${JSON.stringify(posicoesGravadas)}, ${montagemGravada.costuras.length} costura(s)` : 'sem montagem',
+  );
+
+  // 14. A inspiração e a IA (ADR 0112): Modelo › Criação › Inspiração; duas imagens desenhadas na hora entram pelo
+  // campo de arquivo, com as cores tiradas delas; a categoria, a nota, a paleta; a IA sem chave; a chave de teste
+  // guardada cifrada (o arquivo não a mostra); o croqui com uma referência, pelo serviço de mentira (a chave só no
+  // cabeçalho, a imagem como image[]); o resultado no painel como rascunho; a chave esquecida.
+  await aba('Modelo');
+  await botao('Inspiração');
+  await espera(800);
+  conferir('abre a inspiração e a IA', (await janela()) === 'Inspiração e IA', await janela());
+  await js(
+    `(async () => {
+      const feitas = [];
+      for (const [nome, cores] of [['tecido-listrado', ['#1b3a6b', '#f4f1ea']], ['botao-vermelho', ['#b3202a', '#f2d7d5']]]) {
+        const tela = document.createElement('canvas');
+        tela.width = 300;
+        tela.height = 200;
+        const ctx = tela.getContext('2d');
+        for (let i = 0; i < 10; i++) {
+          ctx.fillStyle = cores[i % 2];
+          ctx.fillRect(i * 30, 0, 30, 200);
+        }
+        const blob = await new Promise((r) => tela.toBlob(r, 'image/png'));
+        feitas.push(new File([blob], nome + '.png', { type: 'image/png' }));
+      }
+      const transferencia = new DataTransfer();
+      feitas.forEach((arquivo) => transferencia.items.add(arquivo));
+      const campo = document.querySelector('input[aria-label="Arquivos de imagem da inspiração"]');
+      campo.files = transferencia.files;
+      campo.dispatchEvent(new Event('change', { bubbles: true }));
+      return 1;
+    })()`,
+  );
+  await espera(1500);
+  const coresDoPainel = await js(`Array.from(document.querySelectorAll('[role=dialog] .cartao-da-inspiracao')).map(c => Array.from(c.querySelectorAll('.amostra-de-cor')).map(s => s.title).join(', ')).join(' | ')`);
+  conferir(
+    'as duas imagens entram no painel, com as cores tiradas de cada uma',
+    coresDoPainel.split(' | ').length === 2 && coresDoPainel.includes('azul-marinho (#1b3a6b)') && coresDoPainel.includes('vermelho (#b3202a)'),
+    coresDoPainel,
+  );
+  await noCampo('Categoria de tecido-listrado', 'tecido');
+  await noCampo('Nota de tecido-listrado', 'listra larga, marinho e cru');
+  await noCampo('Conceito do modelo (o público, a ocasião, o clima)', 'verão urbano, leve');
+  await clicarEm(`document.querySelector('[role=dialog] button[aria-label="Pôr azul-marinho (#1b3a6b) na paleta"]')`);
+  await espera(400);
+  const naPaleta = Number(await js(`document.querySelectorAll('[role=dialog] [aria-label="Paleta do modelo"] [role=listitem]').length`));
+  conferir('a paleta do modelo, pela cor da imagem', naPaleta === 1, `${naPaleta} cor(es)`);
+  await foto('38-painel-de-inspiracao.png');
+  await parteDaJanela('Criar com IA');
+  await espera(800);
+  const servicoAntes = await js(`((document.querySelector('[role=dialog] .cartao-do-servico strong') || {}).textContent || '')`);
+  const gerarDesligado = await js(`(Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.startsWith('Gerar')) || {}).disabled === true`);
+  conferir('sem chave: a IA não configurada, e o Gerar desligado', servicoAntes === 'IA não configurada' && gerarDesligado, servicoAntes);
+  await foto('39-ia-sem-chave.png');
+  const CHAVE_DE_TESTE = 'sk-teste-do-uso-0123456789abcdef';
+  await noCampo('Chave do serviço', CHAVE_DE_TESTE);
+  await botaoNaJanela('Guardar a chave');
+  await espera(1200);
+  const servicoDepois = await js(`((document.querySelector('[role=dialog] .cartao-do-servico strong') || {}).textContent || '')`);
+  const avisoDaChave = await js(`((document.querySelector('[role=dialog] .aviso-da-ia') || {}).textContent || '')`);
+  if (avisoDaChave.includes('não tem o cofre de senhas')) {
+    // Sem o cofre do sistema (uma máquina de testes sem chaveiro), a chave não é guardada — e a geração não é testada.
+    conferir('sem o cofre do sistema, a chave não é guardada (e a janela diz)', servicoDepois === 'IA não configurada' && !fs.existsSync(path.join(DADOS, 'servico-de-ia.json')), avisoDaChave);
+    log('      (o cofre do sistema não funciona aqui: a geração com a IA não foi testada nesta máquina)');
+  } else {
+    const arquivoDaChave = path.join(DADOS, 'servico-de-ia.json');
+    const noDisco = fs.existsSync(arquivoDaChave) ? fs.readFileSync(arquivoDaChave, 'utf8') : '';
+    conferir(
+      'a chave guardada: a IA configurada, e o arquivo não mostra a chave (cifrada pelo cofre do sistema)',
+      servicoDepois === 'IA configurada: OpenAI (imagens)' && noDisco.includes('chaveCifrada') && !noDisco.includes('sk-teste-do-uso'),
+      `${servicoDepois} / ${noDisco.length} letras no arquivo`,
+    );
+    await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] .tipo-de-geracao')).find(l => l.textContent.includes('Croqui frente e costas')).querySelector('input')`);
+    await clicarEm(`document.querySelector('[role=dialog] input[aria-label="Referência: tecido-listrado"]')`);
+    await noCampo('Quantas', '1');
+    await espera(300);
+    await botaoNaJanela('Gerar 1 imagem(ns)');
+    for (let i = 0; i < 40 && Number(await js(`document.querySelectorAll('[role=dialog] .resultados-da-ia figure').length`)) === 0; i++) await espera(250);
+    const resultados = Number(await js(`document.querySelectorAll('[role=dialog] .resultados-da-ia figure').length`));
+    const pedidoFeito = pedidosAoServicoDeIa[0];
+    conferir(
+      'o croqui pedido ao serviço (de mentira): a chave só no cabeçalho, a imagem de referência junto, o resultado marcado como rascunho',
+      pedidosAoServicoDeIa.length === 1 &&
+        pedidoFeito.url === 'https://api.openai.com/v1/images/edits' &&
+        pedidoFeito.autorizacao === `Bearer ${CHAVE_DE_TESTE}` &&
+        pedidoFeito.imagens === 1 &&
+        pedidoFeito.modelo === 'gpt-image-2.5-flare' &&
+        resultados === 1 &&
+        (await js(`((document.querySelector('[role=dialog] .resultados-da-ia .selo-de-rascunho') || {}).textContent || '')`)) === 'Rascunho da IA',
+      JSON.stringify({ ...pedidoFeito, autorizacao: pedidoFeito && pedidoFeito.autorizacao ? 'Bearer …' : null, resultados }),
+    );
+    await botaoNaJanela('Pôr no painel');
+    await espera(1200);
+    await foto('40-croqui-da-ia.png');
+    await botaoNaJanela('Esquecer a chave');
+    await espera(800);
+    const servicoNoFim = await js(`((document.querySelector('[role=dialog] .cartao-do-servico strong') || {}).textContent || '')`);
+    conferir('esquecer a chave: a IA não configurada de novo, e o arquivo da chave apagado', servicoNoFim === 'IA não configurada' && !fs.existsSync(arquivoDaChave), servicoNoFim);
+  }
+  await parteDaJanela('Painel de inspiração');
+  await espera(500);
+  await foto('41-painel-com-rascunho.png');
+  await fecharJanela();
+  await espera(1200);
+  const painelGravado = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', f), 'utf8')))
+    .find((p) => p.inspiracao)?.inspiracao;
+  const comRascunho = painelGravado ? painelGravado.itens.filter((i) => i.rascunhoDaIa).length : 0;
+  conferir(
+    'o painel ficou no projeto: o conceito, a paleta, as imagens (e o rascunho da IA, marcado)',
+    !!painelGravado &&
+      painelGravado.conceito === 'verão urbano, leve' &&
+      JSON.stringify(painelGravado.paleta) === '["#1b3a6b"]' &&
+      painelGravado.itens.some((i) => i.categoria === 'tecido' && i.nota === 'listra larga, marinho e cru') &&
+      painelGravado.itens.length === 2 + comRascunho &&
+      (pedidosAoServicoDeIa.length === 0 || comRascunho === 1) &&
+      !JSON.stringify(painelGravado).includes('sk-teste-do-uso'),
+    painelGravado ? `${painelGravado.itens.length} imagem(ns), ${comRascunho} rascunho(s)` : 'sem painel',
   );
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));

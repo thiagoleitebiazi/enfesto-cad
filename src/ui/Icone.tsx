@@ -164,7 +164,9 @@ export type NomeDoIcone =
   | 'molde-da-foto'
   | 'recomendar-tamanho'
   | 'guia-de-medidas'
-  | 'provador-3d';
+  | 'provador-3d'
+  | 'inspiracao'
+  | 'criar-com-ia';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -1060,6 +1062,21 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M2.5 10.2 9.6 3h7.4v7.4L9.8 17.5Z" />
       <circle cx="13.6" cy="6.4" r="1.2" />
       <path d="m6.6 10.6 2.1 2.1 3.6-3.6" />
+    </>
+  ),
+  inspiracao: (
+    <>
+      <rect x="2.5" y="3" width="7" height="6" rx="0.8" />
+      <rect x="10.5" y="3" width="7" height="9" rx="0.8" />
+      <rect x="2.5" y="10" width="7" height="7" rx="0.8" />
+      <rect x="10.5" y="13" width="7" height="4" rx="0.8" />
+    </>
+  ),
+  'criar-com-ia': (
+    <>
+      <path d="M8 3.5 9.4 7.6 13.5 9 9.4 10.4 8 14.5 6.6 10.4 2.5 9 6.6 7.6Z" />
+      <path d="M15 2.5 15.6 4.4 17.5 5 15.6 5.6 15 7.5 14.4 5.6 12.5 5 14.4 4.4Z" />
+      <path d="M14.5 12.5 15 14 16.5 14.5 15 15 14.5 16.5 14 15 12.5 14.5 14 14Z" />
     </>
   ),
   'provador-3d': (

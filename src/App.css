@@ -3513,6 +3513,291 @@ input[type='radio'] {
   color: var(--erro-texto);
 }
 
+/* A inspiração e a IA (ADR 0112): o painel em cartões com a cor da categoria, o selo de rascunho, o serviço. */
+.sobreposicao-painel:has(.painel-de-inspiracao) {
+  width: min(1180px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-de-inspiracao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.secao-da-inspiracao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(68vh, 620px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.conceito-da-inspiracao {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.paleta-da-inspiracao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-200);
+  border-left: 5px solid var(--grupo-5);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.amostras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.amostra-de-cor {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.amostra-de-cor.amostra-escolhida {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px var(--marca-800);
+}
+
+.amostras.pequenas .amostra-de-cor {
+  width: 16px;
+  height: 16px;
+  cursor: default;
+}
+
+.barra-da-inspiracao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.filtros-da-inspiracao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.grade-da-inspiracao {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.cartao-da-inspiracao {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--cinza-200);
+  border-top: 5px solid var(--cinza-400);
+  border-radius: var(--raio-md);
+  background: var(--cinza-0);
+  box-shadow: var(--sombra-leve);
+}
+
+.cartao-da-inspiracao.categoria-modelagem {
+  border-top-color: var(--grupo-1);
+}
+
+.cartao-da-inspiracao.categoria-tecido {
+  border-top-color: var(--grupo-2);
+}
+
+.cartao-da-inspiracao.categoria-cor {
+  border-top-color: var(--grupo-5);
+}
+
+.cartao-da-inspiracao.categoria-aviamento {
+  border-top-color: var(--grupo-8);
+}
+
+.cartao-da-inspiracao.categoria-estampa {
+  border-top-color: var(--grupo-3);
+}
+
+.imagem-da-inspiracao {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  background: var(--cinza-100);
+}
+
+.imagem-da-inspiracao img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.selo-de-rascunho {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 8px;
+  border-radius: var(--raio-sm);
+  background: var(--erro-forte);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.cartao-da-inspiracao figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+}
+
+.cartao-da-inspiracao figcaption small {
+  color: var(--cinza-600);
+}
+
+.cartao-do-servico {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--cinza-300);
+  border-left: 6px solid var(--cinza-400);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.cartao-do-servico p {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+
+.cartao-do-servico.servico-configurado {
+  border-color: var(--sucesso-borda);
+  border-left-color: var(--grupo-6);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.cartao-do-servico.servico-sem-chave {
+  border-left-color: var(--aviso-borda);
+}
+
+.configuracao-da-ia {
+  padding: 10px 12px;
+  border: 1px dashed var(--cinza-400);
+  border-radius: var(--raio-md);
+}
+
+.aviso-da-ia {
+  padding: 6px 10px;
+  border-left: 4px solid var(--grupo-1);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.tipos-de-geracao {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.tipo-de-geracao {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-md);
+  background: var(--cinza-0);
+  cursor: pointer;
+}
+
+.tipo-de-geracao small {
+  grid-column: 2;
+  color: var(--cinza-600);
+}
+
+.tipo-de-geracao.tipo-escolhido {
+  border-color: var(--grupo-3);
+  background: #f3effb;
+  box-shadow: inset 4px 0 0 var(--grupo-3);
+}
+
+.referencias-da-ia {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-200);
+  border-radius: var(--raio-md);
+}
+
+.referencias-da-ia legend {
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.referencia-da-ia {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.referencia-da-ia img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--raio-sm);
+}
+
+.miniatura-do-desenho {
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 8px;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-sm);
+  font-size: 12px;
+}
+
+.opcoes-da-ia {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.opcoes-da-ia label,
+.pedido-da-ia {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
 /* O provador 3D (ADR 0111): o manequim num fundo de estúdio à esquerda; os controles em abas à direita. */
 .sobreposicao-painel:has(.painel-do-provador) {
   width: min(1280px, 97vw);

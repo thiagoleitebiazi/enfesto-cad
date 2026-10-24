@@ -91,6 +91,7 @@ function propsBase(): Props {
     onAbrirColecoes: vi.fn(),
     onAbrirRecomendacaoDeTamanho: vi.fn(),
     onAbrirProvador3D: vi.fn(),
+    onAbrirInspiracao: vi.fn(),
     onAbrirMoldeDaFoto: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
@@ -262,7 +263,7 @@ describe('BarraDeFerramentas: abas', () => {
     expect(props.onAbrirProvador3D).toHaveBeenCalledTimes(1);
   });
 
-  it('Modelo: Informações, Operações, Ficha técnica e Loja', () => {
+  it('Modelo: Informações, Operações, Ficha técnica, Criação e Loja', () => {
     const props = renderizar('Modelo');
 
     expect(gruposDaAba()).toEqual({
@@ -270,8 +271,13 @@ describe('BarraDeFerramentas: abas', () => {
       Operações: ['Variantes', 'Relacionamento piques', 'Imagens', 'Localizar modelos'],
       Coleção: ['Coleções'],
       'Ficha técnica': ['Ficha técnica', 'Desenho técnico', 'Pré-custo', 'Materiais e aviamentos'],
+      Criação: ['Inspiração', 'Criar com IA'],
       Loja: ['Recomendar tamanho', 'Guia de medidas'],
     });
+    fireEvent.click(botao('Inspiração'));
+    fireEvent.click(botao('Criar com IA'));
+    expect(props.onAbrirInspiracao).toHaveBeenNthCalledWith(1, 'painel');
+    expect(props.onAbrirInspiracao).toHaveBeenNthCalledWith(2, 'ia');
     fireEvent.click(botao('Materiais e aviamentos'));
     expect(props.onAbrirMateriais).toHaveBeenCalledTimes(1);
     fireEvent.click(botao('Ficha técnica'));
