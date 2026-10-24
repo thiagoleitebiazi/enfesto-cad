@@ -94,4 +94,28 @@ describe('motivoDoErroDeSalvar', () => {
     ).toBe("ENOSPC: no space left on device, open 'x.json'.");
     expect(motivoDoErroDeSalvar('falhou.')).toBe('falhou.');
   });
+
+  it('a fila de encaixes: aparece só com algo calculando, aguardando ou pronto, e abre a fila ao clicar', () => {
+    let abriu = 0;
+    const base = {
+      cursorMundo: null,
+      transform: { escalaPxPorMm: 1, offsetXPx: 0, offsetYPx: 0 },
+      totalDePecas: 0,
+      pecasSelecionadas: 0,
+      problemas: [],
+      onAlternarValidacao: () => {},
+      unidade: 'mm' as const,
+      onAbrirFila: () => abriu++,
+    };
+    const { rerender } = render(<BarraDeStatus {...base} fila={{ calculando: 0, aguardando: 0, prontos: 0 }} />);
+    expect(screen.queryByText(/^Fila:/)).toBeNull();
+    rerender(<BarraDeStatus {...base} fila={{ calculando: 1, aguardando: 2, prontos: 1 }} />);
+    const indicador = screen.getByRole('button', { name: /^Fila:/ });
+    expect(indicador).toHaveTextContent('Fila: 1 calculando · 2 aguardando · 1 pronto(s) para aplicar');
+    expect(indicador).toHaveClass('fila-calculando');
+    indicador.click();
+    expect(abriu).toBe(1);
+    rerender(<BarraDeStatus {...base} fila={{ calculando: 0, aguardando: 0, prontos: 2 }} />);
+    expect(screen.getByRole('button', { name: /^Fila:/ })).toHaveClass('fila-pronta');
+  });
 });

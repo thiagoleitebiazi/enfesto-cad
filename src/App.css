@@ -3213,3 +3213,150 @@ input[type='radio'] {
 .painel-de-planejamento > .acoes-em-linha:last-child:empty {
   display: none;
 }
+
+/* A fila de encaixes (ADR 0102): a faixa verde (rodando) ou amarela (pausada), a lista com a situação de cada
+   encaixe, a barra de progresso do que calcula e a estrela do melhor de cada projeto. */
+.sobreposicao-painel:has(.painel-da-fila-de-encaixes) {
+  width: min(1240px, 94vw);
+  max-width: 94vw;
+}
+
+.painel-da-fila-de-encaixes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.painel-da-fila-de-encaixes section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.estado-da-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--info-borda);
+  border-left-width: 4px;
+  border-radius: var(--raio-md);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.estado-da-fila.fila-rodando {
+  border-color: var(--sucesso-borda);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.estado-da-fila.fila-pausada {
+  border-color: var(--aviso-borda);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.acoes-da-fila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.avisos-da-fila {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border: 1px solid var(--aviso-borda);
+  border-radius: var(--raio-md);
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.tabela-da-fila {
+  width: 100%;
+}
+
+.tabela-da-fila td {
+  vertical-align: top;
+}
+
+.tabela-da-fila small {
+  color: var(--cinza-600);
+}
+
+.tabela-da-fila .barra-de-progresso {
+  min-width: 90px;
+  margin: 5px 0 2px;
+}
+
+.tabela-da-fila tr.trabalho-melhor td {
+  background: var(--sucesso-fundo);
+}
+
+.acoes-do-trabalho {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.acoes-do-trabalho button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.texto-de-erro {
+  color: var(--erro-forte);
+}
+
+.situacao-da-execucao.situacao-aguardando {
+  border-color: var(--info-borda);
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.situacao-da-execucao.situacao-executando {
+  border-color: var(--destaque);
+  background: var(--destaque);
+  color: #fff;
+  font-weight: 600;
+}
+
+.situacao-da-execucao.situacao-concluido {
+  border-color: var(--sucesso-borda);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.situacao-da-execucao.situacao-falhou {
+  border-color: var(--erro-borda);
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
+/* Na barra de status: azul com encaixes esperando, laranja calculando, verde com resultado para aplicar. */
+.barra-de-status .indicador-da-fila {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 999px;
+  background: #2f6fd6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.barra-de-status .indicador-da-fila.fila-calculando {
+  background: var(--destaque);
+}
+
+.barra-de-status .indicador-da-fila.fila-pronta {
+  background: #1f8a4c;
+}
+
+.barra-de-status .indicador-da-fila:hover {
+  filter: brightness(1.1);
+}

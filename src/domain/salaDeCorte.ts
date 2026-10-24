@@ -1,6 +1,7 @@
 import { estadoDoRolo, rendimentoDaMalha, type CadastroDeProducao, type ExecucaoDoCorte, type RoloDeEstoque } from './cadastroDeProducao';
 import { comparativoDaExecucao, ROTULO_DA_SITUACAO } from './execucaoDoCorte';
 import { numeroComVirgula } from '../core/numeros';
+import { textoCsv } from '../core/csv';
 
 /**
  * A sala de corte inteira (ADR 0100): todas as execuções do cadastro (de todos os projetos), os indicadores, as
@@ -198,8 +199,6 @@ export function consumoPorMalha(cadastro: CadastroDeProducao, desdeIso?: string)
 
 // ---- Relatórios em CSV: separados por ponto e vírgula, com vírgula decimal (o padrão das planilhas em português).
 
-const celula = (v: string): string => (/[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-const linhaCsv = (valores: readonly string[]): string => valores.map(celula).join(';');
 const dataHora = (iso: string | undefined): string => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '');
 const metros = (mm: number | undefined): string => (mm === undefined ? '' : numeroComVirgula(mm / 1000, 3));
 
@@ -250,12 +249,12 @@ export function csvDasExecucoes(cadastro: CadastroDeProducao, nomeDoProjeto: (pr
       e.observacoes ?? '',
     ];
   });
-  return [cabecalho, ...linhas].map(linhaCsv).join('\r\n') + '\r\n';
+  return textoCsv([cabecalho, ...linhas]);
 }
 
 /** O consumo por malha (para compras). */
 export function csvDoConsumoPorMalha(consumo: readonly ConsumoDaMalha[]): string {
   const cabecalho = ['Malha', 'Cortes', 'Consumo planejado (m)', 'Consumo real (m)', 'Consumo real (kg)'];
   const linhas = consumo.map((c) => [c.malha, String(c.cortes), metros(c.planejadoMm), metros(c.realMm), c.realG === null ? '' : numeroComVirgula(c.realG / 1000, 2)]);
-  return [cabecalho, ...linhas].map(linhaCsv).join('\r\n') + '\r\n';
+  return textoCsv([cabecalho, ...linhas]);
 }

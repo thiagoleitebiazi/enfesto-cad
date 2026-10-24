@@ -78,8 +78,8 @@ inventa.
 | Combinação de tamanhos e o melhor tipo de enfesto sugeridos | ✅ (composição dos riscos no plano) | — |
 | Parâmetros de enfesto fixados como padrão | ✅ (configuração do plano) | — |
 | Consumo, eficiência e perda antes do corte; relatórios para o financeiro | ✅ (plano, relatório, custo) | — |
-| Prioridade das ordens a calcular | ⬜ | L |
-| Fila de encaixes em segundo plano: várias, com prioridade, pausar, reordenar, relatório de eficiência | 🟡 (um cálculo por vez, cancelável) | L (nesta estação) |
+| Prioridade das ordens a calcular | ✅ (na fila de encaixes, ADR 0102) | — |
+| Fila de encaixes em segundo plano: várias, com prioridade, pausar, reordenar, relatório de eficiência | ✅ (nesta estação, com o programa aberto, ADR 0102) | — |
 | Servidor dedicado recebendo de várias estações, 24 h | ⬜ | S (exige servidor na rede) |
 | Encaixe de estampa para impressão digital (molde preenchido com a imagem) | ⬜ | L (o arquivo); a impressora é H |
 

@@ -1,6 +1,7 @@
 /*
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
- * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento — com
+ * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
+ * dois encaixes na fila e aplica o melhor — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -270,6 +271,59 @@ async function principal() {
   conferir('o Enfesto com as margens de 4 mm', JSON.stringify(JSON.parse(margens).map(Number)) === '[4,4]', margens);
   await foto('11-enfesto.png');
   await fecharJanela();
+  await espera(300);
+
+  // 5. A fila de encaixes (ADR 0102): dois encaixes postos na fila pelo Nesting automático (um de cada método),
+  // calculados em segundo plano; a barra de status avisa; a fila mostra os dois, com a estrela no melhor; aplicar.
+  const porNaFila = async (metodo) => {
+    await botao('Nesting Automático');
+    await espera(800);
+    await js(`(() => { const s = document.querySelector('[role=dialog] select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(metodo)}); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await espera(300);
+    await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Pôr na fila')`);
+    await espera(500);
+  };
+  await porNaFila('grade');
+  conferir('"Pôr na fila" fecha a janela do nesting', (await janela()) === 'nenhuma', await janela());
+  await porNaFila('pontos-de-canto');
+  const textoDaFila = () => js(`((document.querySelector('.barra-de-status .indicador-da-fila') || {}).textContent || '')`);
+  let naBarra = '';
+  for (let i = 0; i < 120 && !naBarra.includes('2 pronto'); i++) {
+    await espera(500);
+    naBarra = await textoDaFila();
+  }
+  conferir('a barra de status avisa os 2 encaixes prontos', naBarra === 'Fila: 2 pronto(s) para aplicar', naBarra);
+  await foto('12-fila-na-barra.png');
+  await clicarEm(`document.querySelector('.barra-de-status .indicador-da-fila')`);
+  await espera(600);
+  conferir('a barra de status abre a fila de encaixes', (await janela()) === 'Fila de encaixes', await janela());
+  const linhasDaFila = JSON.parse(
+    await js(`JSON.stringify(Array.from(document.querySelectorAll('.tabela-da-fila tbody tr')).map(tr => ({ texto: tr.innerText.replace(/\\s+/g, ' '), melhor: tr.classList.contains('trabalho-melhor') })))`),
+  );
+  conferir(
+    'a fila mostra os 2 encaixes concluídos, um com a estrela de melhor',
+    linhasDaFila.length === 2 && linhasDaFila.every((l) => l.texto.includes('Concluído')) && linhasDaFila.filter((l) => l.melhor).length === 1,
+    JSON.stringify(linhasDaFila.map((l) => l.texto.slice(0, 150))),
+  );
+  await foto('13-fila-de-encaixes.png');
+  await clicarEm(`document.querySelector('.tabela-da-fila tr.trabalho-melhor .botao-primario')`);
+  await espera(800);
+  const validacao = await js(`document.querySelector('.indicador-de-validacao').textContent`);
+  const filaNaBarra = await textoDaFila();
+  conferir(
+    'aplicar o melhor põe o encaixe na mesa, sem erro de validação; na barra, só o outro pronto',
+    (await janela()) === 'nenhuma' && !/[1-9]\d* erro/.test(validacao) && filaNaBarra === 'Fila: 1 pronto(s) para aplicar',
+    `${validacao} / ${filaNaBarra}`,
+  );
+  const selecaoNaBarra = await js(`Array.from(document.querySelectorAll('.barra-de-status span')).map(s => s.textContent).find(t => t.startsWith('Seleção')) || ''`);
+  conferir('depois de aplicar, nenhuma peça marcada', selecaoNaBarra === 'Seleção: nenhuma', selecaoNaBarra);
+  await foto('14-fila-aplicada.png');
+  const filaGravada = JSON.parse(fs.readFileSync(path.join(DADOS, 'fila-de-encaixes.json'), 'utf8'));
+  conferir(
+    'a fila ficou gravada na pasta de dados, com o aplicado marcado',
+    filaGravada.trabalhos.length === 2 && filaGravada.trabalhos.filter((t) => t.aplicadoEmIso).length === 1,
+    filaGravada.trabalhos.map((t) => t.situacao + (t.aplicadoEmIso ? ' (aplicado)' : '')).join(', '),
+  );
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

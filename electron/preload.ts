@@ -59,6 +59,14 @@ const api = {
   async gravarCadastroDeProducao(cadastro: unknown): Promise<boolean> {
     return ipcRenderer.invoke('cadastro-gravar', cadastro) as Promise<boolean>;
   },
+  /** A fila de encaixes como está no disco (`null`: ainda não existe). Ler com `lerFilaDeEncaixes`. */
+  async lerFilaDeEncaixes(): Promise<unknown> {
+    return ipcRenderer.invoke('fila-ler') as Promise<unknown>;
+  },
+  /** Grava a fila de encaixes inteira (o processo principal confere antes). */
+  async gravarFilaDeEncaixes(fila: unknown): Promise<boolean> {
+    return ipcRenderer.invoke('fila-gravar', fila) as Promise<boolean>;
+  },
   /** Avisa o processo principal de que a interface está montada e desenhando: fica no diagnóstico da abertura. */
   avisarInterfacePronta(): void {
     ipcRenderer.send('interface-pronta');

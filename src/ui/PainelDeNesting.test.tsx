@@ -207,3 +207,36 @@ describe('PainelDeNesting — o resultado, com os números em português', () =>
     expect(valor('Aproveitamento')).toBe('74,3%');
   });
 });
+
+describe('PainelDeNesting: pôr na fila (ADR 0102)', () => {
+  afterEach(() => cleanup());
+
+  it('"Pôr na fila" manda as mesmas opções do calcular; sem a fila ligada, o botão não aparece', () => {
+    const onCalcular = vi.fn();
+    const onPorNaFila = vi.fn<(opcoes: OpcoesAvancadasDeNesting) => void>();
+    const props = {
+      pecas: [molde('Frente', 'f', 'M')],
+      distanciaEntreMoldesMm: 3,
+      executando: false,
+      progresso: null,
+      resultado: null,
+      onCalcular,
+      onCancelar: () => {},
+      onAplicar: () => {},
+      onFechar: () => {},
+    };
+    render(<PainelDeNesting {...props} />);
+    expect(screen.queryByRole('button', { name: 'Pôr na fila' })).toBeNull();
+
+    cleanup();
+    render(<PainelDeNesting {...props} onPorNaFila={onPorNaFila} />);
+    fireEvent.change(screen.getByLabelText('Método do encaixe'), { target: { value: 'pontos-de-canto' } });
+    fireEvent.change(screen.getByLabelText('Limite de tempo (minutos)'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Pôr na fila' }));
+    expect(onPorNaFila).toHaveBeenCalledWith({ limiteDeTempoMinutos: 2, distanciaEntreMoldesMm: 3, metodo: 'pontos-de-canto' });
+    expect(onCalcular).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Distância entre os moldes (mm)'), { target: { value: '-1' } });
+    expect(screen.getByRole('button', { name: 'Pôr na fila' })).toBeDisabled();
+  });
+});

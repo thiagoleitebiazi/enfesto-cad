@@ -84,6 +84,7 @@ function propsBase(): Props {
     onAbrirRelatorio: vi.fn(),
     onAbrirPlanoDeCorte: vi.fn(),
     onAbrirSalaDeCorte: vi.fn(),
+    onAbrirFilaDeEncaixes: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
     onRestaurar: vi.fn(),
@@ -578,8 +579,14 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
       Relatórios: ['Relatórios'],
       Planejamento: ['Planejamento de corte', 'Sala de corte'],
       Configuração: ['Tecido', 'Enfesto'],
-      Encaixe: ['Sugerir posição', 'Nesting Automático'],
+      Encaixe: ['Sugerir posição', 'Nesting Automático', 'Fila de encaixes'],
     });
+  });
+
+  it('Encaixe: a Fila de encaixes abre a fila', () => {
+    const props = renderizar('Encaixe');
+    fireEvent.click(botao('Fila de encaixes'));
+    expect(props.onAbrirFilaDeEncaixes).toHaveBeenCalledTimes(1);
   });
 
   it('Início: "Selecionar tudo" e "Selecionar moldes" selecionam todas as peças (aqui todo objeto é um molde)', () => {

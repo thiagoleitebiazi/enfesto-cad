@@ -29,6 +29,8 @@ interface PainelDeNestingProps {
   readonly progresso: { readonly colocadas: number; readonly total: number } | null;
   readonly resultado: ResultadoDeNesting | null;
   readonly onCalcular: (opcoesAvancadas: OpcoesAvancadasDeNesting) => void;
+  /** Põe o encaixe com estas opções na fila de encaixes (ADR 0102), para ser calculado em segundo plano. */
+  readonly onPorNaFila?: (opcoesAvancadas: OpcoesAvancadasDeNesting) => void;
   readonly onCancelar: () => void;
   readonly onAplicar: () => void;
   readonly onFechar: () => void;
@@ -53,11 +55,12 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
     return todosOsTamanhos ? p.graduacao.tamanhos.join(', ') : p.graduacao.tamanhos[p.graduacao.base]!;
   };
 
-  function aoCalcular(): void {
-    if (erroDaDistancia !== null || distanciaLida === null) return;
+  /** As opções escolhidas na janela (`null` com a distância errada). */
+  function opcoesEscolhidas(): OpcoesAvancadasDeNesting | null {
+    if (erroDaDistancia !== null || distanciaLida === null) return null;
     const minutos = Number(limiteDeTempoMinutos);
     const aproveitamento = Number(aproveitamentoDesejadoPercentual);
-    props.onCalcular({
+    return {
       ...(limiteDeTempoMinutos.trim() !== '' && minutos > 0 ? { limiteDeTempoMinutos: minutos } : {}),
       ...(aproveitamentoDesejadoPercentual.trim() !== '' && aproveitamento > 0
         ? { aproveitamentoDesejadoPercentual: aproveitamento }
@@ -66,7 +69,17 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(temSimetria ? { abrirSimetrias } : {}),
       distanciaEntreMoldesMm: distanciaLida,
       ...(metodo !== 'grade' ? { metodo } : {}),
-    });
+    };
+  }
+
+  function aoCalcular(): void {
+    const opcoes = opcoesEscolhidas();
+    if (opcoes) props.onCalcular(opcoes);
+  }
+
+  function aoPorNaFila(): void {
+    const opcoes = opcoesEscolhidas();
+    if (opcoes) props.onPorNaFila?.(opcoes);
   }
 
   return (
@@ -204,6 +217,16 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
               <button type="button" onClick={props.onFechar}>
                 Cancelar
               </button>
+              {props.onPorNaFila && (
+                <button
+                  type="button"
+                  onClick={aoPorNaFila}
+                  disabled={erroDaDistancia !== null}
+                  title="Põe este encaixe, com estas opções, na fila de encaixes: ele é calculado em segundo plano, um de cada vez, enquanto você continua trabalhando (Encaixe › Fila de encaixes)"
+                >
+                  Pôr na fila
+                </button>
+              )}
               <button type="button" onClick={aoCalcular} className="botao-primario" disabled={erroDaDistancia !== null}>
                 Calcular encaixe
               </button>

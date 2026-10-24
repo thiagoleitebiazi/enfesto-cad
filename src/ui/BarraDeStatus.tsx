@@ -20,6 +20,9 @@ interface BarraDeStatusProps {
   readonly unidade: UnidadeDeRegua;
   /** O último salvamento; sem nenhum ainda, nada aparece. */
   readonly salvamento?: EstadoDoSalvamento | null;
+  /** A fila de encaixes (ADR 0102): quantos calculando, aguardando e prontos para aplicar; sem nada, não aparece. */
+  readonly fila?: { readonly calculando: number; readonly aguardando: number; readonly prontos: number } | null;
+  readonly onAbrirFila?: () => void;
 }
 
 /** Medida em mm escrita na unidade das réguas, com vírgula; em cm, duas casas dão a mesma precisão de 0,1 mm. */
@@ -76,6 +79,23 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
             Não foi salvo
           </span>
         ))}
+      {props.fila && props.fila.calculando + props.fila.aguardando + props.fila.prontos > 0 && (
+        <button
+          type="button"
+          className={`indicador-da-fila ${props.fila.calculando > 0 ? 'fila-calculando' : props.fila.prontos > 0 ? 'fila-pronta' : ''}`}
+          title="Abrir a fila de encaixes"
+          onClick={props.onAbrirFila}
+        >
+          Fila:{' '}
+          {[
+            props.fila.calculando > 0 ? `${props.fila.calculando} calculando` : null,
+            props.fila.aguardando > 0 ? `${props.fila.aguardando} aguardando` : null,
+            props.fila.prontos > 0 ? `${props.fila.prontos} pronto(s) para aplicar` : null,
+          ]
+            .filter((x) => x !== null)
+            .join(' · ')}
+        </button>
+      )}
       <button
         className={`indicador-de-validacao ${erros > 0 ? 'tem-erro' : avisos > 0 ? 'tem-aviso' : ''}`}
         onClick={props.onAlternarValidacao}

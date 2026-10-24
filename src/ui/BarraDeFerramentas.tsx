@@ -75,6 +75,8 @@ interface BarraDeFerramentasProps {
   readonly onSugerirPosicao: () => void;
   readonly podeSugerirPosicao: boolean;
   readonly onNestingAutomatico: () => void;
+  /** Encaixe > Fila de encaixes: os encaixes calculados em segundo plano, um de cada vez (ADR 0102). */
+  readonly onAbrirFilaDeEncaixes: () => void;
   readonly podeExecutarNesting: boolean;
   readonly onEntrarModoMoverPonto: () => void;
   readonly onEntrarModoModificar: () => void;
@@ -1901,6 +1903,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 >
                   <Icone nome="nesting" />
                   <span>Nesting Automático</span>
+                </button>
+                <button
+                  onClick={props.onAbrirFilaDeEncaixes}
+                  title="Fila de encaixes: os encaixes postos na fila pelo Nesting automático, calculados em segundo plano, um de cada vez — prioridade, pausar, reordenar, aplicar e o relatório de eficiência"
+                >
+                  <Icone nome="fila-de-encaixes" />
+                  <span>Fila de encaixes</span>
                 </button>
               </div>
             </>

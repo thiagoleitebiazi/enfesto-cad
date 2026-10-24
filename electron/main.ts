@@ -28,6 +28,7 @@ import {
 import { copiaUnica, criarFilaDeGravacao, gravarComAnterior, gravarProjetoComCopia, gravarSemCorromper, idDeProjetoValido, lerComRecuperacao } from './gravacao';
 import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
+import { lerFilaDeEncaixes, VERSAO_DA_FILA } from '../src/domain/filaDeEncaixes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 
@@ -749,6 +750,41 @@ ipcMain.handle('cadastro-gravar', async (_evento, bruto: unknown) => {
     gravarComAnterior(arquivoDoCadastro(), JSON.stringify(lido.cadastro, null, 2), {
       idDoArquivo: 'cadastro-de-producao',
       versaoNova: VERSAO_DO_CADASTRO,
+      pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
+      agoraIso: new Date().toISOString(),
+    }),
+  );
+  return true;
+});
+
+/**
+ * A fila de encaixes (ADR 0102), em <userData>/fila-de-encaixes.json: os encaixes esperando a vez, o que está
+ * calculando e os resultados. Lida e gravada como o cadastro: a versão anterior fica ao lado para recuperar, e o
+ * arquivo ilegível vai para as cópias de segurança na primeira gravação, sem se perder.
+ */
+function arquivoDaFila(): string {
+  return path.join(app.getPath('userData'), 'fila-de-encaixes.json');
+}
+
+ipcMain.handle('fila-ler', async () => {
+  const lido = await lerComRecuperacao(arquivoDaFila());
+  if (lido.situacao === 'ausente') return null;
+  if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivoDaFila()) };
+  if (lido.situacao === 'recuperado') {
+    registrarDiagnostico(`fila-recuperada-da-versao-anterior motivo=${lido.motivo}`);
+    return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
+  }
+  return lido.conteudo;
+});
+
+ipcMain.handle('fila-gravar', async (_evento, bruto: unknown) => {
+  const lido = lerFilaDeEncaixes(bruto);
+  if (lido.descartados.length > 0) throw new Error(`A fila não foi gravada: ${lido.descartados.join(' ')}`);
+  await mkdir(app.getPath('userData'), { recursive: true });
+  await filaDeGravacao('fila-de-encaixes', () =>
+    gravarComAnterior(arquivoDaFila(), JSON.stringify(lido.fila), {
+      idDoArquivo: 'fila-de-encaixes',
+      versaoNova: VERSAO_DA_FILA,
       pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
       agoraIso: new Date().toISOString(),
     }),

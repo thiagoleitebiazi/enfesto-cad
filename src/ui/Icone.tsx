@@ -154,7 +154,8 @@ export type NomeDoIcone =
   | 'arco-tangente-2-retas'
   | 'arco-tangente-arco-reta'
   | 'arco-tangente-2-arcos'
-  | 'programas';
+  | 'programas'
+  | 'fila-de-encaixes';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -377,6 +378,14 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
       <path d="M10 2.5v3M10 14.5v3M2.5 10h3M14.5 10h3" />
       <path d="M5.5 5.5l2 2M12.5 12.5l2 2M5.5 14.5l2-2M12.5 7.5l2-2" strokeOpacity="0.55" />
       <circle cx="10" cy="10" r="2.3" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'fila-de-encaixes': (
+    <>
+      <rect x="3" y="3" width="10" height="3.2" rx="0.6" />
+      <rect x="3" y="8.4" width="10" height="3.2" rx="0.6" />
+      <rect x="3" y="13.8" width="10" height="3.2" rx="0.6" />
+      <path d="M15.5 4v11.5M13.8 13.8l1.7 1.7 1.7-1.7" />
     </>
   ),
   nesting: (

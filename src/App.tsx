@@ -11,7 +11,7 @@ import { PainelDePlanejamento, type BuscarRiscos } from './ui/PainelDePlanejamen
 import { carregarCadastro, gravarCadastro, type CadastroCarregado } from './ui/cadastroNoDisco';
 import { gravarConfiguracaoDoPlanejamento, lerConfiguracaoDoPlanejamento } from './ui/configuracaoDoPlanejamento';
 import { executarBusca } from './domain/buscaDeRiscos';
-import { escreverM as escreverEmMetros, enfestoDoPlano } from './domain/planoDeCorte';
+import { escreverM as escreverEmMetros, enfestoDoPlano, impressaoDigitalDoMolde } from './domain/planoDeCorte';
 import type { CadastroDeProducao } from './domain/cadastroDeProducao';
 import type { MensagemParaABusca } from './planejamento.worker';
 import { destinoDaAcaoDoMenu } from './ui/edicaoPeloMenu';
@@ -353,7 +353,10 @@ import type { MetodoDoNesting, ResultadoDeNesting } from './domain/nesting';
 import type { MensagemParaWorker } from './nesting.worker';
 import { PainelDeTecido } from './ui/PainelDeTecido';
 import { PainelDeEnfesto } from './ui/PainelDeEnfesto';
-import { PainelDeNesting } from './ui/PainelDeNesting';
+import { PainelDeNesting, type OpcoesAvancadasDeNesting } from './ui/PainelDeNesting';
+import { PainelDaFilaDeEncaixes } from './ui/PainelDaFilaDeEncaixes';
+import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
+import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
 import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
@@ -379,6 +382,9 @@ import {
   type TipoDeEvento,
 } from './domain/projeto';
 import './App.css';
+
+/** O Worker da fila de encaixes (ADR 0102): o mesmo do Nesting automático. */
+const criarWorkerDoEncaixe = (): WorkerDoEncaixe => new Worker(new URL('./nesting.worker.ts', import.meta.url), { type: 'module' });
 
 function proximoId(): string {
   return `peca-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -709,6 +715,9 @@ export default function App(): React.JSX.Element {
   const [progressoNesting, setProgressoNesting] = useState<{ colocadas: number; total: number } | null>(null);
   const [resultadoNesting, setResultadoNesting] = useState<ResultadoDeNesting | null>(null);
   const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
+  // A fila de encaixes (ADR 0102): lida do disco ao abrir e rodando em segundo plano enquanto o programa está aberto.
+  const filaDeEncaixes = useFilaDeEncaixes(window.enfestoCad, criarWorkerDoEncaixe);
+  const [mostrarFilaDeEncaixes, setMostrarFilaDeEncaixes] = useState(false);
 
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   // O planejamento de corte: a janela e o cadastro de produção (lido ao abrir a janela).
@@ -1598,6 +1607,10 @@ export default function App(): React.JSX.Element {
     return api.salvarArquivo(sugestaoDeNome, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   }, []);
 
+  const exportarCsvDaFila = useCallback(async () => {
+    await salvarTexto('fila-de-encaixes.csv', csvDaFila(filaDeEncaixes.fila));
+  }, [salvarTexto, filaDeEncaixes.fila]);
+
   const configuracaoDoPlanejamento = useMemo(() => {
     if (!mostrarPlanoDeCorte) return null;
     try {
@@ -2396,17 +2409,13 @@ export default function App(): React.JSX.Element {
     setMostrarPainelDeNesting(true);
   }, [enfesto, pecas.length]);
 
-  const calcularNestingAutomatico = useCallback(
-    (opcoesAvancadas: {
-      limiteDeTempoMinutos?: number;
-      aproveitamentoDesejadoPercentual?: number;
-      todosOsTamanhos?: boolean;
-      abrirSimetrias?: boolean;
-      distanciaEntreMoldesMm?: number;
-      metodo?: MetodoDoNesting;
-    }) => {
-      if (!enfesto || pecas.length === 0) return;
-      // A distância entre os moldes pedida na janela do encaixe passa a ser a do enfesto: a validação mede com ela.
+  /**
+   * As peças e a mesa do encaixe pedido na janela (o mesmo para calcular agora e para pôr na fila): a distância entre
+   * os moldes passa a ser a do enfesto (a validação mede com ela), os tamanhos e as simetrias abertos, se pedido.
+   */
+  const prepararEncaixe = useCallback(
+    (opcoesAvancadas: OpcoesAvancadasDeNesting): { readonly paraEncaixar: readonly Molde[]; readonly enfestoDoEncaixe: ConfiguracaoDeEnfesto } | null => {
+      if (!enfesto || pecas.length === 0) return null;
       let enfestoDoEncaixe = enfesto;
       const distancia = opcoesAvancadas.distanciaEntreMoldesMm;
       if (distancia !== undefined && distancia !== enfesto.distanciaMinimaEntrePecasMm) {
@@ -2414,7 +2423,7 @@ export default function App(): React.JSX.Element {
           enfestoDoEncaixe = criarConfiguracaoDeEnfesto({ ...enfesto, distanciaMinimaEntrePecasMm: distancia });
         } catch (e) {
           window.alert(e instanceof Error ? e.message : String(e));
-          return;
+          return null;
         }
         setEnfesto(enfestoDoEncaixe);
         registrarEventoEPersistir(
@@ -2430,11 +2439,21 @@ export default function App(): React.JSX.Element {
           paraEncaixar = expandirTamanhos(pecas, proximoId);
         } catch (e) {
           window.alert(e instanceof Error ? e.message : String(e));
-          return;
+          return null;
         }
       }
       // As peças com linha de simetria entram abertas, inteiras.
       if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
+      return { paraEncaixar, enfestoDoEncaixe };
+    },
+    [pecas, enfesto, tecido, registrarEventoEPersistir],
+  );
+
+  const calcularNestingAutomatico = useCallback(
+    (opcoesAvancadas: OpcoesAvancadasDeNesting) => {
+      const preparado = prepararEncaixe(opcoesAvancadas);
+      if (!preparado) return;
+      const { paraEncaixar, enfestoDoEncaixe } = preparado;
       setResultadoNesting(null);
       setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
       setNestingExecutando(true);
@@ -2483,7 +2502,7 @@ export default function App(): React.JSX.Element {
       };
       worker.postMessage(mensagemIniciar);
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir],
+    [prepararEncaixe, tecido],
   );
 
   const cancelarNestingAutomatico = useCallback(() => {
@@ -2512,6 +2531,8 @@ export default function App(): React.JSX.Element {
     const novasPecas = resultadoNesting.pecasColocadas.map((p) => p.molde);
     aplicarMudanca(novasPecas);
     setSelecionadoId(null);
+    // As peças do encaixe são outras (outros ids): a marca do lote era das de antes.
+    setIdsSelecionadosEmLote(new Set());
     setMostrarPainelDeNesting(false);
     setResultadoNesting(null);
     registrarEventoEPersistir(
@@ -2520,6 +2541,98 @@ export default function App(): React.JSX.Element {
       `${resultadoNesting.pecasColocadas.length} peça(s) colocada(s), ${numeroComVirgula(resultadoNesting.aproveitamentoPercentual, 1)}% de aproveitamento`,
     );
   }, [resultadoNesting, aplicarMudanca, tecido, enfesto, registrarEventoEPersistir]);
+
+  // ---- A fila de encaixes (ADR 0102)
+
+  /** O encaixe pedido na janela vai para a fila, com as peças e a mesa de agora; a janela fecha e o trabalho segue. */
+  const porNaFila = useCallback(
+    (opcoesAvancadas: OpcoesAvancadasDeNesting) => {
+      const preparado = prepararEncaixe(opcoesAvancadas);
+      if (!preparado) return;
+      const minutos = opcoesAvancadas.limiteDeTempoMinutos;
+      const meta = opcoesAvancadas.aproveitamentoDesejadoPercentual;
+      try {
+        filaDeEncaixes.mudar((f) =>
+          adicionarTrabalho(
+            f,
+            {
+              projetoId: projetoAtual.id,
+              projetoNome: projetoAtual.nome,
+              projetoCodigo: projetoAtual.codigo,
+              impressaoDasPecas: impressaoDigitalDoMolde(pecas),
+              prioridade: 'normal',
+              pecas: preparado.paraEncaixar,
+              enfesto: preparado.enfestoDoEncaixe,
+              opcoes: {
+                metodo: opcoesAvancadas.metodo ?? 'grade',
+                ...(minutos !== undefined ? { limiteDeTempoMs: minutos * 60_000 } : {}),
+                ...(meta !== undefined ? { aproveitamentoDesejadoPercentual: meta } : {}),
+                ...(sentidoUnicoDoTecido(tecido) ? { tecidoDeSentidoUnico: true } : {}),
+                ...(opcoesAvancadas.todosOsTamanhos ? { todosOsTamanhos: true } : {}),
+                ...(opcoesAvancadas.abrirSimetrias ? { abrirSimetrias: true } : {}),
+              },
+            },
+            `encaixe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            new Date().toISOString(),
+          ),
+        );
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      setMostrarPainelDeNesting(false);
+      setAviso({
+        texto: 'Encaixe posto na fila: ele é calculado em segundo plano, um de cada vez. Acompanhe pela barra de status ou em Encaixe › Fila de encaixes.',
+        pecas,
+        selecionadoId,
+      });
+    },
+    [prepararEncaixe, filaDeEncaixes, projetoAtual, pecas, tecido, selecionadoId],
+  );
+
+  const abrirFilaDeEncaixes = useCallback(() => {
+    // A lista da Biblioteca diz quais projetos de origem existem (para o "Abrir o projeto").
+    carregarListaDeProjetos();
+    setMostrarFilaDeEncaixes(true);
+  }, [carregarListaDeProjetos]);
+
+  /** Aplica o resultado de um encaixe da fila no projeto aberto: avisa antes se o projeto, as peças ou a mesa não são mais os dele. */
+  const aplicarDaFila = useCallback(
+    (id: string) => {
+      const trabalho = filaDeEncaixes.fila.trabalhos.find((t) => t.id === id);
+      const resultado = trabalho?.resultado;
+      if (!trabalho || !resultado || resultado.pecasColocadas.length === 0) return;
+      const motivos: string[] = [];
+      if (trabalho.projetoId !== projetoAtual.id) {
+        motivos.push(`este encaixe é do projeto "${trabalho.projetoNome}" (${trabalho.projetoCodigo}), e o aberto é "${projetoAtual.nome}" (${projetoAtual.codigo})`);
+      } else if (impressaoDigitalDoMolde(pecas) !== trabalho.impressaoDasPecas) {
+        motivos.push('as peças do projeto mudaram depois que o encaixe entrou na fila');
+      }
+      const mesa = (e: ConfiguracaoDeEnfesto | null): string =>
+        e ? [e.larguraUtilMm, e.comprimentoMm, e.margemLateralMm, e.margemDeExtremidadeMm, e.distanciaMinimaEntrePecasMm].join('|') : '';
+      if (mesa(enfesto) !== mesa(trabalho.enfesto)) motivos.push('a mesa do projeto aberto (largura, comprimento, margens ou distância entre os moldes) não é a do encaixe');
+      if (
+        motivos.length > 0 &&
+        !window.confirm(
+          `Atenção: ${motivos.join('; ')}.\n\nAplicar troca as peças do projeto aberto pelas ${resultado.pecasColocadas.length} do encaixe (Ctrl+Z desfaz). Aplicar mesmo assim?`,
+        )
+      ) {
+        return;
+      }
+      const novasPecas = resultado.pecasColocadas.map((p) => p.molde);
+      aplicarMudanca(novasPecas);
+      setSelecionadoId(null);
+      setIdsSelecionadosEmLote(new Set());
+      registrarEventoEPersistir(
+        'execucao-de-nesting',
+        { pecas: novasPecas, tecido, enfesto },
+        `Encaixe da fila (${descricaoDasOpcoes(trabalho.opcoes)}): ${resultado.pecasColocadas.length} peça(s) colocada(s), ${numeroComVirgula(resultado.aproveitamentoPercentual, 1)}% de aproveitamento`,
+      );
+      filaDeEncaixes.mudar((f) => marcarAplicado(f, id, new Date().toISOString()));
+      setMostrarFilaDeEncaixes(false);
+    },
+    [filaDeEncaixes, projetoAtual, pecas, enfesto, tecido, aplicarMudanca, registrarEventoEPersistir],
+  );
 
   const exportarPdf = useCallback(
     async (opcoesEscolhidas: OpcoesDeExportacaoEscolhidas) => {
@@ -4106,6 +4219,7 @@ export default function App(): React.JSX.Element {
         onAbrirRelatorio={() => setMostrarRelatorio(true)}
         onAbrirPlanoDeCorte={abrirPlanejamento}
         onAbrirSalaDeCorte={abrirSalaDeCorte}
+        onAbrirFilaDeEncaixes={abrirFilaDeEncaixes}
         onEntrarModoMoverPonto={entrarModoMoverPonto}
         onEntrarModoModificar={entrarModoModificar}
         onEntrarModoRedefinirPerimetro={entrarModoRedefinirPerimetro}
@@ -4196,6 +4310,7 @@ export default function App(): React.JSX.Element {
           progresso={progressoNesting}
           resultado={resultadoNesting}
           onCalcular={calcularNestingAutomatico}
+          onPorNaFila={porNaFila}
           onCancelar={cancelarNestingAutomatico}
           onAplicar={aplicarResultadoNesting}
           onFechar={fecharPainelDeNesting}
@@ -4276,6 +4391,22 @@ export default function App(): React.JSX.Element {
           onMudarCadastro={mudarCadastroDeProducao}
           onSalvarTexto={salvarTexto}
           onFechar={() => setMostrarSalaDeCorte(false)}
+        />
+      )}
+      {mostrarFilaDeEncaixes && (
+        <PainelDaFilaDeEncaixes
+          fila={filaDeEncaixes.fila}
+          progresso={filaDeEncaixes.progresso}
+          avisos={filaDeEncaixes.avisos}
+          somenteLeitura={filaDeEncaixes.somenteLeitura}
+          projetoAbertoId={projetoAtual.id}
+          projetoExiste={(id) => projetos.some((p) => p.id === id)}
+          onMudar={filaDeEncaixes.mudar}
+          onAplicar={aplicarDaFila}
+          onAbrirProjeto={abrirProjeto}
+          onExportarCsv={() => void exportarCsvDaFila()}
+          agoraIso={() => new Date().toISOString()}
+          onFechar={() => setMostrarFilaDeEncaixes(false)}
         />
       )}
       {relatorioAtual && (
@@ -5561,6 +5692,12 @@ export default function App(): React.JSX.Element {
         aproveitamentoPercentual={aproveitamentoAtualDaMesa}
         unidade={unidadeDaRegua}
         salvamento={salvamento}
+        fila={{
+          calculando: contagemDaFila(filaDeEncaixes.fila).executando,
+          aguardando: contagemDaFila(filaDeEncaixes.fila).aguardando,
+          prontos: concluidosSemAplicar(filaDeEncaixes.fila),
+        }}
+        onAbrirFila={abrirFilaDeEncaixes}
         pontoReferencia={
           MODOS_COM_PONTO_DE_REFERENCIA.has(modo) && pontosEmEdicao.length > 0
             ? pontosEmEdicao[pontosEmEdicao.length - 1]!
