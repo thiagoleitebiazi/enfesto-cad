@@ -133,6 +133,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirFichaTecnica: (parte: 'descricao' | 'precusto') => void;
   /** Modelo > Coleções: o PLM local — o mix, as etapas, os prazos, a peça-piloto (ADR 0108). */
   readonly onAbrirColecoes: () => void;
+  /** Modelo > Loja: a recomendação de tamanho e o guia de medidas (ADR 0110) — a mesma janela, na aba pedida. */
+  readonly onAbrirRecomendacaoDeTamanho: (parte: 'recomendar' | 'guia') => void;
   /** Modelo > Desenho técnico: o croqui de frente e costas da ficha (ADR 0107). */
   readonly onAbrirDesenhoTecnico: () => void;
   /** Modelo > Materiais e aviamentos: a biblioteca da empresa, com os padrões de custo (ADR 0104). */
@@ -1894,6 +1896,23 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   icone="materiais"
                   dica="Materiais e aviamentos: a biblioteca da empresa (tecidos, aviamentos, embalagens, com a unidade e o preço) e os padrões de custo (custo do minuto, indiretos, impostos, comissão, margem)"
                   onClick={props.onAbrirMateriais}
+                />
+              </div>
+
+              <div className="grupo-de-ferramentas" role="group" aria-label="Loja">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Recomendar', 'tamanho']}
+                  icone="recomendar-tamanho"
+                  dica="Recomendar tamanho: as medidas do corpo da pessoa contra a tabela de medidas da ficha, com a folga de cada ponto — o tamanho, a explicação ponto por ponto e o aviso de quando ela fica entre dois tamanhos"
+                  onClick={() => props.onAbrirRecomendacaoDeTamanho('recomendar')}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Guia de', 'medidas']}
+                  icone="guia-de-medidas"
+                  dica="Guia de medidas: a faixa do corpo de cada tamanho, para a página do produto na loja (CSV para planilha, ou a página HTML)"
+                  onClick={() => props.onAbrirRecomendacaoDeTamanho('guia')}
                 />
               </div>
             </>

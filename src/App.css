@@ -3513,6 +3513,219 @@ input[type='radio'] {
   color: var(--erro-texto);
 }
 
+/* A recomendação de tamanho (ADR 0110): a faixa dos tamanhos colorida, a letra grande e a comparação por ponto. */
+.sobreposicao-painel:has(.painel-da-recomendacao) {
+  width: min(1120px, 96vw);
+  max-width: 96vw;
+}
+
+.painel-da-recomendacao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.painel-da-recomendacao section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.painel-da-recomendacao h4 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--marca-800);
+}
+
+.cabecalho-da-recomendacao {
+  border-left-color: var(--grupo-6);
+}
+
+.painel-da-recomendacao .partes-da-recomendacao {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.corpo-da-pessoa {
+  padding: 10px 12px;
+  border: 1px solid var(--cinza-200);
+  border-radius: var(--raio-md);
+  background: var(--cinza-50);
+}
+
+.corpo-da-pessoa label small {
+  color: var(--cinza-600);
+}
+
+.resultado-da-recomendacao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.faixa-de-tamanhos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tamanho-da-faixa {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 34px;
+  padding: 0 10px;
+  border: 2px solid var(--cinza-300);
+  border-radius: var(--raio-md);
+  background: var(--cinza-0);
+  color: var(--cinza-700);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.tamanho-da-faixa.tamanho-recomendado {
+  border-color: var(--grupo-6);
+  background: var(--grupo-6);
+  color: #fff;
+  transform: scale(1.12);
+  box-shadow: var(--sombra-media);
+}
+
+.tamanho-da-faixa.tamanho-recomendado.tamanho-aperta {
+  border-color: var(--erro-forte);
+  background: var(--erro-forte);
+}
+
+.tamanho-da-faixa.tamanho-alternativo {
+  border-color: var(--azul-600);
+  background: var(--azul-100);
+  color: var(--azul-700);
+}
+
+.tamanho-da-faixa.tamanho-aperta:not(.tamanho-recomendado) {
+  border-color: var(--erro-borda);
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+  text-decoration: line-through;
+}
+
+.cartao-do-tamanho {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--sucesso-borda);
+  border-left: 6px solid var(--grupo-6);
+  border-radius: var(--raio-md);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.cartao-do-tamanho.cartao-que-aperta {
+  border-color: var(--erro-borda);
+  border-left-color: var(--erro-forte);
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
+.cartao-do-tamanho p {
+  margin: 4px 0 0;
+}
+
+.tamanho-grande {
+  flex: none;
+  min-width: 64px;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.entre-dois-tamanhos {
+  font-weight: 600;
+  color: var(--azul-700);
+}
+
+.tabela-da-comparacao td small {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.tabela-da-comparacao .coluna-recomendada {
+  outline: 2px solid var(--grupo-6);
+  outline-offset: -2px;
+  font-weight: 700;
+}
+
+.medida-certa {
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.medida-folgada {
+  background: var(--info-fundo);
+  color: var(--info-texto);
+}
+
+.medida-justa {
+  background: var(--aviso-fundo);
+  color: var(--aviso-texto);
+}
+
+.medida-aperta {
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
+.legenda-da-comparacao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.legenda-da-comparacao span {
+  padding: 2px 8px;
+  border-radius: var(--raio-sm);
+}
+
+.explicacao-da-recomendacao {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.painel-da-recomendacao .tabela-da-ficha td input.campo-curto {
+  width: 80px;
+}
+
+.painel-da-recomendacao .linha-fora td {
+  color: var(--cinza-500);
+}
+
+.tabela-do-guia tbody th {
+  background: var(--cinza-50);
+  text-align: left;
+}
+
+.tabela-do-guia td {
+  font-weight: 600;
+  color: var(--marca-800);
+}
+
+@media (max-width: 760px) {
+  .painel-da-recomendacao .partes-da-recomendacao {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .faixa-da-ficha-fechada,
 .faixa-do-custo-parcial {
   margin: 0;

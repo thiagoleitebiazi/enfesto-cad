@@ -2,7 +2,7 @@
  * O teste de uso: abre o programa gerado (dist e dist-electron) e o usa como uma pessoa usaria — importa um DXF de
  * teste, seleciona com o retângulo e com o Ctrl/⌘+clique, arrasta o grupo, exporta o PDF, abre o planejamento, põe
  * dois encaixes na fila e aplica o melhor, põe uma peça num grupo do encaixe, faz a ficha técnica, o desenho técnico e
- * uma coleção, e cria uma peça pela foto — com
+ * uma coleção, cria uma peça pela foto e recomenda o tamanho pelas medidas do corpo (com o guia de medidas) — com
  * o mouse e o teclado de verdade (pelo sistema), tirando uma foto da janela a cada passo. Roda no Mac do GitHub, na
  * montagem do instalador (.github/workflows/mac.yml), e em qualquer computador:
  *
@@ -718,6 +718,82 @@ async function principal() {
     caixaDaFoto ? `${(caixaDaFoto.maxX - caixaDaFoto.minX).toFixed(1)} × ${(caixaDaFoto.maxY - caixaDaFoto.minY).toFixed(1)} mm, ${pecaDaFoto.furos.length} furo(s), ${pecaDaFoto.piques.length} pique(s)` : 'sem a peça',
   );
   await foto('29-peca-da-foto.png');
+
+  // 12. A recomendação de tamanho (ADR 0110): Modelo › Loja; sem a tabela de medidas, o aviso abre a ficha na
+  // tabela, colada da planilha; as medidas do corpo dão o tamanho (e o "entre dois"); o guia salvo em HTML; a folga
+  // mudada fica no projeto (as medidas da pessoa, não).
+  await aba('Modelo');
+  await botao('Recomendar tamanho');
+  await espera(800);
+  const avisoSemTabela = await js(`((document.querySelector('[role=dialog] .faixa-da-ficha-fechada') || {}).textContent || '')`);
+  conferir('a recomendação sem a tabela de medidas diz o que falta', (await janela()) === 'Recomendação de tamanho' && avisoSemTabela.includes('ainda não tem os tamanhos ou os pontos de medida'), avisoSemTabela.slice(0, 120));
+  await botaoNaJanela('Abrir a tabela de medidas');
+  await espera(800);
+  await botaoNaJanela('Colar da planilha…');
+  await js(
+    `(() => { const c = document.querySelector('[role=dialog] .colagem-de-medidas textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(c, ${JSON.stringify('Ponto\tP\tM\tG\tGG\tTol.\nBusto\t96\t100\t104\t110\t1\nQuadril\t98\t102\t106\t112\t1\nComprimento total\t70\t72\t74\t76\t1')}); c.dispatchEvent(new Event('input', { bubbles: true })); })()`,
+  );
+  await botaoNaJanela('Colar');
+  await espera(300);
+  const pontosColados = Number(await js(`document.querySelectorAll('[role=dialog] .tabela-da-ficha tbody tr').length`));
+  conferir('a ficha abre na tabela de medidas, e a tabela da planilha entra (3 pontos)', (await janela()) === 'Ficha técnica' && pontosColados === 3, `${await janela()} / ${pontosColados} ponto(s)`);
+  await fecharJanela();
+  await espera(1200);
+  await botao('Recomendar tamanho');
+  await espera(800);
+  await noCampo('Corpo: Busto', '94');
+  await noCampo('Corpo: Quadril', '98');
+  await noCampo('Corpo: Comprimento total', '73');
+  await espera(300);
+  const naRecomendacao = JSON.parse(
+    await js(
+      `JSON.stringify({ grande: (document.querySelector('[role=dialog] .tamanho-grande') || {}).textContent, entre: (document.querySelector('[role=dialog] .entre-dois-tamanhos') || {}).textContent, faixa: Array.from(document.querySelectorAll('[role=dialog] .tamanho-da-faixa')).map(s => s.textContent + ':' + s.className.replace('tamanho-da-faixa ', '')), linhas: document.querySelectorAll('[role=dialog] .tabela-da-comparacao tbody tr').length })`,
+    ),
+  );
+  conferir(
+    'o corpo de 94/98/73 dá o G, "entre dois tamanhos: o M também serve (mais justo)", com a comparação dos 3 pontos',
+    naRecomendacao.grande === 'G' && naRecomendacao.entre === 'Entre dois tamanhos: o M também serve (mais justo).' && naRecomendacao.faixa.includes('G:tamanho-recomendado') && naRecomendacao.faixa.includes('M:tamanho-alternativo') && naRecomendacao.linhas === 3,
+    JSON.stringify(naRecomendacao),
+  );
+  await foto('30-recomendacao-de-tamanho.png');
+  await parteDaJanela('Guia de medidas');
+  await espera(300);
+  const linhaDoBusto = await js(`((Array.from(document.querySelectorAll('[role=dialog] .tabela-do-guia tbody tr')).find(l => l.textContent.startsWith('Busto')) || {}).textContent || '')`);
+  await botaoNaJanela('Salvar a página (HTML, para a loja virtual)');
+  await espera(1200);
+  const guias = fs.readdirSync(SAIDA).filter((f) => f.startsWith('guia-de-medidas-') && f.endsWith('.html'));
+  const guia = guias[0] ? fs.readFileSync(path.join(SAIDA, guias[0]), 'utf8') : '';
+  conferir(
+    'o guia de medidas (o corpo de cada tamanho) na tela e salvo como página HTML',
+    linhaDoBusto.includes('90 a 94') && guia.includes('<table>') && guia.includes('<th>Busto</th><td>86–90</td><td>90–94</td>'),
+    `${linhaDoBusto} / ${JSON.stringify(guias)} ${guia.length} letras`,
+  );
+  await foto('31-guia-de-medidas.png');
+  await parteDaJanela('Caimento');
+  await noCampo('Folga de Busto', '6');
+  await espera(300);
+  await foto('32-caimento.png');
+  await fecharJanela();
+  await espera(1200);
+  const projetoComCaimento = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', f), 'utf8')))
+    .find((p) => p.regrasDeCaimento);
+  const regraDoBusto = projetoComCaimento ? Object.entries(projetoComCaimento.regrasDeCaimento).map(([id, r]) => ({ r, nome: (projetoComCaimento.fichaTecnica.medidas.find((m) => m.id === id) || {}).nome })).find((x) => x.nome === 'Busto') : null;
+  conferir(
+    'a folga do busto (6 cm) ficou guardada no projeto, e as medidas da pessoa não',
+    !!regraDoBusto && regraDoBusto.r.folgaCm === 6 && regraDoBusto.r.usar === true && !JSON.stringify(projetoComCaimento).includes('"corpo'),
+    regraDoBusto ? JSON.stringify(regraDoBusto) : 'sem regras no projeto',
+  );
+  // A tela de quem usa (1920 × 1080 a 150%: 1280 × 720): a aba Modelo, com o grupo Loja, cabe sem rolar.
+  win.setBounds({ x: 0, y: 0, width: 1280, height: 720 });
+  await espera(1200);
+  const fitaEm1280 = JSON.parse(await js(`(() => { const c = document.querySelector('.ribbon-conteudo'); const b = Array.from(document.querySelectorAll('.grupo-de-ferramentas button')).find(x => x.textContent.trim() === 'Guia de medidas'); const r = b.getBoundingClientRect(); return JSON.stringify({ rola: c.scrollWidth - c.clientWidth, direita: Math.round(r.right), largura: window.innerWidth }); })()`));
+  conferir('em 1280 × 720, a aba Modelo cabe inteira (o Guia de medidas à vista, sem rolar)', fitaEm1280.rola <= 1 && fitaEm1280.direita <= fitaEm1280.largura, JSON.stringify(fitaEm1280));
+  await foto('33-modelo-em-1280.png');
+  win.setBounds({ x: 0, y: 0, width: 1440, height: 900 });
+  await espera(800);
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

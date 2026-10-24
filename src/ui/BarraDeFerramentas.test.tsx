@@ -89,6 +89,7 @@ function propsBase(): Props {
     onAbrirFichaTecnica: vi.fn(),
     onAbrirDesenhoTecnico: vi.fn(),
     onAbrirColecoes: vi.fn(),
+    onAbrirRecomendacaoDeTamanho: vi.fn(),
     onAbrirMoldeDaFoto: vi.fn(),
     onInverterSelecao: vi.fn(),
     onCriarPontoDeRestauracao: vi.fn(),
@@ -257,7 +258,7 @@ describe('BarraDeFerramentas: abas', () => {
     });
   });
 
-  it('Modelo: Informações, Operações e Ficha técnica', () => {
+  it('Modelo: Informações, Operações, Ficha técnica e Loja', () => {
     const props = renderizar('Modelo');
 
     expect(gruposDaAba()).toEqual({
@@ -265,6 +266,7 @@ describe('BarraDeFerramentas: abas', () => {
       Operações: ['Variantes', 'Relacionamento piques', 'Imagens', 'Localizar modelos'],
       Coleção: ['Coleções'],
       'Ficha técnica': ['Ficha técnica', 'Desenho técnico', 'Pré-custo', 'Materiais e aviamentos'],
+      Loja: ['Recomendar tamanho', 'Guia de medidas'],
     });
     fireEvent.click(botao('Materiais e aviamentos'));
     expect(props.onAbrirMateriais).toHaveBeenCalledTimes(1);
@@ -276,6 +278,10 @@ describe('BarraDeFerramentas: abas', () => {
     expect(props.onAbrirDesenhoTecnico).toHaveBeenCalledTimes(1);
     fireEvent.click(botao('Coleções'));
     expect(props.onAbrirColecoes).toHaveBeenCalledTimes(1);
+    fireEvent.click(botao('Recomendar tamanho'));
+    fireEvent.click(botao('Guia de medidas'));
+    expect(props.onAbrirRecomendacaoDeTamanho).toHaveBeenNthCalledWith(1, 'recomendar');
+    expect(props.onAbrirRecomendacaoDeTamanho).toHaveBeenNthCalledWith(2, 'guia');
   });
 
   it('Marcações tem os grupos da referência — Piques, Editar piques e Linhas auxiliares — e, à parte, o Furo', () => {

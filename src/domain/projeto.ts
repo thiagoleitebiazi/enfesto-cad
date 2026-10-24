@@ -5,6 +5,7 @@ import type { ImagemDoModelo } from './imagens';
 import type { PlanoDeCorte } from './planoDeCorte';
 import type { PlanoGuardado } from './planejamento';
 import type { FichaTecnica } from './fichaTecnica';
+import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -99,6 +100,8 @@ export interface Projeto {
   readonly revisoesDoMolde?: readonly RevisaoDoMolde[];
   /** A ficha técnica do modelo (aba Modelo > Ficha técnica, ADR 0105). Ausente: ainda não feita. */
   readonly fichaTecnica?: FichaTecnica;
+  /** As regras de caimento da recomendação de tamanho (a folga de cada ponto de medida, ADR 0110). */
+  readonly regrasDeCaimento?: RegrasDeCaimento;
 }
 
 /**
@@ -194,12 +197,17 @@ export function adicionarPlanoDeCorte(projeto: Projeto, plano: PlanoDeCorte, ago
 
 export const TAMANHO_MAXIMO_DO_AUTOR = 80;
 
-/** "Autor": guarda no projeto o nome de quem fez o modelo; vazio, tira o autor. */
+/** O projeto com as regras de caimento da recomendação de tamanho. */
+export function definirRegrasDeCaimento(projeto: Projeto, regras: RegrasDeCaimento, agoraIso: string): Projeto {
+  return { ...projeto, regrasDeCaimento: regras, modificadoEmIso: agoraIso };
+}
+
 /** O projeto com a ficha técnica (nova ou mudada). */
 export function definirFichaTecnica(projeto: Projeto, ficha: FichaTecnica, agoraIso: string): Projeto {
   return { ...projeto, fichaTecnica: ficha, modificadoEmIso: agoraIso };
 }
 
+/** "Autor": guarda no projeto o nome de quem fez o modelo; vazio, tira o autor. */
 export function definirAutor(projeto: Projeto, autor: string, agoraIso: string): Projeto {
   const limpo = autor.trim();
   if (limpo.length > TAMANHO_MAXIMO_DO_AUTOR) throw new Error(`O nome do autor pode ter até ${TAMANHO_MAXIMO_DO_AUTOR} caracteres.`);

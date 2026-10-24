@@ -161,7 +161,9 @@ export type NomeDoIcone =
   | 'pre-custo'
   | 'desenho-tecnico'
   | 'colecoes'
-  | 'molde-da-foto';
+  | 'molde-da-foto'
+  | 'recomendar-tamanho'
+  | 'guia-de-medidas';
 
 const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
   novo: (
@@ -1050,6 +1052,19 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <path d="M7 3 4 5.5 2.5 9l2 1L6 8v9h8V8l1.5 2 2-1L16 5.5 13 3c-.6 1.3-1.7 2-3 2S7.6 4.3 7 3Z" />
       <path d="M10 5v12" strokeDasharray="1.5 1.5" />
+    </>
+  ),
+  'recomendar-tamanho': (
+    <>
+      <path d="M2.5 10.2 9.6 3h7.4v7.4L9.8 17.5Z" />
+      <circle cx="13.6" cy="6.4" r="1.2" />
+      <path d="m6.6 10.6 2.1 2.1 3.6-3.6" />
+    </>
+  ),
+  'guia-de-medidas': (
+    <>
+      <rect x="2.5" y="4" width="15" height="12" rx="1" />
+      <path d="M2.5 8h15M2.5 12h15M7 4v12M12.2 4v12" />
     </>
   ),
   'pre-custo': (

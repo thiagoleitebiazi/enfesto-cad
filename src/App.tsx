@@ -158,7 +158,8 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor, definirFichaTecnica } from './domain/projeto';
+import { definirAutor, definirFichaTecnica, definirRegrasDeCaimento } from './domain/projeto';
+import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
 import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica } from './domain/fichaTecnica';
 import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
 import { PainelDoDesenhoTecnico } from './ui/PainelDoDesenhoTecnico';
@@ -167,6 +168,7 @@ import { useColecoes } from './ui/useColecoes';
 import { PainelDeColecoes, type ParteDaColecao } from './ui/PainelDeColecoes';
 import { avisoDePrazos, diaDe } from './domain/colecoes';
 import { PainelDaFotoParaMolde } from './ui/PainelDaFotoParaMolde';
+import { PainelDeRecomendacaoDeTamanho, type ParteDaRecomendacao } from './ui/PainelDeRecomendacaoDeTamanho';
 import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
 import { paraODesenho, type MoldeReconhecido } from './domain/digitalizacao';
 import { custosDosModelos, type PreCusto } from './domain/preCusto';
@@ -1747,6 +1749,20 @@ export default function App(): React.JSX.Element {
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Desenho técnico (SVG) salvo em ${caminhoSalvo}`);
     },
     [projetoAtual, pecas, tecido, enfesto, registrarEventoEPersistir],
+  );
+
+  // ---- A recomendação de tamanho e o guia de medidas (aba Modelo › Loja, ADR 0110): pela tabela de medidas da ficha.
+  const [recomendacaoAberta, setRecomendacaoAberta] = useState<ParteDaRecomendacao | null>(null);
+  /** A regra de caimento vai para o projeto e é gravada (as medidas da pessoa, não: ficam só na janela). */
+  const guardarRegrasDeCaimento = useCallback(
+    (regras: RegrasDeCaimento) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirRegrasDeCaimento(atual, regras, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
   );
 
   // ---- O molde da foto (aba Produção, ADR 0109): a peça nova vai depois das outras, com os furos, os piques e o fio.
@@ -4473,6 +4489,7 @@ export default function App(): React.JSX.Element {
         onAbrirFichaTecnica={abrirFichaTecnica}
         onAbrirDesenhoTecnico={() => abrirDesenhoTecnico()}
         onAbrirColecoes={() => abrirColecoes('mix')}
+        onAbrirRecomendacaoDeTamanho={setRecomendacaoAberta}
         onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
@@ -4633,6 +4650,20 @@ export default function App(): React.JSX.Element {
           agoraIso={agoraIsoDaFicha}
           novoId={novoIdDaFicha}
           onFechar={() => setFichaAberta(null)}
+        />
+      )}
+      {recomendacaoAberta && (
+        <PainelDeRecomendacaoDeTamanho
+          ficha={lerFichaTecnica(projetoAtual.fichaTecnica)}
+          regrasGuardadas={lerRegrasDeCaimento(projetoAtual.regrasDeCaimento)}
+          parteInicial={recomendacaoAberta}
+          onGuardarRegras={guardarRegrasDeCaimento}
+          onAbrirMedidas={() => {
+            setRecomendacaoAberta(null);
+            abrirFichaTecnica('medidas');
+          }}
+          onSalvarTexto={salvarTexto}
+          onFechar={() => setRecomendacaoAberta(null)}
         />
       )}
       {mostrarMoldeDaFoto && (
