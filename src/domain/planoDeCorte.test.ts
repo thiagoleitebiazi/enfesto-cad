@@ -86,6 +86,12 @@ describe('unidades', () => {
     expect(rendimentoPelaGramatura(1600, 310)).toBeCloseTo(1000 / (1.6 * 310), 12);
   });
 
+  it('na malha tubular, as duas folhas do tubo achatado: metade dos metros por quilo (ADR 0098; antes dava o dobro)', () => {
+    // Tubo achatado de 0,9 m, 180 g/m²: um metro de tubo tem 2 × 0,9 m² = 324 g → 3,086 m/kg (antes: 6,173).
+    expect(rendimentoPelaGramatura(900, 180, true)).toBeCloseTo(1000 / (0.9 * 180 * 2), 12);
+    expect(rendimentoPelaGramatura(900, 180, false)).toBeCloseTo(2 * rendimentoPelaGramatura(900, 180, true), 12);
+  });
+
   it('escreve com vírgula e a unidade', () => {
     expect(escreverM(3250)).toBe('3,25 m');
     expect(escreverKg(1500)).toBe('1,50 kg');
@@ -151,6 +157,16 @@ describe('calcularPlanoDeCorte — o rendimento', () => {
     expect(c.resultado.rendimentoUsadoMmPorG).toBeCloseTo(2.016129, 5);
     expect(c.resultado.disponivelMm).toBeCloseTo(200_000 * 2.016129, 0);
     expect(c.alertas.some((a) => a.texto.includes('O plano usa o calculado'))).toBe(true);
+  });
+
+  it('malha tubular sem rendimento informado: o comprimento que o peso dá conta as duas folhas do tubo (ADR 0098)', () => {
+    const tubular: MalhaDoPlano = { ...sem(MALHA, 'rendimentoMmPorG'), larguraUtilMm: 900, tubular: true };
+    const c = resultado(calcularPlanoDeCorte(entrada({ malha: tubular, tipoDeEnfesto: 'tubular', risco: { ...RISCO, larguraMm: 880 } }), SEM_SOBRA));
+    const porGrama = 1_000_000 / (900 * 310 * 2);
+    expect(c.resultado.origemDoRendimento).toBe('calculado');
+    expect(c.resultado.rendimentoUsadoMmPorG).toBeCloseTo(porGrama, 9);
+    // 200 kg de tubo: 200 000 g × 1,792 mm/g = 358 m (antes, 717 m — o dobro do tecido que existe).
+    expect(c.resultado.disponivelMm).toBeCloseTo(200_000 * porGrama, 3);
   });
 
   it('dentro da tolerância, não há aviso de divergência', () => {

@@ -14,6 +14,7 @@ import {
   removerMalha,
   removerOrdem,
   removerRolo,
+  rendimentoDaMalha,
   salvarMalha,
   salvarOrdem,
   salvarRolo,
@@ -69,6 +70,24 @@ function semPeso(r: RoloDeEstoque): RoloDeEstoque {
 }
 
 const COM_MALHA: CadastroDeProducao = salvarMalha(CADASTRO_VAZIO, MALHA);
+
+describe('rendimentoDaMalha — o comprimento que o peso de um rolo dá', () => {
+  const semRendimento = (m: MalhaDoCadastro): MalhaDoCadastro => {
+    const copia: { -readonly [K in keyof MalhaDoCadastro]?: MalhaDoCadastro[K] } = { ...m };
+    delete copia.rendimentoMmPorG;
+    return copia as MalhaDoCadastro;
+  };
+
+  it('o informado vale; sem ele, o da gramatura — na tubular, com as duas folhas do tubo (ADR 0098; antes, o dobro)', () => {
+    expect(rendimentoDaMalha(MALHA)).toBe(3.6);
+    expect(rendimentoDaMalha(semRendimento(MALHA))).toBeCloseTo(1_000_000 / (1700 * 160), 9);
+    const tubular = { ...semRendimento(MALHA), larguraUtilMm: 900, tubular: true };
+    expect(rendimentoDaMalha(tubular)).toBeCloseTo(1_000_000 / (900 * 160 * 2), 9);
+    // Um rolo de 25 kg de tubo: 25 000 g × 3,47 mm/g = 86,8 m (antes, 173,6 m).
+    expect(comprimentoDoRolo(ROLO, rendimentoDaMalha(tubular))!.comprimentoMm).toBeCloseTo(25_000 * (1_000_000 / (900 * 160 * 2)), 6);
+    expect(rendimentoDaMalha(undefined)).toBeNull();
+  });
+});
 
 describe('lerCadastroDeProducao', () => {
   it('sem arquivo, o cadastro vazio; um cadastro gravado volta igual', () => {

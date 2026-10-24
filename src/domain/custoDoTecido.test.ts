@@ -171,15 +171,17 @@ describe('estimarCustoDoTecido — custo por quilo', () => {
     expect(e.porTamanho.every((t) => t.custoDiretoPorUnidade === null)).toBe(true);
   });
 
-  it('malha tubular com o rendimento tirado da gramatura: não converte (a gramatura é de uma folha, o tubo tem duas)', () => {
+  it('malha tubular com o rendimento tirado da gramatura: converte com as duas folhas do tubo (ADR 0098; antes não convertia)', () => {
     const semRendimento = sem('rendimentoMmPorG');
     const malha: MalhaDoCadastro = { ...semRendimento, larguraUtilMm: 900, tubular: true, tipoDeTecido: 'tubular', gramaturaGm2: 180, custo: { valor: 40, unidade: 'kg', moeda: 'BRL' } };
     const risco = { ...RISCO, larguraMm: 880, larguraDoRiscoMm: 900 };
     const e2 = entrada({ malha, tipoDeEnfesto: 'tubular', larguraDoRiscoMm: 900 });
     const e = estimar(e2, plano(e2, risco), [risco]);
     expect(e.origemDoRendimento).toBe('calculado');
-    expect(e.faltas.join(' ')).toContain('Informe o rendimento medido (m/kg)');
-    expect(e.custoTotal).toBeNull();
+    // Um metro de tubo: 2 folhas de 0,9 m × 180 g/m² = 324 g → 3,086 m/kg; R$ 40/kg ÷ 3,086 m/kg = R$ 12,96/m.
+    expect(e.rendimentoMmPorG).toBeCloseTo(1_000_000 / (900 * 180 * 2), 9);
+    expect(e.custoPorMetroLinear).toBeCloseTo(12.96, 9);
+    expect(e.faltas.join(' ')).not.toContain('rendimento');
   });
 });
 

@@ -28,9 +28,13 @@ export const mm2ParaM2 = (mm2: number): number => mm2 / 1_000_000;
 export const mPorKgParaMmPorG = (mPorKg: number): number => mPorKg;
 export const mmPorGParaMPorKg = (mmPorG: number): number => mmPorG;
 
-/** O rendimento (m/kg) que a largura útil e a gramatura dão: 1000 / (largura em m × gramatura). Em mm/g. */
-export function rendimentoPelaGramatura(larguraUtilMm: number, gramaturaGm2: number): number {
-  return 1_000_000 / (larguraUtilMm * gramaturaGm2);
+/**
+ * O rendimento (m/kg) que a largura útil e a gramatura dão: 1000 / (largura em m × gramatura × folhas). Em mm/g.
+ * Na malha tubular a largura útil é a do tubo achatado, e um metro de tubo tem duas folhas dela (ADR 0098): antes a
+ * conta usava uma folha só, e o quilo de malha tubular rendia o dobro dos metros.
+ */
+export function rendimentoPelaGramatura(larguraUtilMm: number, gramaturaGm2: number, tubular = false): number {
+  return 1_000_000 / (larguraUtilMm * gramaturaGm2 * (tubular ? 2 : 1));
 }
 
 // ---- Entradas
@@ -287,7 +291,7 @@ export function calcularPlanoDeCorte(
 
   // O rendimento: o informado, o calculado pela largura e gramatura, e qual vale.
   const informado = positivo(malha.rendimentoMmPorG) ? malha.rendimentoMmPorG : null;
-  const calculado = positivo(malha.gramaturaGm2) ? rendimentoPelaGramatura(malha.larguraUtilMm, malha.gramaturaGm2) : null;
+  const calculado = positivo(malha.gramaturaGm2) ? rendimentoPelaGramatura(malha.larguraUtilMm, malha.gramaturaGm2, malha.tubular) : null;
   let usado: number | null = null;
   let origem: RendimentoPrincipal | null = null;
   if (informado !== null && calculado !== null) {

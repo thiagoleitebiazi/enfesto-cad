@@ -1,4 +1,5 @@
 import { ehTipoDeTecido, problemaDoCusto, type CustoDoTecido, type PadraoDoTecido, type TipoDeTecido } from './tecido';
+import { rendimentoPelaGramatura } from './planoDeCorte';
 
 /**
  * O cadastro de produção do planejamento de corte: as malhas que a fábrica usa, os rolos em estoque e as ordens de
@@ -598,11 +599,16 @@ export function casamentoDaMalha(malha: MalhaDoCadastro): { readonly rapportComp
   };
 }
 
-/** O rendimento da malha para converter peso em comprimento: o informado, ou o pela gramatura. */
-export function rendimentoDaMalha(malha: Pick<MalhaDoCadastro, 'rendimentoMmPorG' | 'gramaturaGm2' | 'larguraUtilMm'> | undefined): number | null {
+/**
+ * O rendimento da malha para converter peso em comprimento: o informado, ou o pela gramatura — na tubular, com as
+ * duas folhas do tubo achatado (ADR 0098).
+ */
+export function rendimentoDaMalha(
+  malha: (Pick<MalhaDoCadastro, 'rendimentoMmPorG' | 'gramaturaGm2' | 'larguraUtilMm'> & { readonly tubular?: boolean }) | undefined,
+): number | null {
   if (!malha) return null;
   if (numeroPositivo(malha.rendimentoMmPorG)) return malha.rendimentoMmPorG;
-  if (numeroPositivo(malha.gramaturaGm2) && numeroPositivo(malha.larguraUtilMm)) return 1_000_000 / (malha.larguraUtilMm * malha.gramaturaGm2);
+  if (numeroPositivo(malha.gramaturaGm2) && numeroPositivo(malha.larguraUtilMm)) return rendimentoPelaGramatura(malha.larguraUtilMm, malha.gramaturaGm2, malha.tubular === true);
   return null;
 }
 

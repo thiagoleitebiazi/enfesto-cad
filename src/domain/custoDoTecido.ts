@@ -222,9 +222,8 @@ export function estimarCustoDoTecido(dados: {
     origemDoRendimento = r.origemDoRendimento;
     if (!positivo(rendimentoMmPorG)) {
       faltas.push('O custo é por quilo, e falta o rendimento (m/kg) da malha para passar quilos a metros: informe o rendimento (ou a gramatura) da malha.');
-    } else if (origemDoRendimento === 'calculado' && tipoDeTecido === 'tubular') {
-      faltas.push('O custo é por quilo, a malha é tubular e o rendimento saiu da gramatura: essa conta usa uma folha só da largura, e o tubo tem duas. Informe o rendimento medido (m/kg) da malha.');
     } else {
+      // Na malha tubular, o rendimento calculado pela gramatura já conta as duas folhas do tubo (ADR 0098).
       // m/kg e mm/g são o mesmo número: R$/kg ÷ m/kg = R$/m.
       custoPorMetroLinear = custoInformado.valor / rendimentoMmPorG;
       premissas.push(
