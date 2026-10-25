@@ -1304,6 +1304,28 @@ async function principal() {
   await noCampo('Brilho', '0');
   await noCampo('Transparência', '0');
   await espera(300);
+  // O zíper (ADR 0132): 18 cm numa lateral da saia, visto de lado; a saia continua assentada.
+  await parteDaJanela('Costuras');
+  await espera(300);
+  await js(`(() => { const c = document.querySelector('[role=dialog] input[aria-label^="Zíper da costura"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, '18'); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await espera(600);
+  // A fita do zíper (#2f2f33) contada no desenho, em cada vista: a lateral aparece em alguma delas (o braço cobre uma).
+  const pixelsDaFita = () =>
+    js(`(() => { const c = document.querySelector('[role=dialog] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 47) < 10 && Math.abs(d[i + 1] - 47) < 10 && Math.abs(d[i + 2] - 51) < 10) n++; return n; })()`);
+  const fitaPorVista = {};
+  for (const vista of ['Frente', 'Lado', 'Costas']) {
+    await botaoNaJanela(vista);
+    await espera(700);
+    fitaPorVista[vista] = await pixelsDaFita();
+    if (fitaPorVista[vista] === Math.max(...Object.values(fitaPorVista))) await foto('35c-ziper-na-lateral.png');
+  }
+  const comZiper = await js(`((document.querySelector('[role=dialog] .status-do-provador') || {}).textContent || '')`);
+  conferir(
+    'o zíper de 18 cm na lateral da saia aparece no desenho, e a saia continua assentada',
+    comZiper.startsWith('Assentou') && Math.max(...Object.values(fitaPorVista)) > 30,
+    `${JSON.stringify(fitaPorVista)} pixel(s) da fita / ${comZiper.slice(0, 60)}`,
+  );
+  await botaoNaJanela('Frente');
   await espera(300);
   await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.trim() === 'Mapa de tensão').querySelector('input')`);
   await espera(800);

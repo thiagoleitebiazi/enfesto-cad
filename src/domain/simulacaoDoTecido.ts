@@ -53,6 +53,8 @@ export interface Simulacao {
   readonly aplicacaoT: Uint32Array;
   readonly aplicacaoPesos: Float64Array;
   readonly aplicacaoDistancia0: Float64Array;
+  /** Os pontos do lado A de cada costura, na ordem do trecho (nos números da simulação): onde vai o zíper (ADR 0132). */
+  readonly cadeiasDasCosturas: ReadonlyArray<{ readonly id: string; readonly pontos: Uint32Array }>;
   /** A camada de cada ponto: 0 no corpo, 1 sobre outra peça (fica mais longe do corpo: por cima da de baixo). */
   readonly camada: Uint8Array;
   /** Os triângulos (nos números da simulação) e os comprimentos das três arestas de cada um no molde. */
@@ -252,6 +254,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   const costuraF: number[] = [];
   const costuraDistancia0: number[] = [];
   const pecaDe = (chave: string): PecaNaSimulacao | undefined => pecas.find((p) => p.chave === chave);
+  const cadeiasDasCosturas: { id: string; pontos: Uint32Array }[] = [];
   const ligar = (de: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, para: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, invertida: boolean): void => {
     for (let k = 0; k < de.t.pontos.length; k++) {
       const f0 = de.t.fracoes[k]!;
@@ -285,6 +288,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     if (ta.pontos.length < 2 || tb.pontos.length < 2) continue;
     ligar({ p: pa, t: ta }, { p: pb, t: tb }, c.invertida);
     ligar({ p: pb, t: tb }, { p: pa, t: ta }, c.invertida);
+    cadeiasDasCosturas.push({ id: c.id, pontos: Uint32Array.from(ta.pontos, (k) => pa.inicio + k) });
   }
   return {
     corpo: e.corpo,
@@ -307,6 +311,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     aplicacaoT: Uint32Array.from(aplicacaoT),
     aplicacaoPesos: Float64Array.from(aplicacaoPesos),
     aplicacaoDistancia0: Float64Array.from(aplicacaoDistancia0),
+    cadeiasDasCosturas,
     camada,
     triangulos,
     ladosDosTriangulos,

@@ -55,3 +55,38 @@ describe('o brilho e a transparência do tecido no provador (ADR 0131)', () => {
     expect(cena(esfera({ transparencia: 100 })).every((i) => Math.abs(i.opacidade! - 0.15) < 1e-9)).toBe(true);
   });
 });
+
+describe('o zíper na costura (ADR 0132)', () => {
+  // Uma costura em pé, de 100 em 100 mm, de y = 600 a y = 1000, em z = 150 (na frente do corpo).
+  const costura = (deBaixoParaCima: boolean) => {
+    const pontos: number[] = [];
+    for (let k = 0; k <= 4; k++) pontos.push(0, 600 + 100 * k, 150);
+    const indices = [0, 1, 2, 3, 4];
+    return { x: Float64Array.from(pontos), indices: deBaixoParaCima ? indices : [...indices].reverse() };
+  };
+  const ziper = (deBaixoParaCima: boolean, comprimentoMm: number) => {
+    const c = costura(deBaixoParaCima);
+    const tecido: TecidoParaDesenhar = { x: c.x, triangulos: new Uint32Array(0), pecas: [], ziperes: [{ pontos: c.indices, comprimentoMm }] };
+    return montarCena(projecao(cameraDeFrente(1700), 800, 600, 1700), null, tecido).filter((i): i is Extract<ItemDaCena, { tipo: 'ziper' }> => i.tipo === 'ziper');
+  };
+
+  it('do alto da costura para baixo, até o comprimento: o primeiro pedaço leva o cursor', () => {
+    for (const sentido of [true, false]) {
+      const itens = ziper(sentido, 250);
+      // 100 + 100 + 50 mm: três pedaços, o último pela metade.
+      expect(itens).toHaveLength(3);
+      // Os itens vêm na ordem da profundidade: o cursor é o do pedaço mais alto (o y da tela cresce para baixo).
+      const cursores = itens.filter((i) => i.cursor);
+      expect(cursores).toHaveLength(1);
+      expect(cursores[0]!.de[1]).toBe(Math.min(...itens.map((i) => i.de[1])));
+      expect(cursores[0]!.de[1]).toBeLessThan(cursores[0]!.ate[1]);
+      const comprimentoNaTela = (i: (typeof itens)[number]): number => Math.hypot(i.ate[0] - i.de[0], i.ate[1] - i.de[1]);
+      expect(Math.min(...itens.map(comprimentoNaTela))).toBeCloseTo(comprimentoNaTela(cursores[0]!) / 2, 0);
+      expect(itens.every((i) => i.largura >= 3 && i.largura <= 18)).toBe(true);
+    }
+  });
+
+  it('o zíper mais comprido que a costura vai até o fim dela', () => {
+    expect(ziper(true, 5000)).toHaveLength(4);
+  });
+});

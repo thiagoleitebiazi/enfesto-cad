@@ -106,6 +106,8 @@ export interface Costura3D {
   readonly b: LadoDaCostura;
   /** `false`: o começo de A vai com o começo de B; `true`: com o fim de B. */
   readonly invertida: boolean;
+  /** O zíper nesta costura (ADR 0132): o comprimento (mm), do alto da costura para baixo. Ausente: sem zíper. */
+  readonly ziperMm?: number;
 }
 
 export type PresetDeTecido = 'malha' | 'moletom' | 'tricoline' | 'jeans' | 'seda' | 'linho' | 'personalizado';
@@ -964,7 +966,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
       if (!ehObjeto(c) || typeof c.id !== 'string') continue;
       const a = lerLado(c.a);
       const b = lerLado(c.b);
-      if (a && b) costuras.push({ id: c.id, a, b, invertida: c.invertida === true });
+      if (a && b) costuras.push({ id: c.id, a, b, invertida: c.invertida === true, ...(typeof c.ziperMm === 'number' && c.ziperMm > 0 ? { ziperMm: Math.min(2000, c.ziperMm) } : {}) });
     }
   }
   const t = ehObjeto(bruto.tecido) ? bruto.tecido : {};

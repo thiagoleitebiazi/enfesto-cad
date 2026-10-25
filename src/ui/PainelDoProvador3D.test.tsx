@@ -105,6 +105,12 @@ describe('PainelDoProvador3D', () => {
     await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
     expect(ultima().costuras).toHaveLength(2);
     expect(ultima().costuras[1]).toMatchObject({ a: { chave: 'f#0', de: 2, ate: 3 }, b: { chave: 'c#0', de: 2, ate: 3 } });
+    // O zíper (ADR 0132): em cm na tela, em mm guardado; em branco, sem zíper.
+    const campoDoZiper = within(screen.getAllByRole('listitem')[1]!).getByLabelText(/^Zíper da costura/);
+    fireEvent.change(campoDoZiper, { target: { value: '18' } });
+    await waitFor(() => expect(ultima().costuras[1]!.ziperMm).toBe(180), { timeout: 2000 });
+    fireEvent.change(campoDoZiper, { target: { value: '' } });
+    await waitFor(() => expect('ziperMm' in ultima().costuras[1]!).toBe(false), { timeout: 2000 });
   });
 
   it('a costura de uma peça que mudou avisa', () => {

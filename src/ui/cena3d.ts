@@ -101,7 +101,9 @@ export type ItemDaCena =
       /** A estampa: a instância e as coordenadas da face (u, v seguidos) dos três pontos. */
       readonly estampa?: { readonly chave: string; readonly uv: Float64Array };
     }
-  | { readonly tipo: 'botao'; readonly x: number; readonly y: number; readonly r: number; readonly z: number; readonly cor: readonly [number, number, number] };
+  | { readonly tipo: 'botao'; readonly x: number; readonly y: number; readonly r: number; readonly z: number; readonly cor: readonly [number, number, number] }
+  /** Um pedaço do zíper (ADR 0132): da ponta `de` à `ate` na tela, a largura em pixels; o primeiro leva o cursor. */
+  | { readonly tipo: 'ziper'; readonly de: readonly [number, number]; readonly ate: readonly [number, number]; readonly z: number; readonly largura: number; readonly cursor: boolean };
 
 export interface MalhaParaDesenhar {
   readonly vertices: ArrayLike<number>;
@@ -132,6 +134,8 @@ export interface TecidoParaDesenhar {
   /** O brilho e a transparência do tecido, de 0 a 100 (ADR 0131). */
   readonly brilho?: number;
   readonly transparencia?: number;
+  /** Os zíperes: os pontos da costura (nos números da simulação) e o comprimento (mm), do alto para baixo (ADR 0132). */
+  readonly ziperes?: readonly { readonly pontos: ArrayLike<number>; readonly comprimentoMm: number }[];
 }
 
 export const COR_DO_CORPO: readonly [number, number, number] = [212, 205, 196];
@@ -236,6 +240,49 @@ export function montarCena(proj: Projecao, corpo: MalhaParaDesenhar | null, teci
         } else itens.push({ tipo: 'triangulo', tela: r.tela, z: r.z, cor, luz, ...daVista });
       }
     }
+    // O zíper: do alto da costura (a ponta mais alta) para baixo, até o comprimento dele; um item por pedaço, cada um na
+    // profundidade dele (o que fica atrás do corpo some atrás dele), um pouco à frente do tecido.
+    const X = tecido.x;
+    for (const ziper of tecido.ziperes ?? []) {
+      const n = ziper.pontos.length;
+      if (n < 2) continue;
+      const altura = (k: number): number => X[3 * ziper.pontos[k]! + 1]!;
+      const ordem = Array.from({ length: n }, (_, k) => (altura(0) >= altura(n - 1) ? k : n - 1 - k));
+      let andado = 0;
+      for (let k = 1; k < n && andado < ziper.comprimentoMm; k++) {
+        const ia = ziper.pontos[ordem[k - 1]!]!;
+        const ib = ziper.pontos[ordem[k]!]!;
+        const ax = X[3 * ia]!;
+        const ay = X[3 * ia + 1]!;
+        const az = X[3 * ia + 2]!;
+        let bx = X[3 * ib]!;
+        let by = X[3 * ib + 1]!;
+        let bz = X[3 * ib + 2]!;
+        const lado = Math.hypot(bx - ax, by - ay, bz - az);
+        if (lado < 1e-9) continue;
+        const falta = ziper.comprimentoMm - andado;
+        if (lado > falta) {
+          const f = falta / lado;
+          bx = ax + (bx - ax) * f;
+          by = ay + (by - ay) * f;
+          bz = az + (bz - az) * f;
+        }
+        andado += Math.min(lado, falta);
+        const pa = proj.projetar(ax, ay, az);
+        const pb = proj.projetar(bx, by, bz);
+        if (!pa || !pb) continue;
+        const pixelsPorMm = Math.hypot(pb.sx - pa.sx, pb.sy - pa.sy) / Math.max(1e-9, Math.min(lado, falta));
+        itens.push({
+          tipo: 'ziper',
+          de: [pa.sx, pa.sy],
+          ate: [pb.sx, pb.sy],
+          z: (pa.z + pb.z) / 2 - 40,
+          // A fita com os dentes tem uns 14 mm; nunca menos de 3 pixels, para se ver o zíper com o corpo inteiro na tela.
+          largura: Math.max(3, Math.min(18, 14 * pixelsPorMm)),
+          cursor: k === 1,
+        });
+      }
+    }
     for (const botao of tecido.botoes ?? []) {
       const a = tecido.triangulos[3 * botao.triangulo]!;
       const b = tecido.triangulos[3 * botao.triangulo + 1]!;
@@ -302,6 +349,32 @@ const multiplicar = (m: readonly number[], n: readonly number[]): [number, numbe
 export function desenharCena(ctx: CanvasRenderingContext2D, itens: readonly ItemDaCena[], estampas: ReadonlyMap<string, EstampaPronta>): void {
   ctx.lineJoin = 'round';
   for (const item of itens) {
+    if (item.tipo === 'ziper') {
+      // A fita escura, os dentes (um tracejado claro) e, no alto, o cursor.
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(item.de[0], item.de[1]);
+      ctx.lineTo(item.ate[0], item.ate[1]);
+      ctx.strokeStyle = '#2f2f33';
+      ctx.lineWidth = item.largura;
+      ctx.stroke();
+      ctx.setLineDash([Math.max(1, item.largura * 0.25), Math.max(1, item.largura * 0.25)]);
+      ctx.strokeStyle = '#c9c9cf';
+      ctx.lineWidth = item.largura * 0.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (item.cursor) {
+        const r = item.largura * 0.75;
+        ctx.fillStyle = '#9ea2aa';
+        ctx.strokeStyle = '#4a4d55';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.rect(item.de[0] - r, item.de[1] - r * 0.6, r * 2, r * 2.4);
+        ctx.fill();
+        ctx.stroke();
+      }
+      continue;
+    }
     if (item.tipo === 'botao') {
       ctx.beginPath();
       ctx.arc(item.x, item.y, item.r, 0, 2 * Math.PI);

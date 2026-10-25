@@ -151,7 +151,8 @@ export function PainelDoProvador3D(props: {
     // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
     // recomeça a simulação.
     { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined },
-    costurasValidas,
+    // O zíper é só da vista: pôr ou tirar não recomeça a simulação.
+    costurasValidas.map((c) => ({ ...c, ziperMm: undefined })),
     Object.entries(montagem.pecas).map(([k, c]) => [k, c.posicao, c.alturaDoTopo, c.ajusteMm, c.desvioMm, c.girarGraus]),
   ]);
   const [chaveVista, setChaveVista] = useState(chaveDaFisica);
@@ -260,11 +261,14 @@ export function PainelDoProvador3D(props: {
         ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}),
         ...(montagem.tecido.brilho ? { brilho: montagem.tecido.brilho } : {}),
         ...(montagem.tecido.transparencia ? { transparencia: montagem.tecido.transparencia } : {}),
+        ziperes: montagem.costuras
+          .filter((c) => c.ziperMm)
+          .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
       desenharCena(ctx, montarCena(proj, m.malhaDoCorpo, tecido), estampas);
       return true;
     },
-    [obterMontada, montagem.pecas, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem],
+    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem],
   );
 
   const desenhar = useCallback((): void => {
@@ -858,6 +862,20 @@ function ParteCosturas(props: {
                 <button type="button" onClick={() => props.onMudar(props.montagem.costuras.map((x) => (x.id === c.id ? { ...x, invertida: !x.invertida } : x)))}>
                   Inverter
                 </button>
+                <label className="ziper-da-costura">
+                  Zíper (cm)
+                  <CampoDeNumero
+                    rotulo={`Zíper da costura ${nome(c.a.chave)} com ${nome(c.b.chave)}`}
+                    valor={c.ziperMm ? c.ziperMm / 10 : null}
+                    vazioPermitido
+                    placeholder="sem"
+                    onMudar={(v) => {
+                      const resto = { ...c };
+                      delete (resto as { ziperMm?: number }).ziperMm;
+                      props.onMudar(props.montagem.costuras.map((x) => (x.id === c.id ? (v && v > 0 ? { ...resto, ziperMm: Math.min(2000, v * 10) } : resto) : x)));
+                    }}
+                  />
+                </label>
                 <button type="button" onClick={() => props.onMudar(props.montagem.costuras.filter((x) => x.id !== c.id))}>
                   Tirar
                 </button>
