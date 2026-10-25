@@ -92,7 +92,7 @@ describe('PainelDaFotoParaMolde', () => {
     const medidas = screen.getByLabelText('Medidas do molde');
     const largura = Number(medidas.textContent!.match(/Largura × altura([\d,]+) mm/)![1]!.replace(',', '.'));
     expect(Math.abs(largura - 100)).toBeLessThan(1.5);
-    expect(medidas).toHaveTextContent(/1 furo\(s\), 1 pique\(s\), fio sugerido/);
+    expect(medidas).toHaveTextContent(/1 furo\(s\), 1 pique\(s\), 0 linha\(s\) interna\(s\), fio sugerido/);
   });
 
   it('o clique fora do molde diz o que fazer', async () => {

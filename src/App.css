@@ -5400,6 +5400,15 @@ rect.destaque-do-desenho,
   stroke-width: 3;
 }
 
+/* As linhas internas achadas nos traços de caneta (ADR 0121): violeta, tracejadas como a linha interna do molde. */
+.linha-reconhecida {
+  fill: none;
+  stroke: #8e24aa;
+  stroke-width: 4;
+  stroke-dasharray: 10 6;
+  vector-effect: non-scaling-stroke;
+}
+
 .semente-marcada {
   fill: #ffeb3b;
   stroke: #000;

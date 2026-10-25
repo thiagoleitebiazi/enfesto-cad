@@ -69,6 +69,7 @@ export function PainelDaFotoParaMolde(props: {
   const [procurarFuros, setProcurarFuros] = useState(true);
   const [procurarPiques, setProcurarPiques] = useState(true);
   const [sugerirFio, setSugerirFio] = useState(true);
+  const [procurarLinhas, setProcurarLinhas] = useState(true);
   const [clique, setClique] = useState<Clique>('semente');
   const [semente, setSemente] = useState<Ponto2D | null>(null);
   const [fioManual, setFioManual] = useState<readonly Ponto2D[]>([]);
@@ -125,9 +126,9 @@ export function PainelDaFotoParaMolde(props: {
 
   const reconhecido = useMemo(() => {
     if (!plana || !semente) return null;
-    const r = reconhecerMolde(plana.pixels, semente, { mmPorPx: plana.mmPorPx, limiar, moldeEscuro, toleranciaMm, procurarFuros, procurarPiques, sugerirFio });
+    const r = reconhecerMolde(plana.pixels, semente, { mmPorPx: plana.mmPorPx, limiar, moldeEscuro, toleranciaMm, procurarFuros, procurarPiques, sugerirFio, procurarLinhas });
     return r;
-  }, [plana, semente, limiar, moldeEscuro, toleranciaMm, procurarFuros, procurarPiques, sugerirFio]);
+  }, [plana, semente, limiar, moldeEscuro, toleranciaMm, procurarFuros, procurarPiques, sugerirFio, procurarLinhas]);
   const molde: MoldeReconhecido | null = useMemo(() => {
     if (!reconhecido || 'erro' in reconhecido || !plana) return null;
     const comFio: MoldeReconhecido =
@@ -306,6 +307,9 @@ export function PainelDaFotoParaMolde(props: {
                       const [x, y] = emPx(p.posicao).split(',').map(Number);
                       return <circle key={i} className="pique-reconhecido" cx={x} cy={y} r={Math.max(3, plana.pixels.largura / 150)} />;
                     })}
+                    {molde.linhasInternas.map((l, i) => (
+                      <polyline key={`l${i}`} className="linha-reconhecida" points={l.map(emPx).join(' ')} />
+                    ))}
                     {molde.fio && <line className="fio-reconhecido" x1={Number(emPx(molde.fio.inicio).split(',')[0])} y1={Number(emPx(molde.fio.inicio).split(',')[1])} x2={Number(emPx(molde.fio.fim).split(',')[0])} y2={Number(emPx(molde.fio.fim).split(',')[1])} />}
                   </g>
                 )}
@@ -317,7 +321,7 @@ export function PainelDaFotoParaMolde(props: {
 
           <aside className="propriedades-do-desenho" aria-label="Reconhecimento">
             {!plana ? (
-              <p className="nota-do-formulario">Depois de corrigir a perspectiva, clique dentro do molde: o contorno, os furos, os piques e o fio aparecem para revisar.</p>
+              <p className="nota-do-formulario">Depois de corrigir a perspectiva, clique dentro do molde: o contorno, os furos, os piques, o fio e as linhas de caneta aparecem para revisar.</p>
             ) : (
               <>
                 {criadas.length > 0 && (
@@ -367,6 +371,10 @@ export function PainelDaFotoParaMolde(props: {
                   <input type="checkbox" checked={sugerirFio} onChange={(e) => setSugerirFio(e.target.checked)} />
                   Sugerir o fio (o traço comprido de dentro)
                 </label>
+                <label className="opcao-em-linha">
+                  <input type="checkbox" checked={procurarLinhas} onChange={(e) => setProcurarLinhas(e.target.checked)} />
+                  Os outros traços de caneta viram linhas internas (pence, bolso, dobra)
+                </label>
                 {!semente && <p className="nota-do-formulario">Clique dentro do molde, na foto corrigida.</p>}
                 {reconhecido && 'erro' in reconhecido && <p className="mensagem-de-erro">{reconhecido.erro}</p>}
                 {molde && medidas && (
@@ -382,7 +390,7 @@ export function PainelDaFotoParaMolde(props: {
                       <dd>{numeroComVirgula(medidas.area / 100, 1)} cm²</dd>
                       <dt>Achados</dt>
                       <dd>
-                        {molde.contorno.length} pontos, {molde.furos.length} furo(s), {molde.piques.length} pique(s), {molde.fio ? (fioManual.length === 2 ? 'fio marcado' : 'fio sugerido') : 'sem fio'}
+                        {molde.contorno.length} pontos, {molde.furos.length} furo(s), {molde.piques.length} pique(s), {molde.linhasInternas.length} linha(s) interna(s), {molde.fio ? (fioManual.length === 2 ? 'fio marcado' : 'fio sugerido') : 'sem fio'}
                       </dd>
                     </dl>
                     {molde.avisos.map((a) => (

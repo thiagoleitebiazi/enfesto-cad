@@ -517,6 +517,16 @@ interface PedidoDeMudanca {
   readonly para: EtapaDoModelo;
 }
 
+/**
+ * A coluna debaixo do mouse: pelo que está no ponto (o cartão arrastado não pega o mouse, então fica de fora), e não
+ * pelo alvo do evento — assim a coluna é a do lugar do mouse mesmo quando o evento chega por outro elemento.
+ */
+function colunaNoPonto(ev: React.PointerEvent): EtapaDoModelo | null {
+  const noPonto = typeof document.elementsFromPoint === 'function' ? document.elementsFromPoint(ev.clientX, ev.clientY) : [];
+  const coluna = [...noPonto, ev.target as Element].map((e) => e.closest('[data-etapa]')).find((c) => c !== null);
+  return coluna ? (coluna.getAttribute('data-etapa') as EtapaDoModelo) : null;
+}
+
 const PERGUNTA_DA_MUDANCA: Readonly<Record<MudancaPeloQuadro, string>> = {
   avancar: 'Comentário (opcional)',
   voltar: 'Por que a etapa volta',
@@ -612,9 +622,7 @@ function ParteEtapas(props: {
           if (!arrasto) return;
           const dx = ev.clientX - arrasto.x0;
           const dy = ev.clientY - arrasto.y0;
-          // O cartão arrastado não pega o mouse: o que está debaixo dele é a coluna.
-          const coluna = (ev.target as Element).closest('[data-etapa]');
-          setArrasto({ ...arrasto, dx, dy, andou: arrasto.andou || Math.hypot(dx, dy) > 5, sobre: coluna ? (coluna.getAttribute('data-etapa') as EtapaDoModelo) : null });
+          setArrasto({ ...arrasto, dx, dy, andou: arrasto.andou || Math.hypot(dx, dy) > 5, sobre: colunaNoPonto(ev) });
         }}
         onPointerUp={soltar}
         onPointerLeave={() => setArrasto(null)}

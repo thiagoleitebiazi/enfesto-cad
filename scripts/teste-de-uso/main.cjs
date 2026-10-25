@@ -716,6 +716,7 @@ async function principal() {
     JSON.parse(await js(`(() => { const r = document.querySelector(${JSON.stringify(seletor)}).getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + Math.min(r.height / 2, 60)) }); })()`));
   const doCartao = await centroDe('[data-etapa="criacao"] .cartao-da-etapa .nome-do-cartao');
   const daModelagem = await centroDe('[data-etapa="modelagem"]');
+  await js(`(() => { window.__alvoDoArrasto = ''; document.addEventListener('pointermove', (e) => { window.__alvoDoArrasto = String(e.target.className || e.target.tagName); }, true); return 1; })()`);
   win.webContents.sendInputEvent({ type: 'mouseDown', x: doCartao.x, y: doCartao.y, button: 'left', clickCount: 1 });
   for (let k = 1; k <= 8; k++) {
     win.webContents.sendInputEvent({
@@ -732,7 +733,7 @@ async function principal() {
   await espera(400);
   const noMeioDoArrasto = JSON.parse(
     await js(
-      `JSON.stringify({ modelagem: document.querySelector('[data-etapa="modelagem"]').className, producao: document.querySelector('[data-etapa="producao"]').className, rotulo: ((document.querySelector('[data-etapa="modelagem"] .o-que-o-arrasto-faz') || {}).textContent || '') })`,
+      `JSON.stringify({ modelagem: document.querySelector('[data-etapa="modelagem"]').className, producao: document.querySelector('[data-etapa="producao"]').className, rotulo: ((document.querySelector('[data-etapa="modelagem"] .o-que-o-arrasto-faz') || {}).textContent || ''), alvo: window.__alvoDoArrasto })`,
     ),
   );
   await foto('25b-arrastando-o-cartao.png');
@@ -792,11 +793,26 @@ async function principal() {
     CANTOS_DA_FOTO,
   );
   const projetar = (pontos) => pontos.map(([x, y]) => aplicarHomografiaDoTeste(h, x, y));
+  /** Um trecho de traço de caneta de `w` mm de a até b (em mm da placa), meio traço a mais em cada ponta. */
+  const trechoDeCaneta = ([ax, ay], [bx, by], w) => {
+    const l = Math.hypot(bx - ax, by - ay);
+    const [ux, uy] = [((bx - ax) / l) * (w / 2), ((by - ay) / l) * (w / 2)];
+    const [nx, ny] = [-uy, ux];
+    return [
+      [ax - ux + nx, ay - uy + ny],
+      [bx + ux + nx, by + uy + ny],
+      [bx + ux - nx, by + uy - ny],
+      [ax - ux - nx, ay - uy - ny],
+    ];
+  };
   const camadasDaFoto = [
     [projetar([[0, 0], [140, 0], [140, 190], [0, 190]]), 60],
     [projetar([[20, 20], [68, 20], [70, 24], [72, 20], [120, 20], [120, 170], [20, 170]]), 220],
     [projetar(Array.from({ length: 36 }, (_, i) => [50 + 4 * Math.cos((i * Math.PI) / 18), 60 + 4 * Math.sin((i * Math.PI) / 18)])), 60],
     [projetar([[69.5, 50], [70.5, 50], [70.5, 140], [69.5, 140]]), 40],
+    // A pence desenhada a caneta (ADR 0121): o V de 20 mm de boca e 35 mm de fundo.
+    [projetar(trechoDeCaneta([35, 120], [45, 155], 1.2)), 40],
+    [projetar(trechoDeCaneta([45, 155], [55, 120], 1.2)), 40],
   ];
   await js(
     `(async () => {
@@ -853,8 +869,12 @@ async function principal() {
   const larguraLida = Number((medidasDaFoto.match(/Largura × altura([\d,]+) mm/) || [])[1]?.replace(',', '.'));
   const alturaLida = Number((medidasDaFoto.match(/ × ([\d,]+) mmPer/) || [])[1]?.replace(',', '.'));
   conferir(
-    'corrigida a perspectiva, o molde sai com 100 × 150 mm (até 1,5 mm), o furo e o fio',
-    Math.abs(larguraLida - 100) <= 1.5 && Math.abs(alturaLida - 150) <= 1.5 && medidasDaFoto.includes('1 furo(s)') && medidasDaFoto.includes('fio sugerido'),
+    'corrigida a perspectiva, o molde sai com 100 × 150 mm (até 1,5 mm), o furo, o fio e a pence (1 linha interna)',
+    Math.abs(larguraLida - 100) <= 1.5 &&
+      Math.abs(alturaLida - 150) <= 1.5 &&
+      medidasDaFoto.includes('1 furo(s)') &&
+      medidasDaFoto.includes('1 linha(s) interna(s)') &&
+      medidasDaFoto.includes('fio sugerido'),
     medidasDaFoto.slice(0, 160),
   );
   await foto('28-molde-reconhecido.png');
@@ -872,9 +892,17 @@ async function principal() {
   const pecaDaFoto = (await pecasGravadas()).find((p) => p.nome === 'Frente da foto');
   const caixaDaFoto = pecaDaFoto ? caixa(pecaDaFoto.contorno) : null;
   conferir(
-    'no projeto: a peça de 150 × 100 mm (deitada como na foto), com o furo, o fio e o pique',
-    !!caixaDaFoto && Math.abs(caixaDaFoto.maxX - caixaDaFoto.minX - 150) <= 2 && Math.abs(caixaDaFoto.maxY - caixaDaFoto.minY - 100) <= 2 && pecaDaFoto.furos.length === 1 && pecaDaFoto.piques.length >= 1,
-    caixaDaFoto ? `${(caixaDaFoto.maxX - caixaDaFoto.minX).toFixed(1)} × ${(caixaDaFoto.maxY - caixaDaFoto.minY).toFixed(1)} mm, ${pecaDaFoto.furos.length} furo(s), ${pecaDaFoto.piques.length} pique(s)` : 'sem a peça',
+    'no projeto: a peça de 150 × 100 mm (deitada como na foto), com o furo, o fio, o pique e a pence como linha interna (o V, 3 pontos)',
+    !!caixaDaFoto &&
+      Math.abs(caixaDaFoto.maxX - caixaDaFoto.minX - 150) <= 2 &&
+      Math.abs(caixaDaFoto.maxY - caixaDaFoto.minY - 100) <= 2 &&
+      pecaDaFoto.furos.length === 1 &&
+      pecaDaFoto.piques.length >= 1 &&
+      pecaDaFoto.linhasInternas.length === 1 &&
+      pecaDaFoto.linhasInternas[0].length === 3,
+    caixaDaFoto
+      ? `${(caixaDaFoto.maxX - caixaDaFoto.minX).toFixed(1)} × ${(caixaDaFoto.maxY - caixaDaFoto.minY).toFixed(1)} mm, ${pecaDaFoto.furos.length} furo(s), ${pecaDaFoto.piques.length} pique(s), linhas internas ${JSON.stringify(pecaDaFoto.linhasInternas.map((l) => l.map((p) => [Math.round(p.x), Math.round(p.y)])))}`
+      : 'sem a peça',
   );
   await foto('29-peca-da-foto.png');
 

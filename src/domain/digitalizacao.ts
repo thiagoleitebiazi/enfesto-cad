@@ -10,8 +10,9 @@ import { area, perimetro, pontoDentroDoContorno, retanguloEnvolvente, simplifica
  *    escolhe a região (os pixels ligados a ele);
  * 3. **o contorno**: seguido pelas bordas dos pixels (a medida exata, sem o meio pixel do centro) e simplificado
  *    (Douglas-Peucker, na tolerância pedida);
- * 4. **os furos, o fio e os piques**: os buracos da região "redondos" são furos; o buraco comprido e fino (o traço de
- *    caneta do fio) dá o fio; os entalhes em V no contorno são piques.
+ * 4. **os furos, o fio, as linhas e os piques**: os buracos da região "redondos" são furos; o buraco comprido, fino e
+ *    reto (o traço de caneta do fio) dá o fio; os outros traços finos de caneta (a pence, a marca do bolso, a linha
+ *    de dobra) viram linhas internas, pela linha do meio (ADR 0121); os entalhes em V no contorno são piques.
  *
  * Tudo aqui é conta sobre os pixels (sem tela): a interface lê a imagem e mostra o resultado para revisar.
  */
@@ -300,6 +301,164 @@ export function eixoPrincipal(pontos: readonly Ponto2D[]): { readonly inicio: Po
   return { inicio: { x: cx + ux * min, y: cy + uy * min }, fim: { x: cx + ux * max, y: cy + uy * max }, comprimento: max - min, espessura: maxT - minT };
 }
 
+// ---- Os traços de caneta (ADR 0121)
+
+/** O comprimento de uma linha aberta. */
+export function comprimentoDaLinha(linha: readonly Ponto2D[]): number {
+  let s = 0;
+  for (let i = 1; i < linha.length; i++) s += Math.hypot(linha[i]!.x - linha[i - 1]!.x, linha[i]!.y - linha[i - 1]!.y);
+  return s;
+}
+
+/**
+ * A linha aberta com menos pontos (Douglas-Peucker), e depois sem os pontos do meio que ficam a menos de `tolerancia`
+ * da reta entre os vizinhos. Com `trechoCurto`, o trecho do meio mais curto que ele (o vaivém do esqueleto onde dois
+ * riscos se cruzam, como a ponta da pence feita em dois riscos) vira um ponto só: o mais saliente dos dois (o mais
+ * longe da reta entre os vizinhos de fora).
+ */
+export function simplificarLinha(linha: readonly Ponto2D[], tolerancia: number, trechoCurto = 0): Ponto2D[] {
+  const pontos = douglasPeuckerAberto(linha, tolerancia);
+  const distanciaAoTrecho = (p: Ponto2D, a: Ponto2D, b: Ponto2D): number => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  };
+  let tirou = true;
+  while (tirou && pontos.length > 2) {
+    tirou = false;
+    for (let k = 1; k < pontos.length - 1; k++) {
+      if (distanciaAoTrecho(pontos[k]!, pontos[k - 1]!, pontos[k + 1]!) < tolerancia) {
+        pontos.splice(k, 1);
+        tirou = true;
+        break;
+      }
+    }
+    // O trecho curto entre dois pontos do meio: fica o mais saliente.
+    for (let k = 1; !tirou && k < pontos.length - 2; k++) {
+      const a = pontos[k]!;
+      const b = pontos[k + 1]!;
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= trechoCurto) continue;
+      const antes = pontos[k - 1]!;
+      const depois = pontos[k + 2]!;
+      pontos.splice(distanciaAoTrecho(a, antes, depois) >= distanciaAoTrecho(b, antes, depois) ? k + 1 : k, 1);
+      tirou = true;
+    }
+  }
+  return pontos;
+}
+
+function douglasPeuckerAberto(linha: readonly Ponto2D[], tolerancia: number): Ponto2D[] {
+  if (linha.length <= 2) return [...linha];
+  const manter = new Array<boolean>(linha.length).fill(false);
+  manter[0] = true;
+  manter[linha.length - 1] = true;
+  const pilha: [number, number][] = [[0, linha.length - 1]];
+  while (pilha.length > 0) {
+    const [de, ate] = pilha.pop()!;
+    const a = linha[de]!;
+    const b = linha[ate]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    let pior = -1;
+    let maior = -1;
+    for (let k = de + 1; k < ate; k++) {
+      const p = linha[k]!;
+      const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+      const d = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+      if (d > maior) {
+        maior = d;
+        pior = k;
+      }
+    }
+    if (maior > tolerancia) {
+      manter[pior] = true;
+      pilha.push([de, pior], [pior, ate]);
+    }
+  }
+  return linha.filter((_, k) => manter[k]);
+}
+
+/** O esqueleto da máscara (o afinamento de Zhang e Suen): os pixels do meio do traço, com 1 pixel de largura. */
+function afinar(mascara: Uint8Array, largura: number, altura: number): Uint8Array {
+  const m = Uint8Array.from(mascara);
+  const em = (x: number, y: number): number => (x >= 0 && y >= 0 && x < largura && y < altura ? m[y * largura + x]! : 0);
+  let mudou = true;
+  while (mudou) {
+    mudou = false;
+    for (const passo of [0, 1]) {
+      const tirar: number[] = [];
+      for (let y = 0; y < altura; y++) {
+        for (let x = 0; x < largura; x++) {
+          if (m[y * largura + x] !== 1) continue;
+          // Os vizinhos, de cima no sentido horário.
+          const v = [em(x, y - 1), em(x + 1, y - 1), em(x + 1, y), em(x + 1, y + 1), em(x, y + 1), em(x - 1, y + 1), em(x - 1, y), em(x - 1, y - 1)];
+          const vizinhos = v.reduce((s, a) => s + a, 0);
+          if (vizinhos < 2 || vizinhos > 6) continue;
+          let transicoes = 0;
+          for (let k = 0; k < 8; k++) if (v[k] === 0 && v[(k + 1) % 8] === 1) transicoes++;
+          if (transicoes !== 1) continue;
+          const [p2, , p4, , p6, , p8] = v;
+          if (passo === 0 ? p2! * p4! * p6! !== 0 || p4! * p6! * p8! !== 0 : p2! * p4! * p8! !== 0 || p2! * p6! * p8! !== 0) continue;
+          tirar.push(y * largura + x);
+        }
+      }
+      for (const i of tirar) m[i] = 0;
+      if (tirar.length > 0) mudou = true;
+    }
+  }
+  return m;
+}
+
+/**
+ * A linha do meio de um traço de caneta, pela máscara dos pixels do traço (`1`: tinta): o esqueleto do traço e, nele,
+ * o caminho mais comprido (duas buscas em largura: a ponta mais longe de um pixel qualquer, e a mais longe dela). Vale
+ * para a reta, a curva e a pence (o V: de uma ponta, pelo bico, até a outra); os galhos curtos ficam de fora. Em
+ * pixels (o centro de cada um).
+ */
+export function linhaDoMeioDoTraco(mascara: Uint8Array, largura: number, altura: number): Ponto2D[] {
+  const esqueleto = afinar(mascara, largura, altura);
+  let algum = -1;
+  for (let i = 0; i < esqueleto.length && algum < 0; i++) if (esqueleto[i] === 1) algum = i;
+  if (algum < 0) return [];
+  const anterior = new Int32Array(esqueleto.length);
+  const buscar = (de: number): number => {
+    anterior.fill(-2);
+    anterior[de] = -1;
+    const fila = [de];
+    let ultimo = de;
+    for (let k = 0; k < fila.length; k++) {
+      const i = fila[k]!;
+      ultimo = i;
+      const x = i % largura;
+      const y = (i - x) / largura;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if ((dx === 0 && dy === 0) || nx < 0 || ny < 0 || nx >= largura || ny >= altura) continue;
+          const j = ny * largura + nx;
+          if (esqueleto[j] === 1 && anterior[j] === -2) {
+            anterior[j] = i;
+            fila.push(j);
+          }
+        }
+      }
+    }
+    return ultimo;
+  };
+  const ponta = buscar(algum);
+  const outraPonta = buscar(ponta);
+  const caminho: Ponto2D[] = [];
+  for (let i = outraPonta; i >= 0; i = anterior[i]!) {
+    const x = i % largura;
+    caminho.push({ x: x + 0.5, y: (i - x) / largura + 0.5 });
+  }
+  return caminho;
+}
+
 export interface PiqueReconhecido {
   readonly posicao: Ponto2D;
   readonly indiceAresta: number;
@@ -372,6 +531,8 @@ export interface OpcoesDoReconhecimento {
   readonly procurarFuros: boolean;
   readonly procurarPiques: boolean;
   readonly sugerirFio: boolean;
+  /** Os outros traços finos de caneta viram linhas internas (ADR 0121). */
+  readonly procurarLinhas: boolean;
 }
 
 export const OPCOES_PADRAO_DO_RECONHECIMENTO: Omit<OpcoesDoReconhecimento, 'mmPorPx' | 'limiar'> = {
@@ -380,7 +541,12 @@ export const OPCOES_PADRAO_DO_RECONHECIMENTO: Omit<OpcoesDoReconhecimento, 'mmPo
   procurarFuros: true,
   procurarPiques: true,
   sugerirFio: true,
+  procurarLinhas: true,
 };
+
+/** O traço de caneta: comprido (de 15 mm) e fino (até 4 mm de largura média). */
+const TRACO_MINIMO_MM = 15;
+const TRACO_LARGURA_MAXIMA_MM = 4;
 
 export interface MoldeReconhecido {
   /** Em mm, nas coordenadas da imagem (x para a direita, y para baixo). */
@@ -388,6 +554,8 @@ export interface MoldeReconhecido {
   readonly furos: Ponto2D[][];
   readonly piques: PiqueReconhecido[];
   readonly fio: { readonly inicio: Ponto2D; readonly fim: Ponto2D } | null;
+  /** Os traços de caneta de dentro (fora o do fio): linhas abertas, pela linha do meio de cada traço (ADR 0121). */
+  readonly linhasInternas: Ponto2D[][];
   readonly avisos: string[];
 }
 
@@ -416,13 +584,42 @@ export function reconhecerMolde(imagem: ImagemDePixels, semente: Ponto2D, opcoes
     ? buracos.filter((b) => area(b) >= 3 && redondeza(b) >= 0.45).map((b) => [...simplificarContorno(b, Math.min(opcoes.toleranciaMm, 0.5))])
     : [];
   let fio: MoldeReconhecido['fio'] = null;
+  let buracoDoFio: Ponto2D[] | null = null;
   if (opcoes.sugerirFio) {
     const tracos = buracos
       .map((b) => ({ b, eixo: eixoPrincipal(b) }))
       .filter((x) => x.eixo !== null && x.eixo.comprimento >= 30 && x.eixo.comprimento >= 8 * Math.max(x.eixo.espessura, mm))
       .sort((a, b) => b.eixo!.comprimento - a.eixo!.comprimento);
-    if (tracos[0]) fio = { inicio: tracos[0].eixo!.inicio, fim: tracos[0].eixo!.fim };
-    else avisos.push('O fio não foi achado (um traço reto, comprido e fino dentro do molde): marque-o à mão.');
+    if (tracos[0]) {
+      fio = { inicio: tracos[0].eixo!.inicio, fim: tracos[0].eixo!.fim };
+      buracoDoFio = tracos[0].b;
+    } else avisos.push('O fio não foi achado (um traço reto, comprido e fino dentro do molde): marque-o à mão.');
+  }
+  // Os outros traços finos (nem furo, nem o fio): a linha do meio de cada um, simplificada.
+  const linhasInternas: Ponto2D[][] = [];
+  if (opcoes.procurarLinhas) {
+    for (const b of buracos) {
+      if (b === buracoDoFio || (area(b) >= 3 && redondeza(b) >= 0.45)) continue;
+      // Os pixels do traço: os de fora do papel dentro da volta do buraco (em pixels).
+      const emPx = b.map((p) => ({ x: p.x / mm, y: p.y / mm }));
+      const caixa = retanguloEnvolvente(emPx);
+      const x0 = Math.max(0, Math.floor(caixa.minX));
+      const y0 = Math.max(0, Math.floor(caixa.minY));
+      const l = Math.min(largura, Math.ceil(caixa.maxX)) - x0;
+      const a = Math.min(altura, Math.ceil(caixa.maxY)) - y0;
+      if (l <= 0 || a <= 0) continue;
+      const tinta = new Uint8Array(l * a);
+      for (let y = 0; y < a; y++) {
+        for (let x = 0; x < l; x++) {
+          if (regiao[(y0 + y) * largura + x0 + x] === 0 && pontoDentroDoContorno({ x: x0 + x + 0.5, y: y0 + y + 0.5 }, emPx)) tinta[y * l + x] = 1;
+        }
+      }
+      const meio = linhaDoMeioDoTraco(tinta, l, a).map((p) => ({ x: (p.x + x0) * mm, y: (p.y + y0) * mm }));
+      const comprimento = comprimentoDaLinha(meio);
+      if (comprimento < TRACO_MINIMO_MM || Math.abs(area(b)) / comprimento > TRACO_LARGURA_MAXIMA_MM) continue;
+      // O trecho mais curto que 5 mm (ou quatro larguras do traço) é ruído do esqueleto, não desenho.
+      linhasInternas.push(simplificarLinha(meio, Math.max(opcoes.toleranciaMm, 0.5), Math.max(5, (4 * Math.abs(area(b))) / comprimento)));
+    }
   }
   let piques: PiqueReconhecido[] = [];
   if (opcoes.procurarPiques) {
@@ -430,7 +627,7 @@ export function reconhecerMolde(imagem: ImagemDePixels, semente: Ponto2D, opcoes
     contorno = r.contorno;
     piques = r.piques;
   }
-  return { contorno, furos, piques, fio, avisos };
+  return { contorno, furos, piques, fio, linhasInternas, avisos };
 }
 
 /** As medidas do contorno (mm e mm²). */
@@ -448,6 +645,7 @@ export function escalarReconhecido(m: MoldeReconhecido, fator: number): MoldeRec
     furos: m.furos.map((f) => f.map(e)),
     piques: m.piques.map((p) => ({ ...p, posicao: e(p.posicao) })),
     fio: m.fio ? { inicio: e(m.fio.inicio), fim: e(m.fio.fim) } : null,
+    linhasInternas: m.linhasInternas.map((l) => l.map(e)),
   };
 }
 
@@ -464,5 +662,6 @@ export function paraODesenho(m: MoldeReconhecido, origem: Ponto2D): MoldeReconhe
     furos: m.furos.map((f) => f.map(t)),
     piques: m.piques.map((p) => ({ ...p, posicao: t(p.posicao) })),
     fio: m.fio ? { inicio: t(m.fio.inicio), fim: t(m.fio.fim) } : null,
+    linhasInternas: m.linhasInternas.map((l) => l.map(t)),
   };
 }

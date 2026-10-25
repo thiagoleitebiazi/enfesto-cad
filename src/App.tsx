@@ -1912,6 +1912,7 @@ export default function App(): React.JSX.Element {
             furos: r.furos,
             piques: r.piques.map((p) => ({ id: proximoId(), posicao: p.posicao, indiceAresta: p.indiceAresta })),
             linhaDeFio: fio,
+            linhasInternas: r.linhasInternas,
           },
           proximoId(),
         );
@@ -1919,7 +1920,7 @@ export default function App(): React.JSX.Element {
         aplicarMudanca(novasPecas);
         setSelecionadoId(molde.id);
         // A janela fica aberta: a mesma foto pode ter outros moldes (cada um uma peça).
-        registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Molde da foto: “${molde.nome}”, ${r.furos.length} furo(s), ${r.piques.length} pique(s)`);
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Molde da foto: “${molde.nome}”, ${r.furos.length} furo(s), ${r.piques.length} pique(s), ${r.linhasInternas.length} linha(s) interna(s)`);
         mudarVistaPara(enquadrarRetanguloDoMundo(retanguloEnvolvente(molde.contorno), tamanhoDaTela));
         return null;
       } catch (e) {

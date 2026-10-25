@@ -17,6 +17,7 @@ import {
   redondeza,
   regiaoNoPonto,
   retificar,
+  simplificarLinha,
   tonsDeCinza,
   voltasDaRegiao,
   type ImagemDePixels,
@@ -221,5 +222,76 @@ describe('a digitalização — vários moldes na mesma foto', () => {
     if ('erro' in a || 'erro' in b) throw new Error('não reconheceu');
     expect([medidasDoContorno(a.contorno).largura, medidasDoContorno(a.contorno).altura]).toEqual([100, 150]);
     expect([medidasDoContorno(b.contorno).largura, medidasDoContorno(b.contorno).altura]).toEqual([120, 80]);
+  });
+});
+
+describe('a digitalização — os traços de caneta viram linhas internas (ADR 0121)', () => {
+  /** O traço de caneta de 1 mm por uma linha aberta (em mm): um retângulo por trecho. */
+  const traco = (img: ImagemDePixels, linha: readonly Ponto2D[], mmPorPx: number, margem = 20): void => {
+    for (let i = 1; i < linha.length; i++) {
+      const a = linha[i - 1]!;
+      const b = linha[i]!;
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      const n = pt((-(b.y - a.y) / l) * 0.5, ((b.x - a.x) / l) * 0.5);
+      // Meio milímetro a mais nas pontas, para o V fechar na ponta.
+      const u = pt(((b.x - a.x) / l) * 0.5, ((b.y - a.y) / l) * 0.5);
+      const q = [pt(a.x - u.x + n.x, a.y - u.y + n.y), pt(b.x + u.x + n.x, b.y + u.y + n.y), pt(b.x + u.x - n.x, b.y + u.y - n.y), pt(a.x - u.x - n.x, a.y - u.y - n.y)];
+      pintar(img, q.map((p) => pt((p.x + margem) / mmPorPx, (p.y + margem) / mmPorPx)), 40);
+    }
+  };
+  const perto = (p: Ponto2D, q: Ponto2D, tol: number): boolean => Math.hypot(p.x - q.x, p.y - q.y) <= tol;
+
+  it('a pence (o V) e a marca do bolso viram linhas; o fio não entra; o tracinho curto fica de fora', () => {
+    const img = fotoDeCima(0.5);
+    traco(img, [pt(20, 100), pt(30, 130), pt(40, 100)], 0.5);
+    traco(img, [pt(60, 60), pt(90, 60)], 0.5);
+    traco(img, [pt(65, 100), pt(73, 100)], 0.5);
+    const r = reconhecerMolde(img, pt(60, 300), opcoes(0.5));
+    if ('erro' in r) throw new Error(r.erro);
+    expect(r.fio).not.toBeNull();
+    expect(r.linhasInternas).toHaveLength(2);
+    // As coordenadas da imagem levam a margem de 20 mm.
+    const pence = r.linhasInternas.find((l) => l.length === 3)!;
+    expect(pence).toBeDefined();
+    const pontas = [pence[0]!, pence[2]!];
+    expect(pontas.some((p) => perto(p, pt(40, 120), 1.5)) && pontas.some((p) => perto(p, pt(60, 120), 1.5))).toBe(true);
+    expect(perto(pence[1]!, pt(50, 150), 2)).toBe(true);
+    const bolso = r.linhasInternas.find((l) => l.length === 2)!;
+    // O afinamento come meio pixel em cada ponta (0,25 mm a 0,5 mm/px).
+    expect(Math.abs(Math.hypot(bolso[1]!.x - bolso[0]!.x, bolso[1]!.y - bolso[0]!.y) - 30)).toBeLessThan(1);
+    expect(Math.abs(bolso[0]!.y - 80)).toBeLessThan(1);
+    // No desenho do programa (o x da imagem vira o y do mundo), as linhas vão junto.
+    const noDesenho = paraODesenho(r, pt(0, 0));
+    expect(noDesenho.linhasInternas).toHaveLength(2);
+    expect(Math.abs(noDesenho.linhasInternas.find((l) => l.length === 2)![0]!.x - (80 - 20))).toBeLessThan(1);
+  });
+
+  it('a foto só com o fio: nenhuma linha interna; com a opção desligada, nenhuma também', () => {
+    const r = reconhecerMolde(fotoDeCima(0.5), pt(60, 300), opcoes(0.5));
+    if ('erro' in r) throw new Error(r.erro);
+    expect(r.linhasInternas).toEqual([]);
+    const img = fotoDeCima(0.5);
+    traco(img, [pt(60, 60), pt(90, 60)], 0.5);
+    const semLinhas = reconhecerMolde(img, pt(60, 300), { ...opcoes(0.5), procurarLinhas: false });
+    if ('erro' in semLinhas) throw new Error(semLinhas.erro);
+    expect(semLinhas.linhasInternas).toEqual([]);
+  });
+});
+
+describe('a digitalização — a linha simplificada (ADR 0121)', () => {
+  it('o vaivém pequeno onde dois riscos se cruzam (a ponta da pence) não vira ponto a mais', () => {
+    // Da boca até o bico, um passo de 4 mm para trás e para o lado, e de volta à outra ponta da boca.
+    const linha = [pt(104, 892), pt(120, 887), pt(137, 882), pt(133, 880), pt(120, 876), pt(105, 872)];
+    expect(simplificarLinha(linha, 1)).toEqual([pt(104, 892), pt(137, 882), pt(105, 872)]);
+  });
+
+  it('o trecho curto do meio (o vaivém do tamanho do traço) vira o ponto mais saliente; sem o limite, fica', () => {
+    // O ponto (134; 879,5) está a uns 1,5 mm da reta entre o bico e a ponta: a tolerância de 1 mm não o tira.
+    const linha = [pt(104, 892), pt(137, 882), pt(134, 879.5), pt(105, 872)];
+    expect(simplificarLinha(linha, 1)).toHaveLength(4);
+    expect(simplificarLinha(linha, 1, 5)).toEqual([pt(104, 892), pt(137, 882), pt(105, 872)]);
+    // O trecho de 12 mm não é curto: a linha em L fica com o canto.
+    const emL = [pt(0, 0), pt(30, 0), pt(30, 12), pt(30, 40)];
+    expect(simplificarLinha(emL, 1, 5)).toEqual([pt(0, 0), pt(30, 0), pt(30, 40)]);
   });
 });
