@@ -36,6 +36,8 @@ function propsBase(): Props {
     onAlternarIma: vi.fn(),
     unidadeDaRegua: 'cm',
     onDefinirUnidadeDaRegua: vi.fn(),
+    canetasDoPlotter: 1,
+    onDefinirCanetasDoPlotter: vi.fn(),
     onAbrirAtalhos: vi.fn(),
     onAbrirSobre: vi.fn(),
     mostrarListaDePecas: true,

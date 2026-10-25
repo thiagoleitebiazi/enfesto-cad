@@ -34,7 +34,19 @@ import {
   type Operacao,
   type PontoDeMedida,
 } from '../domain/fichaTecnica';
-import { calcularPreCusto, centavos, ROTULO_DO_GRUPO_DA_LINHA, simularMeta, totaisPorGrupo, type MetaDeCusto, type PreCusto } from '../domain/preCusto';
+import {
+  calcularPreCusto,
+  centavos,
+  consumoDosTecidos,
+  preCustoPorTamanho,
+  ROTULO_DO_GRUPO_DA_LINHA,
+  simularMeta,
+  totaisPorGrupo,
+  variacaoDoTecido,
+  type CustoDoTamanho,
+  type MetaDeCusto,
+  type PreCusto,
+} from '../domain/preCusto';
 import { numeroComVirgula } from '../core/numeros';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { FolhaDoDesenho } from './FolhaDoDesenho';
@@ -73,7 +85,8 @@ export function PainelDaFichaTecnica(props: {
   readonly parteInicial?: ParteDaFicha;
   readonly responsavelSugerido: string;
   readonly onGuardar: (ficha: FichaTecnica) => void;
-  readonly onExportarPdf: (ficha: FichaTecnica, preCusto: PreCusto) => void;
+  /** O PDF da ficha, com o pré-custo e o custo de cada tamanho (vazio sem graduação). */
+  readonly onExportarPdf: (ficha: FichaTecnica, preCusto: PreCusto, porTamanho: readonly CustoDoTamanho[]) => void;
   readonly onAbrirMateriais: () => void;
   /** As imagens do projeto (as estampas do desenho técnico). */
   readonly imagens?: readonly ImagemDoModelo[];
@@ -141,7 +154,7 @@ export function PainelDaFichaTecnica(props: {
           </span>
           <span className="nota-do-formulario">{guardadaEm ? `Guardada às ${guardadaEm}` : 'Guardada no projeto a cada mudança'}</span>
           <span className="acoes-da-fila">
-            <button type="button" onClick={() => props.onExportarPdf(ficha, preCusto)}>
+            <button type="button" onClick={() => props.onExportarPdf(ficha, preCusto, preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas))}>
               Exportar PDF
             </button>
           </span>
@@ -191,6 +204,7 @@ export function PainelDaFichaTecnica(props: {
           <PartePreCusto
             ficha={ficha}
             preCusto={preCusto}
+            porTamanho={preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas)}
             editavel={editavel}
             onPadroes={(padroes) => editar((f) => definirPadroesDeCustoDaFicha(f, padroes, props.agoraIso()))}
             onAbrirMateriais={props.onAbrirMateriais}
@@ -734,6 +748,8 @@ function ParteInstrucoes(props: { readonly instrucoes: InstrucoesDaFicha; readon
 function PartePreCusto(props: {
   readonly ficha: FichaTecnica;
   readonly preCusto: PreCusto;
+  /** O custo de cada tamanho (vazio sem graduação). */
+  readonly porTamanho: readonly CustoDoTamanho[];
   readonly editavel: boolean;
   readonly onPadroes: (padroes: PadroesDeCusto | null) => void;
   readonly onAbrirMateriais: () => void;
@@ -838,6 +854,44 @@ function PartePreCusto(props: {
           </div>
         )}
       </dl>
+
+      {props.porTamanho.length > 0 && (
+        <>
+          <table className="tabela-de-relatorio tabela-da-ficha tabela-por-tamanho">
+            <caption>Por tamanho — o tecido acompanha a área das peças de cada tamanho (pela graduação); aviamentos, embalagem e mão de obra são os mesmos</caption>
+            <thead>
+              <tr>
+                <th scope="col">Tamanho</th>
+                <th scope="col" className="coluna-numerica">
+                  Área das peças
+                </th>
+                <th scope="col" className="coluna-numerica">
+                  Tecido
+                </th>
+                <th scope="col" className="coluna-numerica">
+                  Custo total
+                </th>
+                <th scope="col" className="coluna-numerica">
+                  Preço sugerido
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {props.porTamanho.map((t) => (
+                <tr key={t.tamanho}>
+                  <th scope="row">{t.tamanho}</th>
+                  <td className="coluna-numerica">{numeroComVirgula(t.areaM2, 3)} m²</td>
+                  <td className="coluna-numerica">
+                    {consumoDosTecidos(t.preCusto)} <small className={t.fatorDoTecido >= 1 ? 'mais-tecido' : 'menos-tecido'}>({variacaoDoTecido(t.fatorDoTecido)})</small>
+                  </td>
+                  <td className="coluna-numerica">{reais(t.preCusto.custoTotal)}</td>
+                  <td className="coluna-numerica">{reais(t.preCusto.precoSugerido)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h4>Padrões de custo</h4>
       <div className="acoes-em-linha">

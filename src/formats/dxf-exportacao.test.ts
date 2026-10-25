@@ -158,3 +158,18 @@ describe('corteDoPique — o pique atravessa a linha de corte', () => {
     }
   });
 });
+
+describe('gerarDxf — os grupos do encaixe (ADR 0115)', () => {
+  it('a divisa entre os trechos na camada GRUPOS, atravessando a mesa, e o nome de cada trecho', () => {
+    const entretela = { ...frente(), id: 'e', grupoDoEncaixe: 'Entretela' };
+    const caixa = entretela.contorno.reduce((m, p) => Math.max(m, p.y), 0);
+    const outra = { ...frente(), id: 'o', contorno: frente().contorno.map((p) => ponto(p.x, p.y + caixa + 100)) };
+    const dxf = gerarDxf([entretela, outra], { larguraDaMesaMm: 1500 });
+    const linhas = dxf.split('\r\n');
+    const camadasDosObjetos = linhas.filter((_, i) => linhas[i - 1] === '8');
+    expect(camadasDosObjetos.filter((c) => c === 'GRUPOS')).toHaveLength(3);
+    expect(dxf).toContain('\r\nEntretela\r\n');
+    expect(dxf).toContain('\r\nSem grupo\r\n');
+    expect(CAMADAS_DO_DXF.grupos.nome).toBe('GRUPOS');
+  });
+});

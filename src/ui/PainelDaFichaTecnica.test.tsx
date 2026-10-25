@@ -4,6 +4,9 @@ import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto, type Biblioteca
 import { novaFichaTecnica, type FichaTecnica } from '../domain/fichaTecnica';
 import { adicionarElemento, DESENHO_VAZIO, tracosDaBase } from '../domain/desenhoTecnico';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './PainelDaFichaTecnica';
+import { criarMolde, type Molde } from '../domain/molde';
+import { ponto } from '../core/geometria';
+import { definirRegra, iniciarGraduacao, regraPorPasso } from '../domain/graduacao';
 
 afterEach(() => cleanup());
 
@@ -15,7 +18,7 @@ function biblioteca(): BibliotecaDeMateriais {
   return salvarPadroesDeCusto(b, { custoDoMinuto: 0.5, indiretosPercentual: 0, impostosPercentual: 0, comissaoPercentual: 0, margemPercentual: 50 });
 }
 
-function abrir(opcoes: { readonly ficha?: FichaTecnica; readonly parte?: ParteDaFicha; readonly encaixe?: boolean } = {}) {
+function abrir(opcoes: { readonly ficha?: FichaTecnica; readonly parte?: ParteDaFicha; readonly encaixe?: boolean; readonly pecas?: readonly Molde[] } = {}) {
   const onGuardar = vi.fn();
   const onExportarPdf = vi.fn();
   let n = 0;
@@ -23,7 +26,7 @@ function abrir(opcoes: { readonly ficha?: FichaTecnica; readonly parte?: ParteDa
     <PainelDaFichaTecnica
       ficha={opcoes.ficha ?? { ...novaFichaTecnica({ nome: 'Camiseta', codigo: 'ENF-1', pecas: [] }, AGORA), tamanhos: ['P', 'M'] }}
       parteInicial={opcoes.parte ?? 'descricao'}
-      pecas={[]}
+      pecas={opcoes.pecas ?? []}
       encaixe={opcoes.encaixe ? { comprimentoMm: 1500, roupasContadas: 2, larguraDoTecidoMm: 1600 } : null}
       biblioteca={biblioteca()}
       responsavelSugerido="Ana"
@@ -166,6 +169,8 @@ describe('PainelDaFichaTecnica', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
     expect(onExportarPdf).toHaveBeenCalledTimes(1);
     expect(onExportarPdf.mock.calls[0]![1]).toMatchObject({ completo: false });
+    // Sem peça graduada, nenhum custo por tamanho.
+    expect(onExportarPdf.mock.calls[0]![2]).toEqual([]);
   });
 });
 
@@ -196,5 +201,28 @@ describe('PainelDaFichaTecnica — o desenho técnico na ficha (ADR 0107)', () =
     fireEvent.change(screen.getByLabelText('Coleção'), { target: { value: 'Inverno' } });
     fireEvent.click(screen.getByRole('button', { name: 'Abrir o desenho técnico' }));
     expect(onAbrirDesenho.mock.calls[0]![0]).toMatchObject({ colecao: 'Inverno' });
+  });
+});
+
+describe('PainelDaFichaTecnica — o custo por tamanho (ADR 0115)', () => {
+  it('com a peça graduada, o pré-custo mostra cada tamanho: a área, o tecido a mais ou a menos, o custo e o preço', () => {
+    const contorno = [ponto(0, 0), ponto(0, 200), ponto(300, 200), ponto(300, 0)];
+    let g = iniciarGraduacao(contorno, ['P', 'M'], 0);
+    for (const i of [1, 2]) g = definirRegra(g, contorno, i, regraPorPasso(g, ponto(0, 20)));
+    const peca = { ...criarMolde({ nome: 'Frente', referencia: '', tamanho: 'P', contorno, linhaDeFio: { inicio: ponto(50, 100), fim: ponto(250, 100) } }, 'f'), graduacao: g };
+    const ficha: FichaTecnica = {
+      ...novaFichaTecnica({ nome: 'Camiseta', codigo: 'ENF-1', pecas: [] }, AGORA),
+      tamanhos: ['P', 'M'],
+      materiais: [{ id: 'i1', materialId: 'malha', descricao: 'Malha PV', aplicacao: 'Corpo', unidade: 'm', consumo: { tipo: 'informado', quantidade: 1 } }],
+    };
+    const { onExportarPdf } = abrir({ ficha, parte: 'precusto', pecas: [peca] });
+    const tabela = screen.getByRole('table', { name: /Por tamanho/ });
+    const linhasDaTabela = within(tabela).getAllByRole('row').slice(1).map((l) => l.textContent);
+    // P: 300 × 200 = 0,060 m²; M: 300 × 220 = 0,066 m² — a média 0,063: P −4,8%, M +4,8%.
+    expect(linhasDaTabela[0]).toMatch(/^P0,060 m²0,952 m \(−4,8%\)R\$ 19,05/);
+    expect(linhasDaTabela[1]).toMatch(/^M0,066 m²1,048 m \(\+4,8%\)R\$ 20,95/);
+    // O PDF leva a mesma tabela.
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
+    expect((onExportarPdf.mock.calls[0]![2] as ReadonlyArray<{ tamanho: string }>).map((t) => t.tamanho)).toEqual(['P', 'M']);
   });
 });

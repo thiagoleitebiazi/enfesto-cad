@@ -3889,6 +3889,69 @@ input[type='radio'] {
   font-size: 13px;
 }
 
+/* O custo por tamanho (ADR 0115): o tecido a mais em laranja, a menos em azul. */
+.tabela-por-tamanho .mais-tecido {
+  color: var(--grupo-4);
+  font-weight: 600;
+}
+
+.tabela-por-tamanho .menos-tecido {
+  color: var(--grupo-1);
+  font-weight: 600;
+}
+
+/* A importação da planilha de materiais (ADR 0115). */
+.importacao-de-materiais {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--grupo-2);
+  border-radius: var(--raio-md);
+  background: #f0faf8;
+}
+
+.importacao-de-materiais label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.importacao-de-materiais .botao-de-arquivo {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-sm);
+  background: var(--cinza-0);
+  cursor: pointer;
+}
+
+.importacao-de-materiais .botao-de-arquivo input {
+  display: none;
+}
+
+.previa-da-importacao {
+  padding: 8px 10px;
+  border-left: 5px solid var(--cinza-400);
+  border-radius: var(--raio-sm);
+  background: var(--cinza-50);
+}
+
+.previa-da-importacao.previa-boa {
+  border-left-color: var(--grupo-6);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.previa-da-importacao ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--erro-texto);
+}
+
 /* O provador 3D (ADR 0111): o manequim num fundo de estúdio à esquerda; os controles em abas à direita. */
 .sobreposicao-painel:has(.painel-do-provador) {
   width: min(1280px, 97vw);

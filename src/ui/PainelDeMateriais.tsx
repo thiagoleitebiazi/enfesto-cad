@@ -4,6 +4,7 @@ import { lerMedida } from './medidas';
 import type { MalhaDoCadastro } from '../domain/cadastroDeProducao';
 import {
   csvDosMateriais,
+  lerMateriaisDaPlanilha,
   precoEscrito,
   procurarMateriais,
   removerMaterial,
@@ -19,6 +20,7 @@ import {
   type UnidadeDoMaterial,
 } from '../domain/materiais';
 import { numeroComVirgula } from '../core/numeros';
+import { lerCsv } from '../core/csv';
 import { centavos, csvDosCustosDosModelos, type CustoDoModelo } from '../domain/preCusto';
 import { ROTULO_DA_SITUACAO_DA_FICHA } from '../domain/fichaTecnica';
 
@@ -111,6 +113,8 @@ export function PainelDeMateriais(props: {
   const [formulario, setFormulario] = useState<FormularioDoMaterial | null>(null);
   const [mensagem, setMensagem] = useState<string | null>(null);
   const [padroes, setPadroes] = useState(() => textosDosPadroes(biblioteca.padroesDeCusto));
+  /** A importação de uma planilha: o texto colado (ou lido do arquivo); `null`: fechada. */
+  const [importando, setImportando] = useState<string | null>(null);
 
   const lista = procurarMateriais(biblioteca.materiais, busca).filter((m) => categoria === 'todas' || m.categoria === categoria);
   const malhasNovas = props.malhasDoCadastro.filter((k) => !biblioteca.materiais.some((m) => m.malhaId === k.id)).length;
@@ -252,8 +256,23 @@ export function PainelDeMateriais(props: {
                 >
                   Exportar CSV
                 </button>
+                <button type="button" disabled={props.somenteLeitura} onClick={() => setImportando(importando === null ? '' : null)}>
+                  {importando === null ? 'Importar planilha…' : 'Fechar a importação'}
+                </button>
               </span>
             </div>
+            {importando !== null && (
+              <ImportacaoDaPlanilha
+                texto={importando}
+                onTexto={setImportando}
+                biblioteca={biblioteca}
+                agoraIso={props.agoraIso}
+                onImportar={async () => {
+                  const r = lerMateriaisDaPlanilha(lerCsv(importando), biblioteca, props.novoId, props.agoraIso());
+                  if (await mudar(() => r.biblioteca, `Planilha importada: ${r.novos} material(is) novo(s), ${r.atualizados} atualizado(s)${r.erros.length > 0 ? `; ${r.erros.length} linha(s) ficaram de fora` : ''}.`)) setImportando(null);
+                }}
+              />
+            )}
             {lista.length === 0 ? (
               <p className="nota-do-formulario">
                 {biblioteca.materiais.length === 0
@@ -523,4 +542,65 @@ function padroesDosTextos(t: TextosDosPadroes): PadroesDeCusto | string {
   if (Number.isNaN(custoDoMinuto) || percentuais.some((v) => Number.isNaN(v))) return 'Os padrões de custo precisam ser números (com vírgula ou ponto).';
   const [indiretosPercentual, impostosPercentual, comissaoPercentual, margemPercentual] = percentuais as [number, number, number, number];
   return { custoDoMinuto, indiretosPercentual, impostosPercentual, comissaoPercentual, margemPercentual };
+}
+
+/**
+ * A importação de uma planilha (ADR 0115): o texto colado (o Excel cola separado por tabulação) ou um arquivo CSV (o que
+ * a própria biblioteca exporta). Antes de gravar, diz quantos materiais entram, quantos mudam e quais linhas ficam de
+ * fora.
+ */
+function ImportacaoDaPlanilha(props: {
+  readonly texto: string;
+  readonly onTexto: (t: string) => void;
+  readonly biblioteca: BibliotecaDeMateriais;
+  readonly agoraIso: () => string;
+  readonly onImportar: () => void;
+}): React.JSX.Element {
+  let n = 0;
+  const previa = props.texto.trim() === '' ? null : lerMateriaisDaPlanilha(lerCsv(props.texto), props.biblioteca, () => `previa-${++n}`, props.agoraIso());
+  return (
+    <section className="importacao-de-materiais" aria-label="Importar planilha">
+      <label>
+        Cole as linhas da planilha, com a primeira linha dos nomes das colunas (Código, Descrição, Categoria, Unidade, Preço, Fornecedor, Cor, Composição, Largura, Gramatura, Observações — só a descrição é
+        obrigatória)
+        <textarea rows={6} value={props.texto} onChange={(e) => props.onTexto(e.target.value)} placeholder={'Código\tDescrição\tCategoria\tUnidade\tPreço\nB12\tBotão 12 mm\tAviamento\tun\t0,35'} />
+      </label>
+      <p className="acoes-da-fila">
+        <label className="botao-de-arquivo">
+          Ou escolher um arquivo CSV…
+          <input
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            aria-label="Arquivo CSV de materiais"
+            onChange={(e) => {
+              const arquivo = e.target.files?.[0];
+              e.target.value = '';
+              if (arquivo) void arquivo.text().then(props.onTexto);
+            }}
+          />
+        </label>
+      </p>
+      {previa && (
+        <div className={`previa-da-importacao ${previa.novos + previa.atualizados > 0 ? 'previa-boa' : 'previa-vazia'}`} role="status">
+          <strong>
+            {previa.novos} material(is) novo(s), {previa.atualizados} atualizado(s)
+            {previa.precosMudados > 0 && ` — ${previa.precosMudados} com preço novo (o antigo vai para o histórico)`}
+          </strong>
+          {previa.erros.length > 0 && (
+            <ul>
+              {previa.erros.slice(0, 12).map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+              {previa.erros.length > 12 && <li>… e mais {previa.erros.length - 12} linha(s).</li>}
+            </ul>
+          )}
+        </div>
+      )}
+      <p className="acoes-da-fila">
+        <button type="button" className="botao-primario" disabled={!previa || previa.novos + previa.atualizados === 0} onClick={props.onImportar}>
+          Importar
+        </button>
+      </p>
+    </section>
+  );
 }

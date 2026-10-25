@@ -174,3 +174,19 @@ describe('PainelDeMateriais — os custos dos modelos (ADR 0106)', () => {
     confirmar.mockRestore();
   });
 });
+
+describe('PainelDeMateriais — importar uma planilha (ADR 0115)', () => {
+  it('colar as linhas: a prévia diz o que entra e o que fica de fora; importar guarda', async () => {
+    render(<Tela inicial={BOTAO} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Importar planilha…' }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Cole as linhas da planilha/ }), {
+      target: { value: 'Código\tDescrição\tCategoria\tUnidade\tPreço\nBOT-12\tBotão 12 mm\tAviamento\tun\t0,40\nZIP-20\tZíper 20 cm\tAviamento\tun\t1,10\nX\tCoisa\tFerragem\tun\t1' },
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('1 material(is) novo(s), 1 atualizado(s) — 1 com preço novo (o antigo vai para o histórico)');
+    expect(screen.getByText(/Linha 4 \(Coisa\): a categoria “Ferragem”/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
+    await waitFor(() => expect(screen.getByText(/Planilha importada: 1 material\(is\) novo\(s\), 1 atualizado\(s\); 1 linha\(s\) ficaram de fora\./)).toBeInTheDocument());
+    expect(linhas().map((l) => l.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('Botão 12 mm'), expect.stringContaining('Zíper 20 cm')]));
+    expect(screen.getByText('R$ 0,40/un')).toBeInTheDocument();
+  });
+});

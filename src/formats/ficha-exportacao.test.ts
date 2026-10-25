@@ -59,6 +59,20 @@ describe('a ficha técnica em PDF — o conteúdo', () => {
     expect(c.tabelas).toEqual([]);
     expect(c.custo).toEqual([]);
     expect(c.instrucoes).toEqual([]);
+    expect(c.custoPorTamanho).toBeNull();
+  });
+
+  it('com o custo por tamanho (ADR 0115): a tabela de cada tamanho, com o hífen no lugar do sinal de menos', () => {
+    const { ficha, preCusto } = exemplo();
+    const c = conteudoDaFichaEmPdf(ficha, preCusto, AGORA, [
+      { tamanho: 'P', areaM2: 0.06, fatorDoTecido: 0.9524, preCusto },
+      { tamanho: 'M', areaM2: 0.066, fatorDoTecido: 1.0476, preCusto },
+    ]);
+    expect(c.custoPorTamanho?.titulo).toBe('Custo por tamanho');
+    expect(c.custoPorTamanho?.linhas).toEqual([
+      ['P', '0,060 m²', '— (-4,8%)', 'R$ 3,38', 'R$ 5,64'],
+      ['M', '0,066 m²', '— (+4,8%)', 'R$ 3,38', 'R$ 5,64'],
+    ]);
   });
 });
 
@@ -72,6 +86,20 @@ describe('a ficha técnica em PDF — o arquivo', () => {
     // O texto do PDF (sem compressão) vem em hexadecimal: decodificado, as palavras aparecem.
     const decodificado = [...texto.matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
     for (const palavra of ['FICHA', 'Tabela de medidas', 'Sequ', 'Hist', 'Moldes', 'Pre']) expect(decodificado).toContain(palavra);
+    expect(decodificado).not.toContain('Custo por tamanho');
+  });
+
+  it('com o custo por tamanho, o PDF ganha a tabela depois do pré-custo', async () => {
+    const { ficha, preCusto } = exemplo();
+    const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, [], AGORA, [], [
+      { tamanho: 'P', areaM2: 0.06, fatorDoTecido: 0.9524, preCusto },
+      { tamanho: 'M', areaM2: 0.066, fatorDoTecido: 1.0476, preCusto },
+    ]);
+    const texto = Buffer.from(await blob.arrayBuffer()).toString('latin1');
+    const decodificado = [...texto.matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
+    expect(decodificado.indexOf('Custo por tamanho')).toBeGreaterThan(decodificado.indexOf('sugerido (markup'));
+    expect(decodificado.indexOf('sugerido (markup')).toBeGreaterThan(0);
+    expect(decodificado).toContain('(-4,8%)');
   });
 });
 

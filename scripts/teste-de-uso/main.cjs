@@ -156,6 +156,9 @@ async function principal() {
   const caixa = (c) => ({ minX: Math.min(...c.map((p) => p.x)), maxX: Math.max(...c.map((p) => p.x)), minY: Math.min(...c.map((p) => p.y)), maxY: Math.max(...c.map((p) => p.y)) });
 
   await js(`(() => { window.__errosDoTeste = []; window.addEventListener('error', (e) => window.__errosDoTeste.push(String(e.message))); window.addEventListener('unhandledrejection', (e) => window.__errosDoTeste.push(String(e.reason))); return 1; })()`);
+  // Os avisos do console (os do React, por exemplo: a chave repetida numa lista, a mudança num componente que já saiu):
+  // não quebram a página, mas costumam esconder um defeito. Ficam no registro, e o fim do teste confere que não houve.
+  await js(`(() => { window.__avisosDoConsole = []; for (const nivel of ['error', 'warn']) { const original = console[nivel].bind(console); console[nivel] = (...args) => { window.__avisosDoConsole.push(nivel + ': ' + args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ').slice(0, 400)); original(...args); }; } return 1; })()`);
   log(`sistema: ${NO_MAC ? 'macOS' : process.platform} ${os.release()} (${process.arch}), Electron ${process.versions.electron}`);
   await foto('01-aberto.png');
   conferir('o programa abre, com a mesa e a barra de ferramentas', (await js(`!!document.querySelector('.app-shell') && !!document.querySelector('.area-de-desenho-container canvas')`)) === true);
@@ -420,6 +423,25 @@ async function principal() {
   );
   await foto('16-grupos-na-mesa.png');
 
+  // 6b. O plotter de duas canetas (ADR 0115): Opções > "Plotter de duas canetas"; o PLT com a linha de corte na caneta 1,
+  // o risco na 2, e o nome de cada grupo do encaixe no começo do seu trecho.
+  await clicarEm(`Array.from(document.querySelectorAll('.botao-de-menu')).find(b => b.textContent.trim() === 'Opções')`);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).find(b => b.textContent.includes('duas canetas'))`);
+  await espera(300);
+  await aba('Início');
+  await botao('Exportar PLT');
+  await espera(1500);
+  const pltsComGrupos = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.plt'));
+  const pltComGrupos = pltsComGrupos[0] ? fs.readFileSync(path.join(SAIDA, pltsComGrupos[0]), 'latin1') : '';
+  const cortesNaCaneta1 = pltComGrupos.split(';SP1;').length - 1;
+  conferir(
+    'o PLT de duas canetas: o corte na 1, o risco na 2, e o nome dos dois grupos',
+    pltComGrupos.includes(';SP2;') && cortesNaCaneta1 >= 3 && pltComGrupos.includes('LBEntretela\x03') && pltComGrupos.includes('LBSem grupo\x03'),
+    `${cortesNaCaneta1} troca(s) para a 1 / ${pltComGrupos.split(';SP2;').length - 1} para a 2`,
+  );
+  await aba('Encaixe');
+  await espera(300);
+
   // 7. A biblioteca de materiais e aviamentos (ADR 0104): Modelo > Materiais e aviamentos, um material novo pelo
   // formulário, guardado na lista e no arquivo da pasta de dados.
   const digitar = (rotulo, valor) =>
@@ -431,7 +453,8 @@ async function principal() {
   await botao('Materiais e aviamentos');
   await espera(800);
   conferir('abre a biblioteca de materiais', (await janela()) === 'Materiais e aviamentos', await janela());
-  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Novo material')`);
+  const botaoNaJanelaDeMateriais = (texto) => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === ${JSON.stringify(texto)})`);
+  await botaoNaJanelaDeMateriais('Novo material');
   await digitar('Descrição *', 'Botão de pressão 12 mm');
   await digitar('Código', 'BOT-12');
   await digitar('Preço por un (R$)', '0,35');
@@ -447,6 +470,39 @@ async function principal() {
     `${naListaDeMateriais} / ${JSON.stringify(bibliotecaGravada.materiais.map((m) => [m.codigo, m.precoPorUnidade]))}`,
   );
   await foto('18-materiais.png');
+
+  // 7b. A planilha de materiais (ADR 0115): o colado do Excel (separado por tabulação) — o botão já cadastrado ganha a
+  // cor (o mesmo preço), a linha entra como nova, e a de unidade desconhecida fica de fora, dita na prévia.
+  const planilha = [
+    ['Código', 'Descrição', 'Categoria', 'Unidade', 'Preço', 'Cor'],
+    ['BOT-12', 'Botão de pressão 12 mm', 'Aviamento', 'un', '0,35', 'Preto'],
+    ['LIN-120', 'Linha de costura 120', 'Aviamento', 'un', 'R$ 12,90', 'Branco'],
+    ['ELA-30', 'Elástico 30 mm', 'Aviamento', 'rolo', '5', ''],
+  ]
+    .map((l) => l.join('\t'))
+    .join('\n');
+  await botaoNaJanelaDeMateriais('Importar planilha…');
+  await js(
+    `(() => { const c = document.querySelector('[role=dialog] .importacao-de-materiais textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(c, ${JSON.stringify(planilha)}); c.dispatchEvent(new Event('input', { bubbles: true })); })()`,
+  );
+  await espera(300);
+  const previaDaPlanilha = await js(`((document.querySelector('[role=dialog] .previa-da-importacao') || {}).innerText || '')`);
+  await foto('18b-planilha-de-materiais.png');
+  await clicarEm(`document.querySelector('[role=dialog] .importacao-de-materiais .botao-primario')`);
+  await espera(800);
+  const depoisDaPlanilha = JSON.parse(fs.readFileSync(path.join(DADOS, 'biblioteca-de-materiais.json'), 'utf8'));
+  const botaoDaPlanilha = depoisDaPlanilha.materiais.find((m) => m.codigo === 'BOT-12');
+  conferir(
+    'a planilha colada: 1 novo, 1 atualizado (o botão ganha a cor, o preço fica), a linha de unidade "rolo" dita e de fora',
+    previaDaPlanilha.includes('1 material(is) novo(s), 1 atualizado(s)') &&
+      !previaDaPlanilha.includes('preço novo') &&
+      previaDaPlanilha.includes('“rolo”') &&
+      depoisDaPlanilha.materiais.length === 2 &&
+      botaoDaPlanilha.cor === 'Preto' &&
+      botaoDaPlanilha.precoPorUnidade === 0.35 &&
+      depoisDaPlanilha.materiais.some((m) => m.codigo === 'LIN-120' && m.precoPorUnidade === 12.9),
+    `${previaDaPlanilha.replace(/\s+/g, ' ').slice(0, 160)} / ${JSON.stringify(depoisDaPlanilha.materiais.map((m) => [m.codigo, m.precoPorUnidade, m.cor ?? '']))}`,
+  );
   await fecharJanela();
   await espera(300);
 
@@ -1050,6 +1106,9 @@ async function principal() {
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
+  const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));
+  for (const a of avisosDoConsole) log('      console ' + a);
+  conferir('sem aviso no console', avisosDoConsole.length === 0, `${avisosDoConsole.length} aviso(s)`);
   log(`falhas: ${falhas}`);
 }
 

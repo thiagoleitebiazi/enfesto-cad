@@ -11,6 +11,10 @@ import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/pi
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import { registroDaPeca } from './pdf-registro';
 import { margensDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { blocosNaMesa, divisasEntreOsBlocos, nomeDoBloco } from '../domain/gruposDoEncaixe';
+
+/** A cor da divisa e do nome dos grupos do encaixe (a mesma da tela). */
+const COR_DOS_GRUPOS = '#c2185b';
 import { retanguloEnvolvente, type Contorno, type Ponto2D } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
 
@@ -349,6 +353,7 @@ export async function gerarPdfDeEncaixe(
 
   const larguraTotal = enfesto.larguraUtilMm;
   const alturaTotal = comprimentoDoEncaixeAImprimirMm(pecas, enfesto);
+  const blocos = blocosNaMesa(pecas);
   const colunas = Math.max(1, Math.ceil(alturaTotal / larguraImprimivel));
   const linhas = Math.max(1, Math.ceil(larguraTotal / alturaImprimivel));
   const totalDePaginas = colunas * linhas;
@@ -374,6 +379,24 @@ export async function gerarPdfDeEncaixe(
         const cai =
           caixa.maxY >= origem.y && caixa.minY <= origem.y + larguraImprimivel && caixa.maxX >= origem.x && caixa.minX <= origem.x + alturaImprimivel;
         if (cai) desenharPeca(doc, peca, origem);
+      }
+
+      // Os grupos do encaixe (ADR 0103): a divisa tracejada atravessando a mesa e o nome no começo de cada trecho.
+      if (blocos.length > 0) {
+        doc.save();
+        doc.lineWidth(mmParaPontos(0.4)).strokeColor(COR_DOS_GRUPOS).dash(mmParaPontos(4), { space: mmParaPontos(2.5) });
+        for (const divisa of divisasEntreOsBlocos(blocos)) {
+          const de = naFolha({ x: 0, y: divisa }, origem);
+          const ate = naFolha({ x: larguraTotal, y: divisa }, origem);
+          doc.moveTo(de.x, de.y).lineTo(ate.x, ate.y).stroke();
+        }
+        doc.undash();
+        doc.fillColor(COR_DOS_GRUPOS).fontSize(mmParaPontos(4));
+        for (const bloco of blocos) {
+          const onde = naFolha({ x: 2, y: bloco.inicioMm }, origem);
+          doc.text(nomeDoBloco(bloco), onde.x + mmParaPontos(1), onde.y, { lineBreak: false });
+        }
+        doc.restore();
       }
 
       doc.restore();

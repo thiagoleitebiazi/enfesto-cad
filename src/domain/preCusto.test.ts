@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto, type BibliotecaDeMateriais, type Material } from './materiais';
 import { aprovarFicha, definirPadroesDeCustoDaFicha, enviarParaAprovacao, mudarFicha, novaFichaTecnica, type EncaixeParaConsumo, type FichaTecnica } from './fichaTecnica';
-import { calcularPreCusto, csvDosCustosDosModelos, custosDosModelos, simularMeta, totaisPorGrupo, type PreCusto } from './preCusto';
+import { calcularPreCusto, csvDosCustosDosModelos, custosDosModelos, preCustoPorTamanho, simularMeta, totaisPorGrupo, type PreCusto } from './preCusto';
+import { definirRegra, iniciarGraduacao, regraPorPasso } from './graduacao';
 import { criarProjeto } from './projeto';
 import { ponto } from '../core/geometria';
 import { criarMolde } from './molde';
@@ -174,5 +175,39 @@ describe('o custo de todos os modelos', () => {
     expect(custos[0]!.diferencaPercentual).toBeCloseTo(12.475, 3);
     const linhas = csvDosCustosDosModelos(custos).trim().split('\r\n');
     expect(linhas[1]!.split(';')).toEqual(['Camisa polo', 'ENF-9', 'ENF-9', '1', '22,50', 'sim', '37,49', '20,00', '12,5']);
+  });
+});
+
+describe('o custo por tamanho (ADR 0115)', () => {
+  /** Uma peça de 300 × 200 mm graduada em P, M e G (base M): o lado de 200 cresce 20 mm por tamanho. */
+  function pecaGraduada() {
+    const contorno = [ponto(0, 0), ponto(0, 200), ponto(300, 200), ponto(300, 0)];
+    let g = iniciarGraduacao(contorno, ['P', 'M', 'G'], 1);
+    for (const i of [1, 2]) g = definirRegra(g, contorno, i, regraPorPasso(g, ponto(0, 20)));
+    return { ...criarMolde({ nome: 'Frente', referencia: '', tamanho: 'M', contorno, linhaDeFio: { inicio: ponto(50, 100), fim: ponto(250, 100) } }, 'f'), graduacao: g };
+  }
+
+  it('a área de cada tamanho pela graduação; o tecido acompanha a área (P −10%, G +10%); aviamentos, embalagem e mão de obra iguais', () => {
+    const peca = pecaGraduada();
+    const f = mudarFicha(ficha(), { tamanhos: ['P', 'M', 'G'] }, AGORA);
+    const porTamanho = preCustoPorTamanho(f, biblioteca(), ENCAIXE, [peca]);
+    expect(porTamanho.map((t) => [t.tamanho, +t.areaM2.toFixed(4), +t.fatorDoTecido.toFixed(4)])).toEqual([
+      ['P', 0.054, 0.9],
+      ['M', 0.06, 1],
+      ['G', 0.066, 1.1],
+    ]);
+    const medio = calcularPreCusto(f, biblioteca(), ENCAIXE);
+    // A malha (R$ 16,00 na média) vira 14,40 e 17,60; o resto (1,45 de aviamentos e saco, 3,00 de mão de obra) igual.
+    const malha = (t: (typeof porTamanho)[number]) => t.preCusto.linhas.find((l) => l.itemId === 'i1')!.valor!;
+    expect(porTamanho.map(malha).map((v) => +v.toFixed(2))).toEqual([14.4, 16, 17.6]);
+    expect(porTamanho[1]!.preCusto.custoTotal).toBeCloseTo(medio.custoTotal, 6);
+    expect(porTamanho[2]!.preCusto.custoTotal).toBeCloseTo((17.6 + 1.45 + 3) * 1.1, 6);
+    expect(porTamanho[0]!.preCusto.linhas.find((l) => l.itemId === 'i2')!.valor).toBeCloseTo(0.9, 6);
+  });
+
+  it('sem graduação (as áreas iguais) ou com um tamanho só: nada', () => {
+    const semGraduacao = { ...pecaGraduada(), graduacao: undefined };
+    expect(preCustoPorTamanho(mudarFicha(ficha(), { tamanhos: ['P', 'M'] }, AGORA), biblioteca(), ENCAIXE, [semGraduacao as never])).toEqual([]);
+    expect(preCustoPorTamanho(mudarFicha(ficha(), { tamanhos: ['M'] }, AGORA), biblioteca(), ENCAIXE, [pecaGraduada()])).toEqual([]);
   });
 });

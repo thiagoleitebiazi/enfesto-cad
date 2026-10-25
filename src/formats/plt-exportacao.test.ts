@@ -65,3 +65,26 @@ describe('gerarPlt — o risco para o plotter (HPGL)', () => {
     expect(textoParaPlotter('Calça — Ação ✓')).toBe('Calca - Acao ?');
   });
 });
+
+describe('gerarPlt — as canetas e os grupos do encaixe (ADR 0115)', () => {
+  it('com uma caneta (o padrão), nada vai para a 2; com duas, a linha de corte vai na 1 e o resto na 2', () => {
+    expect(comandos(gerarPlt([peca()]))).not.toContain('SP2');
+    const c = comandos(gerarPlt([peca({ margemDeCosturaMm: 10 })], { canetas: 2 }));
+    // A linha de corte (com a costura de 10 mm, fora do contorno) e logo depois a troca para a 2.
+    const corte = c.findIndex((x) => x.startsWith('PU'));
+    expect(c[corte + 2]).toBe('SP2');
+    expect(c.filter((x) => x === 'SP1')).toHaveLength(1);
+    expect(c.filter((x) => x === 'SP2')).toHaveLength(1);
+  });
+
+  it('a divisa entre os trechos dos grupos atravessa a mesa, e cada trecho leva o nome', () => {
+    const entretela = { ...peca(), id: 'e', grupoDoEncaixe: 'Entretela' };
+    const outra = { ...criarMolde({ nome: 'Frente', referencia: '', tamanho: 'M', contorno: [ponto(10, 400), ponto(210, 400), ponto(210, 700), ponto(10, 700)], linhaDeFio: { inicio: ponto(110, 420), fim: ponto(110, 680) } }, 'o') };
+    const c = comandos(gerarPlt([entretela, outra], { larguraDaMesaMm: 1500, comprimentoDaMesaMm: 3000 }));
+    // A divisa no meio de 320 e 400 mm (360 mm), da borda (y = 1500) à outra (y = 0) no papel.
+    expect(c).toContain('PU14400,60000');
+    expect(c).toContain('PD14400,0');
+    expect(c).toContain(`LBEntretela${ETX}`);
+    expect(c).toContain(`LBSem grupo${ETX}`);
+  });
+});

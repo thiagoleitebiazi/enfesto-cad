@@ -10,7 +10,7 @@ import { numeroComVirgula } from '../core/numeros';
 import { retanguloEnvolvente } from '../core/geometria';
 import { linhaDeCorteDaPeca, type Molde } from '../domain/molde';
 import { ROTULO_DA_ACAO_DA_FICHA, ROTULO_DA_SITUACAO_DA_FICHA, medidaComTolerancia, tempoTotalDasOperacoes, type FichaTecnica } from '../domain/fichaTecnica';
-import { centavos, ROTULO_DO_GRUPO_DA_LINHA, totaisPorGrupo, type PreCusto } from '../domain/preCusto';
+import { centavos, consumoDosTecidos, ROTULO_DO_GRUPO_DA_LINHA, totaisPorGrupo, variacaoDoTecido, type CustoDoTamanho, type PreCusto } from '../domain/preCusto';
 import { ALTURA_DA_FOLHA, caminhoDoTraco, elementosDaVista, LARGURA_DA_FOLHA, ROTULO_DA_VISTA, TRACEJADO_DO_ESTILO, type DesenhoTecnico, type VistaDoDesenho } from '../domain/desenhoTecnico';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { vistasComDesenho } from './desenho-exportacao';
@@ -44,12 +44,14 @@ export interface ConteudoDaFichaEmPdf {
   readonly instrucoes: ReadonlyArray<readonly [string, string]>;
   readonly custo: ReadonlyArray<readonly [string, string]>;
   readonly faltando: readonly string[];
+  /** O custo de cada tamanho (ADR 0115), depois do pré-custo; `null` sem graduação. */
+  readonly custoPorTamanho: TabelaDoPdf | null;
 }
 
 const reais = (v: number | null): string => (v === null ? '—' : `R$ ${numeroComVirgula(centavos(v), 2)}`);
 const data = (iso: string): string => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
 
-export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | null, agoraIso: string): ConteudoDaFichaEmPdf {
+export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | null, agoraIso: string, porTamanho: readonly CustoDoTamanho[] = []): ConteudoDaFichaEmPdf {
   const tabelas: TabelaDoPdf[] = [];
   if (ficha.medidas.length > 0) {
     tabelas.push({
@@ -121,6 +123,24 @@ export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | n
     instrucoes,
     custo,
     faltando: preCusto && !preCusto.completo ? preCusto.faltando : [],
+    custoPorTamanho:
+      porTamanho.length === 0
+        ? null
+        : {
+            titulo: 'Custo por tamanho',
+            colunas: ['Tamanho', 'Área das peças', 'Tecido', 'Custo total', 'Preço sugerido'],
+            pesos: [1, 1.4, 2.2, 1.4, 1.4],
+            numericas: [1, 2, 3, 4],
+            // A fonte do PDF não tem o sinal de menos (−): o hífen no lugar.
+            linhas: porTamanho.map((t) => [
+              t.tamanho,
+              `${numeroComVirgula(t.areaM2, 3)} m²`,
+              `${consumoDosTecidos(t.preCusto)} (${variacaoDoTecido(t.fatorDoTecido).replace('−', '-')})`,
+              reais(t.preCusto.custoTotal),
+              reais(t.preCusto.precoSugerido),
+            ]),
+            rodape: 'O tecido acompanha a área das peças de cada tamanho; aviamentos, embalagem e mão de obra são os mesmos.',
+          },
   };
 }
 
@@ -168,8 +188,9 @@ export async function gerarPdfDaFichaTecnica(
   pecas: readonly Molde[],
   agoraIso: string,
   imagens: readonly ImagemDoModelo[] = [],
+  porTamanho: readonly CustoDoTamanho[] = [],
 ): Promise<Blob> {
-  const c = conteudoDaFichaEmPdf(ficha, preCusto, agoraIso);
+  const c = conteudoDaFichaEmPdf(ficha, preCusto, agoraIso, porTamanho);
   const doc = new PDFDocument({ size: 'A4', margin: MARGEM, compress: false });
   const largura = doc.page.width - MARGEM * 2;
   const garantir = (altura: number): void => {
@@ -238,7 +259,7 @@ export async function gerarPdfDaFichaTecnica(
     doc.fillColor('black');
   }
 
-  for (const t of c.tabelas) {
+  const tabela = (t: TabelaDoPdf): void => {
     secao(t.titulo);
     const total = t.pesos.reduce((s, p) => s + p, 0);
     const larguras = t.pesos.map((p) => (p / total) * largura);
@@ -261,7 +282,8 @@ export async function gerarPdfDaFichaTecnica(
       doc.moveDown(0.2);
       doc.fontSize(9).font('Helvetica-Bold').text(t.rodape, MARGEM, doc.y, { width: largura, align: 'right' });
     }
-  }
+  };
+  for (const t of c.tabelas) tabela(t);
 
   if (c.instrucoes.length > 0) {
     secao('Instruções');
@@ -289,6 +311,7 @@ export async function gerarPdfDaFichaTecnica(
       doc.fillColor('black');
     }
   }
+  if (c.custoPorTamanho) tabela(c.custoPorTamanho);
 
   return new Promise((resolve, reject) => {
     const stream = doc.pipe(blobStream());

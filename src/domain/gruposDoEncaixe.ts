@@ -87,5 +87,18 @@ export function blocosQueSeMisturam(blocos: readonly BlocoDoGrupo[]): Array<read
   return pares;
 }
 
+/**
+ * As divisas entre os trechos dos grupos (mm no comprimento): no meio entre o fim de um bloco e o começo do seguinte,
+ * só quando eles não se misturam (misturados, a validação avisa). Servem à tela, ao PDF, ao DXF e ao PLT.
+ */
+export function divisasEntreOsBlocos(blocos: readonly BlocoDoGrupo[]): number[] {
+  const divisas: number[] = [];
+  blocos.forEach((bloco, i) => {
+    const seguinte = blocos[i + 1];
+    if (seguinte && seguinte.inicioMm >= bloco.fimMm) divisas.push((bloco.fimMm + seguinte.inicioMm) / 2);
+  });
+  return divisas;
+}
+
 /** O nome do bloco para a tela. */
 export const nomeDoBloco = (bloco: Pick<BlocoDoGrupo, 'grupo'>): string => (bloco.grupo === '' ? 'Sem grupo' : bloco.grupo);

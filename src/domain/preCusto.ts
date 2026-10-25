@@ -1,4 +1,7 @@
 import type { BibliotecaDeMateriais, CategoriaDoMaterial, PadroesDeCusto } from './materiais';
+import type { Molde } from './molde';
+import { area } from '../core/geometria';
+import { contornoDoTamanho } from './graduacao';
 import { problemaDosPadroes, ROTULO_DA_UNIDADE } from './materiais';
 import { consumoDoItem, consumoEscrito, lerFichaTecnica, tempoTotalDasOperacoes, ultimaAprovacao, type EncaixeParaConsumo, type FichaTecnica } from './fichaTecnica';
 import { encaixeParaConsumo } from './fichaTecnica';
@@ -148,6 +151,100 @@ export function calcularPreCusto(ficha: FichaTecnica, biblioteca: BibliotecaDeMa
     faltando,
     completo: faltando.length === 0 && problemaDosPadroes(padroes) === null,
     custoAprovado,
+  };
+}
+
+// ---- O custo por tamanho (ADR 0115)
+
+export interface CustoDoTamanho {
+  readonly tamanho: string;
+  /** A área das peças de uma roupa nesse tamanho (m², pela graduação). */
+  readonly areaM2: number;
+  /** O tecido desse tamanho sobre o médio (1,05: 5% a mais). */
+  readonly fatorDoTecido: number;
+  readonly preCusto: PreCusto;
+}
+
+/** A área das peças de uma roupa em cada tamanho (m²): a de cada peça no tamanho (a da base, sem graduação) vezes as cópias. */
+export function areasPorTamanho(pecas: readonly Molde[], tamanhos: readonly string[]): Map<string, number> {
+  const areas = new Map<string, number>();
+  for (const t of tamanhos) {
+    let soma = 0;
+    for (const p of pecas) {
+      const g = p.graduacao;
+      const i = g ? g.tamanhos.indexOf(t) : -1;
+      const contorno = g && i >= 0 ? contornoDoTamanho(g, p.contorno, i) : p.contorno;
+      soma += Math.abs(area(contorno)) * Math.max(1, p.quantidade);
+    }
+    areas.set(t, soma / 1e6);
+  }
+  return areas;
+}
+
+/**
+ * O pré-custo de cada tamanho da ficha: o tecido acompanha a área das peças do tamanho (pela graduação) sobre a média
+ * dos tamanhos — o consumo do encaixe e o informado são de uma roupa média —; os aviamentos, a embalagem e a mão de
+ * obra são os mesmos. Sem tamanhos, ou com as áreas todas iguais (sem graduação), nada.
+ */
+export function preCustoPorTamanho(ficha: FichaTecnica, biblioteca: BibliotecaDeMateriais, encaixe: EncaixeParaConsumo | null, pecas: readonly Molde[]): CustoDoTamanho[] {
+  if (ficha.tamanhos.length < 2 || pecas.length === 0) return [];
+  const areas = areasPorTamanho(pecas, ficha.tamanhos);
+  const valores = [...areas.values()];
+  const media = valores.reduce((s, a) => s + a, 0) / valores.length;
+  if (!(media > 0) || valores.every((a) => Math.abs(a - media) < media * 1e-6)) return [];
+  const ehTecido = (item: FichaTecnica['materiais'][number]): boolean => biblioteca.materiais.find((m) => m.id === item.materialId)?.categoria === 'tecido';
+  return ficha.tamanhos.map((tamanho) => {
+    const areaM2 = areas.get(tamanho)!;
+    const fator = areaM2 / media;
+    // O tecido do tamanho: o informado vezes o fator; o do encaixe, com o encaixe esticado pelo fator. O resto, igual.
+    const daFicha: FichaTecnica = {
+      ...ficha,
+      materiais: ficha.materiais.map((item) =>
+        ehTecido(item) && item.consumo.tipo === 'informado' ? { ...item, consumo: { ...item.consumo, quantidade: item.consumo.quantidade * fator } } : item,
+      ),
+    };
+    const encaixeDoTecido = encaixe ? { ...encaixe, comprimentoMm: encaixe.comprimentoMm * fator } : null;
+    // O encaixe esticado só vale para o tecido: os outros itens pelo encaixe (raros: um elástico em metros) ficam com o
+    // encaixe de verdade.
+    const comTecido = calcularPreCusto(daFicha, biblioteca, encaixeDoTecido);
+    const semTecido = calcularPreCusto(daFicha, biblioteca, encaixe);
+    const linhas = comTecido.linhas.map((l, i) => (l.grupo === 'tecido' ? l : semTecido.linhas[i]!));
+    const preCusto = recalcularTotais(comTecido, linhas);
+    return { tamanho, areaM2, fatorDoTecido: fator, preCusto };
+  });
+}
+
+/** O consumo dos tecidos de um pré-custo, para mostrar ("1,048 m"; com dois tecidos, "1,048 m + 0,300 m"); sem tecido, "—". */
+export const consumoDosTecidos = (p: PreCusto): string =>
+  p.linhas
+    .filter((l) => l.grupo === 'tecido')
+    .map((l) => l.consumo)
+    .join(' + ') || '—';
+
+/** O tecido de um tamanho sobre o médio, para mostrar: "+4,8%", "−4,8%". */
+export const variacaoDoTecido = (fator: number): string => `${fator >= 1 ? '+' : '−'}${numeroComVirgula(Math.abs((fator - 1) * 100), 1)}%`;
+
+/** Os totais do pré-custo com outras linhas (os mesmos padrões). */
+function recalcularTotais(base: PreCusto, linhas: readonly LinhaDoPreCusto[]): PreCusto {
+  const padroes = base.padroes;
+  const materiais = linhas.filter((l) => l.grupo !== 'mao-de-obra').reduce((s, l) => s + (l.valor ?? 0), 0);
+  const custoDireto = materiais + base.maoDeObra;
+  const indiretos = custoDireto * (padroes.indiretosPercentual / 100);
+  const custoTotal = custoDireto + indiretos;
+  const sobreOPreco = padroes.impostosPercentual + padroes.comissaoPercentual + padroes.margemPercentual;
+  const precoSugerido = sobreOPreco < 100 && custoTotal > 0 ? custoTotal / (1 - sobreOPreco / 100) : null;
+  return {
+    ...base,
+    linhas,
+    materiais,
+    custoDireto,
+    indiretos,
+    custoTotal,
+    precoSugerido,
+    markup: precoSugerido !== null && custoTotal > 0 ? precoSugerido / custoTotal : null,
+    impostos: precoSugerido === null ? null : precoSugerido * (padroes.impostosPercentual / 100),
+    comissao: precoSugerido === null ? null : precoSugerido * (padroes.comissaoPercentual / 100),
+    margem: precoSugerido === null ? null : precoSugerido * (padroes.margemPercentual / 100),
   };
 }
 

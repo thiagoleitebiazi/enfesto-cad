@@ -446,3 +446,18 @@ describe('a folha mostra a peça como a tela — sem espelhar', () => {
     expect(conta(encaixe)).toBe(folhas(encaixe));
   });
 });
+
+describe('gerarPdfDeEncaixe — os grupos do encaixe (ADR 0115)', () => {
+  it('a divisa tracejada entre os trechos, na cor da tela, e o nome de cada trecho', async () => {
+    const entretela = { ...pecaRetangular('Gola', 40, 40), grupoDoEncaixe: 'Entretela' };
+    const corpo = { ...pecaRetangular('Frente', 40, 40), id: 'Frente', contorno: pecaRetangular('Frente', 40, 40).contorno.map((p) => ponto(p.x, p.y + 100)) };
+    const enfesto = enfestoBase({ comprimentoMm: 200 });
+    const texto = await paraTexto(await gerarPdfDeEncaixe([entretela, corpo], enfesto, { formato: 'A4', orientacao: 'paisagem', margemMm: 10 }));
+    // A cor #c2185b no traço, e um tracejado.
+    expect(texto).toMatch(/0\.76078\d* 0\.09411\d* 0\.35686\d* SCN/);
+    expect(texto).toMatch(/\[11\.33858\d* 7\.08661\d*\] 0 d/);
+    const decodificado = decodificarTextoDoPdf(texto);
+    expect(decodificado).toContain('Entretela');
+    expect(decodificado).toContain('Sem grupo');
+  });
+});

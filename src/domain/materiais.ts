@@ -255,6 +255,158 @@ export function csvDosMateriais(materiais: readonly Material[]): string {
   return textoCsv([cabecalho, ...linhas]);
 }
 
+// ---- A importação de uma planilha
+
+const semAcento = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+/** Um número de planilha: "12,50", "R$ 1.234,56", "1234.5"; `null`: em branco; `NaN`: não é número. */
+function numeroDaPlanilha(texto: string): number | null {
+  let t = texto.replace(/R\$/gi, '').replace(/\s/g, '');
+  if (t === '') return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  const v = Number(t);
+  return Number.isFinite(v) ? v : Number.NaN;
+}
+
+const COLUNAS_DA_PLANILHA: ReadonlyArray<readonly [keyof Omit<Material, 'id' | 'atualizadoEmIso' | 'precosAnteriores' | 'malhaId'>, RegExp]> = [
+  ['codigo', /^(codigo|cod|ref|referencia)$/],
+  ['descricao', /^(descricao|nome|material|produto|item)$/],
+  ['categoria', /^(categoria|tipo|grupo)$/],
+  ['unidade', /^(unidade|un|und|medida)$/],
+  ['precoPorUnidade', /^(preco|valor|custo)/],
+  ['fornecedor', /^fornecedor/],
+  ['cor', /^cor$/],
+  ['composicao', /^composicao/],
+  ['larguraMm', /^largura/],
+  ['gramaturaGm2', /^gramatura/],
+  ['observacoes', /^(observacoes|observacao|obs)/],
+];
+
+function categoriaDaPlanilha(texto: string): CategoriaDoMaterial | null {
+  const t = semAcento(texto);
+  if (t === '') return 'outro';
+  if (/^tecido|^malha/.test(t)) return 'tecido';
+  if (/^aviamento|^botao|^ziper|^linha|^etiqueta|^elastico/.test(t)) return 'aviamento';
+  if (/^embalage|^saco|^caixa|^cabide/.test(t)) return 'embalagem';
+  if (/^outro/.test(t)) return 'outro';
+  return null;
+}
+
+function unidadeDaPlanilha(texto: string): UnidadeDoMaterial | null {
+  const t = semAcento(texto).replace(/\.$/, '');
+  if (/^(m|metro|metros|mt|mts)$/.test(t)) return 'm';
+  if (/^(cm|centimetro|centimetros)$/.test(t)) return 'cm';
+  if (/^(kg|quilo|quilos|kilo|quilograma)$/.test(t)) return 'kg';
+  if (/^(g|grama|gramas|gr)$/.test(t)) return 'g';
+  if (/^(un|und|unid|unidade|unidades|pc|pca|peca|pecas|pç)$/.test(t)) return 'un';
+  if (/^(par|pares)$/.test(t)) return 'par';
+  if (/^(m2|m²|metro quadrado|metros quadrados)$/.test(t)) return 'm2';
+  return null;
+}
+
+export interface MateriaisDaPlanilha {
+  readonly biblioteca: BibliotecaDeMateriais;
+  readonly novos: number;
+  readonly atualizados: number;
+  /** Dos atualizados, os que mudaram de preço (o antigo foi para os preços anteriores). */
+  readonly precosMudados: number;
+  /** As linhas que ficaram de fora, com o motivo. */
+  readonly erros: readonly string[];
+}
+
+/**
+ * Os materiais de uma planilha (o CSV que a própria biblioteca exporta, ou o colado do Excel): a primeira linha diz as
+ * colunas (pelo nome: Código, Descrição, Categoria, Unidade, Preço, Fornecedor, Cor, Composição, Largura, Gramatura,
+ * Observações; só a descrição é obrigatória). O material com o mesmo código (ou, sem código, com a mesma descrição)
+ * é atualizado — o preço antigo vai para os preços anteriores —; o resto entra como novo. A linha com problema fica de
+ * fora e é dita.
+ */
+export function lerMateriaisDaPlanilha(linhas: readonly (readonly string[])[], biblioteca: BibliotecaDeMateriais, novoId: () => string, agoraIso: string): MateriaisDaPlanilha {
+  const erros: string[] = [];
+  if (linhas.length < 2) return { biblioteca, novos: 0, atualizados: 0, precosMudados: 0, erros: ['A planilha precisa da primeira linha com os nomes das colunas e, embaixo, um material por linha.'] };
+  const cabecalho = linhas[0]!.map(semAcento);
+  const coluna = new Map<string, number>();
+  cabecalho.forEach((nome, i) => {
+    const achada = COLUNAS_DA_PLANILHA.find(([campo, padrao]) => padrao.test(nome) && !coluna.has(campo));
+    if (achada) coluna.set(achada[0], i);
+  });
+  if (!coluna.has('descricao')) return { biblioteca, novos: 0, atualizados: 0, precosMudados: 0, erros: ['A planilha não tem a coluna da descrição (Descrição, Nome ou Material).'] };
+  let atual = biblioteca;
+  let novos = 0;
+  let atualizados = 0;
+  let precosMudados = 0;
+  linhas.slice(1).forEach((celulas, k) => {
+    const n = k + 2;
+    const valor = (campo: string): string => {
+      const i = coluna.get(campo);
+      return i === undefined ? '' : (celulas[i] ?? '').trim();
+    };
+    const descricao = valor('descricao');
+    if (descricao === '') {
+      erros.push(`Linha ${n}: sem descrição.`);
+      return;
+    }
+    const codigo = valor('codigo');
+    const existente = atual.materiais.find((m) =>
+      codigo !== '' ? m.codigo.trim().toLowerCase() === codigo.toLowerCase() : m.codigo.trim() === '' && semAcento(m.descricao) === semAcento(descricao),
+    );
+    // A coluna que a planilha não tem não mexe no que o material já tinha.
+    const tem = (campo: string): boolean => coluna.has(campo);
+    const categoria = !tem('categoria') && existente ? existente.categoria : categoriaDaPlanilha(valor('categoria'));
+    if (categoria === null) {
+      erros.push(`Linha ${n} (${descricao}): a categoria “${valor('categoria')}” não é Tecido, Aviamento, Embalagem nem Outro.`);
+      return;
+    }
+    const unidade = !tem('unidade') && existente ? existente.unidade : valor('unidade') === '' ? (categoria === 'tecido' ? 'm' : 'un') : unidadeDaPlanilha(valor('unidade'));
+    if (unidade === null) {
+      erros.push(`Linha ${n} (${descricao}): a unidade “${valor('unidade')}” não é conhecida (m, cm, kg, g, un, par, m²).`);
+      return;
+    }
+    const preco = numeroDaPlanilha(valor('precoPorUnidade'));
+    const largura = numeroDaPlanilha(valor('larguraMm'));
+    const gramatura = numeroDaPlanilha(valor('gramaturaGm2'));
+    for (const [nome, v] of [
+      ['o preço', preco],
+      ['a largura', largura],
+      ['a gramatura', gramatura],
+    ] as const) {
+      if (v !== null && Number.isNaN(v)) {
+        erros.push(`Linha ${n} (${descricao}): ${nome} não é um número.`);
+        return;
+      }
+    }
+    const opcional = <K extends keyof Material>(campo: K, v: Material[K] | null | undefined): Partial<Pick<Material, K>> =>
+      v === null || v === undefined || v === '' ? {} : ({ [campo]: v } as Partial<Pick<Material, K>>);
+    const material: Material = {
+      ...(existente ?? {}),
+      id: existente?.id ?? novoId(),
+      codigo,
+      descricao,
+      categoria,
+      unidade,
+      precoPorUnidade: !tem('precoPorUnidade') && existente ? existente.precoPorUnidade : preco,
+      atualizadoEmIso: agoraIso,
+      ...opcional('fornecedor', valor('fornecedor')),
+      ...opcional('cor', valor('cor')),
+      ...opcional('composicao', valor('composicao')),
+      ...opcional('larguraMm', largura),
+      ...opcional('gramaturaGm2', gramatura),
+      ...opcional('observacoes', valor('observacoes')),
+    };
+    try {
+      atual = salvarMaterial(atual, material, agoraIso);
+      if (existente) {
+        atualizados++;
+        if (existente.precoPorUnidade !== material.precoPorUnidade) precosMudados++;
+      }
+      else novos++;
+    } catch (e) {
+      erros.push(`Linha ${n} (${descricao}): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  });
+  return { biblioteca: atual, novos, atualizados, precosMudados, erros };
+}
+
 // ---- A leitura do arquivo
 
 export interface BibliotecaDeMateriaisLida {

@@ -4,6 +4,7 @@ import {
   BIBLIOTECA_VAZIA,
   csvDosMateriais,
   lerBibliotecaDeMateriais,
+  lerMateriaisDaPlanilha,
   materiaisNaOrdem,
   PADROES_DE_CUSTO_INICIAIS,
   precoEscrito,
@@ -16,6 +17,7 @@ import {
   validarMaterial,
   type Material,
 } from './materiais';
+import { lerCsv } from '../core/csv';
 
 const material = (extras: Partial<Material> = {}): Material => ({
   id: 'm1',
@@ -119,5 +121,60 @@ describe('a biblioteca de materiais', () => {
     expect(lerBibliotecaDeMateriais({ versaoDoFormato: 5, materiais: [] }).maisNova).toBe(true);
     // Padrões que não fecham voltam aos iniciais.
     expect(lerBibliotecaDeMateriais({ materiais: [], padroesDeCusto: { margemPercentual: 150 } }).biblioteca.padroesDeCusto).toEqual(PADROES_DE_CUSTO_INICIAIS);
+  });
+});
+
+describe('a importação de uma planilha (ADR 0115)', () => {
+  const AGORA = '2026-10-25T10:00:00.000Z';
+  const base = salvarMaterial(BIBLIOTECA_VAZIA, material(), '2026-10-01T10:00:00.000Z');
+  let n = 0;
+  const novoId = (): string => `p${++n}`;
+
+  it('novos e atualizados (pelo código; o preço antigo vai para o histórico); as linhas com problema ficam de fora', () => {
+    const existente = base.materiais[0]!;
+    const r = lerMateriaisDaPlanilha(
+      lerCsv(
+        [
+          'Código;Descrição;Categoria;Unidade;Preço (R$);Largura (mm)',
+          `${existente.codigo};${existente.descricao};${'Tecido'};metro;R$ 1.234,50;1600`,
+          'B12;Botão 12 mm;Aviamento;peça;0,35;',
+          ';Saco plástico;Embalagem;un;0.10;',
+          'X1;Coisa;Ferragem;un;1;',
+          'X2;Outra;Aviamento;litro;1;',
+          'X3;Mais uma;Aviamento;un;abc;',
+          ';;Aviamento;un;1;',
+        ].join('\n'),
+      ),
+      base,
+      novoId,
+      AGORA,
+    );
+    expect([r.novos, r.atualizados, r.precosMudados]).toEqual([2, 1, 1]);
+    const atualizado = r.biblioteca.materiais.find((m) => m.id === existente.id)!;
+    expect(atualizado).toMatchObject({ precoPorUnidade: 1234.5, unidade: 'm', larguraMm: 1600, precosAnteriores: [{ precoPorUnidade: existente.precoPorUnidade, ateIso: AGORA }] });
+    expect(r.biblioteca.materiais.find((m) => m.codigo === 'B12')).toMatchObject({ categoria: 'aviamento', unidade: 'un', precoPorUnidade: 0.35 });
+    expect(r.erros).toEqual([
+      'Linha 5 (Coisa): a categoria “Ferragem” não é Tecido, Aviamento, Embalagem nem Outro.',
+      'Linha 6 (Outra): a unidade “litro” não é conhecida (m, cm, kg, g, un, par, m²).',
+      'Linha 7 (Mais uma): o preço não é um número.',
+      'Linha 8: sem descrição.',
+    ]);
+  });
+
+  it('a coluna que a planilha não tem não mexe no material (sem a coluna do preço, o preço fica)', () => {
+    const existente = base.materiais[0]!;
+    const r = lerMateriaisDaPlanilha(lerCsv(`Código;Descrição;Fornecedor\n${existente.codigo};${existente.descricao};Outro fornecedor`), base, novoId, AGORA);
+    expect(r.biblioteca.materiais[0]).toMatchObject({ precoPorUnidade: existente.precoPorUnidade, categoria: existente.categoria, unidade: existente.unidade, fornecedor: 'Outro fornecedor' });
+  });
+
+  it('a planilha que a biblioteca exporta volta igual (nada novo, tudo atualizado, nada de fora)', () => {
+    const r = lerMateriaisDaPlanilha(lerCsv(csvDosMateriais(base.materiais)), base, novoId, AGORA);
+    expect([r.novos, r.atualizados, r.precosMudados, r.erros]).toEqual([0, 1, 0, []]);
+    expect(r.biblioteca.materiais[0]).toMatchObject({ ...base.materiais[0], atualizadoEmIso: AGORA });
+  });
+
+  it('sem a coluna da descrição, ou só o cabeçalho: diz o que falta', () => {
+    expect(lerMateriaisDaPlanilha(lerCsv('Código;Preço\nA;1'), base, novoId, AGORA).erros).toEqual(['A planilha não tem a coluna da descrição (Descrição, Nome ou Material).']);
+    expect(lerMateriaisDaPlanilha(lerCsv('Descrição'), base, novoId, AGORA).erros[0]).toMatch(/primeira linha com os nomes das colunas/);
   });
 });

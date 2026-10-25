@@ -50,6 +50,9 @@ interface BarraDeFerramentasProps {
   readonly onAlternarIma: () => void;
   readonly unidadeDaRegua: UnidadeDeRegua;
   readonly onDefinirUnidadeDaRegua: (unidade: UnidadeDeRegua) => void;
+  /** O plotter: uma caneta (tudo na 1) ou duas (a linha de corte na 1, o risco na 2), para o Exportar PLT. */
+  readonly canetasDoPlotter: 1 | 2;
+  readonly onDefinirCanetasDoPlotter: (canetas: 1 | 2) => void;
   readonly onAbrirAtalhos: () => void;
   readonly onAbrirSobre: () => void;
   readonly mostrarListaDePecas: boolean;
@@ -427,6 +430,21 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 rotulo: 'Régua em milímetros',
                 marcado: props.unidadeDaRegua === 'mm',
                 onEscolher: () => props.onDefinirUnidadeDaRegua('mm'),
+              },
+              { tipo: 'separador' },
+              {
+                tipo: 'opcao',
+                rotulo: 'Plotter de uma caneta',
+                marcado: props.canetasDoPlotter === 1,
+                titulo: 'Exportar PLT: tudo com a caneta 1',
+                onEscolher: () => props.onDefinirCanetasDoPlotter(1),
+              },
+              {
+                tipo: 'opcao',
+                rotulo: 'Plotter de duas canetas (corte e risco)',
+                marcado: props.canetasDoPlotter === 2,
+                titulo: 'Exportar PLT: a linha de corte com a caneta 1; a costura, as linhas internas, o fio, os piques e os textos com a 2',
+                onEscolher: () => props.onDefinirCanetasDoPlotter(2),
               },
             ]}
           />

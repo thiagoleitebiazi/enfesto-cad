@@ -45,11 +45,11 @@ inventa.
 | Linhas de costura e acabamento no desenho (pespontos, instruções) | ✅ (estilos costura e pesponto, e textos, ADR 0107) | — |
 | Estampas aplicadas no desenho (posição, escala, rotação) | ✅ (as imagens do projeto, ADR 0107) | — |
 | Ficha técnica ligada ao desenho e aos materiais (muda junto) | ✅ (o desenho mora na ficha e trava com ela; materiais, encaixe e custo, ADR 0105 e 0107) | — |
-| Cadastro de materiais e aviamentos reutilizável entre coleções | ✅ (biblioteca de materiais, ADR 0104) | — |
+| Cadastro de materiais e aviamentos reutilizável entre coleções | ✅ (biblioteca de materiais, ADR 0104; importar de uma planilha colada ou de um CSV, ADR 0115) | — |
 | Tabela de medidas com tolerâncias por tamanho | ✅ (ficha técnica, com a colagem da planilha, ADR 0105) | — |
 | Sequência operacional (operações, máquina, tempo) | ✅ (ficha técnica, ADR 0105) | — |
 | Consumo de tecido estimado pelo desenho | 🟡 (pelo encaixe da mesa na ficha, ADR 0105, e pelo plano de corte — mais preciso que pelo croqui) | L |
-| Pré-custo (tecido + aviamentos + mão de obra + indiretos → custo e preço) e simulador de meta de custo | ✅ (ADR 0106) | — |
+| Pré-custo (tecido + aviamentos + mão de obra + indiretos → custo e preço) e simulador de meta de custo | ✅ (ADR 0106; o custo de cada tamanho pela graduação, na tela e no PDF da ficha, ADR 0115) | — |
 | Atualizar vários produtos do mix de uma vez | ✅ (o preço na biblioteca muda o custo de todos; aba Custos dos modelos, ADR 0106) | — |
 | Exportar a ficha (PDF) | ✅ (ADR 0105) | — |
 
@@ -72,7 +72,7 @@ inventa.
 |---|---|---|
 | Encaixe automático com muitas combinações e relatório | ✅ heurístico (R-3: sem garantia de ótimo) | — |
 | Margens de segurança, restrição do fio, rotação por brilho/estampa, simetria | ✅ | — |
-| Grupos de peças que ficam juntas no encaixe (ex.: as que vão à entretela) | ✅ (um trecho do comprimento por grupo, nos dois métodos e no planejamento, ADR 0103) | — |
+| Grupos de peças que ficam juntas no encaixe (ex.: as que vão à entretela) | ✅ (um trecho do comprimento por grupo, nos dois métodos e no planejamento, ADR 0103; a divisa e o nome dos trechos no PDF, no DXF e no PLT, ADR 0115) | — |
 | Desviar de furos e manchas do tecido | ✅ (defeitos com posição, no plano) | — |
 | Listras e xadrez casados | 🟡 (casamento por um ponto por peça) | L (mais pontos) |
 | Combinação de tamanhos e o melhor tipo de enfesto sugeridos | ✅ (composição dos riscos no plano) | — |
@@ -116,7 +116,7 @@ inventa.
 | Gestão de retalhos (estoque de retalhos) | ✅ (ADR 0098, 0100) | — |
 | Relatórios para compras e histórico para auditoria | ✅ (CSV, ADR 0100) | — |
 | Ligação com máquina de corte, enfestadeira, mesa | ⬜ | H (sem protocolo nem equipamento) |
-| Plotter de papel (risco 1:1) | ✅ (arquivo PLT/HPGL, ADR 0101; PDF 1:1 em folhas; DXF) | H (o plotter físico: não testado num) |
+| Plotter de papel (risco 1:1) | ✅ (arquivo PLT/HPGL, de uma caneta ou de duas — corte e risco —, ADR 0101 e 0115; PDF 1:1 em folhas; DXF) | H (o plotter físico: não testado num) |
 
 ## 8. IA de criação
 

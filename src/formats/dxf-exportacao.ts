@@ -3,6 +3,7 @@ import { ponto, pontoDentroDoContorno, pontoMaisProximoNoContorno, retanguloEnvo
 import type { Molde, Pique } from '../domain/molde';
 import { linhaDeCorteDaPeca } from '../domain/molde';
 import { arestaDeSimetria, ondeEscreverOCodigo } from '../domain/anotacoes';
+import { blocosNaMesa, divisasEntreOsBlocos, nomeDoBloco } from '../domain/gruposDoEncaixe';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
 
 /**
@@ -26,6 +27,8 @@ export const CAMADAS_DO_DXF = {
   simetria: { nome: 'SIMETRIA', cor: 6 },
   marcas: { nome: 'MARCAS', cor: 4 },
   texto: { nome: 'TEXTO', cor: 7 },
+  /** A divisa entre os trechos dos grupos do encaixe e o nome de cada trecho (ADR 0103, 0115). */
+  grupos: { nome: 'GRUPOS', cor: 30 },
 } as const;
 
 type Camada = (typeof CAMADAS_DO_DXF)[keyof typeof CAMADAS_DO_DXF]['nome'];
@@ -183,6 +186,14 @@ export function gerarDxf(pecas: readonly Molde[], opcoes: OpcoesDoDxf = {}): str
     const caixa = retanguloEnvolvente(peca.contorno);
     const centro = ponto((caixa.minX + caixa.maxX) / 2, (caixa.minY + caixa.maxY) / 2);
     corpo.texto(CAMADAS_DO_DXF.texto.nome, `${peca.nome} (${peca.referencia || '—'}) ${peca.tamanho}`.trim(), noArquivo(centro), ALTURA_DO_NOME_MM, 0, 1);
+  }
+
+  // Os grupos do encaixe: a divisa atravessando a mesa e o nome no começo de cada trecho.
+  const blocos = blocosNaMesa(pecas);
+  if (blocos.length > 0) {
+    const largura = opcoes.larguraDaMesaMm ?? altura;
+    for (const divisa of divisasEntreOsBlocos(blocos)) corpo.reta(CAMADAS_DO_DXF.grupos.nome, noArquivo(ponto(0, divisa)), noArquivo(ponto(largura, divisa)));
+    for (const bloco of blocos) corpo.texto(CAMADAS_DO_DXF.grupos.nome, nomeDoBloco(bloco), noArquivo(ponto(-8, bloco.inicioMm)), ALTURA_DO_NOME_MM, 0, 0);
   }
 
   const doArquivo = noArquivoTodos(todos);

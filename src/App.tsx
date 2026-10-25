@@ -179,7 +179,7 @@ import { PainelDeInspiracao, type AcessoAoServicoDeIa, type ParteDaInspiracao } 
 import { lerImagemParaInspiracao, pngDoSvg, reduzirParaInspiracao } from './ui/imagensDaInspiracao';
 import { dataUrlDosPixels, pixelsDaImagem } from './ui/pixelsDaImagem';
 import { paraODesenho, type MoldeReconhecido } from './domain/digitalizacao';
-import { custosDosModelos, type PreCusto } from './domain/preCusto';
+import { custosDosModelos, type CustoDoTamanho, type PreCusto } from './domain/preCusto';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './ui/PainelDaFichaTecnica';
 import { gerarPdfDaFichaTecnica } from './formats/ficha-exportacao';
 import type { FerramentaDeAnotacao } from './ui/BarraDeFerramentas';
@@ -415,6 +415,7 @@ const hojeLocal = (): string => diaDe(new Date(Date.now() - new Date().getTimezo
 
 /** A hora e os ids da ficha técnica (fora do componente: a janela guarda pela mudança da função). */
 const agoraIsoDaFicha = (): string => new Date().toISOString();
+const CHAVE_DAS_CANETAS_DO_PLOTTER = 'enfesto-cad:canetas-do-plotter';
 const novoIdDaFicha = (): string => `ficha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** O Worker da fila de encaixes (ADR 0102): o mesmo do Nesting automático. */
@@ -616,6 +617,22 @@ export default function App(): React.JSX.Element {
   const [mostrarGrade, setMostrarGrade] = useState(false);
   const [imaAtivo, setImaAtivo] = useState(false);
   const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
+  // As canetas do plotter: do computador (é do plotter que está ligado nele), não do projeto.
+  const [canetasDoPlotter, setCanetasDoPlotter] = useState<1 | 2>(() => {
+    try {
+      return window.localStorage.getItem(CHAVE_DAS_CANETAS_DO_PLOTTER) === '2' ? 2 : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const definirCanetasDoPlotter = useCallback((canetas: 1 | 2) => {
+    setCanetasDoPlotter(canetas);
+    try {
+      window.localStorage.setItem(CHAVE_DAS_CANETAS_DO_PLOTTER, String(canetas));
+    } catch {
+      // Sem como guardar: vale até fechar o programa.
+    }
+  }, []);
   const [cursorMundo, setCursorMundo] = useState<Ponto2D | null>(null);
 
   const [passado, setPassado] = useState<Molde[][]>([]);
@@ -1691,14 +1708,14 @@ export default function App(): React.JSX.Element {
     [persistirProjeto],
   );
   const exportarPdfDaFicha = useCallback(
-    async (ficha: FichaTecnica, preCusto: PreCusto) => {
+    async (ficha: FichaTecnica, preCusto: PreCusto, porTamanho: readonly CustoDoTamanho[]) => {
       const api = window.enfestoCad;
       if (!api) {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
         return;
       }
       try {
-        const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, pecas, new Date().toISOString(), imagensDoProjeto(projetoAtual));
+        const blob = await gerarPdfDaFichaTecnica(ficha, preCusto, pecas, new Date().toISOString(), imagensDoProjeto(projetoAtual), porTamanho);
         const nome = `ficha-tecnica-${(ficha.referencia || projetoAtual.codigo).replace(/[^A-Za-z0-9._-]+/g, '-')}.pdf`;
         const caminhoSalvo = await api.salvarArquivo(nome, await blob.arrayBuffer());
         if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Ficha técnica (PDF, versão ${ficha.versao}) salva em ${caminhoSalvo}`);
@@ -3019,13 +3036,13 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}));
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}) }));
       const caminhoSalvo = await api.salvarArquivo('encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter]);
 
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
   // Só é montado com o painel aberto, e a hora é a de quando foi aberto (ou de quando as peças mudaram).
@@ -4507,6 +4524,8 @@ export default function App(): React.JSX.Element {
         onAlternarIma={() => setImaAtivo((v) => !v)}
         unidadeDaRegua={unidadeDaRegua}
         onDefinirUnidadeDaRegua={setUnidadeDaRegua}
+        canetasDoPlotter={canetasDoPlotter}
+        onDefinirCanetasDoPlotter={definirCanetasDoPlotter}
         onAbrirAtalhos={() => setPainelDeAjuda('atalhos')}
         onAbrirSobre={() => setPainelDeAjuda('sobre')}
         mostrarListaDePecas={mostrarListaDePecas}
@@ -4735,7 +4754,7 @@ export default function App(): React.JSX.Element {
           biblioteca={bibliotecaDeMateriais.biblioteca}
           responsavelSugerido={projetoAtual.autor ?? ''}
           onGuardar={guardarFichaTecnica}
-          onExportarPdf={(f, c) => void exportarPdfDaFicha(f, c)}
+          onExportarPdf={(f, c, t) => void exportarPdfDaFicha(f, c, t)}
           onAbrirMateriais={abrirMateriais}
           imagens={imagensDoProjeto(projetoAtual)}
           onAbrirDesenho={(f) => abrirDesenhoTecnico(f)}

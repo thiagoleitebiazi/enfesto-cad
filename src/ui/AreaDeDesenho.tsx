@@ -26,7 +26,7 @@ import {
   type Ponto2D,
 } from '../core/geometria';
 import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
-import { blocosNaMesa, nomeDoBloco } from '../domain/gruposDoEncaixe';
+import { blocosNaMesa, divisasEntreOsBlocos, nomeDoBloco } from '../domain/gruposDoEncaixe';
 import {
   aplicarZoom,
   enquadrarRetanguloDeTela,
@@ -851,17 +851,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.setLineDash([8, 5]);
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
-        blocos.forEach((bloco, i) => {
-          const seguinte = blocos[i + 1];
-          if (seguinte && seguinte.inicioMm >= bloco.fimMm) {
-            const divisa = (bloco.fimMm + seguinte.inicioMm) / 2;
-            const de = mundoParaTela(ponto(0, divisa), transform);
-            const ate = mundoParaTela(ponto(enfesto.larguraUtilMm, divisa), transform);
-            ctx.beginPath();
-            ctx.moveTo(de.x, de.y);
-            ctx.lineTo(ate.x, ate.y);
-            ctx.stroke();
-          }
+        for (const divisa of divisasEntreOsBlocos(blocos)) {
+          const de = mundoParaTela(ponto(0, divisa), transform);
+          const ate = mundoParaTela(ponto(enfesto.larguraUtilMm, divisa), transform);
+          ctx.beginPath();
+          ctx.moveTo(de.x, de.y);
+          ctx.lineTo(ate.x, ate.y);
+          ctx.stroke();
+        }
+        blocos.forEach((bloco) => {
           const nome = nomeDoBloco(bloco);
           const canto = mundoParaTela(ponto(0, bloco.inicioMm), transform);
           desenharRotuloComFundo(ctx, nome, canto.x + ctx.measureText(nome).width / 2 + 4, canto.y - 22, COR_GRUPO_DO_ENCAIXE);

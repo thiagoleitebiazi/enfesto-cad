@@ -15,6 +15,7 @@ import {
   blocosNaMesa,
   blocosQueSeMisturam,
   comGrupoDoEncaixe,
+  divisasEntreOsBlocos,
   grupoDaPeca,
   indiceDoGrupo,
   nomeDoBloco,
@@ -216,5 +217,15 @@ describe('os grupos do encaixe — no planejamento de corte', () => {
     expect(depois.grupo).toBe('Forro');
     expect(depois.inicioMm).toBeCloseTo(antes.inicioMm * 1.05, 1);
     expect(depois.fimMm).toBeCloseTo(antes.fimMm * 1.05, 1);
+  });
+});
+
+describe('as divisas entre os trechos (ADR 0115)', () => {
+  it('no meio entre um bloco e o seguinte; os que se misturam não têm divisa', () => {
+    expect(divisasEntreOsBlocos([
+      { grupo: 'A', inicioMm: 0, fimMm: 200, pecas: 1 },
+      { grupo: '', inicioMm: 250, fimMm: 400, pecas: 2 },
+      { grupo: 'B', inicioMm: 380, fimMm: 500, pecas: 1 },
+    ])).toEqual([225]);
   });
 });
