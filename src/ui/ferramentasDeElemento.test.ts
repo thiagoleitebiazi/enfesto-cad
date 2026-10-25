@@ -6,6 +6,7 @@ import {
   aplicarPontoPorCoordenada,
   cliqueDeElemento,
   dialogoDoElemento,
+  extrairTodasAsRegioes,
   ehModoDeElemento,
   instrucaoDoElemento,
   lerDialogoDoElemento,
@@ -313,5 +314,30 @@ describe('diálogos, prévia e instruções', () => {
     }
     expect(instrucaoDoElemento('manipulacao-rapida', O, comPrimeiro)).toMatch(/tecle Delete/);
     expect(instrucaoDoElemento('copiar-elemento', com({ copiar: { modo: 'trocar' } }), SEM_TRECHO)).toMatch(/^Trocar elemento de peça/);
+  });
+});
+
+describe('extrair todas as regiões (ADR 0128)', () => {
+  it('as quatro regiões viram quatro peças, em fila depois das que estão na mesa, e juntas cobrem a peça', () => {
+    const peca = molde({ linhasInternas: [[ponto(0, 100), ponto(200, 100)], [ponto(100, 0), ponto(100, 300)]] });
+    const outra = molde({ contorno: [ponto(0, 400), ponto(50, 400), ponto(50, 450), ponto(0, 450)] }, 'outra');
+    let n = 0;
+    const resultado = extrairTodasAsRegioes([peca, outra], peca, () => `n${++n}`);
+    expect(resultado.novas.map((p) => p.nome)).toEqual(['Frente (2)', 'Frente (3)', 'Frente (4)', 'Frente (5)']);
+    expect(resultado.novas.map((p) => Math.round(area(p.contorno)))).toEqual([10000, 20000, 10000, 20000]);
+    expect(resultado.pecas).toHaveLength(6);
+    expect(resultado.pecas![0]).toBe(peca);
+    // A primeira depois da outra (até y = 450), a 20 mm; cada uma 20 mm depois da anterior, sem se sobrepor.
+    const ys = resultado.novas.map((p) => [Math.min(...p.contorno.map((q) => q.y)), Math.max(...p.contorno.map((q) => q.y))] as const);
+    expect(ys[0]![0]).toBeCloseTo(470, 6);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]![0]).toBeCloseTo(ys[i - 1]![1] + 20, 6);
+    expect(resultado.recado).toBe('4 moldes extraídos de “Frente” (Frente (2), Frente (3), Frente (4), Frente (5)), postos em fila depois das peças que já estavam na mesa: juntos, cobrem a peça inteira. “Frente” não mudou.');
+  });
+
+  it('sem linhas que dividam, nada muda e o recado diz o que falta', () => {
+    const resultado = extrairTodasAsRegioes([molde()], molde(), () => 'x');
+    expect(resultado.pecas).toBeUndefined();
+    expect(resultado.novas).toEqual([]);
+    expect(resultado.recado).toMatch(/^Nenhuma linha interna divide “Frente” em regiões/);
   });
 });

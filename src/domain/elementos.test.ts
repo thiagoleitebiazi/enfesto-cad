@@ -21,6 +21,7 @@ import {
   pontoPorDistancia,
   pontoPorIntersecao,
   regiaoDaPeca,
+  regioesDaPeca,
   removerElemento,
   segmentoPerto,
 } from './elementos';
@@ -271,5 +272,35 @@ describe('escolher, mover, apagar, dividir e copiar elementos', () => {
     const comAMarca = copiarElemento(molde(), origem, { tipo: 'marca', id: 'm' }, ids());
     expect(comAMarca.marcas).toEqual([{ id: 'novo-1', posicao: ponto(100, 100) }]);
     expect(origem.marcas).toHaveLength(1);
+  });
+});
+
+describe('todas as regiões da peça (ADR 0128)', () => {
+  const areas = (m: Molde): number[] => regioesDaPeca(m).map((r) => Math.round(area(r.regiao)));
+
+  it('uma linha de borda a borda: as duas regiões, de cima para baixo', () => {
+    expect(areas(molde({ linhasInternas: [[ponto(0, 100), ponto(200, 100)]] }))).toEqual([20000, 40000]);
+  });
+
+  it('duas linhas que se cruzam: as quatro regiões, na ordem de leitura', () => {
+    const regioes = regioesDaPeca(molde({ linhasInternas: [[ponto(0, 100), ponto(200, 100)], [ponto(100, 0), ponto(100, 300)]] }));
+    expect(regioes.map((r) => Math.round(area(r.regiao)))).toEqual([10000, 20000, 10000, 20000]);
+    // Juntas, a peça inteira; cada uma com o ponto de dentro que a achou.
+    expect(regioes.reduce((s, r) => s + area(r.regiao), 0)).toBeCloseTo(60000, 6);
+    expect(regioes.every((r) => regiaoDaPeca(molde({ linhasInternas: [[ponto(0, 100), ponto(200, 100)], [ponto(100, 0), ponto(100, 300)]] }), r.dentro) !== null)).toBe(true);
+  });
+
+  it('a faixa estreita entre duas linhas (2 mm) também é achada', () => {
+    expect(areas(molde({ linhasInternas: [[ponto(0, 100), ponto(200, 100)], [ponto(0, 102), ponto(200, 102)]] }))).toEqual([20000, 400, 39600]);
+  });
+
+  it('o laço fechado (um bolso desenhado): a região dele; o resto, com o furo, não é uma região a extrair', () => {
+    const bolso = [ponto(50, 50), ponto(50, 150), ponto(120, 150), ponto(120, 50), ponto(50, 50)];
+    expect(areas(molde({ linhasInternas: [bolso] }))).toEqual([7000]);
+  });
+
+  it('sem linhas que dividam (a linha que não chega à borda), nenhuma', () => {
+    expect(regioesDaPeca(molde())).toEqual([]);
+    expect(regioesDaPeca(molde({ linhasInternas: [[ponto(50, 50), ponto(50, 150)]] }))).toEqual([]);
   });
 });

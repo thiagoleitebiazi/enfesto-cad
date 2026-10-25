@@ -270,6 +270,7 @@ import type { Programa } from './domain/programas';
 import {
   apagarElementoEscolhido,
   aplicarPontoPorCoordenada,
+  extrairTodasAsRegioes,
   cliqueDeElemento,
   dialogoDoElemento,
   ehModoDeElemento,
@@ -1736,6 +1737,22 @@ export default function App(): React.JSX.Element {
     (texto: string, pecasDepois: readonly Molde[] = pecas) => setAviso({ texto, pecas: pecasDepois, selecionadoId }),
     [pecas, selecionadoId],
   );
+
+  /** "Extrair todas" (ADR 0128): as regiões da selecionada viram peças, de uma vez, marcadas e enquadradas. */
+  const extrairTodasAsRegioesDaSelecionada = useCallback(() => {
+    if (!pecaSelecionada) return;
+    const resultado = extrairTodasAsRegioes(pecas, pecaSelecionada, proximoId);
+    if (!resultado.pecas) {
+      avisar(resultado.recado);
+      return;
+    }
+    aplicarMudanca(resultado.pecas);
+    setSelecionadoId(null);
+    setIdsSelecionadosEmLote(new Set(resultado.novas.map((p) => p.id)));
+    const retangulo = retanguloDoDesenho(resultado.pecas, enfesto, imagens);
+    if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela));
+    setAviso({ texto: resultado.recado, pecas: resultado.pecas, selecionadoId: null });
+  }, [pecaSelecionada, pecas, enfesto, imagens, tamanhoDaTela, aplicarMudanca, avisar]);
 
   // ---- Planejamento de corte (aba Encaixe > Planejamento de corte). O cadastro de produção é lido ao abrir.
   const abrirPlanejamento = useCallback(() => {
@@ -4745,6 +4762,7 @@ export default function App(): React.JSX.Element {
         temPontoDeRestauracao={selecionadoId !== null && pontosDeRestauracao.has(selecionadoId)}
         onEntrarModoRetangulo={entrarModoRetangulo}
         onEntrarModoSentidoDoFio={entrarModoSentidoDoFio}
+        onExtrairTodasAsRegioes={extrairTodasAsRegioesDaSelecionada}
         onAbrirCostura={() => setMostrarCostura(true)}
         onRemoverCostura={removerCostura}
         podeRemoverCostura={alvosDeCostura.some((p) => p.margemDeCosturaMm > 0)}

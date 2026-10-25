@@ -24,6 +24,8 @@ const RAIZ = path.resolve(__dirname, '..', '..');
 const SAIDA = path.resolve(process.env.SAIDA_DO_TESTE || path.join(process.cwd(), 'uso'));
 const DXF = path.join(__dirname, 'molde-de-teste.dxf');
 const SAIA_DXF = path.join(__dirname, 'saia-de-teste.dxf');
+/** Uma pala de 30 × 20 cm cortada por duas linhas internas que se cruzam (o "Extrair todas", ADR 0128). */
+const PALA_DXF = path.join(__dirname, 'pala-de-teste.dxf');
 /** O arquivo que a janela de abrir devolve (o DXF de teste; a saia, na etapa do provador 3D). */
 let arquivoParaAbrir = DXF;
 const NO_MAC = process.platform === 'darwin';
@@ -1564,6 +1566,42 @@ async function principal() {
   await clicarEm(`document.querySelector('button[title="Desfazer (Ctrl+Z)"]')`);
   await espera(400);
   conferir('o Desfazer tira as peças da base', (await pecasGravadas()).length === pecasDoModelo.length, '');
+
+  // 17. Extrair todas (ADR 0128): a pala de teste (30 × 20 cm, cortada por duas linhas internas que se cruzam)
+  // importada; com ela selecionada, "Extrair todas" faz de uma vez as quatro peças, uma por região, em fila depois das
+  // que estão na mesa, e juntas elas são a pala inteira; o Desfazer as tira.
+  const areaDe = (c) => Math.abs(c.reduce((s, p, i) => s + p.x * c[(i + 1) % c.length].y - c[(i + 1) % c.length].x * p.y, 0)) / 2;
+  arquivoParaAbrir = PALA_DXF;
+  await aba('Início');
+  await botao('Importar DXF');
+  await espera(2500);
+  const comAPala = await pecasGravadas();
+  const pala = comAPala.find((p) => p.nome.startsWith('pala-de-teste'));
+  conferir('a pala de teste entra, com as duas linhas internas', !!pala && pala.linhasInternas.length === 2 && Math.abs(areaDe(pala.contorno) - 60000) < 1, pala ? `${pala.nome}: ${Math.round(areaDe(pala.contorno))} mm², ${pala.linhasInternas.length} linha(s) interna(s)` : JSON.stringify(comAPala.map((p) => p.nome)));
+  await clicarEm(`Array.from(document.querySelectorAll('.lista-de-pecas li')).find(li => li.textContent.startsWith(${JSON.stringify(pala ? pala.nome : 'pala-de-teste')})).querySelector('button')`);
+  await espera(300);
+  await aba('Produção');
+  await espera(300);
+  await botao('Extrair todas');
+  await espera(1000);
+  const recadoDasRegioes = await js(`((document.querySelector('.faixa-de-instrucao') || {}).textContent || '')`);
+  await foto('46-extrair-todas.png');
+  const comAsPartes = await pecasGravadas();
+  const partes = comAsPartes.filter((p) => pala && p.nome.startsWith(`${pala.nome} (`));
+  const fimDasDeAntes = Math.max(...comAPala.flatMap((p) => p.contorno.map((q) => q.y)));
+  conferir(
+    'Extrair todas: as quatro regiões viram quatro peças, em fila depois das que estavam na mesa, e juntas são a pala inteira',
+    partes.length === 4 &&
+      comAsPartes.length === comAPala.length + 4 &&
+      Math.abs(partes.reduce((s, p) => s + areaDe(p.contorno), 0) - 60000) < 1 &&
+      partes.every((p) => Math.min(...p.contorno.map((q) => q.y)) > fimDasDeAntes) &&
+      recadoDasRegioes.startsWith('4 moldes extraídos de') &&
+      recadoDasRegioes.includes('juntos, cobrem a peça inteira'),
+    `${partes.map((p) => `${p.nome} ${Math.round(areaDe(p.contorno))} mm²`).join(', ')} / ${recadoDasRegioes.slice(0, 120)}`,
+  );
+  await clicarEm(`document.querySelector('button[title="Desfazer (Ctrl+Z)"]')`);
+  await espera(400);
+  conferir('o Desfazer tira as quatro peças de uma vez', (await pecasGravadas()).length === comAPala.length, '');
 
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));

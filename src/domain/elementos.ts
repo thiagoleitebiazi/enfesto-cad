@@ -340,6 +340,71 @@ export function extrairMolde(molde: Molde, dentro: Ponto2D, novoId: () => string
   };
 }
 
+/** Uma região da peça e um ponto de dentro dela (o que a achou, e que o `extrairMolde` usa). */
+export interface RegiaoDaPeca {
+  readonly regiao: Ponto2D[];
+  readonly dentro: Ponto2D;
+}
+
+/** Quantos pontos de cada lado tem a grade sobre a peça, ao procurar as regiões. */
+const PONTOS_DA_GRADE = 48;
+/** O afastamento (mm) da linha interna dos pontos de cada lado dela. */
+const AO_LADO_DA_LINHA_MM = 0.5;
+
+/**
+ * Todas as regiões da peça delimitadas pelo contorno e pelas linhas internas (ADR 0128, "vários moldes com um
+ * clique"), na ordem de leitura (de cima para baixo, da esquerda para a direita). Cada região é achada por um ponto de
+ * dentro dela (`regiaoDaPeca`):
+ * - os pontos de uma grade sobre a peça;
+ * - os pontos de cada lado das linhas internas, ao longo de cada trecho — toda região encosta numa linha, e a região
+ *   estreita, entre duas linhas, também tem os dela.
+ * Vazio quando nenhuma linha divide a peça.
+ */
+export function regioesDaPeca(molde: Molde): RegiaoDaPeca[] {
+  const xs = molde.contorno.map((p) => p.x);
+  const ys = molde.contorno.map((p) => p.y);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const amostras: Ponto2D[] = [];
+  for (const linha of molde.linhasInternas) {
+    for (let i = 1; i < linha.length; i++) {
+      const a = linha[i - 1]!;
+      const b = linha[i]!;
+      const comprimento = distancia(a, b);
+      if (comprimento < MESMO_PONTO_MM) continue;
+      const normal = { x: -(b.y - a.y) / comprimento, y: (b.x - a.x) / comprimento };
+      for (const s of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+        const p = { x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s };
+        for (const lado of [1, -1]) amostras.push({ x: p.x + normal.x * AO_LADO_DA_LINHA_MM * lado, y: p.y + normal.y * AO_LADO_DA_LINHA_MM * lado });
+      }
+    }
+  }
+  for (let i = 0; i < PONTOS_DA_GRADE; i++) {
+    for (let j = 0; j < PONTOS_DA_GRADE; j++) {
+      amostras.push({ x: minX + ((maxX - minX) * (i + 0.5)) / PONTOS_DA_GRADE, y: minY + ((maxY - minY) * (j + 0.5)) / PONTOS_DA_GRADE });
+    }
+  }
+  const achadas: RegiaoDaPeca[] = [];
+  const pertoDeUmaLinha = (p: Ponto2D): boolean =>
+    molde.linhasInternas.some((linha) => linha.some((a, i) => i > 0 && distancia(p, pontoMaisProximoNoSegmento(p, linha[i - 1]!, a)) < AO_LADO_DA_LINHA_MM / 2));
+  for (const p of amostras) {
+    if (!pontoDentroDoContorno(p, molde.contorno) || pontoMaisProximoNoContorno(p, molde.contorno).distancia < AO_LADO_DA_LINHA_MM / 2 || pertoDeUmaLinha(p)) continue;
+    if (achadas.some((r) => pontoDentroDoContorno(p, r.regiao))) continue;
+    const regiao = regiaoDaPeca(molde, p);
+    // O ponto em que nenhuma linha delimita nada (fora de um laço fechado, sem outras linhas): a peça inteira não é uma região a extrair.
+    if (!regiao) continue;
+    // A mesma região, achada de novo por um ponto da borda dela: fica a primeira.
+    if (achadas.some((r) => Math.abs(area(r.regiao) - area(regiao)) < 1e-6 * Math.max(1, area(regiao)) && pontoDentroDoContorno(r.dentro, regiao))) continue;
+    achadas.push({ regiao, dentro: p });
+  }
+  const centro = (r: RegiaoDaPeca): Ponto2D => {
+    const rx = r.regiao.map((q) => q.x);
+    const ry = r.regiao.map((q) => q.y);
+    return { x: (Math.min(...rx) + Math.max(...rx)) / 2, y: (Math.min(...ry) + Math.max(...ry)) / 2 };
+  };
+  // A ordem de leitura na tela (o x do mundo para baixo, o y para a direita), por faixas de 1 cm.
+  return achadas.sort((a, b) => Math.round(centro(a).x / 10) - Math.round(centro(b).x / 10) || centro(a).y - centro(b).y);
+}
+
 /** Um elemento de construção da peça: uma linha interna (pelo número) ou uma marca (pelo id). */
 export type ElementoDaPeca = { readonly tipo: 'linha'; readonly indice: number } | { readonly tipo: 'marca'; readonly id: string };
 

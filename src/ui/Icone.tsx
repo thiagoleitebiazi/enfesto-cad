@@ -89,6 +89,7 @@ export type NomeDoIcone =
   | 'inserir-texto'
   | 'editar-texto'
   | 'extrair-molde'
+  | 'extrair-todas'
   | 'digitalizar'
   | 'sentido-do-fio'
   | 'linha-de-simetria'
@@ -669,6 +670,13 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <path d="M3 3h8v9H3z" strokeDasharray="2.2 1.8" />
       <path d="M9 8h8v9H9z" fill="currentColor" fillOpacity="0.18" />
+    </>
+  ),
+  // A peça tracejada dividida em quatro, e as quatro partes saindo dela.
+  'extrair-todas': (
+    <>
+      <path d="M2.5 2.5h9v9h-9zM7 2.5v9M2.5 7h9" strokeDasharray="2 1.6" />
+      <path d="M12 12h3v3h-3zM15.5 12h3v3h-3zM12 15.5h3v3h-3zM15.5 15.5h3v3h-3z" fill="currentColor" fillOpacity="0.2" />
     </>
   ),
   digitalizar: (

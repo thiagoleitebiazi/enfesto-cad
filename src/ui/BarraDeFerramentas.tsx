@@ -119,6 +119,8 @@ interface BarraDeFerramentasProps {
   readonly temPontoDeRestauracao: boolean;
   readonly onEntrarModoRetangulo: () => void;
   readonly onEntrarModoSentidoDoFio: () => void;
+  /** "Extrair todas" (ADR 0128): uma peça para cada região da selecionada, de uma vez. */
+  readonly onExtrairTodasAsRegioes?: () => void;
   readonly onAbrirCostura: () => void;
   readonly onRemoverCostura: () => void;
   /** Alguma das peças selecionadas tem margem de costura para remover. */
@@ -998,6 +1000,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={props.onEntrarModoSentidoDoFio}
                   />
+                  {props.onExtrairTodasAsRegioes && (
+                    <Ferramenta
+                      tamanho="pequeno"
+                      rotulo="Extrair todas"
+                      icone="extrair-todas"
+                      dica="Extrair todas: cria de uma vez uma peça nova para cada região da peça selecionada delimitada pelas linhas internas (vários moldes com um clique). A peça de origem não muda"
+                      falta={props.temSelecaoUnica ? null : SEM_PECA}
+                      onClick={props.onExtrairTodasAsRegioes}
+                    />
+                  )}
                 </div>
                 <Ferramenta
                   tamanho="grande"

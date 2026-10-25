@@ -18,6 +18,7 @@ import {
   pontoPorDistancia,
   pontoPorIntersecao,
   regiaoDaPeca,
+  regioesDaPeca,
   segmentoPerto,
 } from '../domain/elementos';
 import { adicionarMarca, transladarMolde, type Molde } from '../domain/molde';
@@ -113,6 +114,39 @@ function trocar(pecas: readonly Molde[], id: string, nova: Molde): Molde[] {
 
 function mensagem(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * "Extrair todas" (ADR 0128): uma peça nova para cada região da peça delimitada pelas linhas internas, de uma vez —
+ * em fila, depois das peças que já estão na mesa, na ordem de leitura. A peça de origem não muda.
+ */
+export function extrairTodasAsRegioes(pecas: readonly Molde[], peca: Molde, novoId: () => string): { readonly pecas?: Molde[]; readonly novas: Molde[]; readonly recado: string } {
+  const regioes = regioesDaPeca(peca);
+  if (regioes.length === 0) {
+    return {
+      novas: [],
+      recado: `Nenhuma linha interna divide “${peca.nome}” em regiões. Desenhe as linhas de divisão (de borda a borda, ou fechadas) e use “Extrair todas” de novo.`,
+    };
+  }
+  const todas = [...pecas];
+  const novas: Molde[] = [];
+  let depoisDe = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
+  for (const r of regioes) {
+    const extraida = extrairMolde(peca, r.dentro, novoId, nomeDaParteNova(peca.nome, todas));
+    const caixa = retanguloEnvolvente(extraida.contorno);
+    const noLugar = transladarMolde(extraida, { x: 0, y: depoisDe + AFASTAMENTO_DA_EXTRAIDA_MM - caixa.minY }, extraida.id);
+    depoisDe = retanguloEnvolvente(noLugar.contorno).maxY;
+    todas.push(noLugar);
+    novas.push(noLugar);
+  }
+  const somadas = novas.reduce((s, p) => s + area(p.contorno), 0);
+  const daPeca = area(peca.contorno);
+  const cobre = Math.abs(somadas - daPeca) <= daPeca * 0.001;
+  return {
+    pecas: todas,
+    novas,
+    recado: `${novas.length} moldes extraídos de “${peca.nome}” (${novas.map((p) => p.nome).join(', ')}), postos em fila depois das peças que já estavam na mesa${cobre ? ': juntos, cobrem a peça inteira' : `: juntos, ${cm2(somadas)} dos ${cm2(daPeca)} da peça — alguma região muito estreita ficou de fora; extraia-a com “Extrair molde”`}. “${peca.nome}” não mudou.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
