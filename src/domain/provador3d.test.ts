@@ -20,6 +20,8 @@ import {
   sugerirCosturas,
   TECIDOS_PRONTOS,
   eixosDaFace,
+  pontosCosturadosDaPecaDeCima,
+  pontosNaPecaDeBaixo,
   type Montagem3D,
   type Tecido3D,
 } from './montagem3d';
@@ -514,5 +516,89 @@ describe('o fio, a trama e o viés (ADR 0120)', () => {
     const antiga = lerMontagem3d({ ...MONTAGEM_VAZIA, tecido: { preset: 'malha', pesoGm2: 160, elasticidade: 70, rigidez: 20, atrito: 50 } });
     expect(antiga.tecido.elasticidadeNaTrama).toBeUndefined();
     expect(antiga.tecido.elasticidadeNoVies).toBeUndefined();
+  });
+});
+
+describe('a peça sobre outra: o bolso na frente (ADR 0123)', () => {
+  /** Um bolso de 120 × 140 mm, em pé como a saia (o x do mundo é a vertical da tela, para baixo). */
+  const bolso = (): Molde =>
+    criarMolde({ nome: 'Bolso', referencia: 'SAIA', tamanho: 'M', contorno: [ponto(0, 0), ponto(0, 120), ponto(140, 120), ponto(140, 0)], linhaDeFio: { inicio: ponto(10, 60), fim: ponto(130, 60) } }, 'b');
+
+  function montar() {
+    const instancias = instanciasDasPecas([pecaDeSaia('f', 'Frente da saia'), pecaDeSaia('c', 'Costas da saia'), bolso()]);
+    const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+    return { instancias, configuracoes };
+  }
+
+  it('o bolso pelo nome vai sobre a frente: um quarto da altura abaixo do alto, um quarto da largura para o lado, a boca em cima', () => {
+    const { instancias, configuracoes } = montar();
+    const frente = instancias.find((i) => i.nome.startsWith('Frente'))!;
+    const c = configuracoes[instancias.find((i) => i.nome === 'Bolso')!.chave]!;
+    expect(c.posicao).toBe('sobre-outra-peca');
+    // A frente da saia tem 550 de altura e 560 de largura (na barra).
+    expect(c.sobre).toEqual({ chave: frente.chave, doAltoMm: 138, doMeioMm: 140, bocaEmCima: true });
+    // Um tom mais escuro que a frente, para aparecer sobre ela.
+    expect(c.cor).toBe('#2d5b82');
+  });
+
+  it('cada ponto do bolso cai no lugar certo da face da frente; os costurados são a borda menos a boca', () => {
+    const { instancias, configuracoes } = montar();
+    const frente = instancias.find((i) => i.nome.startsWith('Frente'))!;
+    const instBolso = instancias.find((i) => i.nome === 'Bolso')!;
+    const malhas = malhasDasInstancias(instancias, configuracoes, 25);
+    const malhaDaFrente = malhas.get(frente.chave)!;
+    const malhaDoBolso = malhas.get(instBolso.chave)!;
+    const sobre = { chave: frente.chave, doAltoMm: 80, doMeioMm: 0, bocaEmCima: true };
+    const locais = pontosNaPecaDeBaixo({ inst: instBolso, girarGraus: 0, pontos: malhaDoBolso.pontos }, { inst: frente, girarGraus: 0, malha: malhaDaFrente }, sobre);
+    // O ponto achado, pela face da frente, é o pedido: o alto do bolso a 80 mm do alto da frente, o meio no meio.
+    const faceDaFrente = coordenadasDaFace(frente, 0, malhaDaFrente.pontos);
+    const faceDoBolso = coordenadasDaFace(instBolso, 0, malhaDoBolso.pontos);
+    for (let k = 0; k < locais.length; k++) {
+      const { triangulo, pesos } = locais[k]!;
+      const v = [0, 1, 2].map((j) => malhaDaFrente.triangulos[3 * triangulo + j]!);
+      const u = pesos[0] * faceDaFrente.u[v[0]!]! + pesos[1] * faceDaFrente.u[v[1]!]! + pesos[2] * faceDaFrente.u[v[2]!]!;
+      const vv = pesos[0] * faceDaFrente.v[v[0]!]! + pesos[1] * faceDaFrente.v[v[1]!]! + pesos[2] * faceDaFrente.v[v[2]!]!;
+      expect(u).toBeCloseTo(faceDoBolso.u[k]!, 6);
+      expect(vv).toBeCloseTo(faceDaFrente.altura / 2 - 80 - (faceDoBolso.altura / 2 - faceDoBolso.v[k]!), 6);
+    }
+    // Os costurados: a borda toda menos o meio do lado de cima (a boca); sem a boca, a borda toda.
+    const comBoca = pontosCosturadosDaPecaDeCima(instBolso, 0, malhaDoBolso, true);
+    const semBoca = pontosCosturadosDaPecaDeCima(instBolso, 0, malhaDoBolso, false);
+    expect(semBoca.length).toBeGreaterThan(comBoca.length);
+    const naBoca = semBoca.filter((p) => !comBoca.includes(p));
+    for (const p of naBoca) expect(faceDoBolso.v[p]!).toBeCloseTo(faceDoBolso.altura / 2, 6);
+  });
+
+  it('simulada: o bolso fica costurado na frente (por cima dela), a boca fica aberta, nada atravessa o corpo', () => {
+    const { instancias, configuracoes } = montar();
+    const tecido = TECIDOS_PRONTOS.malha.tecido;
+    let n = 0;
+    const costuras = sugerirCosturas(FEMININO, instancias, { ...MONTAGEM_VAZIA, pecas: configuracoes, tecido }, () => `c${++n}`);
+    expect(costuras).toHaveLength(2);
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas: malhasDasInstancias(instancias, configuracoes, 25), costuras, tecido });
+    const pecaDoBolso = sim.pecas.find((p) => p.chave === instancias.find((i) => i.nome === 'Bolso')!.chave)!;
+    expect(sim.aplicacaoA.length).toBeGreaterThan(10);
+    for (let t = 0; t < 4 * 60 && !(t > 60 && assentou(sim)); t++) avancar(sim, 1 / 60, 8);
+    expect(aberturaDasCosturas(sim)).toBeLessThan(6);
+    expect(maiorPenetracao(sim)).toBeLessThan(4);
+    // O bolso por cima da frente: os pontos dele ficam mais longe do corpo que a espessura da frente.
+    const pontosDoBolso = pecaDoBolso.malha.pontos.length / 2;
+    let maisPerto = Infinity;
+    for (let k = 0; k < pontosDoBolso; k++) {
+      const i = pecaDoBolso.inicio + k;
+      maisPerto = Math.min(maisPerto, distanciaAoCorpo(sim.corpo, sim.x[3 * i]!, sim.x[3 * i + 1]!, sim.x[3 * i + 2]!).d);
+    }
+    expect(maisPerto).toBeGreaterThan(4);
+  }, 60000);
+
+  it('sem a peça de baixo no corpo, o bolso não entra; a leitura guarda onde ele vai', () => {
+    const { instancias, configuracoes } = montar();
+    const frente = instancias.find((i) => i.nome.startsWith('Frente'))!;
+    const semFrente = { ...configuracoes, [frente.chave]: { ...configuracoes[frente.chave]!, posicao: 'fora' as const } };
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes: semFrente, malhas: malhasDasInstancias(instancias, semFrente, 25), costuras: [], tecido: TECIDOS_PRONTOS.malha.tecido });
+    expect(sim.pecas.map((p) => p.chave)).toEqual([instancias.find((i) => i.nome.startsWith('Costas'))!.chave]);
+    const chaveDoBolso = instancias.find((i) => i.nome === 'Bolso')!.chave;
+    const lida = lerMontagem3d({ ...MONTAGEM_VAZIA, pecas: { [chaveDoBolso]: { ...configuracoes[chaveDoBolso], sobre: { chave: frente.chave, doAltoMm: 90, doMeioMm: -30, bocaEmCima: false } } } });
+    expect(lida.pecas[chaveDoBolso]).toMatchObject({ posicao: 'sobre-outra-peca', sobre: { chave: frente.chave, doAltoMm: 90, doMeioMm: -30, bocaEmCima: false } });
   });
 });

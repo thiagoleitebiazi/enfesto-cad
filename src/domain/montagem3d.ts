@@ -22,7 +22,8 @@ export type PosicaoNoCorpo =
   | 'perna-direita-frente'
   | 'perna-direita-costas'
   | 'perna-esquerda-frente'
-  | 'perna-esquerda-costas';
+  | 'perna-esquerda-costas'
+  | 'sobre-outra-peca';
 
 export const ROTULO_DA_POSICAO: Readonly<Record<PosicaoNoCorpo, string>> = {
   fora: 'Fora (não vai ao corpo)',
@@ -36,6 +37,7 @@ export const ROTULO_DA_POSICAO: Readonly<Record<PosicaoNoCorpo, string>> = {
   'perna-direita-costas': 'Perna direita, costas',
   'perna-esquerda-frente': 'Perna esquerda, frente',
   'perna-esquerda-costas': 'Perna esquerda, costas',
+  'sobre-outra-peca': 'Sobre outra peça (bolso, aplicação)',
 };
 
 export type AlturaDoTopo = 'pescoco' | 'ombro' | 'busto' | 'cintura' | 'quadril';
@@ -71,6 +73,22 @@ export interface ConfiguracaoDaInstancia {
   readonly girarGraus: number;
   readonly cor: string;
   readonly estampa?: EstampaDaPeca;
+  /** Na posição "sobre outra peça": em qual e onde (ADR 0123). */
+  readonly sobre?: SobreOutraPeca;
+}
+
+/**
+ * A peça posta sobre outra (ADR 0123): o bolso na frente, a aplicação, a etiqueta. Fica na face da peça de baixo, com
+ * o alto a `doAltoMm` do alto dela e o meio a `doMeioMm` do meio dela (+ para a direita de quem olha), costurada nela
+ * pela borda — menos o lado de cima, se for a boca do bolso.
+ */
+export interface SobreOutraPeca {
+  /** A instância de baixo. */
+  readonly chave: string;
+  readonly doAltoMm: number;
+  readonly doMeioMm: number;
+  /** O lado de cima fica aberto (a boca do bolso); `false`: costurada em volta toda (a aplicação, a etiqueta). */
+  readonly bocaEmCima: boolean;
 }
 
 /** Um lado de uma costura: o trecho do contorno da instância, do ponto `de` ao `ate` (no sentido do contorno). */
@@ -202,6 +220,15 @@ const contornoComoPontos = (c: Contorno): Float64Array => {
 
 /** A cor de partida das peças: a mesma em todas (uma roupa é de um tecido só); cada uma pode mudar depois. */
 export const COR_DE_PARTIDA = '#3f7fb5';
+
+/** A cor um tom mais escura (a peça de cima na mesma cor da de baixo sumiria nela, ADR 0123). */
+export function corMaisEscura(hex: string, fator = 0.72): string {
+  const v = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!v) return hex;
+  const n = Number.parseInt(v[1]!, 16);
+  const canal = (deslocamento: number): string => Math.round(((n >> deslocamento) & 255) * fator).toString(16).padStart(2, '0');
+  return `#${canal(16)}${canal(8)}${canal(0)}`;
+}
 
 /** A configuração de partida de uma instância, pelo nome da peça. */
 export function configuracaoSugerida(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
@@ -505,7 +532,8 @@ export function alturaDoNivel(corpo: CorpoDoManequim, nivel: AlturaDoTopo): numb
  * volta do tronco, de um braço ou de uma perna, com a face para fora, o topo na altura pedida. `null`: fora.
  */
 export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: InstanciaDaPeca, config: ConfiguracaoDaInstancia, pontos: ArrayLike<number>): Float64Array | null {
-  if (config.posicao === 'fora') return null;
+  // Fora, ou sobre outra peça (o lugar depende da de baixo já arrumada: é a simulação que põe, ADR 0123).
+  if (config.posicao === 'fora' || config.posicao === 'sobre-outra-peca') return null;
   const face = coordenadasDaFace(instancia, config.girarGraus, pontos);
   const contorno = { largura: face.largura, altura: face.altura };
   const n = pontos.length / 2;
@@ -915,10 +943,15 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
         cor: typeof c.cor === 'string' && /^#[0-9a-f]{6}$/i.test(c.cor) ? c.cor : COR_DE_PARTIDA,
       };
       const e = c.estampa;
+      const s = c.sobre;
+      const comSobre: ConfiguracaoDaInstancia =
+        ehObjeto(s) && typeof s.chave === 'string'
+          ? { ...config, sobre: { chave: s.chave, doAltoMm: numero(s.doAltoMm, 0), doMeioMm: numero(s.doMeioMm, 0), bocaEmCima: s.bocaEmCima !== false } }
+          : config;
       pecas[chave] =
         ehObjeto(e) && typeof e.imagemId === 'string'
-          ? { ...config, estampa: { imagemId: e.imagemId, modo: e.modo === 'localizada' ? 'localizada' : 'corrida', larguraMm: Math.max(5, numero(e.larguraMm, 100)), alturaMm: numero(e.alturaMm, 0) } }
-          : config;
+          ? { ...comSobre, estampa: { imagemId: e.imagemId, modo: e.modo === 'localizada' ? 'localizada' : 'corrida', larguraMm: Math.max(5, numero(e.larguraMm, 100)), alturaMm: numero(e.alturaMm, 0) } }
+          : comSobre;
     }
   }
   const costuras: Costura3D[] = [];
@@ -946,11 +979,117 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
   return { manequim, pecas, costuras, tecido, resolucaoMm };
 }
 
-/** A configuração de cada instância: a guardada, ou a sugerida. */
+/** A configuração de cada instância: a guardada, ou a sugerida (o bolso, sobre a frente ou as costas que houver). */
 export function configuracoesDasInstancias(instancias: readonly InstanciaDaPeca[], montagem: Montagem3D): Record<string, ConfiguracaoDaInstancia> {
   const r: Record<string, ConfiguracaoDaInstancia> = {};
   for (const inst of instancias) r[inst.chave] = montagem.pecas[inst.chave] ?? configuracaoSugerida(inst, larguraDaFace(inst));
+  for (const inst of instancias) {
+    if (montagem.pecas[inst.chave]) continue;
+    const sugerida = sobreSugerida(inst, instancias, r);
+    if (sugerida) r[inst.chave] = { ...r[inst.chave]!, posicao: 'sobre-outra-peca', sobre: sugerida, cor: corMaisEscura(r[sugerida.chave]!.cor) };
+  }
   return r;
+}
+
+/**
+ * Onde vai a peça de cima pelo nome (ADR 0123): o bolso na frente (ou nas costas, se o nome diz), um quarto da altura
+ * abaixo do alto, um quarto da largura para o lado (o par, um de cada lado), com a boca em cima; a aplicação e a
+ * etiqueta, costuradas em volta toda. Sem peça de baixo no corpo, nada.
+ */
+function sobreSugerida(inst: InstanciaDaPeca, instancias: readonly InstanciaDaPeca[], configuracoes: Readonly<Record<string, ConfiguracaoDaInstancia>>): SobreOutraPeca | null {
+  const n = semAcento(inst.peca.nome);
+  if (!/bolso|aplicac|etiqueta/.test(n)) return null;
+  const atras = /costas|traseir/.test(n);
+  const baixo = instancias.find((i) => i.chave !== inst.chave && configuracoes[i.chave]?.posicao === (atras ? 'costas' : 'frente'));
+  if (!baixo) return null;
+  const caixa = caixaDaFace(baixo, configuracoes[baixo.chave]!.girarGraus);
+  const lado = inst.copia % 2 === 1 ? -1 : 1;
+  return { chave: baixo.chave, doAltoMm: Math.round(caixa.altura * 0.25), doMeioMm: Math.round(lado * caixa.largura * 0.25), bocaEmCima: /bolso/.test(n) };
+}
+
+export interface PontoNaPecaDeBaixo {
+  /** O triângulo da malha da peça de baixo (o número dele na malha) e os pesos dos seus três pontos. */
+  readonly triangulo: number;
+  readonly pesos: readonly [number, number, number];
+}
+
+/**
+ * Onde cada ponto da peça de cima cai na de baixo (ADR 0123), pelas duas faces: o ponto vai à face da de baixo (o meio a
+ * `doMeioMm` do meio dela, o alto a `doAltoMm` do alto dela) e fica no triângulo da malha de baixo que o contém, com
+ * os pesos (baricêntricos). O que cai fora da peça de baixo fica no triângulo mais perto, na borda dele.
+ */
+export function pontosNaPecaDeBaixo(
+  cima: { readonly inst: InstanciaDaPeca; readonly girarGraus: number; readonly pontos: ArrayLike<number> },
+  baixo: { readonly inst: InstanciaDaPeca; readonly girarGraus: number; readonly malha: MalhaDaPeca },
+  sobre: SobreOutraPeca,
+): PontoNaPecaDeBaixo[] {
+  const fc = coordenadasDaFace(cima.inst, cima.girarGraus, cima.pontos);
+  const fb = coordenadasDaFace(baixo.inst, baixo.girarGraus, baixo.malha.pontos);
+  const tri = baixo.malha.triangulos;
+  const saida: PontoNaPecaDeBaixo[] = [];
+  for (let i = 0; i < fc.u.length; i++) {
+    const U = fc.u[i]! + sobre.doMeioMm;
+    const V = fb.altura / 2 - sobre.doAltoMm - (fc.altura / 2 - fc.v[i]!);
+    let melhor: PontoNaPecaDeBaixo | null = null;
+    let melhorMinimo = -Infinity;
+    for (let t = 0; t < tri.length / 3; t++) {
+      const a = tri[3 * t]!;
+      const b = tri[3 * t + 1]!;
+      const c = tri[3 * t + 2]!;
+      const x1 = fb.u[a]!;
+      const y1 = fb.v[a]!;
+      const x2 = fb.u[b]!;
+      const y2 = fb.v[b]!;
+      const x3 = fb.u[c]!;
+      const y3 = fb.v[c]!;
+      const det = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3);
+      if (Math.abs(det) < 1e-12) continue;
+      const l1 = ((y2 - y3) * (U - x3) + (x3 - x2) * (V - y3)) / det;
+      const l2 = ((y3 - y1) * (U - x3) + (x1 - x3) * (V - y3)) / det;
+      const l3 = 1 - l1 - l2;
+      const minimo = Math.min(l1, l2, l3);
+      if (minimo > melhorMinimo) {
+        melhorMinimo = minimo;
+        // Fora do triângulo: os pesos negativos vão a zero e o resto se reparte (o ponto vai para a borda).
+        const p1 = Math.max(0, l1);
+        const p2 = Math.max(0, l2);
+        const p3 = Math.max(0, l3);
+        const s = p1 + p2 + p3 || 1;
+        melhor = { triangulo: t, pesos: [p1 / s, p2 / s, p3 / s] };
+      }
+      if (minimo >= -1e-9) break;
+    }
+    saida.push(melhor ?? { triangulo: 0, pesos: [1, 0, 0] });
+  }
+  return saida;
+}
+
+/**
+ * Os pontos da borda da malha da peça de cima que são costurados na de baixo (ADR 0123): os de todos os lados do
+ * contorno, menos o de cima (o mais alto na face) se ele for a boca. Os cantos da boca são costurados (são dos lados
+ * vizinhos).
+ */
+export function pontosCosturadosDaPecaDeCima(inst: InstanciaDaPeca, girarGraus: number, malha: MalhaDaPeca, bocaEmCima: boolean): number[] {
+  const lados = ladosDoContorno(inst.contorno);
+  let deCima: LadoDoContorno | null = null;
+  if (bocaEmCima) {
+    let maior = -Infinity;
+    for (const lado of lados) {
+      const meio = pontoNoTrecho(inst.contorno, lado.de, lado.ate, 0.5);
+      const v = coordenadasDaFace(inst, girarGraus, [meio.x, meio.y]).v[0]!;
+      if (v > maior) {
+        maior = v;
+        deCima = lado;
+      }
+    }
+  }
+  const costurados = new Set<number>();
+  for (const lado of lados) {
+    if (lado === deCima) continue;
+    for (const p of trechoDaBorda(malha, lado.de, lado.ate).pontos) costurados.add(p);
+  }
+  // Os cantos da boca entram pelos lados vizinhos; se a boca for o único lado, nada.
+  return [...costurados].sort((a, b) => a - b);
 }
 
 /** O corpo da montagem. */

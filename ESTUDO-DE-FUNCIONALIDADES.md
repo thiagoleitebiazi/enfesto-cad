@@ -99,7 +99,7 @@ inventa.
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
 | Manequim 3D com medidas ajustáveis (público-alvo, tabela de medidas) | ✅ (Conferência › Provador 3D: público, 10 medidas, o tamanho da ficha, ADR 0111) | — |
-| Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ✅ (as laterais e os ombros sugeridos; as outras clicando nos pontos; montagem aproximada, ADR 0111) | — |
+| Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ✅ (as laterais e os ombros sugeridos; as outras clicando nos pontos; montagem aproximada, ADR 0111; o bolso e a aplicação costurados sobre outra peça, ADR 0123) | — |
 | Simulação de caimento pelo peso, densidade e elasticidade; vincos e pontos de tensão | 🟡 (física simplificada: peso, elasticidade no fio, na trama e no viés (ADR 0120), rigidez, atrito; o mapa de tensão; sem o tecido colidir consigo mesmo, vincos só na escala da malha, ADR 0111) | P (o resto da física — não substitui a peça-piloto) |
 | Editor das propriedades do tecido | ✅ (seis prontos e o personalizado, ADR 0111) | — |
 | Cores, estampas (inclusive localizada), texturas, aviamentos no 3D | ✅ (a cor por peça; a estampa corrida ou localizada pelas imagens do modelo; os furos como botões; a textura é uma imagem corrida, ADR 0111) | — |

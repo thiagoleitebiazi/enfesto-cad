@@ -118,6 +118,8 @@ export interface TecidoParaDesenhar {
     readonly uv?: Float64Array;
     /** O primeiro ponto da peça (para achar o `uv` de cada ponto). */
     readonly inicio: number;
+    /** 1: a peça vai sobre outra (o bolso, ADR 0123) e é pintada por cima dela. */
+    readonly camada?: number;
   }[];
   /** Pinta pela tensão (o quanto estica) em vez da cor. */
   readonly tensoes?: ArrayLike<number>;
@@ -192,7 +194,7 @@ export function montarCena(proj: Projecao, corpo: MalhaParaDesenhar | null, teci
         const uv = peca.uv && daFace && !tecido.tensoes ? peca.uv : null;
         // O tecido fica a poucos milímetros do corpo: na ordem, ele vem um pouco à frente (senão um triângulo grande do
         // corpo, com o meio mais perto da câmera, o cobriria).
-        r.z -= 25;
+        r.z -= 25 + 20 * (peca.camada ?? 0);
         if (uv) {
           const ia = a - peca.inicio;
           const ib = b - peca.inicio;

@@ -1092,8 +1092,13 @@ async function principal() {
   conferir('abre o provador 3D', (await janela()) === 'Provador 3D', await janela());
   await noCampo('Onde vai saia-de-teste-1', 'frente');
   await noCampo('Onde vai saia-de-teste-2', 'costas');
-  await noCampo('Onde vai Frente da foto', 'fora');
+  // A peça da foto vira um bolso sobre a frente da saia (ADR 0123), 8 cm abaixo do alto dela.
+  await noCampo('Onde vai Frente da foto', 'sobre-outra-peca');
+  await espera(300);
+  await noCampo('Distância do alto de Frente da foto', '80');
   await espera(800);
+  const bolsoSobre = await js(`(() => { const s = document.querySelector('[role=dialog] select[aria-label="Sobre que peça vai Frente da foto"]'); return s ? s.selectedOptions[0].textContent : ''; })()`);
+  conferir('a peça da foto vai como bolso sobre a frente da saia (escolhida sozinha)', bolsoSobre.startsWith('saia-de-teste-1'), bolsoSobre);
   await foto('34-provador-arrumado.png');
   // 13a. O fio, a trama e o viés (ADR 0120): a malha pronta estica mais na trama; as três réguas na aba Tecido.
   await parteDaJanela('Tecido');
@@ -1151,8 +1156,12 @@ async function principal() {
     .find((p) => p.montagem3d)?.montagem3d;
   const posicoesGravadas = montagemGravada ? Object.values(montagemGravada.pecas).map((c) => c.posicao).filter((p) => p !== 'fora').sort() : [];
   conferir(
-    'a montagem ficou no projeto: a frente e as costas, as 2 costuras, a estampa localizada',
-    !!montagemGravada && JSON.stringify(posicoesGravadas) === '["costas","frente"]' && montagemGravada.costuras.length === 2 && Object.values(montagemGravada.pecas).some((c) => c.estampa && c.estampa.modo === 'localizada'),
+    'a montagem ficou no projeto: a frente, as costas e o bolso sobre a frente, as 2 costuras, a estampa localizada',
+    !!montagemGravada &&
+      JSON.stringify(posicoesGravadas) === '["costas","frente","sobre-outra-peca"]' &&
+      Object.values(montagemGravada.pecas).some((c) => c.sobre && c.sobre.doAltoMm === 80) &&
+      montagemGravada.costuras.length === 2 &&
+      Object.values(montagemGravada.pecas).some((c) => c.estampa && c.estampa.modo === 'localizada'),
     montagemGravada ? `${JSON.stringify(posicoesGravadas)}, ${montagemGravada.costuras.length} costura(s)` : 'sem montagem',
   );
 

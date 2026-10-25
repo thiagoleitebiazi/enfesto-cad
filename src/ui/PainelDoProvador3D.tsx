@@ -21,6 +21,7 @@ import {
 } from '../domain/manequim';
 import {
   comprimentoDoTrecho,
+  corMaisEscura,
   configuracoesDasInstancias,
   coordenadasDaFace,
   giroPelaForma,
@@ -237,7 +238,15 @@ export function PainelDoProvador3D(props: {
             });
           }
         }
-        const base = { chave: p.chave, primeiroTriangulo: p.primeiroTriangulo, quantidade: p.malha.triangulos.length / 3, cor: corRgb(config.cor), espelhada: inst.espelhada, inicio: p.inicio };
+        const base = {
+          chave: p.chave,
+          primeiroTriangulo: p.primeiroTriangulo,
+          quantidade: p.malha.triangulos.length / 3,
+          cor: corRgb(config.cor),
+          espelhada: inst.espelhada,
+          inicio: p.inicio,
+          camada: config.posicao === 'sobre-outra-peca' ? 1 : 0,
+        };
         const uv = estampas.has(p.chave) ? m.uvs.get(p.chave) : undefined;
         pecas.push(uv ? { ...base, uv } : base);
       }
@@ -535,6 +544,9 @@ function PartePecas(props: {
       {props.instancias.map((inst) => {
         const c = props.montagem.pecas[inst.chave]!;
         const fora = c.posicao === 'fora';
+        const sobre = c.posicao === 'sobre-outra-peca';
+        // As peças que podem ficar embaixo (as que vão ao corpo, sem ser elas mesmas de cima).
+        const deBaixo = props.instancias.filter((i) => i.chave !== inst.chave && !['fora', 'sobre-outra-peca'].includes(props.montagem.pecas[i.chave]!.posicao));
         return (
           <div key={inst.chave} className={`cartao-da-peca-3d ${fora ? 'peca-fora' : ''}`}>
             <div className="titulo-da-peca-3d">
@@ -551,7 +563,17 @@ function PartePecas(props: {
                   onChange={(e) => {
                     // A posição nova pode pedir a outra ponta em cima (na perna, a larga): o alto é refeito pela forma.
                     const posicao = e.target.value as PosicaoNoCorpo;
-                    props.onMudar(inst.chave, posicao === 'fora' ? { posicao } : { posicao, girarGraus: giroPelaForma(inst, c.girarGraus, posicao) });
+                    if (posicao === 'sobre-outra-peca') {
+                      // Sobre a frente que houver (ou a primeira no corpo), um pouco abaixo do alto, com a boca em cima.
+                      const alvo = deBaixo.find((i) => props.montagem.pecas[i.chave]!.posicao === 'frente') ?? deBaixo[0];
+                      const corDeBaixo = alvo ? props.montagem.pecas[alvo.chave]!.cor : null;
+                      props.onMudar(inst.chave, {
+                        posicao,
+                        ...(alvo && !c.sobre ? { sobre: { chave: alvo.chave, doAltoMm: 60, doMeioMm: 0, bocaEmCima: true } } : {}),
+                        // Na mesma cor da de baixo, o bolso sumiria nela: um tom mais escuro.
+                        ...(corDeBaixo && corDeBaixo.toLowerCase() === c.cor.toLowerCase() ? { cor: corMaisEscura(c.cor) } : {}),
+                      });
+                    } else props.onMudar(inst.chave, posicao === 'fora' ? { posicao } : { posicao, girarGraus: giroPelaForma(inst, c.girarGraus, posicao) });
                   }}
                 >
                   {(Object.keys(ROTULO_DA_POSICAO) as PosicaoNoCorpo[]).map((p) => (
@@ -561,7 +583,55 @@ function PartePecas(props: {
                   ))}
                 </select>
               </label>
-              {!fora && (
+              {sobre && (
+                <>
+                  <label>
+                    Sobre
+                    <select
+                      aria-label={`Sobre que peça vai ${inst.nome}`}
+                      value={c.sobre?.chave ?? ''}
+                      onChange={(e) => props.onMudar(inst.chave, { sobre: { doAltoMm: 60, doMeioMm: 0, bocaEmCima: true, ...c.sobre, chave: e.target.value } })}
+                    >
+                      {!c.sobre && <option value="">Escolha a peça de baixo</option>}
+                      {deBaixo.map((i) => (
+                        <option key={i.chave} value={i.chave}>
+                          {i.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {c.sobre && (
+                    <>
+                      <label>
+                        Do alto dela (mm)
+                        <input
+                          type="number"
+                          step={10}
+                          aria-label={`Distância do alto de ${inst.nome}`}
+                          value={c.sobre.doAltoMm}
+                          onChange={(e) => props.onMudar(inst.chave, { sobre: { ...c.sobre!, doAltoMm: Number(e.target.value) || 0 } })}
+                        />
+                      </label>
+                      <label>
+                        Do meio dela (mm)
+                        <input
+                          type="number"
+                          step={10}
+                          aria-label={`Distância do meio de ${inst.nome}`}
+                          value={c.sobre.doMeioMm}
+                          onChange={(e) => props.onMudar(inst.chave, { sobre: { ...c.sobre!, doMeioMm: Number(e.target.value) || 0 } })}
+                        />
+                      </label>
+                      <label className="opcao-em-linha">
+                        <input type="checkbox" checked={c.sobre.bocaEmCima} onChange={(e) => props.onMudar(inst.chave, { sobre: { ...c.sobre!, bocaEmCima: e.target.checked } })} />
+                        A boca em cima (o bolso; sem ela, costurada em volta toda)
+                      </label>
+                    </>
+                  )}
+                  {deBaixo.length === 0 && <p className="nota-do-formulario">Ponha antes a peça de baixo no corpo (a frente, as costas).</p>}
+                </>
+              )}
+              {!fora && !sobre && (
                 <>
                   <label>
                     O topo

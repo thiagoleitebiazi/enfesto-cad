@@ -3,7 +3,7 @@ import { distanciaAoCorpo } from './manequim';
 import type { MalhaDaPeca } from './malhaDaPeca';
 import { trechoDaBorda } from './malhaDaPeca';
 import type { ConfiguracaoDaInstancia, Costura3D, InstanciaDaPeca, Tecido3D } from './montagem3d';
-import { posicoesDeArrumacao } from './montagem3d';
+import { pontosCosturadosDaPecaDeCima, pontosNaPecaDeBaixo, posicoesDeArrumacao } from './montagem3d';
 
 /**
  * A simulação do caimento (ADR 0111): o tecido como partículas (os pontos da malha de cada peça) ligadas por
@@ -45,6 +45,16 @@ export interface Simulacao {
   readonly costuraB2: Uint32Array;
   readonly costuraF: Float64Array;
   readonly costuraDistancia0: Float64Array;
+  /**
+   * As peças de cima (o bolso) costuradas na de baixo por dentro dela (ADR 0123): o ponto da borda da de cima e o ponto
+   * da de baixo dentro de um triângulo (os três pontos e os pesos); a distância de partida.
+   */
+  readonly aplicacaoA: Uint32Array;
+  readonly aplicacaoT: Uint32Array;
+  readonly aplicacaoPesos: Float64Array;
+  readonly aplicacaoDistancia0: Float64Array;
+  /** A camada de cada ponto: 0 no corpo, 1 sobre outra peça (fica mais longe do corpo: por cima da de baixo). */
+  readonly camada: Uint8Array;
   /** Os triângulos (nos números da simulação) e os comprimentos das três arestas de cada um no molde. */
   readonly triangulos: Uint32Array;
   readonly ladosDosTriangulos: Float64Array;
@@ -66,6 +76,8 @@ export interface ParametrosDoTecido {
 }
 
 export const TEMPO_DA_COSTURA_S = 1.2;
+/** A distância de partida da peça de cima à de baixo (mm), para fora. */
+const AFASTAMENTO_DA_CAMADA = 4;
 const GRAVIDADE = 9810;
 /** A maior velocidade de um ponto do tecido (mm/s). */
 const VELOCIDADE_MAXIMA = 3000;
@@ -123,9 +135,16 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   const pecas: PecaNaSimulacao[] = [];
   let totalDePontos = 0;
   let totalDeTriangulos = 0;
+  // A peça de cima entra se a de baixo está no corpo (e não é ela também de cima).
+  const deBaixoNoCorpo = (chave: string): boolean => {
+    const c = e.configuracoes[chave];
+    return !!c && c.posicao !== 'fora' && c.posicao !== 'sobre-outra-peca' && e.malhas.has(chave);
+  };
   for (const inst of e.instancias) {
     const malha = e.malhas.get(inst.chave);
     if (!malha) continue;
+    const config = e.configuracoes[inst.chave];
+    if (config?.posicao === 'sobre-outra-peca' && !(config.sobre && deBaixoNoCorpo(config.sobre.chave))) continue;
     pecas.push({ chave: inst.chave, malha, inicio: totalDePontos, primeiroTriangulo: totalDeTriangulos });
     totalDePontos += malha.pontos.length / 2;
     totalDeTriangulos += malha.triangulos.length / 3;
@@ -139,11 +158,52 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   const comprimentosDasDobras: number[] = [];
   const triangulos = new Uint32Array(totalDeTriangulos * 3);
   const ladosDosTriangulos = new Float64Array(totalDeTriangulos * 3);
-  for (const p of pecas) {
+  const camada = new Uint8Array(totalDePontos);
+  const aplicacaoA: number[] = [];
+  const aplicacaoT: number[] = [];
+  const aplicacaoPesos: number[] = [];
+  const aplicacaoDistancia0: number[] = [];
+  // As peças no corpo primeiro; as de cima depois, sobre a de baixo já posta.
+  const ordem = [...pecas].sort((a, b) => Number(e.configuracoes[a.chave]!.posicao === 'sobre-outra-peca') - Number(e.configuracoes[b.chave]!.posicao === 'sobre-outra-peca'));
+  for (const p of ordem) {
     const inst = e.instancias.find((i) => i.chave === p.chave)!;
     const m = p.malha;
-    const pos = posicoesDeArrumacao(e.corpo, inst, e.configuracoes[p.chave]!, m.pontos)!;
-    x.set(pos, p.inicio * 3);
+    const config = e.configuracoes[p.chave]!;
+    if (config.posicao === 'sobre-outra-peca') {
+      // A peça de cima (ADR 0123): cada ponto no lugar da de baixo onde cai, um pouco para fora do corpo.
+      const sobre = config.sobre!;
+      const baixo = pecas.find((q) => q.chave === sobre.chave)!;
+      const instBaixo = e.instancias.find((i) => i.chave === sobre.chave)!;
+      const locais = pontosNaPecaDeBaixo({ inst, girarGraus: config.girarGraus, pontos: m.pontos }, { inst: instBaixo, girarGraus: e.configuracoes[sobre.chave]!.girarGraus, malha: baixo.malha }, sobre);
+      const vertices = (k: number): [number, number, number] => {
+        const t = locais[k]!.triangulo;
+        return [baixo.inicio + baixo.malha.triangulos[3 * t]!, baixo.inicio + baixo.malha.triangulos[3 * t + 1]!, baixo.inicio + baixo.malha.triangulos[3 * t + 2]!];
+      };
+      for (let k = 0; k < locais.length; k++) {
+        const [i0, i1, i2] = vertices(k);
+        const [b0, b1, b2] = locais[k]!.pesos;
+        let px = x[3 * i0]! * b0 + x[3 * i1]! * b1 + x[3 * i2]! * b2;
+        let py = x[3 * i0 + 1]! * b0 + x[3 * i1 + 1]! * b1 + x[3 * i2 + 1]! * b2;
+        let pz = x[3 * i0 + 2]! * b0 + x[3 * i1 + 2]! * b1 + x[3 * i2 + 2]! * b2;
+        const fora = distanciaAoCorpo(e.corpo, px, py, pz);
+        px += fora.nx * AFASTAMENTO_DA_CAMADA;
+        py += fora.ny * AFASTAMENTO_DA_CAMADA;
+        pz += fora.nz * AFASTAMENTO_DA_CAMADA;
+        x[3 * (p.inicio + k)] = px;
+        x[3 * (p.inicio + k) + 1] = py;
+        x[3 * (p.inicio + k) + 2] = pz;
+        camada[p.inicio + k] = 1;
+      }
+      for (const k of pontosCosturadosDaPecaDeCima(inst, config.girarGraus, m, sobre.bocaEmCima)) {
+        const [i0, i1, i2] = vertices(k);
+        aplicacaoA.push(p.inicio + k);
+        aplicacaoT.push(i0, i1, i2);
+        aplicacaoPesos.push(...locais[k]!.pesos);
+        aplicacaoDistancia0.push(AFASTAMENTO_DA_CAMADA);
+      }
+    } else {
+      x.set(posicoesDeArrumacao(e.corpo, inst, config, m.pontos)!, p.inicio * 3);
+    }
     const dist2d = (i: number, j: number): number => Math.hypot(m.pontos[2 * i]! - m.pontos[2 * j]!, m.pontos[2 * i + 1]! - m.pontos[2 * j + 1]!);
     for (let k = 0; k < m.triangulos.length; k += 3) {
       const a = m.triangulos[k]!;
@@ -243,6 +303,11 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     costuraB2: Uint32Array.from(costuraB2),
     costuraF: Float64Array.from(costuraF),
     costuraDistancia0: Float64Array.from(costuraDistancia0),
+    aplicacaoA: Uint32Array.from(aplicacaoA),
+    aplicacaoT: Uint32Array.from(aplicacaoT),
+    aplicacaoPesos: Float64Array.from(aplicacaoPesos),
+    aplicacaoDistancia0: Float64Array.from(aplicacaoDistancia0),
+    camada,
     triangulos,
     ladosDosTriangulos,
     parametros,
@@ -277,6 +342,49 @@ function resolverDistancias(x: Float64Array, w: Float64Array, pares: Uint32Array
     x[3 * j] = x[3 * j]! - wj * fx;
     x[3 * j + 1] = x[3 * j + 1]! - wj * fy;
     x[3 * j + 2] = x[3 * j + 2]! - wj * fz;
+  }
+}
+
+/**
+ * As peças de cima costuradas na de baixo (ADR 0123): cada ponto da borda vai ao seu ponto dentro do triângulo da de
+ * baixo (a distância de partida vai a zero durante a costura); a correção se reparte entre o ponto e os três de baixo,
+ * pelos pesos e pelas massas.
+ */
+function resolverAplicacoes(sim: Simulacao, fracao: number, alfa: number): void {
+  const { x, w } = sim;
+  for (let k = 0; k < sim.aplicacaoA.length; k++) {
+    const a = sim.aplicacaoA[k]!;
+    const i0 = sim.aplicacaoT[3 * k]!;
+    const i1 = sim.aplicacaoT[3 * k + 1]!;
+    const i2 = sim.aplicacaoT[3 * k + 2]!;
+    const b0 = sim.aplicacaoPesos[3 * k]!;
+    const b1 = sim.aplicacaoPesos[3 * k + 1]!;
+    const b2 = sim.aplicacaoPesos[3 * k + 2]!;
+    const ws = w[a]! + b0 * b0 * w[i0]! + b1 * b1 * w[i1]! + b2 * b2 * w[i2]!;
+    if (ws === 0) continue;
+    const dx = x[3 * a]! - (x[3 * i0]! * b0 + x[3 * i1]! * b1 + x[3 * i2]! * b2);
+    const dy = x[3 * a + 1]! - (x[3 * i0 + 1]! * b0 + x[3 * i1 + 1]! * b1 + x[3 * i2 + 1]! * b2);
+    const dz = x[3 * a + 2]! - (x[3 * i0 + 2]! * b0 + x[3 * i1 + 2]! * b1 + x[3 * i2 + 2]! * b2);
+    const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const alvo = sim.aplicacaoDistancia0[k]! * fracao;
+    if (L < 1e-9 || L <= alvo) continue;
+    const lambda = -(L - alvo) / (ws + alfa);
+    const nx = (dx / L) * lambda;
+    const ny = (dy / L) * lambda;
+    const nz = (dz / L) * lambda;
+    x[3 * a] = x[3 * a]! + w[a]! * nx;
+    x[3 * a + 1] = x[3 * a + 1]! + w[a]! * ny;
+    x[3 * a + 2] = x[3 * a + 2]! + w[a]! * nz;
+    for (const [i, b] of [
+      [i0, b0],
+      [i1, b1],
+      [i2, b2],
+    ] as const) {
+      const f = w[i]! * b;
+      x[3 * i] = x[3 * i]! - f * nx;
+      x[3 * i + 1] = x[3 * i + 1]! - f * ny;
+      x[3 * i + 2] = x[3 * i + 2]! - f * nz;
+    }
   }
 }
 
@@ -348,6 +456,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       x[3 * b2 + 1] = x[3 * b2 + 1]! - k2 * ny;
       x[3 * b2 + 2] = x[3 * b2 + 2]! - k2 * nz;
     }
+    resolverAplicacoes(sim, fracao, alfaC);
     }
     // O corpo e o chão: empurram para fora, com atrito.
     tocou.fill(0);
@@ -357,12 +466,14 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       let py = x[3 * i + 1]!;
       let pz = x[3 * i + 2]!;
       const c = distanciaAoCorpo(sim.corpo, px, py, pz);
+      // A peça de cima guarda o dobro: fica por cima da de baixo, que encosta no corpo.
+      const espessura = par.espessura * (1 + sim.camada[i]!);
       let nx = 0;
       let ny = 0;
       let nz = 0;
       let fundo = 0;
-      if (c.d < par.espessura) {
-        fundo = par.espessura - c.d;
+      if (c.d < espessura) {
+        fundo = espessura - c.d;
         nx = c.nx;
         ny = c.ny;
         nz = c.nz;
@@ -398,10 +509,10 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         // confere de novo, até três vezes.
         for (let volta = 0; volta < 3; volta++) {
           const c2 = distanciaAoCorpo(sim.corpo, px, py, pz);
-          if (c2.d >= par.espessura) break;
-          px += c2.nx * (par.espessura - c2.d);
-          py += c2.ny * (par.espessura - c2.d);
-          pz += c2.nz * (par.espessura - c2.d);
+          if (c2.d >= espessura) break;
+          px += c2.nx * (espessura - c2.d);
+          py += c2.ny * (espessura - c2.d);
+          pz += c2.nz * (espessura - c2.d);
         }
         x[3 * i] = px;
         x[3 * i + 1] = py;
@@ -546,6 +657,21 @@ export function aberturaDasCosturas(sim: Simulacao): number {
       x[3 * a + 2]! - (x[3 * b1 + 2]! * (1 - f) + x[3 * b2 + 2]! * f),
     );
     maior = Math.max(maior, d);
+  }
+  // E as peças de cima costuradas na de baixo (ADR 0123).
+  for (let k = 0; k < sim.aplicacaoA.length; k++) {
+    const a = sim.aplicacaoA[k]!;
+    let tx = 0;
+    let ty = 0;
+    let tz = 0;
+    for (let j = 0; j < 3; j++) {
+      const i = sim.aplicacaoT[3 * k + j]!;
+      const b = sim.aplicacaoPesos[3 * k + j]!;
+      tx += x[3 * i]! * b;
+      ty += x[3 * i + 1]! * b;
+      tz += x[3 * i + 2]! * b;
+    }
+    maior = Math.max(maior, Math.hypot(x[3 * a]! - tx, x[3 * a + 1]! - ty, x[3 * a + 2]! - tz));
   }
   return maior;
 }
