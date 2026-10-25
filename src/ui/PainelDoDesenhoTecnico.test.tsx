@@ -303,3 +303,42 @@ describe('PainelDoDesenhoTecnico — as cotas (ADR 0117)', () => {
     expect(screen.getByLabelText('Texto da cota')).toBeInTheDocument();
   });
 });
+
+describe('a área para o consumo (ADR 0127)', () => {
+  const corpo = (id: string, vista: 'frente' | 'costas'): TracoDoDesenho => ({
+    id,
+    tipo: 'traco',
+    vista,
+    pontos: [
+      { x: 150, y: 100 },
+      { x: 200, y: 100 },
+      { x: 200, y: 300 },
+      { x: 150, y: 300 },
+    ],
+    curvo: false,
+    fechado: true,
+    estilo: 'contorno',
+    cor: '#000000',
+    espessura: 2,
+    preenchimento: null,
+    espelhar: true,
+  });
+  const cota: CotaDoDesenho = { id: 'c1', tipo: 'cota', vista: 'frente', de: { x: 120, y: 100 }, ate: { x: 120, y: 300 }, medidaId: 'comp', texto: '', cor: '#c62828' };
+  const comprimento: PontoDeMedida = { id: 'comp', nome: 'Comprimento', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 66, M: 70 } };
+
+  it('o corpo de frente e de costas na escala da cota, no tamanho do meio', () => {
+    abrir({ desenho: { ...DESENHO_VAZIO, elementos: [corpo('f', 'frente'), corpo('c', 'costas'), cota] }, medidas: [comprimento] });
+    const caixa = screen.getByRole('region', { name: 'Área para o consumo' });
+    // 100 × 200 unidades por vista, 3,3 mm por unidade (66 cm em 200 unidades): 0,2178 m² cada.
+    expect(caixa).toHaveTextContent('Área para o consumo (tamanho P)');
+    expect(caixa).toHaveTextContent('0,436 m²');
+    expect(caixa).toHaveTextContent('frente 0,218 m² + costas 0,218 m², na escala da cota de Comprimento (66 cm no P). 2 contorno(s) fechado(s).');
+    // 100 × 200 unidades a 3,3 mm: 33 × 66 cm.
+    expect(caixa).toHaveTextContent('Nesta escala, a roupa tem 33 × 66 cm (largura × altura)');
+  });
+
+  it('sem a cota ligada a uma medida, diz o que falta', () => {
+    abrir({ desenho: { ...DESENHO_VAZIO, elementos: [corpo('f', 'frente')] }, medidas: [comprimento] });
+    expect(screen.getByRole('region', { name: 'Área para o consumo' })).toHaveTextContent('nenhuma cota do desenho está ligada a uma medida com valor no tamanho P — a cota dá a escala.');
+  });
+});

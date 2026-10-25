@@ -77,14 +77,14 @@ export function padroesDaFicha(ficha: FichaTecnica, biblioteca: BibliotecaDeMate
   return ficha.padroesDeCusto ? { padroes: ficha.padroesDeCusto, daEmpresa: false } : { padroes: biblioteca.padroesDeCusto, daEmpresa: true };
 }
 
-export function calcularPreCusto(ficha: FichaTecnica, biblioteca: BibliotecaDeMateriais, encaixe: EncaixeParaConsumo | null): PreCusto {
+export function calcularPreCusto(ficha: FichaTecnica, biblioteca: BibliotecaDeMateriais, encaixe: EncaixeParaConsumo | null, larguraDoTecidoMm: number | null = null): PreCusto {
   const { padroes, daEmpresa } = padroesDaFicha(ficha, biblioteca);
   const faltando: string[] = [];
   const linhas: LinhaDoPreCusto[] = [];
   for (const item of ficha.materiais) {
     const material = item.materialId ? biblioteca.materiais.find((m) => m.id === item.materialId) : undefined;
     const removido = item.materialId !== null && !material;
-    const consumo = consumoDoItem(item, material, encaixe);
+    const consumo = consumoDoItem(item, material, encaixe, ficha, larguraDoTecidoMm);
     if (consumo.erro) faltando.push(`${item.descricao}: ${consumo.erro}`);
     const precoUnitario = material ? material.precoPorUnidade : removido ? null : (item.precoInformado ?? null);
     const origemDoPreco: LinhaDoPreCusto['origemDoPreco'] = removido ? 'material removido' : precoUnitario === null ? 'sem preço' : material ? 'biblioteca' : 'informado';
@@ -186,7 +186,13 @@ export function areasPorTamanho(pecas: readonly Molde[], tamanhos: readonly stri
  * dos tamanhos — o consumo do encaixe e o informado são de uma roupa média —; os aviamentos, a embalagem e a mão de
  * obra são os mesmos. Sem tamanhos, ou com as áreas todas iguais (sem graduação), nada.
  */
-export function preCustoPorTamanho(ficha: FichaTecnica, biblioteca: BibliotecaDeMateriais, encaixe: EncaixeParaConsumo | null, pecas: readonly Molde[]): CustoDoTamanho[] {
+export function preCustoPorTamanho(
+  ficha: FichaTecnica,
+  biblioteca: BibliotecaDeMateriais,
+  encaixe: EncaixeParaConsumo | null,
+  pecas: readonly Molde[],
+  larguraDoTecidoMm: number | null = null,
+): CustoDoTamanho[] {
   if (ficha.tamanhos.length < 2 || pecas.length === 0) return [];
   const areas = areasPorTamanho(pecas, ficha.tamanhos);
   const valores = [...areas.values()];
@@ -196,18 +202,25 @@ export function preCustoPorTamanho(ficha: FichaTecnica, biblioteca: BibliotecaDe
   return ficha.tamanhos.map((tamanho) => {
     const areaM2 = areas.get(tamanho)!;
     const fator = areaM2 / media;
-    // O tecido do tamanho: o informado vezes o fator; o do encaixe, com o encaixe esticado pelo fator. O resto, igual.
+    // O tecido do tamanho: o informado vezes o fator; o do encaixe, com o encaixe esticado pelo fator; o do desenho,
+    // na escala das medidas do tamanho. O resto, igual.
     const daFicha: FichaTecnica = {
       ...ficha,
       materiais: ficha.materiais.map((item) =>
-        ehTecido(item) && item.consumo.tipo === 'informado' ? { ...item, consumo: { ...item.consumo, quantidade: item.consumo.quantidade * fator } } : item,
+        !ehTecido(item)
+          ? item
+          : item.consumo.tipo === 'informado'
+            ? { ...item, consumo: { ...item.consumo, quantidade: item.consumo.quantidade * fator } }
+            : item.consumo.tipo === 'pelo-desenho'
+              ? { ...item, consumo: { ...item.consumo, tamanho } }
+              : item,
       ),
     };
     const encaixeDoTecido = encaixe ? { ...encaixe, comprimentoMm: encaixe.comprimentoMm * fator } : null;
     // O encaixe esticado só vale para o tecido: os outros itens pelo encaixe (raros: um elástico em metros) ficam com o
     // encaixe de verdade.
-    const comTecido = calcularPreCusto(daFicha, biblioteca, encaixeDoTecido);
-    const semTecido = calcularPreCusto(daFicha, biblioteca, encaixe);
+    const comTecido = calcularPreCusto(daFicha, biblioteca, encaixeDoTecido, larguraDoTecidoMm);
+    const semTecido = calcularPreCusto(daFicha, biblioteca, encaixe, larguraDoTecidoMm);
     const linhas = comTecido.linhas.map((l, i) => (l.grupo === 'tecido' ? l : semTecido.linhas[i]!));
     const preCusto = recalcularTotais(comTecido, linhas);
     return { tamanho, areaM2, fatorDoTecido: fator, preCusto };
@@ -353,7 +366,7 @@ export function custosDosModelos(projetos: readonly Projeto[], biblioteca: Bibli
     if (!ficha) continue;
     const estado = projeto.estadoAtual;
     const encaixe = encaixeParaConsumo(estado.pecas, estado.enfesto?.larguraUtilMm ?? null);
-    const c = calcularPreCusto(ficha, biblioteca, encaixe);
+    const c = calcularPreCusto(ficha, biblioteca, encaixe, estado.tecido?.larguraUtilMm ?? estado.enfesto?.larguraUtilMm ?? null);
     linhas.push({
       projetoId: projeto.id,
       nome: projeto.nome,

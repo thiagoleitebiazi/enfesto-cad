@@ -6,6 +6,7 @@ import type { Ponto2D } from '../core/geometria';
 import type { ImagemDoModelo } from '../domain/imagens';
 import type { PontoDeMedida } from '../domain/fichaTecnica';
 import { numeroComVirgula } from '../core/numeros';
+import { avisoDoTamanhoDaRoupa, estimativaPeloDesenho, tamanhoDoMeio } from '../domain/consumoPeloDesenho';
 import {
   adicionarElemento,
   ALTURA_DA_FOLHA,
@@ -590,10 +591,49 @@ export function PainelDoDesenhoTecnico(props: {
                 }}
               />
             )}
+            <AreaParaOConsumo desenho={desenho} medidas={props.medidas} tamanhos={props.tamanhos} />
           </aside>
         </div>
       </div>
     </Sobreposicao>
+  );
+}
+
+/**
+ * A área da roupa pelo desenho (ADR 0127), no tamanho do meio: os contornos fechados na escala das cotas — a que o
+ * tecido "Pelo desenho técnico" da ficha usa. Sem escala ou sem contorno, diz o que falta.
+ */
+function AreaParaOConsumo(props: { readonly desenho: DesenhoTecnico; readonly medidas: readonly PontoDeMedida[]; readonly tamanhos: readonly string[] }): React.JSX.Element {
+  const tamanho = tamanhoDoMeio(props.tamanhos);
+  const estimativa = tamanho === null ? null : estimativaPeloDesenho(props.desenho, props.medidas, tamanho);
+  const aviso = estimativa?.ok ? avisoDoTamanhoDaRoupa(estimativa) : null;
+  return (
+    <section className="area-do-consumo" aria-label="Área para o consumo">
+      <p className="legenda-inline">Área para o consumo{tamanho ? ` (tamanho ${tamanho})` : ''}</p>
+      {estimativa === null ? (
+        <p className="nota-do-formulario">A ficha ainda não tem tamanhos: a escala vem da medida de um tamanho.</p>
+      ) : estimativa.ok ? (
+        <>
+          <p className="valor-da-area">{numeroComVirgula(estimativa.areaMm2 / 1e6, 3)} m²</p>
+          <p className="nota-do-formulario">
+            {estimativa.comoSaiu}. {estimativa.formas} contorno(s) fechado(s). Nesta escala, a roupa tem{' '}
+            <strong>
+              {numeroComVirgula(Math.round(estimativa.larguraMm / 10))} × {numeroComVirgula(Math.round(estimativa.alturaMm / 10))} cm
+            </strong>{' '}
+            (largura × altura): confira se é o tamanho dela.
+            {estimativa.escala.diferencaPercentual > 5 ? ` As cotas não concordam (até ${numeroComVirgula(Math.round(estimativa.escala.diferencaPercentual))}% de diferença): confira as medidas ou o desenho.` : ''} Na ficha, o
+            tecido com o consumo "Pelo desenho técnico" usa esta área.
+          </p>
+          {aviso && (
+            <p className="mensagem-de-erro" role="alert">
+              {aviso}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="nota-do-formulario">{estimativa.erro.replace(/^Pelo desenho: /, '')}</p>
+      )}
+    </section>
   );
 }
 

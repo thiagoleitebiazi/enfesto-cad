@@ -4921,6 +4921,7 @@ export default function App(): React.JSX.Element {
           parteInicial={fichaAberta.parte}
           pecas={pecas}
           encaixe={encaixeParaConsumo(pecas, enfesto?.larguraUtilMm ?? null)}
+          larguraDoTecidoMm={tecido?.larguraUtilMm ?? enfesto?.larguraUtilMm ?? null}
           biblioteca={bibliotecaDeMateriais.biblioteca}
           responsavelSugerido={projetoAtual.autor ?? ''}
           onGuardar={guardarFichaTecnica}

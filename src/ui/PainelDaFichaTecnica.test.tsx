@@ -245,3 +245,42 @@ describe('PainelDaFichaTecnica — a letra das cotas na tabela de medidas (ADR 0
     expect(letras).toEqual(['A:letra-sem-cota', 'B:letra-da-cota']);
   });
 });
+
+describe('o consumo do tecido pelo desenho técnico (ADR 0127)', () => {
+  it('o tecido "Pelo desenho técnico": a área do desenho na escala da cota, com a costura e o aproveitamento, pela largura', () => {
+    const corpo = (id: string, vista: 'frente' | 'costas') => ({
+      id,
+      tipo: 'traco' as const,
+      vista,
+      pontos: [ponto(150, 100), ponto(200, 100), ponto(200, 300), ponto(150, 300)],
+      curvo: false,
+      fechado: true,
+      estilo: 'contorno' as const,
+      cor: '#000000',
+      espessura: 2,
+      preenchimento: null,
+      espelhar: true,
+    });
+    const desenho = adicionarElemento(DESENHO_VAZIO, [corpo('f', 'frente'), corpo('c', 'costas'), novaCota('c1', 'frente', ponto(120, 100), ponto(120, 300), 'comp')]);
+    const ficha: FichaTecnica = {
+      ...novaFichaTecnica({ nome: 'Blusa', codigo: 'ENF-1', pecas: [] }, AGORA),
+      tamanhos: ['P', 'M', 'G'],
+      medidas: [{ id: 'comp', nome: 'Comprimento', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 66, M: 70, G: 74 } }],
+      desenho,
+    };
+    abrir({ ficha, parte: 'materiais' });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar material' }));
+    fireEvent.change(screen.getByLabelText('Consumo de Malha PV'), { target: { value: 'pelo-desenho' } });
+    const linha = within(screen.getByRole('table', { name: 'Materiais e aviamentos (por peça pronta)' })).getAllByRole('row')[1]!;
+    // 0,49 m² × 1,15 ÷ 0,80 = 0,704 m² de tecido ÷ 1,6 m de largura (a da malha) = 0,440 m × R$ 20.
+    expect(linha).toHaveTextContent('0,440 m');
+    expect(linha).toHaveTextContent('frente 0,245 m² + costas 0,245 m², na escala da cota de Comprimento (70 cm no M); + 15% de costura e folga, ÷ 80% de aproveitamento = 0,704 m² de tecido ÷ 1,60 m de largura');
+    expect(linha).toHaveTextContent('R$ 8,80');
+    expect(screen.getByLabelText('Tamanho da escala de Malha PV')).toHaveDisplayValue('o do meio (M)');
+    // No G, a escala é a do G: 74 cm na mesma cota.
+    fireEvent.change(screen.getByLabelText('Tamanho da escala de Malha PV'), { target: { value: 'G' } });
+    expect(linha).toHaveTextContent(`${((0.704375 * (74 / 70) ** 2) / 1.6).toFixed(3).replace('.', ',')} m`);
+    fireEvent.change(screen.getByLabelText('Aproveitamento de Malha PV'), { target: { value: '100' } });
+    expect(linha).toHaveTextContent('÷ 100% de aproveitamento');
+  });
+});

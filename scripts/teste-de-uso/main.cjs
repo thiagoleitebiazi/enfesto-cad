@@ -853,6 +853,12 @@ async function principal() {
   // Mais um passo pequeno no mesmo lugar: a coluna debaixo do mouse é a do último movimento já desenhado.
   win.webContents.sendInputEvent({ type: 'mouseMove', x: daModelagem.x + 2, y: daModelagem.y + 2, button: 'left', modifiers: ['leftButtonDown'] });
   await espera(400);
+  // O sistema às vezes perde os últimos movimentos mandados de uma vez (o cartão para no meio do caminho, entre as
+  // colunas): o último movimento é repetido, um pouco ao lado, até o quadro mostrar a coluna debaixo do mouse.
+  for (let i = 0; i < 10 && !(await js(`document.querySelector('[data-etapa="modelagem"]').className`)).includes('destino-sob-o-cartao'); i++) {
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: daModelagem.x + 3 + (i % 2), y: daModelagem.y + 3, button: 'left', modifiers: ['leftButtonDown'] });
+    await espera(200);
+  }
   const noMeioDoArrasto = JSON.parse(
     await js(
       `JSON.stringify({ modelagem: document.querySelector('[data-etapa="modelagem"]').className, producao: document.querySelector('[data-etapa="producao"]').className, rotulo: ((document.querySelector('[data-etapa="modelagem"] .o-que-o-arrasto-faz') || {}).textContent || ''), alvo: window.__alvoDoArrasto })`,
@@ -1184,6 +1190,16 @@ async function principal() {
     JSON.stringify(naCota),
   );
   await foto('33b-cota-no-desenho.png');
+  // A área para o consumo (ADR 0127): com a cota ligada ao busto, os contornos fechados (a camiseta e o bolso) medidos
+  // na escala dela, e o tamanho da roupa nessa escala. O busto da ficha é a volta inteira (100 cm no M), e a cota
+  // atravessa só a frente: a escala dobra, e o aviso diz que a roupa ficou grande demais.
+  const caixaDaArea = await js(`((document.querySelector('[role=dialog] .area-do-consumo') || {}).innerText || '').replace(/\\s+/g, ' ')`);
+  const areaDoDesenho = Number(((caixaDaArea.match(/(\d+,\d{3}) m²/) || [])[1] || '').replace(',', '.'));
+  conferir(
+    'a área para o consumo: os contornos na escala da cota do busto, o tamanho da roupa nessa escala, e o aviso de grande demais (a volta do busto numa cota da frente)',
+    areaDoDesenho > 0 && caixaDaArea.includes('na escala da cota de Busto') && /Nesta escala, a roupa tem \d+ × \d+ cm/.test(caixaDaArea) && caixaDaArea.includes('grande demais'),
+    caixaDaArea.slice(0, 260),
+  );
   await fecharJanela();
   await espera(1200);
   await botao('Ficha técnica');
@@ -1197,6 +1213,29 @@ async function principal() {
     JSON.stringify(letrasNaTabela),
   );
   await foto('33c-letras-na-tabela.png');
+  // Na ficha, um tecido em m² com o consumo "Pelo desenho técnico": a mesma área, mais 15% de costura e folga, sobre
+  // 80% de aproveitamento. Depois, tirado (a ficha fica como estava).
+  await parteDaJanela('Materiais');
+  await espera(300);
+  await botaoNaJanela('Adicionar material');
+  await espera(200);
+  await js(`(() => { const linhas = Array.from(Array.from(document.querySelectorAll('[role=dialog] table')).find(t => (t.caption || {}).textContent === 'Materiais e aviamentos (por peça pronta)').querySelectorAll('tbody tr')); const s = linhas[linhas.length - 1].querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, '__digitado__'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await espera(200);
+  await noCampo('Descrição do item digitado', 'Tecido pelo desenho');
+  await espera(200);
+  await noCampo('Unidade de Tecido pelo desenho', 'm2');
+  await noCampo('Consumo de Tecido pelo desenho', 'pelo-desenho');
+  await espera(400);
+  const linhaDoDesenho = await js(`(() => { const linhas = Array.from(Array.from(document.querySelectorAll('[role=dialog] table')).find(t => (t.caption || {}).textContent === 'Materiais e aviamentos (por peça pronta)').querySelectorAll('tbody tr')); return linhas[linhas.length - 1].innerText.replace(/\\s+/g, ' '); })()`);
+  const consumoDoDesenho = Number(((linhaDoDesenho.match(/(\d+,\d{3}) m²/) || [])[1] || '').replace(',', '.'));
+  conferir(
+    'na ficha, o tecido "Pelo desenho técnico": a área do desenho + 15% ÷ 80% de aproveitamento',
+    Math.abs(consumoDoDesenho - (areaDoDesenho * 1.15) / 0.8) < 0.002 && linhaDoDesenho.includes('na escala da cota de Busto'),
+    `${consumoDoDesenho} m² (a área ${areaDoDesenho} m²): ${linhaDoDesenho.slice(0, 200)}`,
+  );
+  await foto('33d-consumo-pelo-desenho.png');
+  await clicarEm(`document.querySelector('[role=dialog] button[aria-label="Remover Tecido pelo desenho"]')`);
+  await espera(400);
   await fecharJanela();
   await espera(800);
 

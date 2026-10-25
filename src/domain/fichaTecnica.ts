@@ -3,6 +3,7 @@ import type { Material, PadroesDeCusto, UnidadeDoMaterial } from './materiais';
 import { problemaDosPadroes, ROTULO_DA_UNIDADE } from './materiais';
 import { riscoDaMesa } from './planoDeCorte';
 import { lerDesenhoTecnico, type DesenhoTecnico } from './desenhoTecnico';
+import { avisoDoTamanhoDaRoupa, estimativaPeloDesenho, tamanhoDoMeio } from './consumoPeloDesenho';
 import { numeroComVirgula } from '../core/numeros';
 
 /**
@@ -38,7 +39,20 @@ export type ConsumoDoItem =
       readonly roupasNoEncaixe: number | null;
       /** A perda somada ao consumo (pontas, emendas, defeitos), em %. */
       readonly perdaPercentual: number;
+    }
+  | {
+      /** Pela área das formas do desenho técnico, antes do molde (ADR 0127). */
+      readonly tipo: 'pelo-desenho';
+      /** O tamanho em que as cotas dão a escala; `null`: o do meio da ficha. */
+      readonly tamanho: string | null;
+      /** A costura, a folga e o que o desenho não mostra (a vista, o forro do bolso), em % da área. */
+      readonly acrescimoPercentual: number;
+      /** O aproveitamento esperado do encaixe (%): a parte do tecido que vira roupa. */
+      readonly aproveitamentoPercentual: number;
     };
+
+/** O consumo pelo desenho com os números de partida: 15% de costura e folga, 80% de aproveitamento. */
+export const CONSUMO_PELO_DESENHO_PADRAO: ConsumoDoItem = { tipo: 'pelo-desenho', tamanho: null, acrescimoPercentual: 15, aproveitamentoPercentual: 80 };
 
 export interface ItemDeMaterial {
   readonly id: string;
@@ -268,10 +282,62 @@ export interface ConsumoCalculado {
   readonly erro?: string;
 }
 
-/** O consumo do item por peça pronta. */
-export function consumoDoItem(item: ItemDeMaterial, material: Material | undefined, encaixe: EncaixeParaConsumo | null): ConsumoCalculado {
+/**
+ * O consumo pelo desenho técnico: a área das formas na escala das cotas, com o acréscimo de costura e folga, dividida
+ * pelo aproveitamento — o tecido gasto, em m²; em metros, pela largura do tecido; em quilos, pela gramatura.
+ */
+function consumoPeloDesenhoDoItem(
+  item: ItemDeMaterial,
+  consumo: Extract<ConsumoDoItem, { tipo: 'pelo-desenho' }>,
+  material: Material | undefined,
+  ficha: Pick<FichaTecnica, 'desenho' | 'medidas' | 'tamanhos'> | null,
+  larguraDoTecidoMm: number | null,
+): ConsumoCalculado {
+  if (!ficha) return { quantidade: null, explicacao: '', erro: 'Pelo desenho: falta a ficha técnica.' };
+  const tamanho = consumo.tamanho ?? tamanhoDoMeio(ficha.tamanhos);
+  if (tamanho === null) return { quantidade: null, explicacao: '', erro: 'Pelo desenho: a ficha não tem tamanhos (a escala vem da medida de um tamanho).' };
+  if (!(consumo.aproveitamentoPercentual > 0 && consumo.aproveitamentoPercentual <= 100)) return { quantidade: null, explicacao: '', erro: 'Pelo desenho: o aproveitamento precisa ser de 1 a 100%.' };
+  const estimativa = estimativaPeloDesenho(ficha.desenho, ficha.medidas, tamanho);
+  if (!estimativa.ok) return { quantidade: null, explicacao: '', erro: estimativa.erro };
+  const m2 = ((estimativa.areaMm2 / 1e6) * (1 + consumo.acrescimoPercentual / 100)) / (consumo.aproveitamentoPercentual / 100);
+  const avisoDoTamanho = avisoDoTamanhoDaRoupa(estimativa);
+  const comoSaiu = `${avisoDoTamanho ? `Atenção: ${avisoDoTamanho} ` : ''}${estimativa.comoSaiu}; + ${numeroComVirgula(Math.round(consumo.acrescimoPercentual * 10) / 10)}% de costura e folga, ÷ ${numeroComVirgula(Math.round(consumo.aproveitamentoPercentual * 10) / 10)}% de aproveitamento = ${numeroComVirgula(m2, 3)} m² de tecido`;
+  const largura = material?.larguraMm ?? larguraDoTecidoMm;
+  switch (item.unidade) {
+    case 'm2':
+      return { quantidade: m2, explicacao: comoSaiu };
+    case 'm':
+    case 'cm': {
+      if (!largura) return { quantidade: null, explicacao: '', erro: 'Pelo desenho em m ou cm: falta a largura do tecido (no material ou no enfesto).' };
+      const metros = m2 / (largura / 1000);
+      return { quantidade: item.unidade === 'm' ? metros : metros * 100, explicacao: `${comoSaiu} ÷ ${numeroComVirgula(largura / 1000, 2)} m de largura` };
+    }
+    case 'kg':
+    case 'g': {
+      const gramatura = material?.gramaturaGm2;
+      if (!gramatura) return { quantidade: null, explicacao: '', erro: 'Pelo desenho em quilos: falta a gramatura do tecido (no material da biblioteca).' };
+      const gramas = m2 * gramatura;
+      return { quantidade: item.unidade === 'kg' ? gramas / 1000 : gramas, explicacao: `${comoSaiu} × ${numeroComVirgula(gramatura, 0)} g/m²` };
+    }
+    default:
+      return { quantidade: null, explicacao: '', erro: `Pelo desenho, só em m, cm, m², kg ou g (o item está em ${ROTULO_DA_UNIDADE[item.unidade]}).` };
+  }
+}
+
+/**
+ * O consumo do item por peça pronta. O pelo desenho usa o desenho, as medidas e os tamanhos da ficha, e a largura do
+ * tecido do material ou, sem ela, a dada (a do enfesto).
+ */
+export function consumoDoItem(
+  item: ItemDeMaterial,
+  material: Material | undefined,
+  encaixe: EncaixeParaConsumo | null,
+  ficha: Pick<FichaTecnica, 'desenho' | 'medidas' | 'tamanhos'> | null = null,
+  larguraDoTecidoMm: number | null = null,
+): ConsumoCalculado {
   const consumo = item.consumo;
   if (consumo.tipo === 'informado') return { quantidade: consumo.quantidade, explicacao: 'informado' };
+  if (consumo.tipo === 'pelo-desenho') return consumoPeloDesenhoDoItem(item, consumo, material, ficha, larguraDoTecidoMm ?? encaixe?.larguraDoTecidoMm ?? null);
   if (!encaixe) return { quantidade: null, explicacao: '', erro: 'Pelo encaixe: não há peças encaixadas na mesa.' };
   const roupas = consumo.roupasNoEncaixe ?? encaixe.roupasContadas;
   if (!(roupas > 0)) return { quantidade: null, explicacao: '', erro: 'Pelo encaixe: as roupas no encaixe precisam ser 1 ou mais.' };
@@ -314,6 +380,10 @@ export function validarItem(item: ItemDeMaterial): string[] {
   const erros: string[] = [];
   if (item.descricao.trim() === '') erros.push('O item precisa da descrição do material.');
   if (item.consumo.tipo === 'informado' && (!Number.isFinite(item.consumo.quantidade) || item.consumo.quantidade < 0)) erros.push(`${item.descricao}: o consumo precisa ser um número de 0 para cima.`);
+  if (item.consumo.tipo === 'pelo-desenho') {
+    if (!Number.isFinite(item.consumo.acrescimoPercentual) || item.consumo.acrescimoPercentual < 0) erros.push(`${item.descricao}: o acréscimo de costura e folga precisa ser um número de 0 para cima (%).`);
+    if (!(item.consumo.aproveitamentoPercentual > 0 && item.consumo.aproveitamentoPercentual <= 100)) erros.push(`${item.descricao}: o aproveitamento precisa ser de 1 a 100%.`);
+  }
   if (item.consumo.tipo === 'pelo-encaixe') {
     if (item.consumo.roupasNoEncaixe !== null && !(Number.isInteger(item.consumo.roupasNoEncaixe) && item.consumo.roupasNoEncaixe >= 1)) erros.push(`${item.descricao}: as roupas no encaixe precisam ser um número inteiro de 1 para cima.`);
     if (!Number.isFinite(item.consumo.perdaPercentual) || item.consumo.perdaPercentual < 0) erros.push(`${item.descricao}: a perda precisa ser um número de 0 para cima (%).`);

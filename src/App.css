@@ -4592,10 +4592,17 @@ input[type='radio'] {
   color: var(--cinza-600);
 }
 
-.tabela-da-ficha .campo-curto,
+/* O campo curto ganha da regra de largura toda dos campos da tabela (que pesa mais pelos :not). */
+.tabela-da-ficha input.campo-curto:not([type='checkbox']):not([type='radio']),
 .painel-da-ficha-tecnica .campo-curto {
   width: 72px;
   min-width: 56px;
+}
+
+/* Os campos do consumo ficam na linha do texto ("no tamanho [M], costura e folga [15] %"), estreitos. */
+.tabela-da-ficha .consumo-pelo-encaixe select {
+  width: auto;
+  flex: 0 1 auto;
 }
 
 .item-digitado,
@@ -5527,4 +5534,30 @@ rect.destaque-do-desenho,
   border-radius: var(--raio-md);
   background: var(--sucesso-fundo);
   box-shadow: inset 3px 0 0 var(--sucesso-texto);
+}
+
+/* A área da roupa pelo desenho técnico (ADR 0127): a caixa azul no fim das propriedades, com o número grande. */
+.area-do-consumo {
+  margin-top: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--azul-200);
+  border-left: 4px solid var(--azul-700);
+  border-radius: var(--raio-md);
+  background: var(--azul-50);
+}
+
+.area-do-consumo .legenda-inline {
+  margin: 0 0 2px;
+  color: var(--azul-700);
+}
+
+.area-do-consumo .valor-da-area {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--azul-700);
+}
+
+.area-do-consumo .nota-do-formulario {
+  margin: 4px 0 0;
 }

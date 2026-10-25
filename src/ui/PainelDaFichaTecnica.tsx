@@ -15,6 +15,7 @@ import {
   abrirNovaVersao,
   aprovarFicha,
   consumoDoItem,
+  CONSUMO_PELO_DESENHO_PADRAO,
   consumoEscrito,
   definirPadroesDeCustoDaFicha,
   enviarParaAprovacao,
@@ -34,6 +35,7 @@ import {
   type Operacao,
   type PontoDeMedida,
 } from '../domain/fichaTecnica';
+import { tamanhoDoMeio } from '../domain/consumoPeloDesenho';
 import {
   calcularPreCusto,
   centavos,
@@ -81,6 +83,8 @@ export function PainelDaFichaTecnica(props: {
   readonly ficha: FichaTecnica;
   readonly pecas: readonly Molde[];
   readonly encaixe: EncaixeParaConsumo | null;
+  /** A largura do tecido do projeto (a do tecido, ou a útil da mesa): o consumo pelo desenho passa de m² a metros por ela. */
+  readonly larguraDoTecidoMm?: number | null;
   readonly biblioteca: BibliotecaDeMateriais;
   readonly parteInicial?: ParteDaFicha;
   readonly responsavelSugerido: string;
@@ -102,7 +106,7 @@ export function PainelDaFichaTecnica(props: {
   const [parte, setParte] = useState<ParteDaFicha>(props.parteInicial ?? 'descricao');
   const [mensagem, setMensagem] = useState<string | null>(null);
   const editavel = fichaEditavel(ficha);
-  const preCusto = calcularPreCusto(ficha, props.biblioteca, props.encaixe);
+  const preCusto = calcularPreCusto(ficha, props.biblioteca, props.encaixe, props.larguraDoTecidoMm ?? null);
 
   // Guarda sozinho, meio segundo depois da última mudança.
   const { onGuardar, agoraIso } = props;
@@ -154,7 +158,7 @@ export function PainelDaFichaTecnica(props: {
           </span>
           <span className="nota-do-formulario">{guardadaEm ? `Guardada às ${guardadaEm}` : 'Guardada no projeto a cada mudança'}</span>
           <span className="acoes-da-fila">
-            <button type="button" onClick={() => props.onExportarPdf(ficha, preCusto, preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas))}>
+            <button type="button" onClick={() => props.onExportarPdf(ficha, preCusto, preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas, props.larguraDoTecidoMm ?? null))}>
               Exportar PDF
             </button>
           </span>
@@ -196,7 +200,7 @@ export function PainelDaFichaTecnica(props: {
         )}
         {parte === 'medidas' && <ParteMedidas ficha={ficha} editavel={editavel} campo={campo} novoId={props.novoId} setMensagem={setMensagem} />}
         {parte === 'materiais' && (
-          <ParteMateriais ficha={ficha} editavel={editavel} campo={campo} biblioteca={props.biblioteca} encaixe={props.encaixe} preCusto={preCusto} novoId={props.novoId} onAbrirMateriais={props.onAbrirMateriais} />
+          <ParteMateriais ficha={ficha} editavel={editavel} campo={campo} biblioteca={props.biblioteca} encaixe={props.encaixe} larguraDoTecidoMm={props.larguraDoTecidoMm ?? null} preCusto={preCusto} novoId={props.novoId} onAbrirMateriais={props.onAbrirMateriais} />
         )}
         {parte === 'operacoes' && <ParteOperacoes ficha={ficha} editavel={editavel} campo={campo} novoId={props.novoId} preCusto={preCusto} />}
         {parte === 'instrucoes' && <ParteInstrucoes instrucoes={ficha.instrucoes} editavel={editavel} onMudar={(instrucoes) => campo({ instrucoes })} />}
@@ -204,7 +208,7 @@ export function PainelDaFichaTecnica(props: {
           <PartePreCusto
             ficha={ficha}
             preCusto={preCusto}
-            porTamanho={preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas)}
+            porTamanho={preCustoPorTamanho(ficha, props.biblioteca, props.encaixe, props.pecas, props.larguraDoTecidoMm ?? null)}
             editavel={editavel}
             onPadroes={(padroes) => editar((f) => definirPadroesDeCustoDaFicha(f, padroes, props.agoraIso()))}
             onAbrirMateriais={props.onAbrirMateriais}
@@ -443,6 +447,7 @@ function ParteMateriais(props: {
   readonly campo: (m: Partial<FichaTecnica>) => void;
   readonly biblioteca: BibliotecaDeMateriais;
   readonly encaixe: EncaixeParaConsumo | null;
+  readonly larguraDoTecidoMm: number | null;
   readonly preCusto: PreCusto;
   readonly novoId: () => string;
   readonly onAbrirMateriais: () => void;
@@ -497,7 +502,7 @@ function ParteMateriais(props: {
           <tbody>
             {ficha.materiais.map((item) => {
               const material = item.materialId ? biblioteca.materiais.find((m) => m.id === item.materialId) : undefined;
-              const consumo = consumoDoItem(item, material, props.encaixe);
+              const consumo = consumoDoItem(item, material, props.encaixe, ficha, props.larguraDoTecidoMm);
               const linha = props.preCusto.linhas.find((l) => l.itemId === item.id);
               return (
                 <tr key={item.id}>
@@ -553,13 +558,56 @@ function ParteMateriais(props: {
                       value={item.consumo.tipo}
                       disabled={!props.editavel}
                       onChange={(e) =>
-                        mudarItem({ ...item, consumo: e.target.value === 'informado' ? { tipo: 'informado', quantidade: consumo.quantidade ?? 1 } : { tipo: 'pelo-encaixe', roupasNoEncaixe: null, perdaPercentual: 0 } })
+                        mudarItem({
+                          ...item,
+                          consumo:
+                            e.target.value === 'informado'
+                              ? { tipo: 'informado', quantidade: consumo.quantidade ?? 1 }
+                              : e.target.value === 'pelo-desenho'
+                                ? CONSUMO_PELO_DESENHO_PADRAO
+                                : { tipo: 'pelo-encaixe', roupasNoEncaixe: null, perdaPercentual: 0 },
+                        })
                       }
                     >
                       <option value="informado">Informado</option>
                       <option value="pelo-encaixe">Pelo encaixe da mesa</option>
+                      <option value="pelo-desenho">Pelo desenho técnico</option>
                     </select>
-                    {item.consumo.tipo === 'informado' ? (
+                    {item.consumo.tipo === 'pelo-desenho' ? (
+                      <span className="consumo-pelo-encaixe">
+                        no tamanho
+                        <select
+                          aria-label={`Tamanho da escala de ${item.descricao}`}
+                          value={item.consumo.tamanho ?? ''}
+                          disabled={!props.editavel}
+                          onChange={(e) => item.consumo.tipo === 'pelo-desenho' && mudarItem({ ...item, consumo: { ...item.consumo, tamanho: e.target.value === '' ? null : e.target.value } })}
+                        >
+                          <option value="">{tamanhoDoMeio(ficha.tamanhos) ? `o do meio (${tamanhoDoMeio(ficha.tamanhos)})` : 'o do meio'}</option>
+                          {ficha.tamanhos.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                        , costura e folga
+                        <CampoDeNumero
+                          className="campo-curto"
+                          rotulo={`Acréscimo de costura e folga de ${item.descricao}`}
+                          valor={item.consumo.acrescimoPercentual}
+                          desabilitado={!props.editavel}
+                          onMudar={(v) => item.consumo.tipo === 'pelo-desenho' && mudarItem({ ...item, consumo: { ...item.consumo, acrescimoPercentual: v ?? 0 } })}
+                        />
+                        %, aproveitamento
+                        <CampoDeNumero
+                          className="campo-curto"
+                          rotulo={`Aproveitamento de ${item.descricao}`}
+                          valor={item.consumo.aproveitamentoPercentual}
+                          desabilitado={!props.editavel}
+                          onMudar={(v) => item.consumo.tipo === 'pelo-desenho' && mudarItem({ ...item, consumo: { ...item.consumo, aproveitamentoPercentual: v ?? 0 } })}
+                        />
+                        %
+                      </span>
+                    ) : item.consumo.tipo === 'informado' ? (
                       <CampoDeNumero
                         className="campo-curto"
                         rotulo={`Quantidade de ${item.descricao}`}
@@ -593,7 +641,7 @@ function ParteMateriais(props: {
                   <td className="coluna-numerica">
                     {consumoEscrito(consumo.quantidade, item.unidade)}
                     {consumo.erro && <small className="texto-de-erro"> {consumo.erro}</small>}
-                    {!consumo.erro && item.consumo.tipo === 'pelo-encaixe' && <small> {consumo.explicacao}</small>}
+                    {!consumo.erro && item.consumo.tipo !== 'informado' && <small> {consumo.explicacao}</small>}
                   </td>
                   <td className="coluna-numerica">
                     {item.materialId === null ? (
