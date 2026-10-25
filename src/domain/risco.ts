@@ -49,6 +49,8 @@ export interface PecaPostaNoRisco {
   readonly deslocamentoMm?: Ponto2D;
   /** O ponto de casamento da peça (a marca "casamento"), no lugar — quando o risco casa listras ou xadrez. */
   readonly pontoDeCasamento?: Ponto2D;
+  /** Os pontos de casamento dos grupos ("casamento: manga"), no lugar, pelo nome do grupo (ADR 0129). */
+  readonly pontosDeCasamento?: Readonly<Record<string, Ponto2D>>;
   readonly copia?: number;
 }
 
@@ -67,6 +69,21 @@ export interface Casamento {
 
 /** A marca que diz o ponto de casamento da peça: a que tem "casamento" no rótulo. */
 export const ROTULO_DO_PONTO_DE_CASAMENTO = 'casamento';
+
+/**
+ * O grupo de uma marca de casamento, pelo rótulo (ADR 0129):
+ * - "casamento" (ou "ponto de casamento"): o ponto principal da peça, que cai na linha do desenho (a fase do tecido) —
+ *   o grupo `''`;
+ * - "casamento: manga" (ou "casamento - manga"): o ponto do grupo "manga", que cai na mesma listra (a mesma fase) que
+ *   o ponto "casamento: manga" das outras peças — a manga com a cava da frente, o bolso com o peito.
+ * `null`: a marca não é de casamento.
+ */
+export function grupoDaMarcaDeCasamento(rotulo: string | undefined): string | null {
+  const r = (rotulo ?? '').trim().toLocaleLowerCase('pt-BR');
+  if (!r.includes(ROTULO_DO_PONTO_DE_CASAMENTO)) return null;
+  const doGrupo = /casamento\s*[:\-–—]\s*(.+)$/.exec(r);
+  return doGrupo ? doGrupo[1]!.trim() : '';
+}
 
 export interface OpcoesDoRisco {
   readonly larguraMm: number;
@@ -164,6 +181,8 @@ interface Orientacao {
   readonly deslocamento: Ponto2D;
   /** O ponto de casamento (a marca "casamento"), com a peça no canto; `null` sem a marca. */
   readonly ref: Ponto2D | null;
+  /** Os pontos dos grupos de casamento ("casamento: manga"), com a peça no canto, pelo nome do grupo. */
+  readonly refs: ReadonlyMap<string, Ponto2D>;
 }
 
 /**
@@ -188,13 +207,38 @@ function normalizada(molde: Molde, anguloGraus: number, espelhada: boolean): Ori
     espelhada,
     desvioMm: corte.length < semRepetidos ? TOLERANCIA_DA_SIMPLIFICACAO_MM : 0,
     deslocamento: d,
-    ref: marcaDeCasamento(molde, d),
+    ...marcasDeCasamento(molde, d),
   };
 }
 
-function marcaDeCasamento(molde: Molde, d: Ponto2D): Ponto2D | null {
-  const marca = molde.marcas.find((m) => (m.rotulo ?? '').toLocaleLowerCase('pt-BR').includes(ROTULO_DO_PONTO_DE_CASAMENTO));
-  return marca ? { x: marca.posicao.x + d.x, y: marca.posicao.y + d.y } : null;
+/** O ponto principal de casamento e os dos grupos, levados por `d`. */
+function marcasDeCasamento(molde: Molde, d: Ponto2D): { readonly ref: Ponto2D | null; readonly refs: ReadonlyMap<string, Ponto2D> } {
+  let ref: Ponto2D | null = null;
+  const refs = new Map<string, Ponto2D>();
+  for (const m of molde.marcas) {
+    const grupo = grupoDaMarcaDeCasamento(m.rotulo);
+    const ponto = { x: m.posicao.x + d.x, y: m.posicao.y + d.y };
+    if (grupo === '' && !ref) ref = ponto;
+    else if (grupo && !refs.has(grupo)) refs.set(grupo, ponto);
+  }
+  return { ref, refs };
+}
+
+/**
+ * Onde a peça tem de cair para casar: o ponto dela e a fase em que ele cai.
+ * - o ponto principal ("casamento") cai na fase do tecido;
+ * - sem ele, o ponto de um grupo que já tem fase (dada pela primeira peça posta com esse grupo) cai nela;
+ * - sem nenhum dos dois, o ponto do primeiro grupo cai na fase do tecido, e a peça dá a fase do grupo.
+ */
+function alvoDoCasamento(o: Orientacao, c: Casamento, fasesDosGrupos: ReadonlyMap<string, Ponto2D>): { readonly ref: Ponto2D; readonly fase: Ponto2D } | null {
+  const doTecido = { x: c.faseLarguraMm, y: c.faseComprimentoMm };
+  if (o.ref) return { ref: o.ref, fase: doTecido };
+  for (const [grupo, ponto] of o.refs) {
+    const fase = fasesDosGrupos.get(grupo);
+    if (fase) return { ref: ponto, fase };
+  }
+  const primeiro = [...o.refs.values()][0];
+  return primeiro ? { ref: primeiro, fase: doTecido } : null;
 }
 
 /** A primeira posição `v` ou adiante em que o ponto `ref` (da peça no canto) cai na fase da repetição. */
@@ -257,6 +301,8 @@ function porNaOrdem(
   let pontos: Ponto2D[] = [{ x: 0, y: 0 }];
   let fimDoComprimento = 0;
   const casar = opcoes.casamento;
+  // A fase de cada grupo de casamento: o lugar do ponto do grupo na primeira peça posta que o tem (ADR 0129).
+  const fasesDosGrupos = new Map<string, Ponto2D>();
   const deFora: PecaDoRisco[] = [];
   for (const peca of ordem) {
     if (opcoes.deveParar?.()) return { cancelado: true };
@@ -279,12 +325,13 @@ function porNaOrdem(
       for (const p of candidatos) {
         if (p.x + largura > opcoes.larguraMm + 1e-9 || p.y + comprimento > opcoes.comprimentoMaximoMm + 1e-9) continue;
         let delta: Ponto2D | null = null;
-        if (casar && o.ref) {
+        const alvo = casar ? alvoDoCasamento(o, casar, fasesDosGrupos) : null;
+        if (casar && alvo) {
           // Com casamento: só as posições em que o ponto da peça cai na fase; sem encostar (andaria para fora dela).
-          let x = naFase(p.x, o.ref.x, casar.rapportLarguraMm, casar.faseLarguraMm);
-          if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, o.ref.x, casar.rapportLarguraMm, casar.faseLarguraMm);
+          let x = naFase(p.x, alvo.ref.x, casar.rapportLarguraMm, alvo.fase.x);
+          if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, alvo.ref.x, casar.rapportLarguraMm, alvo.fase.x);
           if (x + largura > opcoes.larguraMm + 1e-9) continue;
-          const y0 = naFase(p.y, o.ref.y, casar.rapportComprimentoMm, casar.faseComprimentoMm);
+          const y0 = naFase(p.y, alvo.ref.y, casar.rapportComprimentoMm, alvo.fase.y);
           for (let k = 0; k < 4 && !delta; k++) {
             const y = y0 + k * (casar.rapportComprimentoMm ?? 0);
             if (y + comprimento > opcoes.comprimentoMaximoMm + 1e-9) break;
@@ -311,6 +358,9 @@ function porNaOrdem(
       continue;
     }
     postas.push(melhor);
+    for (const [grupo, ponto] of melhor.orientacao.refs) {
+      if (!fasesDosGrupos.has(grupo)) fasesDosGrupos.set(grupo, { x: ponto.x + melhor.delta.x, y: ponto.y + melhor.delta.y });
+    }
     if (primeira) opcoes.aoProgredir?.(postas.length + deFora.length, ordem.length);
     cortes.push(melhor.corte);
     caixas.push(melhor.caixa);
@@ -344,7 +394,7 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
     orientacoes.set(p, porTipo.get(chave)!);
   }
   if (opcoes.casamento) {
-    const semMarca = [...new Set(pecas.filter((p) => orientacoes.get(p)!.some((o) => o.ref === null)).map((p) => p.nome))];
+    const semMarca = [...new Set(pecas.filter((p) => orientacoes.get(p)!.some((o) => o.ref === null && o.refs.size === 0)).map((p) => p.nome))];
     if (semMarca.length > 0) {
       return {
         ok: false,
@@ -378,9 +428,12 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
     const chave = (p: PecaDoRisco): number => Math.max(...orientacoes.get(p)!.map(medida));
     // Estável: as cópias da mesma peça ficam juntas, na ordem em que vieram.
     // Os grupos do encaixe na ordem (as sem grupo por último); em cada grupo, a medida desta ordem de entrada.
+    // Com casamento, as peças só com pontos de grupo ("casamento: manga") vêm depois das que têm o ponto principal:
+    // a fase de cada grupo sai da peça que cai na linha do desenho (a frente), e a manga casa com ela (ADR 0129).
+    const soComGrupos = (p: PecaDoRisco): number => (opcoes.casamento && orientacoes.get(p)!.every((o) => o.ref === null) ? 1 : 0);
     const ordem = pecas
-      .map((p, i) => ({ p, i, g: indiceDoGrupo(gruposDoRisco, grupoDaPeca(p.molde)), v: chave(p) }))
-      .sort((a, b) => a.g - b.g || b.v - a.v || a.i - b.i)
+      .map((p, i) => ({ p, i, g: indiceDoGrupo(gruposDoRisco, grupoDaPeca(p.molde)), s: soComGrupos(p), v: chave(p) }))
+      .sort((a, b) => a.g - b.g || a.s - b.s || b.v - a.v || a.i - b.i)
       .map((x) => x.p);
     const passada = porNaOrdem(ordem, orientacoes, opcoes, folgaDaSimplificacao, tentadas.length === 1);
     if ('cancelado' in passada) return { ok: false, grade, motivo: 'A busca foi cancelada.', cancelado: true };
@@ -429,6 +482,9 @@ export function fazerRisco(todasAsPecas: readonly PecaDoRisco[], grade: GradeDoR
       deslocamentoMm: { x: x.orientacao.deslocamento.x + x.delta.x, y: x.orientacao.deslocamento.y + x.delta.y },
       ...(x.peca.copia !== undefined ? { copia: x.peca.copia } : {}),
       ...(opcoes.casamento && x.orientacao.ref ? { pontoDeCasamento: { x: x.orientacao.ref.x + x.delta.x, y: x.orientacao.ref.y + x.delta.y } } : {}),
+      ...(opcoes.casamento && x.orientacao.refs.size > 0
+        ? { pontosDeCasamento: Object.fromEntries([...x.orientacao.refs].map(([g, q]) => [g, { x: q.x + x.delta.x, y: q.y + x.delta.y }])) }
+        : {}),
   }));
   return {
     ok: true,
@@ -456,16 +512,30 @@ function casamentoValido(c: Casamento): boolean {
   return ok(c.rapportComprimentoMm) && ok(c.rapportLarguraMm) && (c.rapportComprimentoMm !== undefined || c.rapportLarguraMm !== undefined);
 }
 
-/** As peças fora da fase (o ponto de casamento fora das linhas do desenho): o nome de cada uma. Vazio: tudo casado. */
+/**
+ * As peças fora da fase: o ponto principal fora das linhas do desenho, ou o ponto de um grupo ("casamento: manga") fora
+ * da listra do mesmo grupo nas outras peças (a do primeiro). O nome de cada uma (e o grupo). Vazio: tudo casado.
+ */
 export function conferirCasamento(pecas: readonly PecaPostaNoRisco[], c: Casamento): string[] {
   const fora = (v: number, rapport: number | undefined, fase: number): boolean => {
     if (!rapport) return false;
     const resto = (((v - fase) % rapport) + rapport) % rapport;
     return Math.min(resto, rapport - resto) > 0.01;
   };
-  return pecas
-    .filter((p) => !p.pontoDeCasamento || fora(p.pontoDeCasamento.y, c.rapportComprimentoMm, c.faseComprimentoMm) || fora(p.pontoDeCasamento.x, c.rapportLarguraMm, c.faseLarguraMm))
-    .map((p) => `${p.nome} (${p.tamanho})`);
+  const foraDoPonto = (q: Ponto2D, fase: Ponto2D): boolean => fora(q.y, c.rapportComprimentoMm, fase.y) || fora(q.x, c.rapportLarguraMm, fase.x);
+  const doTecido = { x: c.faseLarguraMm, y: c.faseComprimentoMm };
+  const fasesDosGrupos = new Map<string, Ponto2D>();
+  const saida: string[] = [];
+  for (const p of pecas) {
+    const grupos = Object.entries(p.pontosDeCasamento ?? {});
+    if ((!p.pontoDeCasamento && grupos.length === 0) || (p.pontoDeCasamento && foraDoPonto(p.pontoDeCasamento, doTecido))) saida.push(`${p.nome} (${p.tamanho})`);
+    for (const [grupo, q] of grupos) {
+      const fase = fasesDosGrupos.get(grupo);
+      if (!fase) fasesDosGrupos.set(grupo, q);
+      else if (foraDoPonto(q, fase)) saida.push(`${p.nome} (${p.tamanho}), no ponto “casamento: ${grupo}”`);
+    }
+  }
+  return saida;
 }
 
 /**

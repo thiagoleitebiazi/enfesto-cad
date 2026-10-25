@@ -5561,3 +5561,29 @@ rect.destaque-do-desenho,
 .area-do-consumo .nota-do-formulario {
   margin: 4px 0 0;
 }
+
+/* O casamento no desenho do risco (ADR 0129): as linhas do desenho do tecido, finas e azuis, por baixo; o ponto
+   principal em vermelho; o de cada grupo, um losango laranja com o nome. */
+.linhas-do-desenho-do-tecido line {
+  stroke: #5b8fd9;
+  stroke-width: 1.5;
+  stroke-dasharray: 8 6;
+  opacity: 0.7;
+}
+
+.ponto-de-casamento {
+  fill: #d32f2f;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.ponto-de-casamento-do-grupo rect {
+  fill: #ef8a00;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.ponto-de-casamento-do-grupo text {
+  fill: #b35f00;
+  font-weight: 700;
+}

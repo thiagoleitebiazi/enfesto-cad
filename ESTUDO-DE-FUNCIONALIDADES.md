@@ -190,7 +190,7 @@ O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entr
 | Biblioteca de bases aprovadas para virar modelos novos | ✅ ADR 0126 |
 | Consumo de tecido estimado pelas áreas do desenho técnico (antes do molde) | ✅ ADR 0127 |
 | Extrair de uma vez todas as regiões fechadas do desenho ("vários modelos com um clique") | ✅ ADR 0128 |
-| Listras e xadrez casados por mais de um ponto | ⬜ |
+| Listras e xadrez casados por mais de um ponto | ✅ ADR 0129 |
 | Desenhar a roupa no manequim 3D e tirar os pré-moldes 2D | ⬜ |
 | Zíper como aviamento no 3D; brilho e transparência; biblioteca de componentes (golas, mangas) | ⬜ |
 

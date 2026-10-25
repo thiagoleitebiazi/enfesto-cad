@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { area, areaAssinada, contornosSeSobrepoem, distanciaEntreContornos, ponto, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { criarMolde, type Molde, type RestricaoDeRotacao } from './molde';
 import { modeloDoPlano } from './modeloDoPlano';
-import { chaveDaGrade, conferirCasamento, escreverGrade, fazerRisco, linhaDeCorteVerdadeira, orientacoesDoRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
+import { chaveDaGrade, conferirCasamento, escreverGrade, fazerRisco, grupoDaMarcaDeCasamento, linhaDeCorteVerdadeira, orientacoesDoRisco, pecasDaGrade, type PecaDoRisco, type RiscoGerado } from './risco';
 
 function retangulo(id: string, nome: string, largura: number, comprimento: number, extras: Partial<Parameters<typeof criarMolde>[0]> = {}): Molde {
   return criarMolde(
@@ -290,6 +290,65 @@ describe('fazerRisco — casamento de listras e xadrez', () => {
     expect(!semMarca.ok && semMarca.motivo).toContain('Faltam em: Bolso');
     const semRepeticao = fazerRisco([copia(marcada())], { M: 1 }, { ...opcoes, casamento: { faseComprimentoMm: 0, faseLarguraMm: 0 } });
     expect(!semRepeticao.ok && semRepeticao.motivo).toBe('O casamento precisa da repetição do desenho (rapport) no comprimento ou na largura, maior que zero.');
+  });
+
+  describe('por mais de um ponto: os grupos "casamento: nome" (ADR 0129)', () => {
+    // A frente (200 × 300) com o ponto principal em (50, 70) e o da cava ("casamento: manga") em (150, 233): 163 mm
+    // depois no comprimento. A manga (100 × 150) só com o ponto da cabeça ("casamento: manga") em (20, 40).
+    const frente = () =>
+      retangulo('f', 'Frente', 200, 300, {
+        marcas: [
+          { id: 'k', posicao: ponto(50, 70), rotulo: 'casamento' },
+          { id: 'm', posicao: ponto(150, 233), rotulo: 'Casamento: manga' },
+        ],
+      });
+    const manga = () => retangulo('m', 'Manga', 100, 150, { marcas: [{ id: 'k', posicao: ponto(20, 40), rotulo: 'casamento - manga' }] });
+    const casamento = { rapportComprimentoMm: 100, faseComprimentoMm: 30, faseLarguraMm: 0 };
+    const resto = (v: number, fase: number): number => {
+      const r = (((v - fase) % 100) + 100) % 100;
+      return Math.min(r, 100 - r);
+    };
+
+    it('a manga casa com a listra da cava da frente, não com a fase do tecido', () => {
+      // A manga vem primeiro na lista: o risco põe a frente antes (ela dá a fase do grupo).
+      const r = gerado(fazerRisco([copia(manga()), copia(manga()), copia(frente())], { M: 1 }, { ...opcoes, casamento }));
+      const f = r.pecas.find((p) => p.nome === 'Frente')!;
+      expect(resto(f.pontoDeCasamento!.y, 30)).toBeLessThan(1e-6);
+      // A cava cai 163 mm depois do ponto principal: na fase 93 (mod 100), não na 30.
+      expect(resto(f.pontosDeCasamento!['manga']!.y, 93)).toBeLessThan(1e-6);
+      const mangas = r.pecas.filter((p) => p.nome === 'Manga');
+      expect(mangas).toHaveLength(2);
+      for (const m of mangas) {
+        expect(m.pontoDeCasamento).toBeUndefined();
+        expect(resto(m.pontosDeCasamento!['manga']!.y, 93)).toBeLessThan(1e-6);
+      }
+      expect(r.casamento?.conferido).toBe(true);
+      conferirGeometria(r, 3);
+    });
+
+    it('a peça só com o ponto de um grupo basta para o risco sair; sem marca nenhuma, não', () => {
+      expect(fazerRisco([copia(manga())], { M: 1 }, { ...opcoes, casamento }).ok).toBe(true);
+      const semMarca = fazerRisco([copia(manga()), copia(retangulo('b', 'Bolso', 80, 80))], { M: 1 }, { ...opcoes, casamento });
+      expect(!semMarca.ok && semMarca.motivo).toContain('Faltam em: Bolso');
+    });
+
+    it('o rótulo diz o grupo: "casamento" e "ponto de casamento" são o principal; "casamento: nome", o grupo', () => {
+      expect(grupoDaMarcaDeCasamento('Casamento')).toBe('');
+      expect(grupoDaMarcaDeCasamento('Ponto de casamento')).toBe('');
+      expect(grupoDaMarcaDeCasamento('casamento: Manga ')).toBe('manga');
+      expect(grupoDaMarcaDeCasamento('Casamento — bolso do peito')).toBe('bolso do peito');
+      expect(grupoDaMarcaDeCasamento('Piquete')).toBeNull();
+      expect(grupoDaMarcaDeCasamento(undefined)).toBeNull();
+    });
+
+    it('a conferência acha o ponto do grupo fora da listra do mesmo grupo na outra peça', () => {
+      const base = { tamanho: 'M', contorno: [], fio: { inicio: ponto(0, 0), fim: ponto(0, 1) }, anguloGraus: 0, espelhada: false };
+      const f = { ...base, pecaId: 'f', nome: 'Frente', pontoDeCasamento: ponto(10, 130), pontosDeCasamento: { manga: ponto(10, 293) } };
+      const naListra = { ...base, pecaId: 'm', nome: 'Manga', pontosDeCasamento: { manga: ponto(500, 493) } };
+      const fora = { ...naListra, pontosDeCasamento: { manga: ponto(500, 450) } };
+      expect(conferirCasamento([f, naListra], casamento)).toEqual([]);
+      expect(conferirCasamento([f, fora], casamento)).toEqual(['Manga (M), no ponto “casamento: manga”']);
+    });
   });
 
   it('a conferência acha a peça fora da fase', () => {

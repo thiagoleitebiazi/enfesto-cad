@@ -1553,7 +1553,9 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                   <p className="nota-do-formulario">
                     O risco vai casar o desenho: o ponto "{ROTULO_DO_PONTO_DE_CASAMENTO}" de cada peça cai na repetição
                     {casamento.rapportComprimentoMm ? ` de ${emCm(casamento.rapportComprimentoMm)} no comprimento` : ''}
-                    {casamento.rapportLarguraMm ? ` e de ${emCm(casamento.rapportLarguraMm)} na largura` : ''}; as peças não deitam.
+                    {casamento.rapportLarguraMm ? ` e de ${emCm(casamento.rapportLarguraMm)} na largura` : ''}; as peças não deitam. Para casar por
+                    mais de um ponto, use marcas de grupo: "casamento: manga" na cava da frente e na cabeça da manga — a manga
+                    cai na mesma listra que a cava, e a peça com o ponto "casamento" dá a fase do grupo.
                     {pecasSemMarcaDeCasamento.length > 0 ? ` Faltam a marca "${ROTULO_DO_PONTO_DE_CASAMENTO}" em: ${pecasSemMarcaDeCasamento.join(', ')} (aba Marcações) — sem ela, o risco não sai.` : ''}
                   </p>
                 ) : (

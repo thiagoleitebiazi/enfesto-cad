@@ -5,10 +5,37 @@ import { escreverGrade } from '../domain/risco';
 /**
  * O desenho do risco, em escala: o comprimento na horizontal (como a mesa na tela do programa), a largura da malha
  * na vertical, cada peça pela linha de corte, com o nome, o tamanho e a linha de fio (a orientação). As medidas e
- * uma régua de 50 cm ficam em volta.
+ * uma régua de 50 cm ficam em volta. Com o casamento de listras e xadrez, as linhas do desenho do tecido ficam por
+ * baixo, e os pontos de casamento por cima: o principal em vermelho, o de cada grupo ("casamento: manga") com o nome
+ * (ADR 0129).
  */
 
 const CORES = ['#cfe3f7', '#f7e0c4', '#d5efd2', '#efd2ea', '#f3f0c2', '#d8d6f5', '#f5d0cf', '#cdeeee'];
+
+/** As linhas do desenho do tecido (as listras, o xadrez) na fase do casamento, por baixo das peças. */
+function LinhasDoDesenho(props: {
+  readonly casamento: NonNullable<RiscoDoPlanejamento['casamento']>;
+  readonly comprimento: number;
+  readonly largura: number;
+}): React.JSX.Element {
+  const { casamento: c } = props;
+  const posicoes = (rapport: number | undefined, fase: number, ate: number): number[] => {
+    if (!rapport || !(rapport > 0)) return [];
+    const lista: number[] = [];
+    for (let v = (((fase % rapport) + rapport) % rapport); v <= ate && lista.length < 2000; v += rapport) lista.push(v);
+    return lista;
+  };
+  return (
+    <g className="linhas-do-desenho-do-tecido" aria-hidden="true">
+      {posicoes(c.rapportComprimentoMm, c.faseComprimentoMm, props.comprimento).map((y) => (
+        <line key={`c${y}`} x1={y} y1={0} x2={y} y2={props.largura} />
+      ))}
+      {posicoes(c.rapportLarguraMm, c.faseLarguraMm, props.largura).map((x) => (
+        <line key={`l${x}`} x1={0} y1={x} x2={props.comprimento} y2={x} />
+      ))}
+    </g>
+  );
+}
 
 export function DesenhoDoRisco(props: { readonly risco: RiscoDoPlanejamento; readonly tamanhos: readonly string[] }): React.JSX.Element {
   const { risco } = props;
@@ -35,6 +62,7 @@ export function DesenhoDoRisco(props: { readonly risco: RiscoDoPlanejamento; rea
           </marker>
         </defs>
         <rect x={0} y={0} width={comprimento} height={largura} className="malha-do-risco" />
+        {risco.casamento && <LinhasDoDesenho casamento={risco.casamento} comprimento={comprimento} largura={largura} />}
         {risco.pecas.map((p, i) => {
           const xs = p.contorno.map((q) => q.y);
           const ys = p.contorno.map((q) => q.x);
@@ -48,6 +76,21 @@ export function DesenhoDoRisco(props: { readonly risco: RiscoDoPlanejamento; rea
                 {p.nome} {p.tamanho}
                 {p.espelhada ? ' (esq.)' : ''}
               </text>
+              {p.pontoDeCasamento && (
+                <circle cx={p.pontoDeCasamento.y} cy={p.pontoDeCasamento.x} r={letra * 0.35} className="ponto-de-casamento">
+                  <title>Ponto de casamento</title>
+                </circle>
+              )}
+              {Object.entries(p.pontosDeCasamento ?? {}).map(([grupo, q]) => (
+                <g key={grupo} className="ponto-de-casamento-do-grupo">
+                  <rect x={q.y - letra * 0.3} y={q.x - letra * 0.3} width={letra * 0.6} height={letra * 0.6} transform={`rotate(45 ${q.y} ${q.x})`}>
+                    <title>{`casamento: ${grupo}`}</title>
+                  </rect>
+                  <text x={q.y + letra * 0.5} y={q.x - letra * 0.4} fontSize={letra * 0.7}>
+                    {grupo}
+                  </text>
+                </g>
+              ))}
             </g>
           );
         })}
