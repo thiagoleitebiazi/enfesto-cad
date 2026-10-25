@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adicionarElemento, DESENHO_VAZIO, novoTraco, tracosDaBase } from '../domain/desenhoTecnico';
+import { adicionarElemento, DESENHO_VAZIO, novaCota, novoTraco, tracosDaBase } from '../domain/desenhoTecnico';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { svgDoDesenho, vistasComDesenho } from './desenho-exportacao';
 
@@ -35,5 +35,21 @@ describe('o desenho técnico em SVG', () => {
     expect(svg).toContain('height="40"');
     expect(svg).toContain('rotate(10 200 200)');
     expect(vistasComDesenho(DESENHO_VAZIO)).toEqual(['frente', 'costas']);
+  });
+});
+
+describe('as cotas no SVG (ADR 0117)', () => {
+  it('a linha, as duas setas e a letra do ponto de medida; sem ponto, o texto na caixa', () => {
+    let d = adicionarElemento(DESENHO_VAZIO, novaCota('c1', 'frente', { x: 100, y: 200 }, { x: 300, y: 200 }, 'comprimento'));
+    d = adicionarElemento(d, { ...novaCota('c2', 'frente', { x: 100, y: 400 }, { x: 100, y: 450 }, null), texto: 'Barra <3 cm>' });
+    const svg = svgDoDesenho(d, [], '', [{ id: 'busto' }, { id: 'comprimento' }]);
+    expect(svg.match(/<g class="cota">/g)).toHaveLength(2);
+    expect(svg.match(/<polygon /g)).toHaveLength(4);
+    expect(svg).toContain('<line x1="100" y1="200" x2="300" y2="200"');
+    expect(svg).toContain('<circle cx="200" cy="200" r="8"');
+    expect(svg).toMatch(/dominant-baseline="central"[^>]*>B<\/text>/);
+    expect(svg).toContain('>Barra &lt;3 cm&gt;</text>');
+    // Sem as medidas da ficha, a cota ligada mostra "?".
+    expect(svgDoDesenho(d, [])).toMatch(/>\?<\/text>/);
   });
 });

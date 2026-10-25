@@ -164,7 +164,7 @@ import { gerarPdfParaImpressaoDigital } from './formats/impressao-exportacao';
 import { lerPainelDeInspiracao, type PainelDeInspiracao as PainelDeInspiracaoDoModelo } from './domain/inspiracao';
 import { lerMontagem3d, type Montagem3D } from './domain/montagem3d';
 import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
-import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica } from './domain/fichaTecnica';
+import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica, type PontoDeMedida } from './domain/fichaTecnica';
 import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
 import { PainelDoDesenhoTecnico } from './ui/PainelDoDesenhoTecnico';
 import { svgDoDesenho } from './formats/desenho-exportacao';
@@ -1727,7 +1727,13 @@ export default function App(): React.JSX.Element {
   );
 
   // ---- O desenho técnico (aba Modelo, ADR 0107): o croqui da ficha técnica; a ficha aprovada só deixa ver.
-  const [desenhoAberto, setDesenhoAberto] = useState<{ readonly desenho: DesenhoTecnico; readonly somenteLeitura: string | null } | null>(null);
+  const [desenhoAberto, setDesenhoAberto] = useState<{
+    readonly desenho: DesenhoTecnico;
+    readonly somenteLeitura: string | null;
+    /** Os pontos de medida e os tamanhos da ficha: a letra e os valores das cotas (ADR 0117). */
+    readonly medidas: readonly PontoDeMedida[];
+    readonly tamanhos: readonly string[];
+  } | null>(null);
   const abrirDesenhoTecnico = useCallback(
     (fichaDada?: FichaTecnica) => {
       const ficha =
@@ -1737,6 +1743,8 @@ export default function App(): React.JSX.Element {
       setFichaAberta(null);
       setDesenhoAberto({
         desenho: ficha.desenho ?? DESENHO_VAZIO,
+        medidas: ficha.medidas,
+        tamanhos: ficha.tamanhos,
         somenteLeitura: fichaEditavel(ficha)
           ? null
           : `A ficha está ${ROTULO_DA_SITUACAO_DA_FICHA[ficha.situacao].toLowerCase()} (versão ${ficha.versao}): o desenho só pode ser visto. Para mudar, abra uma nova versão (Ficha técnica › Aprovação).`,
@@ -1769,7 +1777,7 @@ export default function App(): React.JSX.Element {
       }
       const ficha = lerFichaTecnica(projetoAtual.fichaTecnica);
       const referencia = ficha?.referencia || projetoAtual.codigo;
-      const bytes = new TextEncoder().encode(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual), `${referencia} — ${ficha?.nomeDoModelo ?? projetoAtual.nome}`));
+      const bytes = new TextEncoder().encode(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual), `${referencia} — ${ficha?.nomeDoModelo ?? projetoAtual.nome}`, ficha?.medidas ?? []));
       const caminhoSalvo = await api.salvarArquivo(`desenho-tecnico-${referencia.replace(/[^A-Za-z0-9._-]+/g, '-')}.svg`, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Desenho técnico (SVG) salvo em ${caminhoSalvo}`);
     },
@@ -4787,8 +4795,9 @@ export default function App(): React.JSX.Element {
             };
           })()}
           desenhoComoPng={(() => {
-            const desenho = lerFichaTecnica(projetoAtual.fichaTecnica)?.desenho;
-            return desenho && desenho.elementos.length > 0 ? () => pngDoSvg(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual)), 1024) : null;
+            const fichaDoDesenho = lerFichaTecnica(projetoAtual.fichaTecnica);
+            const desenho = fichaDoDesenho?.desenho;
+            return desenho && desenho.elementos.length > 0 ? () => pngDoSvg(svgDoDesenho(desenho, imagensDoProjeto(projetoAtual), '', fichaDoDesenho.medidas), 1024) : null;
           })()}
           lerImagem={lerImagemParaInspiracao}
           reduzirImagem={reduzirParaInspiracao}
@@ -4865,6 +4874,8 @@ export default function App(): React.JSX.Element {
           desenho={desenhoAberto.desenho}
           somenteLeitura={desenhoAberto.somenteLeitura}
           imagens={imagensDoProjeto(projetoAtual)}
+          medidas={desenhoAberto.medidas}
+          tamanhos={desenhoAberto.tamanhos}
           onGuardar={guardarDesenhoTecnico}
           onExportarSvg={(d) => void exportarSvgDoDesenho(d)}
           novoId={novoIdDaFicha}

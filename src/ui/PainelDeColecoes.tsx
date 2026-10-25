@@ -370,7 +370,7 @@ function CroquiDoProjeto(props: { readonly projeto: Projeto | undefined }): Reac
   const ficha = props.projeto ? lerFichaTecnica(props.projeto.fichaTecnica) : null;
   if (!ficha?.desenho || ficha.desenho.elementos.length === 0) return null;
   const vista = ficha.desenho.elementos.some((e) => e.vista === 'frente') ? 'frente' : 'costas';
-  return <FolhaDoDesenho desenho={ficha.desenho} vista={vista} imagens={imagensDoProjeto(props.projeto!)} rotulo={`Croqui de ${props.projeto!.nome}`} />;
+  return <FolhaDoDesenho desenho={ficha.desenho} vista={vista} imagens={imagensDoProjeto(props.projeto!)} medidas={ficha.medidas} rotulo={`Croqui de ${props.projeto!.nome}`} />;
 }
 
 function CartaoDoModelo(props: { readonly modelo: ModeloDaColecao; readonly projeto: Projeto | undefined; readonly hoje: string; readonly onAbrir: () => void }): React.JSX.Element {

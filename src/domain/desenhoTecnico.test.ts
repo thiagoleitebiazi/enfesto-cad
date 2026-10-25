@@ -13,15 +13,21 @@ import {
   elementosDaVista,
   espelharElemento,
   FORMAS,
+  geometriaDaCota,
   lerDesenhoTecnico,
+  letraDaMedida,
+  medidasComCota,
   MANEQUINS,
   moverElemento,
   mudarElemento,
+  novaCota,
   novoTraco,
   ordemDoElemento,
   pontoPegaElemento,
   pontosDoTraco,
+  proximaMedidaSemCota,
   removerElemento,
+  rotuloDaCota,
   tracosDaBase,
   tracosDaForma,
   type EstampaDoDesenho,
@@ -168,5 +174,57 @@ describe('o desenho técnico — na ficha', () => {
     expect(lido!.elementos.map((e) => e.id)).toEqual(['a']);
     expect(lido!.manequim).toBeNull();
     expect(lerDesenhoTecnico(null)).toBeNull();
+  });
+});
+
+describe('as cotas do desenho (ADR 0117)', () => {
+  const MEDIDAS = [{ id: 'busto' }, { id: 'comprimento' }, { id: 'manga' }];
+
+  it('a letra pela ordem da tabela: A … Z, AA, AB', () => {
+    expect([0, 1, 25, 26, 27, 51, 52].map(letraDaMedida)).toEqual(['A', 'B', 'Z', 'AA', 'AB', 'AZ', 'BA']);
+  });
+
+  it('o rótulo: a letra do ponto ligado; sem ele (ou se saiu da tabela), o texto ou "?"', () => {
+    const cota = novaCota('c', 'frente', { x: 100, y: 100 }, { x: 300, y: 100 }, 'comprimento');
+    expect(rotuloDaCota(cota, MEDIDAS)).toBe('B');
+    expect(rotuloDaCota(cota, [{ id: 'busto' }])).toBe('?');
+    expect(rotuloDaCota({ ...cota, medidaId: null, texto: ' Barra 3 cm ' }, MEDIDAS)).toBe('Barra 3 cm');
+  });
+
+  it('a cota nova liga ao primeiro ponto de medida que ainda não tem cota', () => {
+    let d = DESENHO_VAZIO;
+    expect(proximaMedidaSemCota(d, MEDIDAS)).toBe('busto');
+    d = adicionarElemento(d, novaCota('c1', 'frente', { x: 0, y: 0 }, { x: 50, y: 0 }, 'busto'));
+    d = adicionarElemento(d, novaCota('c2', 'costas', { x: 0, y: 0 }, { x: 50, y: 0 }, 'manga'));
+    expect([...medidasComCota(d)]).toEqual(['busto', 'manga']);
+    expect(proximaMedidaSemCota(d, MEDIDAS)).toBe('comprimento');
+    d = adicionarElemento(d, novaCota('c3', 'frente', { x: 0, y: 0 }, { x: 50, y: 0 }, 'comprimento'));
+    expect(proximaMedidaSemCota(d, MEDIDAS)).toBeNull();
+  });
+
+  it('o desenho: as setas com a ponta em cada ponta da cota, o rótulo no meio (círculo para a letra, caixa para o texto)', () => {
+    const cota = novaCota('c', 'frente', { x: 100, y: 200 }, { x: 300, y: 200 }, 'busto');
+    const g = geometriaDaCota(cota, 'A');
+    expect(g.linha).toEqual([cota.de, cota.ate]);
+    expect(g.setas[0]![0]).toEqual(cota.de);
+    expect(g.setas[1]![0]).toEqual(cota.ate);
+    // As bases das setas ficam para dentro da cota.
+    expect(g.setas[0]![1].x).toBeGreaterThan(100);
+    expect(g.setas[1]![1].x).toBeLessThan(300);
+    expect(g.rotulo).toMatchObject({ centro: { x: 200, y: 200 }, texto: 'A', raio: 8 });
+    const comTexto = geometriaDaCota(cota, 'Barra 3 cm');
+    expect(comTexto.rotulo.raio).toBeNull();
+    expect(comTexto.rotulo.largura).toBeGreaterThan(50);
+  });
+
+  it('pegar, mover, não se espelhar, e voltar do arquivo; a quebrada fica de fora', () => {
+    const cota = novaCota('c', 'frente', { x: 100, y: 200 }, { x: 300, y: 200 }, 'busto');
+    expect(pontoPegaElemento(cota, { x: 150, y: 203 }, 6)).toBe(true);
+    expect(pontoPegaElemento(cota, { x: 150, y: 220 }, 6)).toBe(false);
+    expect(moverElemento(cota, 10, -5)).toMatchObject({ de: { x: 110, y: 195 }, ate: { x: 310, y: 195 } });
+    const d = adicionarElemento(DESENHO_VAZIO, cota);
+    expect(elementosDaVista(d, 'frente')).toHaveLength(1);
+    const lido = lerDesenhoTecnico(JSON.parse(JSON.stringify({ ...d, elementos: [...d.elementos, { id: 'x', tipo: 'cota', vista: 'frente', de: { x: 0 }, ate: { x: 1, y: 1 }, medidaId: null }] })));
+    expect(lido?.elementos).toEqual([cota]);
   });
 });

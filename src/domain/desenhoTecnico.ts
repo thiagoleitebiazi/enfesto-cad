@@ -5,8 +5,8 @@ import type { Ponto2D } from '../core/geometria';
  * é uma folha de 400 × 500 pontos com o eixo do meio em x = 200: o que é marcado "espelhar" aparece também do
  * outro lado (desenha-se um lado, o outro sai). Os elementos são traços (retos ou curvos, abertos ou fechados, no
  * estilo de contorno, costura, pesponto ou detalhe), textos e estampas (uma imagem do projeto, com posição,
- * largura e rotação). As bases técnicas e as formas (bolsos, golas, punhos…) entram prontas para ajustar; o
- * manequim, por baixo, é só a guia.
+ * largura e rotação) e cotas (a medida apontada, com a letra do ponto de medida da ficha, ADR 0117). As bases
+ * técnicas e as formas (bolsos, golas, punhos…) entram prontas para ajustar; o manequim, por baixo, é só a guia.
  */
 
 export const LARGURA_DA_FOLHA = 400;
@@ -73,7 +73,25 @@ export interface EstampaDoDesenho {
   readonly espelhar: boolean;
 }
 
-export type ElementoDoDesenho = TracoDoDesenho | TextoDoDesenho | EstampaDoDesenho;
+/**
+ * A cota (ADR 0117): a medida apontada no croqui — a linha com uma seta em cada ponta e, no meio, a letra do ponto de
+ * medida da ficha técnica (A, B, C…, pela ordem da tabela de medidas), que diz o valor de cada tamanho. Sem ponto
+ * ligado, o texto digitado. A cota não se espelha.
+ */
+export interface CotaDoDesenho {
+  readonly id: string;
+  readonly tipo: 'cota';
+  readonly vista: VistaDoDesenho;
+  readonly de: Ponto2D;
+  readonly ate: Ponto2D;
+  /** O ponto de medida da ficha (o id); `null`: sem ligação (vale o texto). */
+  readonly medidaId: string | null;
+  /** O texto da cota sem ponto de medida ("Barra 3 cm"). */
+  readonly texto: string;
+  readonly cor: string;
+}
+
+export type ElementoDoDesenho = TracoDoDesenho | TextoDoDesenho | EstampaDoDesenho | CotaDoDesenho;
 
 export type Manequim = 'feminino' | 'masculino';
 export const ROTULO_DO_MANEQUIM: Readonly<Record<Manequim, string>> = { feminino: 'Feminino', masculino: 'Masculino' };
@@ -99,6 +117,8 @@ export function espelharElemento(e: ElementoDoDesenho): ElementoDoDesenho {
       return { ...e, id: `${e.id}~`, pontos: e.pontos.map(espelharPonto) };
     case 'estampa':
       return { ...e, id: `${e.id}~`, centro: espelharPonto(e.centro), rotacaoGraus: -e.rotacaoGraus };
+    case 'cota':
+      return { ...e, id: `${e.id}~`, de: espelharPonto(e.de), ate: espelharPonto(e.ate) };
     default:
       return { ...e, id: `${e.id}~`, posicao: espelharPonto(e.posicao) };
   }
@@ -110,9 +130,76 @@ export function elementosDaVista(desenho: DesenhoTecnico, vista: VistaDoDesenho)
   for (const e of desenho.elementos) {
     if (e.vista !== vista) continue;
     lista.push(e);
-    if (e.tipo !== 'texto' && e.espelhar) lista.push(espelharElemento(e));
+    if ((e.tipo === 'traco' || e.tipo === 'estampa') && e.espelhar) lista.push(espelharElemento(e));
   }
   return lista;
+}
+
+// ---- As cotas (ADR 0117)
+
+/** A letra do ponto de medida pela ordem na tabela: A, B, … Z, AA, AB… */
+export function letraDaMedida(indice: number): string {
+  let n = indice;
+  let letra = '';
+  do {
+    letra = String.fromCharCode(65 + (n % 26)) + letra;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letra;
+}
+
+/** O que a cota mostra: a letra do ponto de medida ligado; sem ele (ou se ele saiu da tabela), o texto ou "?". */
+export function rotuloDaCota(c: CotaDoDesenho, medidas: readonly { readonly id: string }[]): string {
+  const i = c.medidaId === null ? -1 : medidas.findIndex((m) => m.id === c.medidaId);
+  if (i >= 0) return letraDaMedida(i);
+  return c.texto.trim() || '?';
+}
+
+/** Os pontos de medida que alguma cota do desenho aponta. */
+export function medidasComCota(desenho: DesenhoTecnico | null | undefined): Set<string> {
+  return new Set((desenho?.elementos ?? []).flatMap((e) => (e.tipo === 'cota' && e.medidaId !== null ? [e.medidaId] : [])));
+}
+
+/** O primeiro ponto de medida da tabela que ainda não tem cota (para a cota nova); `null`: todos têm, ou não há. */
+export function proximaMedidaSemCota(desenho: DesenhoTecnico, medidas: readonly { readonly id: string }[]): string | null {
+  const com = medidasComCota(desenho);
+  return medidas.find((m) => !com.has(m.id))?.id ?? null;
+}
+
+export const TAMANHO_DO_ROTULO_DA_COTA = 10;
+
+export interface GeometriaDaCota {
+  readonly linha: readonly [Ponto2D, Ponto2D];
+  /** As duas setas, cada uma um triângulo (a ponta primeiro). */
+  readonly setas: readonly (readonly [Ponto2D, Ponto2D, Ponto2D])[];
+  /** O rótulo no meio: um círculo (a letra) ou uma caixa (o texto), branco por dentro. */
+  readonly rotulo: { readonly centro: Ponto2D; readonly texto: string; readonly tamanho: number; readonly raio: number | null; readonly largura: number; readonly altura: number };
+}
+
+/** O desenho da cota, igual na tela, no SVG e no PDF: a linha, as setas e o rótulo. */
+export function geometriaDaCota(c: CotaDoDesenho, rotulo: string): GeometriaDaCota {
+  const dx = c.ate.x - c.de.x;
+  const dy = c.ate.y - c.de.y;
+  const comprimento = Math.hypot(dx, dy) || 1;
+  const u = { x: dx / comprimento, y: dy / comprimento };
+  const n = { x: -u.y, y: u.x };
+  const seta = (ponta: Ponto2D, sentido: 1 | -1): readonly [Ponto2D, Ponto2D, Ponto2D] => {
+    const base = { x: ponta.x + sentido * u.x * 7, y: ponta.y + sentido * u.y * 7 };
+    return [ponta, { x: arredondar(base.x + n.x * 2.6), y: arredondar(base.y + n.y * 2.6) }, { x: arredondar(base.x - n.x * 2.6), y: arredondar(base.y - n.y * 2.6) }];
+  };
+  const tamanho = TAMANHO_DO_ROTULO_DA_COTA;
+  const curto = rotulo.length <= 2;
+  const largura = curto ? 2 * 8 : arredondar(rotulo.length * tamanho * 0.58 + 8);
+  return {
+    linha: [c.de, c.ate],
+    setas: [seta(c.de, 1), seta(c.ate, -1)],
+    rotulo: { centro: { x: arredondar((c.de.x + c.ate.x) / 2), y: arredondar((c.de.y + c.ate.y) / 2) }, texto: rotulo, tamanho, raio: curto ? 8 : null, largura, altura: curto ? 16 : tamanho + 6 },
+  };
+}
+
+/** Uma cota nova, na cor das cotas. */
+export function novaCota(id: string, vista: VistaDoDesenho, de: Ponto2D, ate: Ponto2D, medidaId: string | null): CotaDoDesenho {
+  return { id, tipo: 'cota', vista, de, ate, medidaId, texto: '', cor: '#c62828' };
 }
 
 const arredondar = (v: number): number => Math.round(v * 100) / 100;
@@ -208,6 +295,10 @@ export function pontoPegaElemento(e: ElementoDoDesenho, p: Ponto2D, tolerancia: 
     return p.x >= c.x - tolerancia && p.x <= c.x + c.largura + tolerancia && p.y >= c.y - tolerancia && p.y <= c.y + c.altura + tolerancia;
   }
   if (e.tipo === 'estampa') return dentroDoPoligono(p, cantosDaEstampa(e, proporcaoDaImagem));
+  if (e.tipo === 'cota') {
+    const meio = { x: (e.de.x + e.ate.x) / 2, y: (e.de.y + e.ate.y) / 2 };
+    return distanciaAoSegmento(p, e.de, e.ate) <= tolerancia || Math.hypot(p.x - meio.x, p.y - meio.y) <= 8 + tolerancia;
+  }
   const caminho = pontosDoTraco(e);
   for (let i = 1; i < caminho.length; i++) if (distanciaAoSegmento(p, caminho[i - 1]!, caminho[i]!) <= tolerancia) return true;
   if (caminho.length === 1) return Math.hypot(p.x - caminho[0]!.x, p.y - caminho[0]!.y) <= tolerancia;
@@ -246,6 +337,8 @@ export function moverElemento(e: ElementoDoDesenho, dx: number, dy: number): Ele
       return { ...e, pontos: e.pontos.map(andar) };
     case 'estampa':
       return { ...e, centro: andar(e.centro) };
+    case 'cota':
+      return { ...e, de: andar(e.de), ate: andar(e.ate) };
     default:
       return { ...e, posicao: andar(e.posicao) };
   }
@@ -517,6 +610,9 @@ function elementoLido(e: unknown): ElementoDoDesenho | null {
   if (e.tipo === 'traco' && Array.isArray(e.pontos) && e.pontos.every(ehPonto) && typeof e.estilo === 'string' && e.estilo in ROTULO_DO_ESTILO) return e as unknown as TracoDoDesenho;
   if (e.tipo === 'texto' && ehPonto(e.posicao) && typeof e.texto === 'string' && typeof e.tamanho === 'number') return e as unknown as TextoDoDesenho;
   if (e.tipo === 'estampa' && ehPonto(e.centro) && typeof e.imagemId === 'string' && typeof e.largura === 'number' && typeof e.rotacaoGraus === 'number') return e as unknown as EstampaDoDesenho;
+  if (e.tipo === 'cota' && ehPonto(e.de) && ehPonto(e.ate) && (e.medidaId === null || typeof e.medidaId === 'string')) {
+    return { id: e.id, tipo: 'cota', vista: e.vista, de: e.de, ate: e.ate, medidaId: e.medidaId, texto: typeof e.texto === 'string' ? e.texto : '', cor: typeof e.cor === 'string' ? e.cor : '#c62828' };
+  }
   return null;
 }
 

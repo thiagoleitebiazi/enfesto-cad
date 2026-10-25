@@ -5,7 +5,7 @@ import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto } from '../domai
 import { aprovarFicha, enviarParaAprovacao, mudarFicha, novaFichaTecnica } from '../domain/fichaTecnica';
 import { calcularPreCusto } from '../domain/preCusto';
 import { conteudoDaFichaEmPdf, gerarPdfDaFichaTecnica } from './ficha-exportacao';
-import { adicionarElemento, DESENHO_VAZIO, tracosDaBase } from '../domain/desenhoTecnico';
+import { adicionarElemento, DESENHO_VAZIO, novaCota, tracosDaBase } from '../domain/desenhoTecnico';
 
 const AGORA = '2026-10-24T17:00:00.000Z';
 
@@ -118,5 +118,18 @@ describe('a ficha técnica em PDF — o desenho técnico (ADR 0107)', () => {
     const semDesenho = await gerarPdfDaFichaTecnica(ficha, preCusto, [], AGORA, []);
     const textoSem = [...Buffer.from(await semDesenho.arrayBuffer()).toString('latin1').matchAll(/<([0-9a-f]+)>/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1')).join('');
     expect(textoSem).not.toContain('Desenho t');
+  });
+});
+
+describe('a ficha técnica em PDF — as cotas (ADR 0117)', () => {
+  it('com cota no desenho, a tabela de medidas leva a letra de cada ponto; o PDF desenha a cota', async () => {
+    const { ficha, preCusto } = exemplo();
+    expect(conteudoDaFichaEmPdf(ficha, preCusto, AGORA).tabelas[0]!.linhas[0]![0]).toBe('Busto (na cava)');
+    const comCota = { ...ficha, desenho: adicionarElemento(DESENHO_VAZIO, novaCota('c', 'frente', { x: 120, y: 200 }, { x: 280, y: 200 }, 'm1')) };
+    expect(conteudoDaFichaEmPdf(comCota, preCusto, AGORA).tabelas[0]!.linhas[0]![0]).toBe('A. Busto (na cava)');
+    const blob = await gerarPdfDaFichaTecnica(comCota, preCusto, [], AGORA, []);
+    const texto = Buffer.from(await blob.arrayBuffer()).toString('latin1');
+    // A cor da cota (vermelha) entra no PDF: 0,776 0,157 0,157 é o #c62828.
+    expect(texto).toMatch(/0\.776\d* 0\.156\d* 0\.156\d* (scn|SCN)/i);
   });
 });

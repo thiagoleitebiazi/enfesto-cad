@@ -9,9 +9,22 @@ import blobStream from 'blob-stream';
 import { numeroComVirgula } from '../core/numeros';
 import { retanguloEnvolvente } from '../core/geometria';
 import { linhaDeCorteDaPeca, type Molde } from '../domain/molde';
-import { ROTULO_DA_ACAO_DA_FICHA, ROTULO_DA_SITUACAO_DA_FICHA, medidaComTolerancia, tempoTotalDasOperacoes, type FichaTecnica } from '../domain/fichaTecnica';
+import { ROTULO_DA_ACAO_DA_FICHA, ROTULO_DA_SITUACAO_DA_FICHA, medidaComTolerancia, tempoTotalDasOperacoes, type FichaTecnica, type PontoDeMedida } from '../domain/fichaTecnica';
 import { centavos, consumoDosTecidos, ROTULO_DO_GRUPO_DA_LINHA, totaisPorGrupo, variacaoDoTecido, type CustoDoTamanho, type PreCusto } from '../domain/preCusto';
-import { ALTURA_DA_FOLHA, caminhoDoTraco, elementosDaVista, LARGURA_DA_FOLHA, ROTULO_DA_VISTA, TRACEJADO_DO_ESTILO, type DesenhoTecnico, type VistaDoDesenho } from '../domain/desenhoTecnico';
+import {
+  ALTURA_DA_FOLHA,
+  caminhoDoTraco,
+  elementosDaVista,
+  geometriaDaCota,
+  LARGURA_DA_FOLHA,
+  letraDaMedida,
+  medidasComCota,
+  ROTULO_DA_VISTA,
+  rotuloDaCota,
+  TRACEJADO_DO_ESTILO,
+  type DesenhoTecnico,
+  type VistaDoDesenho,
+} from '../domain/desenhoTecnico';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { vistasComDesenho } from './desenho-exportacao';
 
@@ -53,13 +66,18 @@ const data = (iso: string): string => (iso ? new Date(iso).toLocaleDateString('p
 
 export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | null, agoraIso: string, porTamanho: readonly CustoDoTamanho[] = []): ConteudoDaFichaEmPdf {
   const tabelas: TabelaDoPdf[] = [];
+  const comLetras = medidasComCota(ficha.desenho).size > 0;
   if (ficha.medidas.length > 0) {
     tabelas.push({
       titulo: 'Tabela de medidas (cm)',
       colunas: ['Ponto de medida', ...ficha.tamanhos],
       pesos: [3, ...ficha.tamanhos.map(() => 1.4)],
       numericas: ficha.tamanhos.map((_, i) => i + 1),
-      linhas: ficha.medidas.map((p) => [p.comoMedir ? `${p.nome} (${p.comoMedir})` : p.nome, ...ficha.tamanhos.map((t) => medidaComTolerancia(p, t))]),
+      // Com cotas no desenho, cada ponto leva a letra dele (a mesma do croqui, ADR 0117).
+      linhas: ficha.medidas.map((p, i) => [
+        `${comLetras ? `${letraDaMedida(i)}. ` : ''}${p.comoMedir ? `${p.nome} (${p.comoMedir})` : p.nome}`,
+        ...ficha.tamanhos.map((t) => medidaComTolerancia(p, t)),
+      ]),
     });
   }
   if (preCusto && preCusto.linhas.some((l) => l.grupo !== 'mao-de-obra')) {
@@ -147,13 +165,35 @@ export function conteudoDaFichaEmPdf(ficha: FichaTecnica, preCusto: PreCusto | n
 const MARGEM = 40;
 
 /** Uma vista do desenho técnico na página: a folha de 400 × 500 encaixada na caixa (x, y, largura). */
-function desenharVista(doc: PDFKit.PDFDocument, desenho: DesenhoTecnico, vista: VistaDoDesenho, imagens: readonly ImagemDoModelo[], x: number, y: number, largura: number): void {
+function desenharVista(
+  doc: PDFKit.PDFDocument,
+  desenho: DesenhoTecnico,
+  vista: VistaDoDesenho,
+  imagens: readonly ImagemDoModelo[],
+  medidas: readonly PontoDeMedida[],
+  x: number,
+  y: number,
+  largura: number,
+): void {
   const escala = largura / LARGURA_DA_FOLHA;
   doc.rect(x, y, largura, ALTURA_DA_FOLHA * escala).lineWidth(0.4).strokeColor('#c5cad3').stroke();
   for (const e of elementosDaVista(desenho, vista)) {
     doc.save();
     doc.translate(x, y).scale(escala);
-    if (e.tipo === 'traco') {
+    if (e.tipo === 'cota') {
+      // A cota (ADR 0117): a linha, as setas e o rótulo, como na tela.
+      const g = geometriaDaCota(e, rotuloDaCota(e, medidas));
+      const r = g.rotulo;
+      doc.moveTo(e.de.x, e.de.y).lineTo(e.ate.x, e.ate.y).lineWidth(0.8).stroke(e.cor);
+      for (const s of g.setas) doc.polygon(...s.map((q): [number, number] => [q.x, q.y])).fill(e.cor);
+      if (r.raio !== null) doc.circle(r.centro.x, r.centro.y, r.raio).lineWidth(1).fillAndStroke('#ffffff', e.cor);
+      else doc.roundedRect(r.centro.x - r.largura / 2, r.centro.y - r.altura / 2, r.largura, r.altura, 3).lineWidth(1).fillAndStroke('#ffffff', e.cor);
+      doc
+        .fillColor(e.cor)
+        .font('Helvetica-Bold')
+        .fontSize(r.tamanho)
+        .text(r.texto, r.centro.x - r.largura / 2, r.centro.y - r.tamanho * 0.42, { width: r.largura, align: 'center', lineBreak: false });
+    } else if (e.tipo === 'traco') {
       const tracejado = TRACEJADO_DO_ESTILO[e.estilo];
       doc.path(caminhoDoTraco(e.pontos, e.curvo, e.fechado)).lineWidth(e.espessura).lineJoin('round').lineCap('round');
       if (tracejado) doc.dash(tracejado[0], { space: tracejado[1] });
@@ -230,7 +270,7 @@ export async function gerarPdfDaFichaTecnica(
     const larguraDaVista = Math.min((largura - 20 * (vistas.length - 1)) / vistas.length, (230 * LARGURA_DA_FOLHA) / ALTURA_DA_FOLHA);
     garantir((larguraDaVista * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA + 18);
     const y0 = doc.y;
-    vistas.forEach((v, i) => desenharVista(doc, ficha.desenho!, v, imagens, MARGEM + i * (larguraDaVista + 20), y0, larguraDaVista));
+    vistas.forEach((v, i) => desenharVista(doc, ficha.desenho!, v, imagens, ficha.medidas, MARGEM + i * (larguraDaVista + 20), y0, larguraDaVista));
     doc.y = y0 + (larguraDaVista * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA + 16;
     doc.x = MARGEM;
   }

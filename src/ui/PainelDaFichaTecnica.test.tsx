@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { BIBLIOTECA_VAZIA, salvarMaterial, salvarPadroesDeCusto, type BibliotecaDeMateriais } from '../domain/materiais';
 import { novaFichaTecnica, type FichaTecnica } from '../domain/fichaTecnica';
-import { adicionarElemento, DESENHO_VAZIO, tracosDaBase } from '../domain/desenhoTecnico';
+import { adicionarElemento, DESENHO_VAZIO, novaCota, tracosDaBase } from '../domain/desenhoTecnico';
 import { PainelDaFichaTecnica, type ParteDaFicha } from './PainelDaFichaTecnica';
 import { criarMolde, type Molde } from '../domain/molde';
 import { ponto } from '../core/geometria';
@@ -224,5 +224,24 @@ describe('PainelDaFichaTecnica — o custo por tamanho (ADR 0115)', () => {
     // O PDF leva a mesma tabela.
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
     expect((onExportarPdf.mock.calls[0]![2] as ReadonlyArray<{ tamanho: string }>).map((t) => t.tamanho)).toEqual(['P', 'M']);
+  });
+});
+
+describe('PainelDaFichaTecnica — a letra das cotas na tabela de medidas (ADR 0117)', () => {
+  it('com cota no desenho, a coluna Cota mostra a letra de cada ponto, a com cota em destaque', () => {
+    const base = novaFichaTecnica({ nome: 'Camiseta', codigo: 'ENF-1', pecas: [] }, AGORA);
+    const ficha: FichaTecnica = {
+      ...base,
+      tamanhos: ['P'],
+      medidas: [
+        { id: 'm1', nome: 'Busto', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 48 } },
+        { id: 'm2', nome: 'Comprimento', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 66 } },
+      ],
+      desenho: adicionarElemento(DESENHO_VAZIO, novaCota('c', 'frente', { x: 100, y: 100 }, { x: 300, y: 100 }, 'm2')),
+    };
+    abrir({ ficha, parte: 'medidas' });
+    expect(screen.getByRole('columnheader', { name: 'Cota' })).toBeInTheDocument();
+    const letras = [...document.querySelectorAll('.letra-da-cota, .letra-sem-cota')].map((c) => `${c.textContent}:${c.className}`);
+    expect(letras).toEqual(['A:letra-sem-cota', 'B:letra-da-cota']);
   });
 });

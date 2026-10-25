@@ -51,7 +51,7 @@ import { numeroComVirgula } from '../core/numeros';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { FolhaDoDesenho } from './FolhaDoDesenho';
 import { vistasComDesenho } from '../formats/desenho-exportacao';
-import { ROTULO_DA_VISTA } from '../domain/desenhoTecnico';
+import { letraDaMedida, medidasComCota, ROTULO_DA_VISTA } from '../domain/desenhoTecnico';
 
 export type ParteDaFicha = 'descricao' | 'medidas' | 'materiais' | 'operacoes' | 'instrucoes' | 'precusto' | 'aprovacao';
 
@@ -244,7 +244,7 @@ function ParteDescricao(props: {
         {temDesenho ? (
           <div className="vistas-da-previa">
             {vistasComDesenho(ficha.desenho!).map((v) => (
-              <FolhaDoDesenho key={v} desenho={ficha.desenho!} vista={v} imagens={props.imagens} rotulo={`Desenho técnico — ${ROTULO_DA_VISTA[v]}`} />
+              <FolhaDoDesenho key={v} desenho={ficha.desenho!} vista={v} imagens={props.imagens} medidas={ficha.medidas} rotulo={`Desenho técnico — ${ROTULO_DA_VISTA[v]}`} />
             ))}
           </div>
         ) : (
@@ -312,6 +312,8 @@ function ParteMedidas(props: {
   const { ficha } = props;
   const [colando, setColando] = useState<string | null>(null);
   const mudarPonto = (p: PontoDeMedida): void => props.campo({ medidas: trocar(ficha.medidas, p.id, p) });
+  // Com cotas no desenho técnico, cada ponto mostra a letra dele (a mesma do croqui, ADR 0117).
+  const comCota = medidasComCota(ficha.desenho);
   return (
     <section aria-label="Medidas">
       {ficha.tamanhos.length === 0 && <p className="nota-do-formulario">A ficha ainda não tem tamanhos: diga quais na aba Descrição.</p>}
@@ -322,6 +324,11 @@ function ParteMedidas(props: {
           <caption>Tabela de medidas (cm)</caption>
           <thead>
             <tr>
+              {comCota.size > 0 && (
+                <th scope="col" title="A letra da cota no desenho técnico">
+                  Cota
+                </th>
+              )}
               <th scope="col">Ponto de medida</th>
               <th scope="col">Como medir</th>
               {ficha.tamanhos.map((t) => (
@@ -336,8 +343,15 @@ function ParteMedidas(props: {
             </tr>
           </thead>
           <tbody>
-            {ficha.medidas.map((p) => (
+            {ficha.medidas.map((p, i) => (
               <tr key={p.id}>
+                {comCota.size > 0 && (
+                  <td className="coluna-da-cota">
+                    <span className={comCota.has(p.id) ? 'letra-da-cota' : 'letra-sem-cota'} title={comCota.has(p.id) ? 'Esta medida tem cota no desenho' : 'Sem cota no desenho'}>
+                      {letraDaMedida(i)}
+                    </span>
+                  </td>
+                )}
                 <td>
                   <input aria-label={`Nome do ponto ${p.nome}`} value={p.nome} disabled={!props.editavel} onChange={(e) => mudarPonto({ ...p, nome: e.target.value })} />
                 </td>

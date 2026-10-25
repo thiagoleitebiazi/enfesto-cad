@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { DESENHO_VAZIO, type DesenhoTecnico, type TracoDoDesenho } from '../domain/desenhoTecnico';
+import { DESENHO_VAZIO, type CotaDoDesenho, type DesenhoTecnico, type TracoDoDesenho } from '../domain/desenhoTecnico';
 import type { ImagemDoModelo } from '../domain/imagens';
+import type { PontoDeMedida } from '../domain/fichaTecnica';
 import { PainelDoDesenhoTecnico } from './PainelDoDesenhoTecnico';
 
 const IMAGEM: ImagemDoModelo = {
@@ -29,7 +30,7 @@ afterEach(() => {
   cleanup();
 });
 
-function abrir(opcoes: { readonly desenho?: DesenhoTecnico; readonly somenteLeitura?: string | null } = {}) {
+function abrir(opcoes: { readonly desenho?: DesenhoTecnico; readonly somenteLeitura?: string | null; readonly medidas?: readonly PontoDeMedida[] } = {}) {
   const onGuardar = vi.fn();
   const onExportarSvg = vi.fn();
   let n = 0;
@@ -38,6 +39,8 @@ function abrir(opcoes: { readonly desenho?: DesenhoTecnico; readonly somenteLeit
       desenho={opcoes.desenho ?? DESENHO_VAZIO}
       somenteLeitura={opcoes.somenteLeitura ?? null}
       imagens={[IMAGEM]}
+      medidas={opcoes.medidas ?? []}
+      tamanhos={['P', 'M']}
       onGuardar={onGuardar}
       onExportarSvg={onExportarSvg}
       novoId={() => `d${++n}`}
@@ -248,5 +251,55 @@ describe('PainelDoDesenhoTecnico — o zoom e a grade (ADR 0116)', () => {
     fireEvent.pointerMove(folha, { clientX: 200, clientY: 150, pointerId: 1 });
     fireEvent.pointerUp(folha, { clientX: 200, clientY: 150, pointerId: 1 });
     expect(folha.getAttribute('viewBox')).toBe('100 175 200 250');
+  });
+});
+
+describe('PainelDoDesenhoTecnico — as cotas (ADR 0117)', () => {
+  const MEDIDAS: PontoDeMedida[] = [
+    { id: 'busto', nome: 'Busto', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 48, M: 52.5 } },
+    { id: 'comprimento', nome: 'Comprimento', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 66 } },
+  ];
+
+  it('dois cliques fazem a cota, com a letra do próximo ponto de medida; as propriedades mostram os valores', async () => {
+    const { folha, clicar, onGuardar, ultimo } = abrir({ medidas: MEDIDAS });
+    ferramenta('Cota');
+    clicar(110, 150);
+    clicar(290, 150);
+    clicar(200, 120);
+    clicar(200, 400);
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
+    await waitFor(() => expect(ultimo().elementos).toHaveLength(2), { timeout: 2000 });
+    const [a, b] = ultimo().elementos as CotaDoDesenho[];
+    expect(a).toMatchObject({ tipo: 'cota', de: { x: 110, y: 150 }, ate: { x: 290, y: 150 }, medidaId: 'busto' });
+    expect(b).toMatchObject({ medidaId: 'comprimento' });
+    expect([...folha.querySelectorAll('.cota-do-desenho text')].map((t) => t.textContent)).toEqual(['A', 'B']);
+    // A escolhida (a última) mostra o ponto e os valores; o busto já tem cota.
+    expect(screen.getByText(/\(cm\): P 66,0$/)).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'A — Busto (já tem cota)' })).toBeInTheDocument();
+  });
+
+  it('sem ponto de medida, o texto da cota; arrastar a ponta da cota escolhida', async () => {
+    const { folha, clicar, onGuardar, ultimo } = abrir({ medidas: MEDIDAS });
+    ferramenta('Cota');
+    clicar(100, 300);
+    clicar(100, 380);
+    fireEvent.change(screen.getByLabelText('Ponto de medida'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Texto da cota'), { target: { value: 'Barra 3 cm' } });
+    expect(folha.querySelector('.cota-do-desenho text')?.textContent).toBe('Barra 3 cm');
+    ferramenta('Selecionar');
+    fireEvent.pointerDown(folha, { clientX: 100, clientY: 380, pointerId: 1 });
+    fireEvent.pointerMove(folha, { clientX: 100, clientY: 420, pointerId: 1 });
+    fireEvent.pointerUp(folha, { clientX: 100, clientY: 420, pointerId: 1 });
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
+    await waitFor(() => expect(ultimo().elementos[0]).toMatchObject({ medidaId: null, texto: 'Barra 3 cm', de: { x: 100, y: 300 }, ate: { x: 100, y: 420 } }), { timeout: 2000 });
+  });
+
+  it('sem pontos de medida na ficha, a cota diz como ligar e leva o texto', () => {
+    const { clicar } = abrir();
+    ferramenta('Cota');
+    clicar(100, 300);
+    clicar(200, 300);
+    expect(screen.getByText(/A ficha ainda não tem pontos de medida/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Texto da cota')).toBeInTheDocument();
   });
 });

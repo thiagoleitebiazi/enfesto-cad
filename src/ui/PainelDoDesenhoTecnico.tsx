@@ -4,6 +4,8 @@ import { CampoDeNumero } from './CampoDeNumero';
 import { EixoNaFolha, ElementoNaFolha, ManequimNaFolha } from './FolhaDoDesenho';
 import type { Ponto2D } from '../core/geometria';
 import type { ImagemDoModelo } from '../domain/imagens';
+import type { PontoDeMedida } from '../domain/fichaTecnica';
+import { numeroComVirgula } from '../core/numeros';
 import {
   adicionarElemento,
   ALTURA_DA_FOLHA,
@@ -16,9 +18,13 @@ import {
   espelharPonto,
   FORMAS,
   LARGURA_DA_FOLHA,
+  letraDaMedida,
+  medidasComCota,
   moverElemento,
   mudarElemento,
+  novaCota,
   novoTraco,
+  proximaMedidaSemCota,
   ordemDoElemento,
   pontoPegaElemento,
   removerElemento,
@@ -27,6 +33,7 @@ import {
   ROTULO_DO_MANEQUIM,
   tracosDaBase,
   tracosDaForma,
+  type CotaDoDesenho,
   type DesenhoTecnico,
   type ElementoDoDesenho,
   type EstiloDoTraco,
@@ -36,15 +43,16 @@ import {
 } from '../domain/desenhoTecnico';
 import { arrastarVista, janelaDaFolha, naGrade, passoDaGrade, VISTA_INTEIRA, ZOOM_MAXIMO, zoomNoPonto, type JanelaDaFolha, type VistaDaFolha } from './vistaDaFolha';
 
-type Ferramenta = 'selecionar' | 'reta' | 'curva' | 'costura' | 'pesponto' | 'texto';
+type Ferramenta = 'selecionar' | 'reta' | 'curva' | 'costura' | 'pesponto' | 'texto' | 'cota';
 
 const FERRAMENTAS: ReadonlyArray<readonly [Ferramenta, string, string]> = [
-  ['selecionar', 'Selecionar', 'Clique num elemento para escolher; arraste para mover; arraste um ponto do traço escolhido para mudá-lo'],
+  ['selecionar', 'Selecionar', 'Clique num elemento para escolher; arraste para mover; arraste um ponto do traço (ou a ponta da cota) escolhido para mudá-lo'],
   ['reta', 'Reta', 'Clique os pontos; duplo clique (ou Enter) termina'],
   ['curva', 'Curva', 'Clique os pontos por onde a curva passa; duplo clique (ou Enter) termina'],
   ['costura', 'Costura', 'A linha de costura: clique os pontos; duplo clique termina'],
   ['pesponto', 'Pesponto', 'O pesponto (tracejado): clique os pontos; duplo clique termina'],
   ['texto', 'Texto', 'Clique onde o texto vai'],
+  ['cota', 'Cota', 'A medida no croqui: clique as duas pontas; a cota leva a letra do próximo ponto de medida da ficha (A, B, C…)'],
 ];
 
 const ESTILO_DA_FERRAMENTA: Partial<Record<Ferramenta, EstiloDoTraco>> = { reta: 'contorno', curva: 'contorno', costura: 'costura', pesponto: 'pesponto' };
@@ -95,6 +103,9 @@ export function PainelDoDesenhoTecnico(props: {
   /** A ficha não pode mudar (aprovada, em aprovação): o motivo; `null`: pode. */
   readonly somenteLeitura: string | null;
   readonly imagens: readonly ImagemDoModelo[];
+  /** Os pontos de medida da ficha, na ordem da tabela (a letra das cotas), e os tamanhos dela. */
+  readonly medidas: readonly PontoDeMedida[];
+  readonly tamanhos: readonly string[];
   readonly onGuardar: (desenho: DesenhoTecnico) => void;
   readonly onExportarSvg: (desenho: DesenhoTecnico) => void;
   readonly novoId: () => string;
@@ -224,9 +235,32 @@ export function PainelDoDesenhoTecnico(props: {
       setFerramenta('selecionar');
       return;
     }
+    if (ferramenta === 'cota') {
+      // A primeira ponta; na segunda, a cota entra ligada ao próximo ponto de medida sem cota.
+      const de = pontos[0];
+      if (!de) {
+        setPontos([p]);
+        return;
+      }
+      setPontos([]);
+      if (Math.hypot(p.x - de.x, p.y - de.y) < 4) return;
+      const cota = novaCota(props.novoId(), vista, de, p, proximaMedidaSemCota(desenho, props.medidas));
+      mudar(adicionarElemento(desenho, cota));
+      setSelecionado(cota.id);
+      return;
+    }
     if (ferramenta !== 'selecionar') {
       setPontos([...pontos, p]);
       return;
+    }
+    // A ponta da cota escolhida?
+    if (elemento?.tipo === 'cota' && elemento.vista === vista) {
+      const ponta = [elemento.de, elemento.ate].findIndex((q) => Math.hypot(q.x - clicado.x, q.y - clicado.y) <= tolerancia);
+      if (ponta >= 0) {
+        setArrasto({ id: elemento.id, indice: ponta, noEspelho: false, inicio: clicado, antes: desenho });
+        ev.currentTarget.setPointerCapture?.(ev.pointerId);
+        return;
+      }
     }
     // Um ponto do traço escolhido (ou do espelho dele)? (Pelo ponto clicado, não pelo preso na grade.)
     if (elemento?.tipo === 'traco' && elemento.vista === vista) {
@@ -268,6 +302,11 @@ export function PainelDoDesenhoTecnico(props: {
     }
     setDesenho(
       mudarElemento(arrasto.antes, arrasto.id, (e) => {
+        if (arrasto.indice !== null && e.tipo === 'cota') {
+          const q = arrasto.indice === 0 ? e.de : e.ate;
+          const nova = prender({ x: Math.round((q.x + dx) * 10) / 10, y: Math.round((q.y + dy) * 10) / 10 });
+          return arrasto.indice === 0 ? { ...e, de: nova } : { ...e, ate: nova };
+        }
         if (arrasto.indice === null || e.tipo !== 'traco') return moverElemento(e, dx, dy);
         const q = e.pontos[arrasto.indice]!;
         const novo = prender({ x: Math.round((q.x + dx) * 10) / 10, y: Math.round((q.y + dy) * 10) / 10 });
@@ -476,7 +515,7 @@ export function PainelDoDesenhoTecnico(props: {
               <ManequimNaFolha manequim={desenho.manequim} />
               <EixoNaFolha />
               {naVista.map((e) => (
-                <ElementoNaFolha key={e.id} elemento={e} imagens={props.imagens} />
+                <ElementoNaFolha key={e.id} elemento={e} imagens={props.imagens} medidas={props.medidas} />
               ))}
               {elemento && elemento.vista === vista && <Destaque elemento={elemento} proporcao={elemento.tipo === 'estampa' ? proporcao(elemento.imagemId) : 1} zoom={vistaDaFolha.zoom} />}
               {pontos.length > 0 && (
@@ -533,6 +572,9 @@ export function PainelDoDesenhoTecnico(props: {
               <Propriedades
                 elemento={elemento}
                 imagens={props.imagens}
+                medidas={props.medidas}
+                tamanhos={props.tamanhos}
+                desenho={desenho}
                 travado={travado}
                 onMudar={mudarSelecionado}
                 onDuplicar={() => {
@@ -595,6 +637,16 @@ function Destaque(props: { readonly elemento: ElementoDoDesenho; readonly propor
     const largura = Math.max(e.tamanho, e.texto.length * e.tamanho * 0.55);
     return <rect className="destaque-do-desenho" x={e.posicao.x - 2} y={e.posicao.y - e.tamanho - 1} width={largura + 4} height={e.tamanho * 1.25 + 2} fill="none" />;
   }
+  if (e.tipo === 'cota') {
+    return (
+      <g className="destaque-do-desenho">
+        <path d={`M ${e.de.x} ${e.de.y} L ${e.ate.x} ${e.ate.y}`} />
+        {[e.de, e.ate].map((q, i) => (
+          <rect key={i} x={q.x - lado / 2} y={q.y - lado / 2} width={lado} height={lado} />
+        ))}
+      </g>
+    );
+  }
   const altura = e.largura * props.proporcao;
   return (
     <rect
@@ -609,9 +661,73 @@ function Destaque(props: { readonly elemento: ElementoDoDesenho; readonly propor
   );
 }
 
+/**
+ * A cota escolhida (ADR 0117): o ponto de medida da ficha (a letra), com o valor de cada tamanho para conferir; sem
+ * ponto, o texto da cota. O ponto que já tem cota em outro lugar diz onde.
+ */
+function PropriedadesDaCota(props: {
+  readonly cota: CotaDoDesenho;
+  readonly medidas: readonly PontoDeMedida[];
+  readonly tamanhos: readonly string[];
+  readonly desenho: DesenhoTecnico;
+  readonly travado: boolean;
+  readonly onMudar: (fazer: (e: ElementoDoDesenho) => ElementoDoDesenho) => void;
+}): React.JSX.Element {
+  const c = props.cota;
+  const t = props.travado;
+  const medida = c.medidaId === null ? undefined : props.medidas.find((m) => m.id === c.medidaId);
+  const comOutraCota = medidasComCota({ ...props.desenho, elementos: props.desenho.elementos.filter((e) => e.id !== c.id) });
+  const valores = medida
+    ? props.tamanhos
+        .filter((tam) => medida.valoresCm[tam] !== undefined)
+        .map((tam) => `${tam} ${numeroComVirgula(medida.valoresCm[tam]!, 1)}`)
+        .join(' · ')
+    : '';
+  return (
+    <>
+      <label>
+        Ponto de medida
+        <select
+          value={medida ? medida.id : ''}
+          disabled={t}
+          onChange={(ev) => props.onMudar((x) => ({ ...(x as CotaDoDesenho), medidaId: ev.target.value === '' ? null : ev.target.value }))}
+        >
+          <option value="">Nenhum (o texto abaixo)</option>
+          {props.medidas.map((m, i) => (
+            <option key={m.id} value={m.id}>
+              {letraDaMedida(i)} — {m.nome}
+              {comOutraCota.has(m.id) ? ' (já tem cota)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      {props.medidas.length === 0 && <p className="nota-do-formulario">A ficha ainda não tem pontos de medida (Ficha técnica › Medidas): a cota leva o texto.</p>}
+      {c.medidaId !== null && !medida && <p className="nota-do-formulario">O ponto de medida desta cota saiu da tabela: escolha outro, ou escreva o texto.</p>}
+      {medida ? (
+        <p className="valores-da-cota">
+          <strong>{medida.nome}</strong>
+          {valores ? ` (cm): ${valores}` : ' — sem medida nos tamanhos'}
+        </p>
+      ) : (
+        <label>
+          Texto da cota
+          <input value={c.texto} disabled={t} placeholder="Barra 3 cm" onChange={(ev) => props.onMudar((x) => ({ ...(x as CotaDoDesenho), texto: ev.target.value }))} />
+        </label>
+      )}
+      <label>
+        Cor
+        <input type="color" value={c.cor} disabled={t} onChange={(ev) => props.onMudar((x) => ({ ...(x as CotaDoDesenho), cor: ev.target.value }))} />
+      </label>
+    </>
+  );
+}
+
 function Propriedades(props: {
   readonly elemento: ElementoDoDesenho;
   readonly imagens: readonly ImagemDoModelo[];
+  readonly medidas: readonly PontoDeMedida[];
+  readonly tamanhos: readonly string[];
+  readonly desenho: DesenhoTecnico;
   readonly travado: boolean;
   readonly onMudar: (fazer: (e: ElementoDoDesenho) => ElementoDoDesenho) => void;
   readonly onDuplicar: () => void;
@@ -623,7 +739,8 @@ function Propriedades(props: {
   const t = props.travado;
   return (
     <form className="formulario-de-sobreposicao" onSubmit={(ev) => ev.preventDefault()}>
-      <p className="legenda-inline">{e.tipo === 'traco' ? 'Traço' : e.tipo === 'texto' ? 'Texto' : 'Estampa'}</p>
+      <p className="legenda-inline">{e.tipo === 'traco' ? 'Traço' : e.tipo === 'texto' ? 'Texto' : e.tipo === 'cota' ? 'Cota' : 'Estampa'}</p>
+      {e.tipo === 'cota' && <PropriedadesDaCota cota={e} medidas={props.medidas} tamanhos={props.tamanhos} desenho={props.desenho} travado={t} onMudar={props.onMudar} />}
       {e.tipo === 'traco' && (
         <>
           <label>

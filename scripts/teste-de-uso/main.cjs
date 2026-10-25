@@ -907,6 +907,42 @@ async function principal() {
   win.setBounds({ x: 0, y: 0, width: 1440, height: 900 });
   await espera(800);
 
+  // 12b. As cotas (ADR 0117): com os pontos de medida na ficha, a ferramenta Cota no desenho técnico — dois cliques
+  // fazem a cota "A" (o busto), e as propriedades mostram as medidas de cada tamanho; na ficha, a tabela de medidas
+  // ganha a coluna da letra.
+  await botao('Desenho técnico');
+  await espera(800);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] [role=toolbar] button')).find(b => b.textContent.trim() === 'Cota')`);
+  await clicarNaFolha(118, 150);
+  await clicarNaFolha(282, 150);
+  await espera(300);
+  const naCota = JSON.parse(
+    await js(
+      `JSON.stringify({ letras: Array.from(document.querySelectorAll('.folha-do-desenho .cota-do-desenho text')).map(t => t.textContent), valores: ((document.querySelector('[role=dialog] .valores-da-cota') || {}).textContent || '') })`,
+    ),
+  );
+  conferir(
+    'dois cliques com a Cota fazem a cota "A" do busto; as propriedades mostram a medida de cada tamanho',
+    JSON.stringify(naCota.letras) === '["A"]' && naCota.valores.startsWith('Busto (cm): P 96,0 · M 100,0'),
+    JSON.stringify(naCota),
+  );
+  await foto('33b-cota-no-desenho.png');
+  await fecharJanela();
+  await espera(1200);
+  await botao('Ficha técnica');
+  await espera(800);
+  await parteDaJanela('Medidas');
+  await espera(300);
+  const letrasNaTabela = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=dialog] .letra-da-cota, [role=dialog] .letra-sem-cota')).map(c => c.textContent + ':' + c.className))`));
+  conferir(
+    'na ficha, a tabela de medidas mostra a letra de cada ponto, o busto (com cota) em destaque',
+    JSON.stringify(letrasNaTabela) === '["A:letra-da-cota","B:letra-sem-cota","C:letra-sem-cota"]',
+    JSON.stringify(letrasNaTabela),
+  );
+  await foto('33c-letras-na-tabela.png');
+  await fecharJanela();
+  await espera(800);
+
   // 13. O provador 3D (ADR 0111): a saia de teste (frente e costas) importada; Conferência › Provador 3D; as peças na
   // frente e nas costas; as costuras sugeridas (as duas laterais); simular até assentar; o mapa de tensão; a foto como
   // estampa localizada; a imagem das três vistas; a montagem guardada no projeto.
