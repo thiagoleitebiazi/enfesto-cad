@@ -62,7 +62,7 @@ inventa.
 | Tabela de graduação, regras, tamanho-base, graduar curva, piques graduados | ✅ | — |
 | Conferir perímetros, distâncias e curvas | ✅ (aba Conferência) | — |
 | DXF de entrada e de saída | ✅ (ADR 0090, 0096) | — |
-| Forro, entretela e vista gerados a partir da peça principal | 🟡 (Elemento paralelo, Bainha, Dobrar; não um comando "gerar forro") | L |
+| Forro, entretela e vista gerados a partir da peça principal | ✅ (Produção › Forro, entretela e vista: a vista pelo trecho, o forro sem ele, a entretela recuada, nos grupos do encaixe, ADR 0124) | — |
 | Biblioteca de bases aprovadas para virar modelos novos | 🟡 (Duplicar projeto; Variantes) | L |
 | Mudança no molde atualiza o encaixe ligado | 🟡 (as peças na mesa são as do projeto; o plano avisa que o molde mudou) | L |
 
@@ -170,3 +170,30 @@ O que é **equipamento** (máquina de corte, enfestadeiras, mesa, plotter, quadr
 programa: o Enfesto CAD gera os arquivos (PDF 1:1, DXF, PLT) e diz "não conectado". O que precisa de **servidor,
 nuvem ou conta de terceiros** (colaboração simultânea, servidor de encaixe entre estações, IA, loja virtual, ERP)
 fica para quando houver o serviço — e a parte local de cada um entra nas fases acima.
+
+## Segunda rodada do estudo (2026-10-25)
+
+O usuário pediu para estudar a referência a fundo e implementar o que ela tem. Os vídeos não podem ser assistidos
+aqui; foram lidos:
+- as páginas oficiais de cada módulo (modelagem, encaixe, desenho e ficha, gestão de coleção, 3D);
+- o manual digital da versão 10, já usado ferramenta por ferramenta nas etapas anteriores;
+- os títulos dos tutoriais em vídeo.
+
+O "o que há de novo" da área de treinamento não abre fora do navegador (a página é montada por JavaScript).
+
+O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entra:
+
+| Da referência | Situação |
+|---|---|
+| Forro, entretela e vista gerados da peça principal | ✅ ADR 0124 |
+| A mudança no molde atualiza o encaixe ligado | ⬜ (hoje o plano avisa que o molde mudou) |
+| Biblioteca de bases aprovadas para virar modelos novos | ⬜ (hoje: duplicar o projeto, variantes) |
+| Consumo de tecido estimado pelas áreas do desenho técnico (antes do molde) | ⬜ |
+| Extrair de uma vez todas as regiões fechadas do desenho ("vários modelos com um clique") | ⬜ (hoje: uma região por clique) |
+| Listras e xadrez casados por mais de um ponto | ⬜ |
+| Desenhar a roupa no manequim 3D e tirar os pré-moldes 2D | ⬜ |
+| Zíper como aviamento no 3D; brilho e transparência; biblioteca de componentes (golas, mangas) | ⬜ |
+
+Ficam de fora, como na primeira rodada:
+- a colaboração na nuvem e os avisos por e-mail ou celular, que precisam de servidor;
+- a ligação com as máquinas de corte, que precisa do equipamento.

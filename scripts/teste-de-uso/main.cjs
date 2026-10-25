@@ -288,6 +288,75 @@ async function principal() {
   conferir('arrastar uma das selecionadas leva as duas, o mesmo tanto; a outra fica', andou(0) > 50 && Math.abs(andou(0) - andou(2)) < 1e-6 && Math.abs(andou(1)) < 1e-6, JSON.stringify([andou(0), andou(1), andou(2)]));
   await foto('08-grupo-arrastado.png');
 
+  // 2b. O forro, a entretela e a vista (ADR 0124): a peça 1 sozinha; a vista de 30 mm pelo trecho do primeiro lado
+  // dela, clicado com o mouse; a entretela na hora; as duas peças novas ao lado; e o Desfazer tira as duas.
+  const naJanelaDoDialogo = (rotulo, valor) =>
+    js(
+      `(() => { const l = Array.from(document.querySelectorAll('[role=dialog] label')).find(x => Array.from(x.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim() === ${JSON.stringify(rotulo)}); const c = l.querySelector('input, select'); const p = c.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(p, 'value').set.call(c, ${JSON.stringify(valor)}); c.dispatchEvent(new Event(c.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); })()`,
+    );
+  const continuar = () => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Continuar')`);
+  await tecla('Escape');
+  // Pela lista (no desenho, depois do arrasto, a peça 1 ficou embaixo da 2).
+  await clicarEm(`Array.from(document.querySelectorAll('.lista-de-pecas li')).find(li => li.textContent.startsWith('molde-de-teste-1')).querySelector('button')`);
+  await espera(300);
+  await aba('Produção');
+  await espera(300);
+  await botao('Forro, entretela e vista');
+  await espera(500);
+  await naJanelaDoDialogo('Vista: a largura (mm) · Forro: quanto encurta (mm)', '30');
+  await continuar();
+  await espera(400);
+  // A conta da posição é refeita agora: a fita da Produção não tem a altura da do Início, e a faixa de instrução da
+  // ferramenta ("Vista: clique no contorno…") apareceu em cima do desenho e o empurrou para baixo.
+  const desenhoAgora = JSON.parse(await js(`JSON.stringify(document.querySelector('.area-de-desenho-container canvas').getBoundingClientRect())`));
+  const m1Agora = await lerXY(150, 100);
+  const m2Agora = await lerXY(850, 450);
+  const kAgora = (850 - 150) / (m2Agora.y - m1Agora.y);
+  const naTelaAgora = (mundo) => ({ x: Math.round(desenhoAgora.left + 150 + (mundo.y - m1Agora.y) * kAgora), y: Math.round(desenhoAgora.top + 100 + (mundo.x - m1Agora.x) * kAgora) });
+  const c0 = depois[0].contorno[0];
+  const c1 = depois[0].contorno[1];
+  for (const f of [0.25, 0.75]) {
+    const p = naTelaAgora({ x: c0.x + (c1.x - c0.x) * f, y: c0.y + (c1.y - c0.y) * f });
+    // Um clique (apertar e soltar no mesmo lugar, sem mexer): com o mouse andando apertado, o desenho entende arrasto.
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+    await espera(100);
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    await espera(300);
+  }
+  await espera(400);
+  await botao('Forro, entretela e vista');
+  await espera(500);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] fieldset label')).find(l => l.textContent.trim().startsWith('Entretela')).querySelector('input')`);
+  await continuar();
+  await espera(600);
+  await foto('08b-vista-e-entretela.png');
+  const comDerivadas = await pecasGravadas();
+  const vistaCriada = comDerivadas.find((p) => p.nome === 'Vista de molde-de-teste-1');
+  const entretelaCriada = comDerivadas.find((p) => p.nome === 'Entretela de molde-de-teste-1');
+  conferir(
+    'a vista (pelo trecho clicado) e a entretela saem ao lado da peça; a entretela sem costura, no grupo "Entretela"',
+    !!vistaCriada &&
+      !!entretelaCriada &&
+      caixa(vistaCriada.contorno).minY > caixa(depois[0].contorno).maxY &&
+      entretelaCriada.margemDeCosturaMm === 0 &&
+      entretelaCriada.grupoDoEncaixe === 'Entretela',
+    JSON.stringify(comDerivadas.map((p) => [p.nome, p.grupoDoEncaixe || '', p.margemDeCosturaMm])),
+  );
+  const antesDeDesfazer = (await lista()).length;
+  for (let k = 0; k < 2; k++) {
+    await clicarEm(`document.querySelector('button[title="Desfazer (Ctrl+Z)"]')`);
+    await espera(300);
+  }
+  const depoisDeDesfazer = await lista();
+  conferir(
+    'o Desfazer tira as duas peças novas (5 peças antes, as 3 de antes depois)',
+    antesDeDesfazer === 5 && depoisDeDesfazer.length === 3 && depoisDeDesfazer.every((n) => n.startsWith('molde-de-teste-')),
+    `${antesDeDesfazer} → ${JSON.stringify(depoisDeDesfazer)}`,
+  );
+  await aba('Início');
+  await espera(300);
+
   // 3. Exportar o PDF das peças (tamanho real).
   await aba('Início');
   await botao('Exportar PDF');

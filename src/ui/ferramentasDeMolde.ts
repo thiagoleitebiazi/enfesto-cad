@@ -8,6 +8,7 @@ import {
   type PosicaoNoContorno,
 } from '../core/geometria';
 import { criarBainha, geometriaDaBainha, type OpcoesDeBainha } from '../domain/bainha';
+import { aoLadoSemSobrepor, dividirPeloTrecho, pecaDerivada, type OpcoesDaPecaDerivada } from '../domain/pecasDerivadas';
 import {
   conferirOpcoesDeCorte,
   cortarMoldeComOpcoes,
@@ -38,12 +39,12 @@ import { formatarMm } from './medidas';
  * selecionada. Aqui fica o que cada clique faz e o que o desenho mostra antes
  * de aplicar; a geometria é do domínio (`corteEUniao.ts` e `bainha.ts`).
  */
-export type FerramentaDeMolde = 'cortar' | 'remover-regiao' | 'dobrar' | 'desdobrar' | 'unir' | 'bainha';
+export type FerramentaDeMolde = 'cortar' | 'remover-regiao' | 'dobrar' | 'desdobrar' | 'unir' | 'bainha' | 'forro-entretela-vista';
 
 /** As que pedem uma reta de corte, de um ponto do contorno a outro. */
 export type FerramentaDeReta = 'cortar' | 'remover-regiao' | 'dobrar';
 
-const FERRAMENTAS_DE_MOLDE: ReadonlySet<string> = new Set(['cortar', 'remover-regiao', 'dobrar', 'desdobrar', 'unir', 'bainha']);
+const FERRAMENTAS_DE_MOLDE: ReadonlySet<string> = new Set(['cortar', 'remover-regiao', 'dobrar', 'desdobrar', 'unir', 'bainha', 'forro-entretela-vista']);
 
 export function ehFerramentaDeMolde(modo: string): modo is FerramentaDeMolde {
   return FERRAMENTAS_DE_MOLDE.has(modo);
@@ -920,6 +921,38 @@ export function previaDaBainha(
   try {
     const { de, ate, miolo } = geometriaDaBainha(peca, estado.inicio, fim, opcoes);
     return { novo: [de.ponto, ...miolo, ate.ponto], substituido, marcas };
+  } catch {
+    return { substituido, marcas };
+  }
+}
+
+/**
+ * "Forro, entretela e vista" (ADR 0124): a peça nova tirada da selecionada — a vista e o forro pelo trecho indicado
+ * (os dois pontos do contorno); a entretela, sem trecho. A selecionada fica como estava.
+ */
+export function aplicarPecaDerivada(
+  pecas: readonly Molde[],
+  peca: Molde,
+  estado: TrechoEmEdicao | null,
+  opcoes: OpcoesDaPecaDerivada,
+  novoId: () => string,
+): ResultadoDeFerramentaDeMolde {
+  const trecho = estado?.inicio && estado.fim ? { a: estado.inicio, b: estado.fim } : null;
+  const nova = aoLadoSemSobrepor(pecaDerivada(peca, opcoes, trecho, novoId()), pecas);
+  const grupo = nova.grupoDoEncaixe && nova.grupoDoEncaixe !== peca.grupoDoEncaixe ? `, no grupo “${nova.grupoDoEncaixe}” do encaixe (outro tecido)` : '';
+  return { pecas: [...pecas, nova], recado: `“${nova.nome}” criada ao lado de “${peca.nome}”${grupo}: ${cm2(area(nova.contorno))}.` };
+}
+
+/** A prévia da vista e do forro: o trecho em destaque e a peça que sairia dele. */
+export function previaDaPecaDerivada(peca: Molde, estado: TrechoEmEdicao, mouse: CliqueDeTrecho | null, opcoes: OpcoesDaPecaDerivada): PreviaDeFerramentaDeMolde {
+  const marcas = [estado.inicio?.ponto, estado.fim?.ponto].filter((p): p is Ponto2D => p !== undefined);
+  if (!estado.inicio) return { marcas };
+  const fim: PosicaoNoContorno | null = estado.fim ?? mouse?.noContorno ?? null;
+  if (!fim || distancia(fim.ponto, estado.inicio.ponto) <= MESMO_PONTO_MM) return { marcas };
+  const substituido = caminhoDoTrecho(peca.contorno, estado.inicio, fim);
+  try {
+    const partes = dividirPeloTrecho(peca, estado.inicio, fim, opcoes.larguraMm, opcoes.tipo === 'vista' ? opcoes.largura2Mm : undefined);
+    return { novo: (opcoes.tipo === 'vista' ? partes.comOTrecho : partes.semOTrecho).contorno, novoFechado: true, substituido, marcas };
   } catch {
     return { substituido, marcas };
   }

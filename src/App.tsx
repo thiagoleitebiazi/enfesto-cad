@@ -43,6 +43,8 @@ import {
 } from './ui/ferramentasDeTrecho';
 import {
   aplicarBainha,
+  aplicarPecaDerivada,
+  previaDaPecaDerivada,
   aplicarDesdobrar,
   aplicarReta,
   dialogoDeCortar,
@@ -158,6 +160,7 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
+import { conferirOpcoesDaPecaDerivada, OPCOES_PADRAO_DA_PECA_DERIVADA, pedeOTrecho, type OpcoesDaPecaDerivada, type TipoDePecaDerivada } from './domain/pecasDerivadas';
 import { definirAutor, definirElasticidadeDaRecomendacao, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
 import { lerImpressaoDigital, type ImpressaoDigital } from './domain/impressaoDigital';
 import { gerarPdfParaImpressaoDigital } from './formats/impressao-exportacao';
@@ -546,6 +549,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'figura'; readonly id: string }
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
+  | { readonly tipo: 'forro-entretela-vista' }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
   | { readonly tipo: 'dobrar' }
@@ -684,6 +688,7 @@ export default function App(): React.JSX.Element {
   );
   // Bainha e Unir (aba Produção): o que o diálogo da ferramenta deixou escolhido.
   const [opcoesDeBainha, setOpcoesDeBainha] = useState<OpcoesDeBainha>({ dobras: 1, larguraMm: 30, piques: true });
+  const [opcoesDaPecaDerivada, setOpcoesDaPecaDerivada] = useState<OpcoesDaPecaDerivada>(OPCOES_PADRAO_DA_PECA_DERIVADA);
   const [opcoesDeCorte, setOpcoesDeCorte] = useState<OpcoesDeCorte>(CORTE_SEM_COSTURA);
   // O "Contorno" do Cortar: no manual, os elementos do corte são indicados um a um e o Enter confirma.
   const [corteManual, setCorteManual] = useState(false);
@@ -1555,7 +1560,7 @@ export default function App(): React.JSX.Element {
   const usarFerramentaDeMolde = useCallback(
     (ferramenta: FerramentaDeMolde | FerramentaDePence) => {
       if (!selecionadoId) return;
-      if (ferramenta === 'bainha' || ferramenta === 'unir' || ferramenta === 'dobrar' || ferramenta === 'cortar' || ferramenta === 'remover-regiao') {
+      if (ferramenta === 'bainha' || ferramenta === 'forro-entretela-vista' || ferramenta === 'unir' || ferramenta === 'dobrar' || ferramenta === 'cortar' || ferramenta === 'remover-regiao') {
         setDialogoDeFerramenta({ tipo: ferramenta });
       }
       else if (ehFerramentaDePence(ferramenta) && dialogoDaPence(ferramenta, opcoesDasPences)) {
@@ -3412,8 +3417,10 @@ export default function App(): React.JSX.Element {
         setRecadoDaFerramenta(resultado.recado);
         return;
       }
-      if (ehFerramentaDeReta(modo) || modo === 'bainha') {
+      if (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'forro-entretela-vista') {
         const peca = pecas.find((p) => p.id === selecionadoId);
+        // A vista e o forro pedem o trecho como a bainha: dois pontos do contorno.
+        const comoReta = modo === 'forro-entretela-vista' ? 'bainha' : modo;
         if (!peca) return;
         setRecadoDaFerramenta(null);
         const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
@@ -3473,9 +3480,9 @@ export default function App(): React.JSX.Element {
           setRecadoDaFerramenta(peloElemento.recado);
           return;
         }
-        const novo = peloElemento ? peloElemento.estado : cliqueDeReta(modo, trecho, { noContorno, livre: semCaptura }, segundaReta);
+        const novo = peloElemento ? peloElemento.estado : cliqueDeReta(comoReta, trecho, { noContorno, livre: semCaptura }, segundaReta);
         // No "Cortar" com a costura numa parte só, os dois pontos não bastam: falta o clique na parte.
-        if (!retaCompleta(modo, novo, segundaReta, modo === 'cortar' && cortePedeAParte(opcoesDeCorte))) {
+        if (!retaCompleta(comoReta, novo, segundaReta, modo === 'cortar' && cortePedeAParte(opcoesDeCorte))) {
           setTrecho(novo);
           return;
         }
@@ -3485,7 +3492,9 @@ export default function App(): React.JSX.Element {
           const resultado =
             modo === 'bainha'
               ? aplicarBainha(pecas, peca, novo, opcoesDeBainha, proximoId)
-              : aplicarReta(modo, pecas, peca, novo, proximoId, undefined, { corte: opcoesDeCorte, remover: opcoesDeRemover });
+              : modo === 'forro-entretela-vista'
+                ? aplicarPecaDerivada(pecas, peca, novo, opcoesDaPecaDerivada, proximoId)
+                : aplicarReta(modo, pecas, peca, novo, proximoId, undefined, { corte: opcoesDeCorte, remover: opcoesDeRemover });
           aplicarMudanca([...resultado.pecas]);
           setRecadoDaFerramenta(resultado.recado);
         } catch (e) {
@@ -3768,6 +3777,7 @@ export default function App(): React.JSX.Element {
       curvaEscolhida,
       espiralPendente,
       opcoesDeBainha,
+      opcoesDaPecaDerivada,
       unirApenasMovendo,
       opcoesDeUniao,
       opcoesDasPences,
@@ -4200,7 +4210,7 @@ export default function App(): React.JSX.Element {
         : null;
       return previaDeDobrar(opcoesDeDobrar, pecaSelecionada, trecho, mouse);
     }
-    if (pecaSelecionada && (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'desdobrar' || modo === 'unir')) {
+    if (pecaSelecionada && (ehFerramentaDeReta(modo) || modo === 'bainha' || modo === 'forro-entretela-vista' || modo === 'desdobrar' || modo === 'unir')) {
       const raioMm = RAIO_DE_MEDICAO_PX / transform.escalaPxPorMm;
       const contorno = pecaSelecionada.contorno;
       if (modo === 'desdobrar') return previaDeDesdobrar(pecaSelecionada, cursorMundo ? arestaPerto(cursorMundo, contorno, raioMm) : null);
@@ -4229,7 +4239,9 @@ export default function App(): React.JSX.Element {
       }
       return modo === 'bainha'
         ? previaDaBainha(pecaSelecionada, trecho, mouse, opcoesDeBainha)
-        : previaDaReta(modo, pecaSelecionada, trecho, mouse, modo === 'remover-regiao' && opcoesDeRemover.unir);
+        : modo === 'forro-entretela-vista'
+          ? previaDaPecaDerivada(pecaSelecionada, trecho, mouse, opcoesDaPecaDerivada)
+          : previaDaReta(modo, pecaSelecionada, trecho, mouse, modo === 'remover-regiao' && opcoesDeRemover.unir);
     }
     if (modo === 'circulo' && pontosEmEdicao[0] && cursorMundo && !mesmoPonto(pontosEmEdicao[0], cursorMundo)) {
       return { novo: circulo(pontosEmEdicao[0], cursorMundo), novoFechado: true };
@@ -4256,6 +4268,7 @@ export default function App(): React.JSX.Element {
     curvaEscolhida,
     espiralPendente,
     opcoesDeBainha,
+    opcoesDaPecaDerivada,
     opcoesDasPences,
     opcoesDaGraduacao,
     opcoesDeElemento,
@@ -4368,6 +4381,12 @@ export default function App(): React.JSX.Element {
         return !trecho.inicio
           ? 'Bainha: clique no contorno da peça selecionada, onde a bainha começa.' + fim
           : 'Bainha: clique no contorno, onde a bainha termina — a sobra tracejada entra no lugar do trecho em destaque.' + fim;
+      case 'forro-entretela-vista': {
+        const qual = opcoesDaPecaDerivada.tipo === 'vista' ? 'a vista' : 'o forro';
+        return !trecho.inicio
+          ? `${qual === 'a vista' ? 'Vista' : 'Forro'}: clique no contorno da peça selecionada, onde o trecho começa.` + fim
+          : `${qual === 'a vista' ? 'Vista' : 'Forro'}: clique onde o trecho termina — a peça tracejada é ${qual} que sai, ao lado da peça.` + fim;
+      }
       default:
         return null;
     }
@@ -5215,6 +5234,66 @@ export default function App(): React.JSX.Element {
             }
             entrarModoDeConstrucao('bainha');
             setOpcoesDeBainha(opcoes);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'forro-entretela-vista' && pecaSelecionada && (
+        <DialogoDeCampos
+          titulo="Forro, entretela e vista"
+          resumo={[['Peça', pecaSelecionada.nome]]}
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'tipo',
+              rotulo: 'Gerar',
+              opcoes: [
+                { valor: 'vista', rotulo: 'Vista — a faixa ao longo de um trecho (decote, meio da frente, cava)' },
+                { valor: 'forro', rotulo: 'Forro — a peça sem a faixa de um trecho (encurtado na barra, ou sem a vista)' },
+                { valor: 'entretela', rotulo: 'Entretela — a peça inteira recuada em volta, sem costura' },
+              ],
+              inicial: opcoesDaPecaDerivada.tipo,
+            },
+            { tipo: 'medida', id: 'largura', rotulo: 'Vista: a largura (mm) · Forro: quanto encurta (mm)', inicial: paraCampo(opcoesDaPecaDerivada.larguraMm) },
+            {
+              tipo: 'medida',
+              id: 'largura2',
+              rotulo: 'Vista: a largura na outra ponta (mm), só se for diferente',
+              inicial: opcoesDaPecaDerivada.largura2Mm === undefined ? '' : paraCampo(opcoesDaPecaDerivada.largura2Mm),
+              opcional: true,
+            },
+            { tipo: 'medida', id: 'recuo', rotulo: 'Entretela: o recuo em volta (mm)', inicial: paraCampo(opcoesDaPecaDerivada.recuoMm) },
+          ]}
+          nota="A vista e o forro: depois de continuar, clique no contorno onde o trecho começa e onde termina (o trecho mais curto entre os dois). A entretela sai na hora. A peça nova fica ao lado da principal, que não muda; o forro e a entretela entram nos grupos “Forro” e “Entretela” do encaixe, porque são de outro tecido."
+          rotuloDoBotao="Continuar"
+          onAplicar={(valores) => {
+            const opcoes: OpcoesDaPecaDerivada = {
+              tipo: valores.tipo as TipoDePecaDerivada,
+              larguraMm: Number(valores.largura),
+              ...(valores.largura2 === undefined ? {} : { largura2Mm: Number(valores.largura2) }),
+              recuoMm: Number(valores.recuo),
+            };
+            try {
+              conferirOpcoesDaPecaDerivada(opcoes);
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            setOpcoesDaPecaDerivada(opcoes);
+            if (!pedeOTrecho(opcoes.tipo)) {
+              try {
+                const resultado = aplicarPecaDerivada(pecas, pecaSelecionada, null, opcoes, proximoId);
+                aplicarMudanca([...resultado.pecas]);
+                // A entretela não pede clique: se a ferramenta esperava o trecho (de uma vista), deixa de esperar.
+                cancelarModo();
+                setRecadoDaFerramenta(resultado.recado);
+              } catch (e) {
+                return e instanceof Error ? e.message : String(e);
+              }
+              setDialogoDeFerramenta(null);
+              return null;
+            }
+            entrarModoDeConstrucao('forro-entretela-vista');
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta(null)}

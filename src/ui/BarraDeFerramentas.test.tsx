@@ -229,7 +229,7 @@ describe('BarraDeFerramentas: abas', () => {
 
     expect(gruposDaAba()).toEqual({
       'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Molde da foto'],
-      'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar'],
+      'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar', 'Forro, entretela e vista'],
       Costura: ['Costura', 'Remover costura', 'Converter em contorno', 'Converter em costura'],
       'Pregas e Pences': ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences'],
       'Cortar e Unir': ['Cortar', 'Unir', 'Remover região'],
@@ -759,12 +759,13 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
   it('Produção: Bainha, Dobrar, Desdobrar, Cortar, Unir e Remover região chamam a ferramenta de cada um', () => {
     const props = renderizar('Produção');
 
-    for (const nome of ['Bainha', 'Dobrar', 'Desdobrar', 'Cortar', 'Unir', 'Remover região']) fireEvent.click(botao(nome));
+    for (const nome of ['Bainha', 'Dobrar', 'Desdobrar', 'Forro, entretela e vista', 'Cortar', 'Unir', 'Remover região']) fireEvent.click(botao(nome));
 
     expect(vi.mocked(props.onUsarFerramentaDeMolde).mock.calls.map(([ferramenta]) => ferramenta)).toEqual([
       'bainha',
       'dobrar',
       'desdobrar',
+      'forro-entretela-vista',
       'cortar',
       'unir',
       'remover-regiao',
@@ -775,6 +776,7 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     ['Bainha', 'bainha'],
     ['Dobrar', 'dobrar'],
     ['Desdobrar', 'desdobrar'],
+    ['Forro, entretela e vista', 'forro-entretela-vista'],
     ['Cortar', 'cortar'],
     ['Unir', 'unir'],
     ['Remover região', 'remover-regiao'],

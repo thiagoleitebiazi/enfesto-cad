@@ -150,6 +150,7 @@ export type ModoDeDesenho =
   | 'desdobrar'
   | 'unir'
   | 'bainha'
+  | 'forro-entretela-vista'
   | 'pence-no-contorno'
   | 'pence-interna'
   | 'fechar-pence'
@@ -230,6 +231,7 @@ const MODOS_QUE_MOSTRAM_ALCAS: ReadonlySet<ModoDeDesenho> = new Set([
   'desdobrar',
   'unir',
   'bainha',
+  'forro-entretela-vista',
   'pence-no-contorno',
   'pence-interna',
   'fechar-pence',

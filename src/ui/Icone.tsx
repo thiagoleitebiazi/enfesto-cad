@@ -93,6 +93,7 @@ export type NomeDoIcone =
   | 'sentido-do-fio'
   | 'linha-de-simetria'
   | 'bainha'
+  | 'forro-entretela-vista'
   | 'dobrar'
   | 'desdobrar'
   | 'costura'
@@ -694,6 +695,13 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <path d="M4 3v14h12V3" />
       <line x1="4" y1="13" x2="16" y2="13" strokeDasharray="2.2 1.8" />
+    </>
+  ),
+  'forro-entretela-vista': (
+    <>
+      <path d="M3 3h10v14H3z" />
+      <path d="M3 6.5h10" />
+      <path d="M8.5 7.5h8.5v10H8.5" strokeDasharray="2.2 1.8" />
     </>
   ),
   dobrar: (

@@ -1046,6 +1046,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={() => props.onUsarFerramentaDeMolde('desdobrar')}
                   />
+                  <Ferramenta
+                    tamanho="pequeno"
+                    rotulo="Forro, entretela e vista"
+                    icone="forro-entretela-vista"
+                    pressionado={props.modo === 'forro-entretela-vista'}
+                    dica="Forro, entretela e vista: cria a peça nova tirada da selecionada — a vista (a faixa ao longo de um trecho do contorno), o forro (a peça sem a faixa de um trecho, como a barra) ou a entretela (a peça recuada em volta, sem costura). A selecionada fica como está"
+                    falta={props.temSelecaoUnica ? null : SEM_PECA}
+                    onClick={() => props.onUsarFerramentaDeMolde('forro-entretela-vista')}
+                  />
                 </div>
               </div>
 
