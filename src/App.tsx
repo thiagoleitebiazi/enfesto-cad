@@ -388,6 +388,7 @@ import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { encaixeComOMoldeDeAgora, type EncaixeComOMoldeDeAgora } from './domain/encaixeAtualizado';
+import { aprovarComoBase, basesAprovadas, modeloDaBase, pecasDaBase, tirarDasBases } from './domain/basesAprovadas';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
 import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
@@ -1099,8 +1100,9 @@ export default function App(): React.JSX.Element {
     if (pecas.length > 0 && !window.confirm('Começar um novo projeto descarta as peças atuais não salvas da tela (o projeto anterior continua na biblioteca, se já foi salvo). Continuar?')) {
       return;
     }
+    carregarListaDeProjetos();
     setMostrarNovoProjeto(true);
-  }, [pecas]);
+  }, [pecas, carregarListaDeProjetos]);
 
   const criarNovoProjetoComDados = useCallback((dados: DadosDeNovoProjeto) => {
     const enfestoInicial = criarConfiguracaoDeEnfesto({
@@ -1262,6 +1264,97 @@ export default function App(): React.JSX.Element {
       return null;
     },
     [pecas, tecido, enfesto, salvarAntesDeTrocar, persistirProjeto, mostrarProjeto, novoCodigoDeProjeto],
+  );
+
+  // A biblioteca de bases aprovadas (ADR 0126).
+  /**
+   * Muda um projeto da biblioteca e grava. O aberto entra com as peças da tela (o que mudou desde o último salvamento
+   * é salvo junto): aprovar o aberto como base aprova o molde que se vê.
+   */
+  const mudarProjetoDaBiblioteca = useCallback(
+    (id: string, mudar: (projeto: Projeto, agoraIso: string) => Projeto) => {
+      const agora = new Date().toISOString();
+      const aberto = id === projetoAtual.id;
+      const mudou = aberto && JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify({ pecas, tecido, enfesto });
+      const projeto = aberto ? (mudou ? registrarEvento(projetoAtual, 'salvamento', { pecas, tecido, enfesto }, agora) : projetoAtual) : projetos.find((p) => p.id === id);
+      if (!projeto) return;
+      const atualizado = mudar(projeto, agora);
+      setProjetos((lista) => [...lista.filter((p) => p.id !== id), atualizado]);
+      if (aberto) setProjetoAtual(atualizado);
+      void persistirProjeto(atualizado).then(carregarListaDeProjetos);
+    },
+    [projetos, projetoAtual, pecas, tecido, enfesto, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const aprovarComoBaseDaBiblioteca = useCallback(
+    (id: string, responsavel: string, nota: string): string | null => {
+      try {
+        mudarProjetoDaBiblioteca(id, (p, agora) => aprovarComoBase(p, { responsavel, nota }, agora));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [mudarProjetoDaBiblioteca],
+  );
+
+  const tirarDasBasesDaBiblioteca = useCallback((id: string) => mudarProjetoDaBiblioteca(id, tirarDasBases), [mudarProjetoDaBiblioteca]);
+
+  /** O modelo novo feito da base: gravado na biblioteca e aberto (o aberto antes é salvo, se mudou). */
+  const novoModeloDaBase = useCallback(
+    (id: string, nome: string): string | null => {
+      const mudou = JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify({ pecas, tecido, enfesto });
+      const base = id === projetoAtual.id ? projetoAtual : projetos.find((p) => p.id === id);
+      if (!base) return 'A base não está mais na biblioteca.';
+      let modelo: Projeto;
+      try {
+        modelo = modeloDaBase(
+          // A base aberta entra com as peças da tela, como as outras ações da biblioteca.
+          id === projetoAtual.id && mudou ? { ...base, estadoAtual: { pecas, tecido, enfesto } } : base,
+          nome,
+          `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          novoCodigoDeProjeto(),
+          new Date().toISOString(),
+          impressaoDigitalDoMolde(id === projetoAtual.id && mudou ? pecas : base.estadoAtual.pecas),
+        );
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      const atual = mudou ? salvarAntesDeTrocar() : projetoAtual;
+      persistirProjeto(modelo);
+      setProjetos((lista) => (mudou ? [...lista.filter((p) => p.id !== atual.id), atual, modelo] : [...lista, modelo]));
+      mostrarProjeto(modelo);
+      return null;
+    },
+    [projetos, projetoAtual, pecas, tecido, enfesto, salvarAntesDeTrocar, persistirProjeto, mostrarProjeto, novoCodigoDeProjeto],
+  );
+
+  /** As peças de uma base no projeto aberto, à direita das que ele já tem, marcadas e enquadradas. */
+  const porPecasDaBase = useCallback(
+    (id: string) => {
+      const base = projetos.find((p) => p.id === id);
+      if (!base) return;
+      let novas: Molde[];
+      try {
+        novas = pecasDaBase(base, pecas, proximoId);
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : String(e));
+        return;
+      }
+      const novasPecas = [...pecas, ...novas];
+      aplicarMudanca(novasPecas);
+      setSelecionadoId(null);
+      setIdsSelecionadosEmLote(new Set(novas.map((p) => p.id)));
+      setMostrarBiblioteca(false);
+      const retangulo = retanguloDoDesenho(novasPecas, enfesto, imagens);
+      if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela));
+      setAviso({
+        texto: `${novas.length === 1 ? 'A peça' : `As ${novas.length} peças`} da base “${base.nome}” (${novas.map((p) => p.nome).join(', ')}) ${novas.length === 1 ? 'entrou' : 'entraram'} no projeto, à direita das que ele já tinha, ${novas.length === 1 ? 'marcada' : 'marcadas'}. Ctrl+Z desfaz.`,
+        pecas: novasPecas,
+        selecionadoId: null,
+      });
+    },
+    [projetos, pecas, enfesto, imagens, tamanhoDaTela, aplicarMudanca],
   );
 
   const abrirVarianteDoProjeto = useCallback(
@@ -4771,6 +4864,10 @@ export default function App(): React.JSX.Element {
           onArquivar={arquivarProjetoDaBiblioteca}
           onExcluir={excluirProjetoDaBiblioteca}
           onFechar={() => setMostrarBiblioteca(false)}
+          onAprovarComoBase={aprovarComoBaseDaBiblioteca}
+          onTirarDasBases={tirarDasBasesDaBiblioteca}
+          onNovoModeloDaBase={novoModeloDaBase}
+          onPorPecasDaBase={porPecasDaBase}
         />
       )}
       {mostrarHistorico && (
@@ -4993,7 +5090,16 @@ export default function App(): React.JSX.Element {
         />
       )}
       {mostrarNovoProjeto && (
-        <PainelDeNovoProjeto onCriar={criarNovoProjetoComDados} onFechar={() => setMostrarNovoProjeto(false)} />
+        <PainelDeNovoProjeto
+          onCriar={criarNovoProjetoComDados}
+          bases={basesAprovadas(projetos)}
+          onCriarDaBase={(id, nome) => {
+            const erro = novoModeloDaBase(id, nome);
+            if (!erro) setMostrarNovoProjeto(false);
+            return erro;
+          }}
+          onFechar={() => setMostrarNovoProjeto(false)}
+        />
       )}
       {mostrarMoverCerca && cerca && (
         <PainelDeMoverCerca

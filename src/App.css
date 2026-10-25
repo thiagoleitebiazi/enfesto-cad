@@ -2120,8 +2120,36 @@ input[type='radio'] {
 
 .acoes-do-projeto {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
   flex-shrink: 0;
+  max-width: 60%;
+}
+
+/* A base aprovada (ADR 0126): a faixa verde à esquerda e o fundo, para achar as bases de olho na lista. */
+.lista-da-biblioteca li.item-de-base {
+  box-shadow: inset 4px 0 0 var(--sucesso-texto);
+}
+
+.lista-da-biblioteca li.item-de-base:not(.item-selecionado) {
+  background: var(--sucesso-fundo);
+}
+
+.selo-de-base {
+  margin-left: 6px;
+}
+
+.detalhes-da-base {
+  color: var(--sucesso-texto);
+}
+
+.filtro-das-bases {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .acoes-do-projeto button {
@@ -2149,6 +2177,15 @@ input[type='radio'] {
 
 .linha-de-renomear input {
   flex: 1;
+}
+
+.linha-de-renomear {
+  flex-wrap: wrap;
+}
+
+.linha-de-renomear .mensagem-de-erro {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .lista-de-historico {
@@ -5469,4 +5506,25 @@ rect.destaque-do-desenho,
 .propriedades-do-desenho .legenda-inline,
 .ferramentas-do-desenho .legenda-inline {
   margin: 6px 0 0;
+}
+
+/* O "Novo projeto" que começa de uma base aprovada (ADR 0126): cada base com a faixa verde da Biblioteca. */
+.escolha-do-comeco {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.escolha-do-comeco label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-direction: row;
+}
+
+.escolha-do-comeco .opcao-de-base {
+  padding: 2px 6px;
+  border-radius: var(--raio-md);
+  background: var(--sucesso-fundo);
+  box-shadow: inset 3px 0 0 var(--sucesso-texto);
 }

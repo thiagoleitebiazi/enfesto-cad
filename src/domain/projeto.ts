@@ -9,6 +9,7 @@ import type { ElasticidadeDaRecomendacao, RegrasDeCaimento } from './recomendaca
 import type { Montagem3D } from './montagem3d';
 import type { PainelDeInspiracao } from './inspiracao';
 import type { ImpressaoDigital } from './impressaoDigital';
+import type { BaseAprovada, OrigemNaBase } from './basesAprovadas';
 
 /**
  * Biblioteca permanente de trabalhos + histórico/versões (seções 9, 10 e 11
@@ -113,6 +114,10 @@ export interface Projeto {
   readonly inspiracao?: PainelDeInspiracao;
   /** A estampa no encaixe, para a impressão digital do tecido (ADR 0113). */
   readonly impressaoDigital?: ImpressaoDigital;
+  /** Marcado como base aprovada: aparece para começar modelos novos (ADR 0126). */
+  readonly base?: BaseAprovada;
+  /** O modelo começou de uma base: de qual (ADR 0126). */
+  readonly feitoDaBase?: OrigemNaBase;
 }
 
 /**

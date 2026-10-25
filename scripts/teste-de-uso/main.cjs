@@ -1441,6 +1441,91 @@ async function principal() {
   await fecharJanela();
   await espera(1200);
 
+  // 16. A biblioteca de bases aprovadas (ADR 0126): o projeto aberto aprovado como base (quem aprova, o que é), com o
+  // selo verde na Biblioteca; um modelo novo desta base, aberto com as mesmas peças e dizendo de que base veio; o "Novo
+  // projeto" oferece a base; e as peças da base postas no modelo, à direita das que ele tem (Ctrl+Z desfaz).
+  const projetoMaisRecente = () => {
+    const pasta = path.join(DADOS, 'projetos');
+    return fs
+      .readdirSync(pasta)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(pasta, f), 'utf8')))
+      .sort((a, b) => b.modificadoEmIso.localeCompare(a.modificadoEmIso))[0];
+  };
+  const abrirABiblioteca = async () => {
+    await clicarEm(`document.querySelector('button[title="Abrir (Ctrl+O)"]')`);
+    await espera(800);
+  };
+  const pecasDaBaseNoDisco = await pecasGravadas();
+  await abrirABiblioteca();
+  conferir('abre a Biblioteca', (await janela()) === 'Biblioteca de trabalhos', await janela());
+  const nomeDaBase = await js(`(document.querySelector('.lista-da-biblioteca li.item-selecionado strong') || {}).textContent || ''`);
+  const naLinhaDaBase = (rotulo) =>
+    clicarEm(`Array.from(Array.from(document.querySelectorAll('.lista-da-biblioteca li')).find(li => (li.querySelector('strong') || {}).textContent === ${JSON.stringify(nomeDaBase)}).querySelectorAll('button')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
+  await naLinhaDaBase('Aprovar como base');
+  await espera(300);
+  await noCampo(`Quem aprova ${nomeDaBase} como base`, 'Teste de uso');
+  await noCampo(`O que é a base ${nomeDaBase}`, 'base do teste de uso');
+  await botaoNaJanela('Aprovar');
+  await espera(800);
+  const linhaDaBase = await js(`(() => { const li = Array.from(document.querySelectorAll('.lista-da-biblioteca li')).find(li => (li.querySelector('strong') || {}).textContent === ${JSON.stringify(nomeDaBase)}); return li ? li.className + ' | ' + li.innerText.replace(/\\s+/g, ' ') : ''; })()`);
+  conferir(
+    'o projeto aberto aprovado como base: o selo verde, quem aprovou e o que é',
+    nomeDaBase !== '' && linhaDaBase.includes('item-de-base') && linhaDaBase.includes('Base aprovada') && linhaDaBase.includes('Aprovada por Teste de uso') && linhaDaBase.includes('base do teste de uso'),
+    `${nomeDaBase}: ${linhaDaBase.slice(0, 220)}`,
+  );
+  await foto('43-base-aprovada.png');
+  await naLinhaDaBase('Novo modelo desta base');
+  await espera(300);
+  await noCampo(`Nome do modelo novo da base ${nomeDaBase}`, 'Modelo da base do teste');
+  await botaoNaJanela('Criar o modelo');
+  await espera(1200);
+  const pecasDoModelo = await pecasGravadas();
+  const modeloNoDisco = projetoMaisRecente();
+  conferir(
+    'o modelo novo abre com as peças da base e diz de que base veio',
+    (await janela()) === 'nenhuma' &&
+      modeloNoDisco.nome === 'Modelo da base do teste' &&
+      modeloNoDisco.feitoDaBase && modeloNoDisco.feitoDaBase.nome === nomeDaBase &&
+      !modeloNoDisco.base &&
+      JSON.stringify(pecasDoModelo.map((p) => p.contorno)) === JSON.stringify(pecasDaBaseNoDisco.map((p) => p.contorno)),
+    `${modeloNoDisco.nome}, da base ${modeloNoDisco.feitoDaBase && modeloNoDisco.feitoDaBase.nome}, ${pecasDoModelo.length} de ${pecasDaBaseNoDisco.length} peça(s)`,
+  );
+  await js('window.__confirmDoTeste = window.confirm; window.confirm = () => true; 1');
+  await clicarEm(`document.querySelector('button[title="Novo projeto (Ctrl+N)"]')`);
+  await espera(800);
+  await js('window.confirm = window.__confirmDoTeste; 1');
+  const opcoesDoComeco = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=dialog] .escolha-do-comeco label')).map(l => l.textContent.trim()))`));
+  conferir(
+    'o "Novo projeto" oferece começar da base',
+    opcoesDoComeco[0] === 'Uma mesa vazia' && opcoesDoComeco.some((o) => o.startsWith(`Da base “${nomeDaBase}”`)),
+    JSON.stringify(opcoesDoComeco),
+  );
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] .escolha-do-comeco label')).find(l => l.textContent.trim().startsWith('Da base')).querySelector('input')`);
+  await espera(300);
+  await foto('44-novo-projeto-da-base.png');
+  await botaoNaJanela('Cancelar');
+  await espera(400);
+  await abrirABiblioteca();
+  await naLinhaDaBase('Pôr as peças no aberto');
+  await espera(1000);
+  const comAsDaBase = await pecasGravadas();
+  const caixaDe = (lista) => caixa(lista.flatMap((p) => p.contorno));
+  const antigas = comAsDaBase.slice(0, pecasDoModelo.length);
+  const novasDaBase = comAsDaBase.slice(pecasDoModelo.length);
+  conferir(
+    'as peças da base entram no modelo à direita das que ele tem, marcadas, com ids novos',
+    (await janela()) === 'nenhuma' &&
+      novasDaBase.length === pecasDaBaseNoDisco.length &&
+      caixaDe(novasDaBase).minY > caixaDe(antigas).maxY &&
+      novasDaBase.every((p) => !antigas.some((a) => a.id === p.id)),
+    `${antigas.length} + ${novasDaBase.length} peça(s); as novas de ${Math.round(caixaDe(novasDaBase).minY)} mm, as de antes até ${Math.round(caixaDe(antigas).maxY)} mm`,
+  );
+  await foto('45-pecas-da-base-no-modelo.png');
+  await clicarEm(`document.querySelector('button[title="Desfazer (Ctrl+Z)"]')`);
+  await espera(400);
+  conferir('o Desfazer tira as peças da base', (await pecasGravadas()).length === pecasDoModelo.length, '');
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));
