@@ -35,6 +35,8 @@ export interface Simulacao {
   /** As arestas (pares, nos números da simulação) e o comprimento de cada uma no molde. */
   readonly arestas: Uint32Array;
   readonly comprimentos: Float64Array;
+  /** A complacência de cada aresta: a do tecido na direção dela, pelo ângulo com o fio da peça (ADR 0120). */
+  readonly complacenciasDasArestas: Float64Array;
   readonly dobras: Uint32Array;
   readonly comprimentosDasDobras: Float64Array;
   /** As costuras: o ponto de um lado e o ponto do outro (entre `b1` e `b2`, na fração `f`); a distância de partida. */
@@ -78,11 +80,28 @@ const ATRITO_NA_COSTURA = 0.3;
 /** Abaixo disto (mm/s), o ponto está parado. */
 const PARADO_MM_S = 15;
 
+/** A elasticidade de 0 a 100 na complacência da física (de 10⁻⁸, quase nada, a 10⁻³). */
+const complacenciaDaElasticidade = (e: number): number => 10 ** (-8 + (5 * e) / 100);
+
+/**
+ * A elasticidade (de 0 a 100) numa direção do tecido (ADR 0120), pelo cosseno do ângulo com o fio: no fio, a do fio;
+ * atravessado, a da trama; a 45°, a do viés. Entre eles, a mistura pelos pesos cos² e sen² (o fio e a trama) e
+ * sen²(2θ) (o viés). Sem a trama e o viés, a mesma em toda direção.
+ */
+export function elasticidadeNaDirecao(t: Tecido3D, cos: number): number {
+  const c2 = Math.min(1, cos * cos);
+  const s2 = 1 - c2;
+  const vies = 4 * c2 * s2;
+  const trama = t.elasticidadeNaTrama ?? t.elasticidade;
+  const noVies = t.elasticidadeNoVies ?? t.elasticidade;
+  return (1 - vies) * (c2 * t.elasticidade + s2 * trama) + vies * noVies;
+}
+
 /** As propriedades do tecido (de 0 a 100) nos números da física. */
 export function parametrosDoTecido(t: Tecido3D): ParametrosDoTecido {
   return {
     gramasPorMm2: t.pesoGm2 * 1e-6,
-    complacenciaDoEstiramento: 10 ** (-8 + (5 * t.elasticidade) / 100),
+    complacenciaDoEstiramento: complacenciaDaElasticidade(t.elasticidade),
     complacenciaDaFlexao: 10 ** (-1 - (4 * t.rigidez) / 100),
     atrito: 0.1 + (0.8 * t.atrito) / 100,
     espessura: 3,
@@ -115,6 +134,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   const massa = new Float64Array(totalDePontos);
   const arestas: number[] = [];
   const comprimentos: number[] = [];
+  const complacenciasDasArestas: number[] = [];
   const dobras: number[] = [];
   const comprimentosDasDobras: number[] = [];
   const triangulos = new Uint32Array(totalDeTriangulos * 3);
@@ -141,9 +161,19 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
       massa[p.inicio + b] = massa[p.inicio + b]! + terco;
       massa[p.inicio + c] = massa[p.inicio + c]! + terco;
     }
+    // O fio da peça, na malha (que está nas coordenadas do molde): a direção de cada aresta diz a elasticidade dela.
+    const fio = inst.peca.linhaDeFio;
+    const fioComprimento = Math.hypot(fio.fim.x - fio.inicio.x, fio.fim.y - fio.inicio.y);
+    const gx = fioComprimento > 1e-9 ? (fio.fim.x - fio.inicio.x) / fioComprimento : 1;
+    const gy = fioComprimento > 1e-9 ? (fio.fim.y - fio.inicio.y) / fioComprimento : 0;
     for (let k = 0; k < m.arestas.length; k += 2) {
-      arestas.push(p.inicio + m.arestas[k]!, p.inicio + m.arestas[k + 1]!);
-      comprimentos.push(dist2d(m.arestas[k]!, m.arestas[k + 1]!));
+      const i = m.arestas[k]!;
+      const j = m.arestas[k + 1]!;
+      const comprimento = dist2d(i, j);
+      arestas.push(p.inicio + i, p.inicio + j);
+      comprimentos.push(comprimento);
+      const cos = comprimento > 1e-9 ? ((m.pontos[2 * j]! - m.pontos[2 * i]!) * gx + (m.pontos[2 * j + 1]! - m.pontos[2 * i + 1]!) * gy) / comprimento : 1;
+      complacenciasDasArestas.push(complacenciaDaElasticidade(elasticidadeNaDirecao(e.tecido, cos)));
     }
     for (let k = 0; k < m.dobras.length; k += 2) {
       dobras.push(p.inicio + m.dobras[k]!, p.inicio + m.dobras[k + 1]!);
@@ -205,6 +235,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     w,
     arestas: Uint32Array.from(arestas),
     comprimentos: Float64Array.from(comprimentos),
+    complacenciasDasArestas: Float64Array.from(complacenciasDasArestas),
     dobras: Uint32Array.from(dobras),
     comprimentosDasDobras: Float64Array.from(comprimentosDasDobras),
     costuraA: Uint32Array.from(costuraA),
@@ -221,7 +252,8 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   };
 }
 
-function resolverDistancias(x: Float64Array, w: Float64Array, pares: Uint32Array, comprimentos: Float64Array, alfa: number): void {
+/** As distâncias dos pares: `alfa` é a complacência sobre dt² (a mesma para todos), ou a escala de `complacencias` (uma por par). */
+function resolverDistancias(x: Float64Array, w: Float64Array, pares: Uint32Array, comprimentos: Float64Array, alfa: number, complacencias: Float64Array | null = null): void {
   for (let k = 0; k < pares.length; k += 2) {
     const i = pares[k]!;
     const j = pares[k + 1]!;
@@ -235,7 +267,7 @@ function resolverDistancias(x: Float64Array, w: Float64Array, pares: Uint32Array
     const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (L < 1e-9) continue;
     const C = L - comprimentos[k / 2]!;
-    const lambda = -C / (ws + alfa);
+    const lambda = -C / (ws + (complacencias ? complacencias[k / 2]! * alfa : alfa));
     const fx = (dx / L) * lambda;
     const fy = (dy / L) * lambda;
     const fz = (dz / L) * lambda;
@@ -253,7 +285,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
   const dt = segundos / subpassos;
   const { x, anterior, v, w, parametros: par } = sim;
   const n = w.length;
-  const alfaE = par.complacenciaDoEstiramento / (dt * dt);
+  const umSobreDt2 = 1 / (dt * dt);
   const alfaF = par.complacenciaDaFlexao / (dt * dt);
   const alfaC = 1e-8 / (dt * dt);
   const tocou = new Uint8Array(n);
@@ -283,7 +315,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
     // O estiramento e as costuras, duas vezes por passo (a colisão, que é o que custa, uma só): com uma volta só a
     // conta não chegava lá, e a camiseta pendurada pelos ombros esticava o dobro do real na costura do ombro.
     for (let volta = 0; volta < VOLTAS_POR_PASSO; volta++) {
-    resolverDistancias(x, w, sim.arestas, sim.comprimentos, alfaE);
+    resolverDistancias(x, w, sim.arestas, sim.comprimentos, umSobreDt2, sim.complacenciasDasArestas);
     for (let k = 0; k < sim.costuraA.length; k++) {
       const a = sim.costuraA[k]!;
       const b1 = sim.costuraB1[k]!;

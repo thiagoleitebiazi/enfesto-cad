@@ -1031,6 +1031,12 @@ async function principal() {
   await noCampo('Onde vai Frente da foto', 'fora');
   await espera(800);
   await foto('34-provador-arrumado.png');
+  // 13a. O fio, a trama e o viés (ADR 0120): a malha pronta estica mais na trama; as três réguas na aba Tecido.
+  await parteDaJanela('Tecido');
+  await espera(300);
+  const reguasDoTecido = await js(`JSON.stringify(['Elasticidade no fio', 'Na trama (atravessado)', 'No viés (45°)'].map(r => (document.querySelector('[role=dialog] input[aria-label=' + JSON.stringify(r) + ']') || {}).value))`);
+  conferir('a aba Tecido tem a elasticidade no fio, na trama e no viés (a malha: 70, 80, 75)', reguasDoTecido === '["70","80","75"]', reguasDoTecido);
+  await foto('34b-tecido-fio-trama-vies.png');
   await parteDaJanela('Costuras');
   await botaoNaJanela('Sugerir costuras');
   await espera(500);

@@ -19,9 +19,11 @@ import {
   problemasDaCostura,
   sugerirCosturas,
   TECIDOS_PRONTOS,
+  eixosDaFace,
   type Montagem3D,
+  type Tecido3D,
 } from './montagem3d';
-import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, maiorPenetracao, montarSimulacao, tensoes } from './simulacaoDoTecido';
+import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, elasticidadeNaDirecao, maiorPenetracao, montarSimulacao, tensoes, type Simulacao } from './simulacaoDoTecido';
 import { rotacionarMolde } from './molde';
 
 const FEMININO = corpoDoManequim(MEDIDAS_DO_PUBLICO.feminino);
@@ -421,9 +423,96 @@ describe('a simulação do caimento', () => {
   }, 30000);
 
   it('o mesmo tecido, mais elástico, estica mais', () => {
-    const elastico = tensoes(simularSaia({ ...TECIDOS_PRONTOS.malha.tecido, elasticidade: 90 }, 3));
-    const firme = tensoes(simularSaia({ ...TECIDOS_PRONTOS.malha.tecido, elasticidade: 0 }, 3));
+    const igual = (e: number): Tecido3D => ({ ...TECIDOS_PRONTOS.malha.tecido, elasticidade: e, elasticidadeNaTrama: e, elasticidadeNoVies: e });
+    const elastico = tensoes(simularSaia(igual(90), 3));
+    const firme = tensoes(simularSaia(igual(0), 3));
     const media = (t: Float32Array): number => t.reduce((s, v) => s + Math.max(0, v), 0) / t.length;
     expect(media(firme)).toBeLessThan(media(elastico));
   }, 30000);
+});
+
+describe('o fio, a trama e o viés (ADR 0120)', () => {
+  const RETO = { inicio: ponto(50, 280), fim: ponto(500, 280) };
+  const VIES = { inicio: ponto(275 - 159, 280 - 159), fim: ponto(275 + 159, 280 + 159) };
+
+  it('a elasticidade em cada direção: no fio, a do fio; atravessado, a da trama; a 45°, a do viés; sem elas, a mesma', () => {
+    const t = TECIDOS_PRONTOS.tricoline.tecido;
+    expect(elasticidadeNaDirecao(t, 1)).toBeCloseTo(10, 9);
+    expect(elasticidadeNaDirecao(t, 0)).toBeCloseTo(18, 9);
+    expect(elasticidadeNaDirecao(t, Math.SQRT1_2)).toBeCloseTo(78, 9);
+    // A 22,5° fica entre o fio e o viés.
+    const meio = elasticidadeNaDirecao(t, Math.cos(Math.PI / 8));
+    expect(meio).toBeGreaterThan(10);
+    expect(meio).toBeLessThan(78);
+    const semDirecao = { preset: 'personalizado', pesoGm2: 150, elasticidade: 40, rigidez: 30, atrito: 50 } as const;
+    expect([0, 0.4, Math.SQRT1_2, 1].map((c) => elasticidadeNaDirecao(semDirecao, c))).toEqual([40, 40, 40, 40]);
+  });
+
+  /** A saia de tecido com o fio dado, em pé (o giro que põe a cintura em cima), simulada até assentar. */
+  function simularSaiaComFio(tecido: Tecido3D, fio: Molde['linhaDeFio']): Simulacao {
+    const comFio = (id: string, nome: string): Molde => ({ ...pecaDeSaia(id, nome), linhaDeFio: fio });
+    const instancias = instanciasDasPecas([comFio('f', 'Frente da saia'), comFio('c', 'Costas da saia')]);
+    const alvo = eixosDaFace(RETO, 0).cima;
+    const giro = [0, 45, 90, 135, 180, 225, 270, 315].find((g) => Math.hypot(eixosDaFace(fio, g).cima.x - alvo.x, eixosDaFace(fio, g).cima.y - alvo.y) < 1e-6)!;
+    const configuracoes = Object.fromEntries(Object.entries(configuracoesDasInstancias(instancias, MONTAGEM_VAZIA)).map(([k, v]) => [k, { ...v, girarGraus: giro }]));
+    let n = 0;
+    const costuras = sugerirCosturas(FEMININO, instancias, { ...MONTAGEM_VAZIA, pecas: configuracoes, tecido }, () => `c${++n}`);
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas: malhasDasInstancias(instancias, configuracoes, 25), costuras, tecido });
+    for (let t = 0; t < 4 * 60 && !(t > 60 && assentou(sim)); t++) avancar(sim, 1 / 60, 8);
+    return sim;
+  }
+
+  /** O quanto as arestas no comprimento da saia (de pé, perto da vertical) esticam, em média (só o que estica). */
+  function estiramentoNaAltura(sim: Simulacao): number {
+    let soma = 0;
+    let quantas = 0;
+    const g = { x: RETO.fim.x - RETO.inicio.x, y: RETO.fim.y - RETO.inicio.y };
+    for (const p of sim.pecas) {
+      const m = p.malha;
+      for (let k = 0; k < m.arestas.length; k += 2) {
+        const i = m.arestas[k]!;
+        const j = m.arestas[k + 1]!;
+        const dx = m.pontos[2 * j]! - m.pontos[2 * i]!;
+        const dy = m.pontos[2 * j + 1]! - m.pontos[2 * i + 1]!;
+        const l0 = Math.hypot(dx, dy);
+        if (Math.abs(dx * g.x + dy * g.y) / (l0 * Math.hypot(g.x, g.y)) < 0.9) continue;
+        const a = 3 * (p.inicio + i);
+        const b = 3 * (p.inicio + j);
+        const l = Math.hypot(sim.x[a]! - sim.x[b]!, sim.x[a + 1]! - sim.x[b + 1]!, sim.x[a + 2]! - sim.x[b + 2]!);
+        soma += Math.max(0, l / l0 - 1);
+        quantas++;
+      }
+    }
+    return soma / quantas;
+  }
+
+  it('cada aresta da malha leva a complacência da direção dela: a do fio é a menor, a do viés a maior', () => {
+    const sim = simularSaiaComFio(TECIDOS_PRONTOS.tricoline.tecido, RETO);
+    const c = [...sim.complacenciasDasArestas];
+    expect(Math.min(...c)).toBeCloseTo(10 ** (-8 + (5 * 10) / 100), 12);
+    expect(Math.max(...c)).toBeLessThanOrEqual(10 ** (-8 + (5 * 78) / 100) * 1.0001);
+    expect(Math.max(...c)).toBeGreaterThan(10 ** (-8 + (5 * 60) / 100));
+  }, 30000);
+
+  it('o peso puxa a saia no comprimento: com o fio que estica, as arestas no fio esticam mais', () => {
+    const base = TECIDOS_PRONTOS.malha.tecido;
+    const fioSolto = estiramentoNaAltura(simularSaiaComFio({ ...base, elasticidade: 95, elasticidadeNaTrama: 0, elasticidadeNoVies: 50 }, RETO));
+    const fioFirme = estiramentoNaAltura(simularSaiaComFio({ ...base, elasticidade: 0, elasticidadeNaTrama: 95, elasticidadeNoVies: 50 }, RETO));
+    expect(fioSolto).toBeGreaterThan(3 * fioFirme);
+  }, 60000);
+
+  it('a saia de seda cortada no viés estica mais no comprimento que a cortada no fio', () => {
+    const seda = TECIDOS_PRONTOS.seda.tecido;
+    const noFio = estiramentoNaAltura(simularSaiaComFio(seda, RETO));
+    const noVies = estiramentoNaAltura(simularSaiaComFio(seda, VIES));
+    expect(noVies).toBeGreaterThan(1.5 * noFio);
+  }, 60000);
+
+  it('a leitura da montagem guarda a trama e o viés; a guardada sem eles fica sem (a mesma em toda direção)', () => {
+    const lida = lerMontagem3d({ ...MONTAGEM_VAZIA, tecido: { ...TECIDOS_PRONTOS.seda.tecido, elasticidadeNoVies: 140 } });
+    expect(lida.tecido).toMatchObject({ elasticidade: 15, elasticidadeNaTrama: 22, elasticidadeNoVies: 100 });
+    const antiga = lerMontagem3d({ ...MONTAGEM_VAZIA, tecido: { preset: 'malha', pesoGm2: 160, elasticidade: 70, rigidez: 20, atrito: 50 } });
+    expect(antiga.tecido.elasticidadeNaTrama).toBeUndefined();
+    expect(antiga.tecido.elasticidadeNoVies).toBeUndefined();
+  });
 });

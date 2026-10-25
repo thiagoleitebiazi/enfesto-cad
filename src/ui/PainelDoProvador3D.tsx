@@ -914,16 +914,20 @@ function ParteManequim(props: {
 
 function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: number; readonly onMudar: (t: Tecido3D) => void; readonly onResolucao: (r: number) => void }): React.JSX.Element {
   const t = props.tecido;
-  const regua = (chave: 'elasticidade' | 'rigidez' | 'atrito', rotulo: string, de: string, ate: string): React.JSX.Element => (
-    <label className="regua-do-tecido">
-      {rotulo}: {t[chave]}
-      <input type="range" min={0} max={100} aria-label={rotulo} value={t[chave]} onChange={(e) => props.onMudar({ ...t, preset: 'personalizado', [chave]: Number(e.target.value) })} />
+  const regua = (chave: 'elasticidade' | 'elasticidadeNaTrama' | 'elasticidadeNoVies' | 'rigidez' | 'atrito', rotulo: string, de: string, ate: string): React.JSX.Element => {
+    // A trama e o viés de um tecido guardado sem eles são os do fio (a mesma elasticidade em toda direção).
+    const valor = t[chave] ?? t.elasticidade;
+    return (
+    <label className={`regua-do-tecido${chave === 'elasticidadeNaTrama' || chave === 'elasticidadeNoVies' ? ' regua-da-direcao' : ''}`}>
+      {rotulo}: {valor}
+      <input type="range" min={0} max={100} aria-label={rotulo} value={valor} onChange={(e) => props.onMudar({ ...t, preset: 'personalizado', [chave]: Number(e.target.value) })} />
       <span className="pontas-da-regua">
         <small>{de}</small>
         <small>{ate}</small>
       </span>
     </label>
-  );
+    );
+  };
   return (
     <section aria-label="Tecido" className="secao-do-provador">
       <form className="formulario-de-sobreposicao campos-do-tecido" onSubmit={(e) => e.preventDefault()}>
@@ -949,7 +953,9 @@ function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: n
           Gramatura (g/m²)
           <CampoDeNumero rotulo="Gramatura" valor={t.pesoGm2} casas={0} onMudar={(v) => v !== null && v >= 20 && v <= 1000 && props.onMudar({ ...t, preset: 'personalizado', pesoGm2: v })} />
         </label>
-        {regua('elasticidade', 'Elasticidade', 'não estica', 'estica muito')}
+        {regua('elasticidade', 'Elasticidade no fio', 'não estica', 'estica muito')}
+        {regua('elasticidadeNaTrama', 'Na trama (atravessado)', 'não estica', 'estica muito')}
+        {regua('elasticidadeNoVies', 'No viés (45°)', 'não cede', 'cede muito')}
         {regua('rigidez', 'Rigidez', 'mole (cai)', 'firme (arma)')}
         {regua('atrito', 'Atrito', 'escorrega', 'agarra')}
         <label>
@@ -961,7 +967,10 @@ function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: n
           </select>
         </label>
       </form>
-      <p className="nota-do-formulario">É uma física simplificada: mostra o caimento e onde a peça repuxa, mas não substitui a peça-piloto.</p>
+      <p className="nota-do-formulario">
+        O fio de cada peça diz a direção: a malha estica mais na largura (a trama); o tecido plano quase não estica no fio nem na trama, mas cede no viés — a peça cortada no viés (girada 45°
+        no fio) cai mais solta. É uma física simplificada: mostra o caimento e onde a peça repuxa, mas não substitui a peça-piloto.
+      </p>
     </section>
   );
 }

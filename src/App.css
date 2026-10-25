@@ -4229,6 +4229,13 @@ input[type='radio'] {
   gap: 8px 12px;
 }
 
+/* A trama e o viés (ADR 0120): as réguas da direção, recuadas sob a do fio, com a borda violeta. */
+.regua-do-tecido.regua-da-direcao {
+  margin-left: 12px;
+  padding-left: 8px;
+  border-left: 3px solid #9c6ade;
+}
+
 .regua-do-tecido input[type='range'] {
   width: 100%;
 }

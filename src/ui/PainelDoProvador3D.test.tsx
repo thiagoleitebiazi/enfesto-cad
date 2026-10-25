@@ -140,7 +140,12 @@ describe('PainelDoProvador3D', () => {
     fireEvent.change(screen.getByLabelText('Rigidez'), { target: { value: '40' } });
     expect(screen.getByLabelText('Tecido pronto')).toHaveValue('personalizado');
     await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
-    expect(ultima().tecido).toEqual({ preset: 'personalizado', pesoGm2: 380, elasticidade: 5, rigidez: 40, atrito: 55 });
+    expect(ultima().tecido).toEqual({ preset: 'personalizado', pesoGm2: 380, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 70, rigidez: 40, atrito: 55 });
+    // O viés (ADR 0120): a régua própria, com o valor do tecido.
+    expect(screen.getByLabelText('No viés (45°)')).toHaveValue('70');
+    fireEvent.change(screen.getByLabelText('No viés (45°)'), { target: { value: '85' } });
+    await waitFor(() => expect(ultima().tecido.elasticidadeNoVies).toBe(85), { timeout: 2000 });
+    expect(screen.getByLabelText('Elasticidade no fio')).toHaveValue('5');
   });
 
   it('sem peça no corpo, não simula; com a saia costurada, simula até assentar e diz onde a roupa ficou', async () => {

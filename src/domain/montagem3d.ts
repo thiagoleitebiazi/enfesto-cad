@@ -96,8 +96,12 @@ export interface Tecido3D {
   readonly preset: PresetDeTecido;
   /** Gramatura (g/m²). */
   readonly pesoGm2: number;
-  /** De 0 (não estica) a 100 (estica muito). */
+  /** De 0 (não estica) a 100 (estica muito), no sentido do fio (o urdume, no tecido plano; o comprimento, na malha). */
   readonly elasticidade: number;
+  /** Atravessado ao fio (a trama; a largura da malha), de 0 a 100 (ADR 0120). Ausente: a mesma do fio. */
+  readonly elasticidadeNaTrama?: number;
+  /** No viés (a 45° do fio), de 0 a 100: o tecido plano cede mais no viés (ADR 0120). Ausente: a mesma do fio. */
+  readonly elasticidadeNoVies?: number;
   /** De 0 (mole, cai como seda) a 100 (firme, como o jeans). */
   readonly rigidez: number;
   /** De 0 (escorrega) a 100 (agarra no corpo). */
@@ -105,12 +109,14 @@ export interface Tecido3D {
 }
 
 export const TECIDOS_PRONTOS: Readonly<Record<Exclude<PresetDeTecido, 'personalizado'>, { readonly nome: string; readonly tecido: Tecido3D }>> = {
-  malha: { nome: 'Malha de algodão (meia malha)', tecido: { preset: 'malha', pesoGm2: 160, elasticidade: 70, rigidez: 20, atrito: 50 } },
-  moletom: { nome: 'Moletom', tecido: { preset: 'moletom', pesoGm2: 300, elasticidade: 45, rigidez: 55, atrito: 60 } },
-  tricoline: { nome: 'Tricoline (algodão plano)', tecido: { preset: 'tricoline', pesoGm2: 120, elasticidade: 10, rigidez: 45, atrito: 40 } },
-  jeans: { nome: 'Jeans', tecido: { preset: 'jeans', pesoGm2: 380, elasticidade: 5, rigidez: 85, atrito: 55 } },
-  seda: { nome: 'Seda / viscose', tecido: { preset: 'seda', pesoGm2: 90, elasticidade: 15, rigidez: 5, atrito: 20 } },
-  linho: { nome: 'Linho', tecido: { preset: 'linho', pesoGm2: 180, elasticidade: 5, rigidez: 65, atrito: 45 } },
+  // A malha estica mais na largura (a trama) que no comprimento; o tecido plano quase não estica no fio nem na trama,
+  // mas cede no viés — é o que faz a saia cortada no viés cair diferente (ADR 0120).
+  malha: { nome: 'Malha de algodão (meia malha)', tecido: { preset: 'malha', pesoGm2: 160, elasticidade: 70, elasticidadeNaTrama: 80, elasticidadeNoVies: 75, rigidez: 20, atrito: 50 } },
+  moletom: { nome: 'Moletom', tecido: { preset: 'moletom', pesoGm2: 300, elasticidade: 45, elasticidadeNaTrama: 55, elasticidadeNoVies: 50, rigidez: 55, atrito: 60 } },
+  tricoline: { nome: 'Tricoline (algodão plano)', tecido: { preset: 'tricoline', pesoGm2: 120, elasticidade: 10, elasticidadeNaTrama: 18, elasticidadeNoVies: 78, rigidez: 45, atrito: 40 } },
+  jeans: { nome: 'Jeans', tecido: { preset: 'jeans', pesoGm2: 380, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 70, rigidez: 85, atrito: 55 } },
+  seda: { nome: 'Seda / viscose', tecido: { preset: 'seda', pesoGm2: 90, elasticidade: 15, elasticidadeNaTrama: 22, elasticidadeNoVies: 85, rigidez: 5, atrito: 20 } },
+  linho: { nome: 'Linho', tecido: { preset: 'linho', pesoGm2: 180, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 72, rigidez: 65, atrito: 45 } },
 };
 
 export interface ManequimDaMontagem {
@@ -931,6 +937,8 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
     preset: presets.includes(t.preset as string) ? (t.preset as PresetDeTecido) : 'malha',
     pesoGm2: Math.min(1000, Math.max(20, numero(t.pesoGm2, 160))),
     elasticidade: limite(t.elasticidade, 70),
+    ...(typeof t.elasticidadeNaTrama === 'number' ? { elasticidadeNaTrama: limite(t.elasticidadeNaTrama, 70) } : {}),
+    ...(typeof t.elasticidadeNoVies === 'number' ? { elasticidadeNoVies: limite(t.elasticidadeNoVies, 70) } : {}),
     rigidez: limite(t.rigidez, 20),
     atrito: limite(t.atrito, 50),
   };
