@@ -36,6 +36,31 @@ describe('a estampa no encaixe — onde a imagem vai', () => {
     expect(eixosDaPecaNoEncaixe(rotacionarMolde(pecaEmPe(), 90)).cima.x).toBeCloseTo(-1, 6);
   });
 
+  it('o alto pela forma: a saia virada no arquivo fica com a cintura (a ponta estreita) em cima; a calça, com a larga; e o giro pedido', () => {
+    // A barra (560 mm) em cima na tela e a cintura (400) embaixo; o fio apontando para cima.
+    const virada = (nome: string): Molde =>
+      criarMolde({ nome, referencia: 'R', tamanho: 'M', contorno: [ponto(0, 0), ponto(0, 560), ponto(550, 480), ponto(550, 80)], linhaDeFio: { inicio: ponto(500, 280), fim: ponto(50, 280) } }, nome);
+    expect(eixosDaPecaNoEncaixe(virada('Saia')).cima.y).toBeCloseTo(-1, 6);
+    expect(eixosDaPecaNoEncaixe(virada('Calça frente')).cima.y).toBeCloseTo(1, 6);
+    // Girada 90° a mais (no sentido horário): o alto aponta para a esquerda da tela.
+    expect(eixosDaPecaNoEncaixe(virada('Saia'), 90).cima.x).toBeCloseTo(-1, 6);
+    expect(lerImpressaoDigital({ giroPorPeca: { a: 90, b: 360, c: 'x', d: -90 } }).giroPorPeca).toEqual({ a: 90, d: 270 });
+  });
+
+  it('a manga (pelo nome), inclinada no arquivo e sem fio: a estampa de pé no eixo dela, do punho ao alto da cabeça', () => {
+    // A cabeça em parábola (300 de corda, 82 de altura) em cima, o punho de 280 embaixo, girada 135° no arquivo.
+    const cabeca = Array.from({ length: 25 }, (_, k) => { const x = 150 - (300 * k) / 24; return ponto(82 * (x / 150) ** 2, x + 400); });
+    const manga = rotacionarMolde(criarMolde({ nome: 'Manga', referencia: 'R', tamanho: 'M', contorno: [...cabeca, ponto(200, 260), ponto(200, 540)], linhaDeFio: { inicio: ponto(0, 0), fim: ponto(0, 100) } }, 'm'), 135);
+    const { cima } = eixosDaPecaNoEncaixe(manga);
+    // Na tela (x = y do mundo, y para cima = −x): do meio do punho ao alto da cabeça (o ponto 12).
+    const tela = (p: { x: number; y: number }) => ({ x: p.y, y: -p.x });
+    const alto = tela(manga.contorno[12]!);
+    const punho = tela({ x: (manga.contorno[25]!.x + manga.contorno[26]!.x) / 2, y: (manga.contorno[25]!.y + manga.contorno[26]!.y) / 2 });
+    const L = Math.hypot(alto.x - punho.x, alto.y - punho.y);
+    expect(cima.x).toBeCloseTo((alto.x - punho.x) / L, 6);
+    expect(cima.y).toBeCloseTo((alto.y - punho.y) / L, 6);
+  });
+
   it('a corrida cobre a peça inteira com a sangria, a partir do canto de cima à esquerda', () => {
     const m = colocacaoNaPeca(pecaEmPe(), { imagemId: 'i', modo: 'corrida', larguraMm: 50, alturaMm: 0 }, 100, 50, 3);
     // 50 × 25 mm por cópia, numa peça de 200 × 300 mm de face, com 3 mm de sangria: 5 colunas e 13 linhas.

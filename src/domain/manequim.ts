@@ -237,6 +237,14 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim): CorpoDoManequi
   for (const b of [bracos.direito, bracos.esquerdo]) {
     capsulas.push({ p0: b.inicio, p1: b.meio, r0: b.raio, r1: b.raio * 0.78 });
     capsulas.push({ p0: b.meio, p1: b.fim, r0: b.raio * 0.78, r1: b.raio * 0.55 });
+    // A mão: um cone curto depois do pulso, na mesma direção do braço — a manga comprida se apoia nela (sem a mão, a
+    // ponta da manga ficava sem nada embaixo e se torcia).
+    const dx = b.fim.x - b.meio.x;
+    const dy = b.fim.y - b.meio.y;
+    const dz = b.fim.z - b.meio.z;
+    const L = Math.hypot(dx, dy, dz) || 1;
+    const mao = 0.1 * H;
+    capsulas.push({ p0: b.fim, p1: p3(b.fim.x + (dx / L) * mao, b.fim.y + (dy / L) * mao, b.fim.z + (dz / L) * mao), r0: b.raio * 0.55, r1: b.raio * 0.45 });
   }
   for (const p of [pernas.direita, pernas.esquerda]) {
     capsulas.push({ p0: p.inicio, p1: p.meio, r0: p.raio, r1: p.raio * 0.62 });

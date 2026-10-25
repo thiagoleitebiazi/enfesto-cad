@@ -2,7 +2,7 @@ import type { Contorno, Ponto2D } from '../core/geometria';
 import type { Molde } from './molde';
 import { abrirSimetrias } from './anotacoes';
 import { corpoDoManequim, medidasConferidas, MEDIDAS_DO_PUBLICO, perimetroDaElipse, semiEixosMaximosDoTronco, type CorpoDoManequim, type MedidasDoManequim, type PublicoDoManequim } from './manequim';
-import { malhaDaPeca, trechoDaBorda, type MalhaDaPeca } from './malhaDaPeca';
+import { cantosDoContorno, malhaDaPeca, trechoDaBorda, type MalhaDaPeca } from './malhaDaPeca';
 
 /**
  * A montagem do provador 3D (ADR 0111): que peça vai onde no corpo, as costuras, o tecido e a aparência. Fica no
@@ -67,8 +67,8 @@ export interface ConfiguracaoDaInstancia {
   readonly ajusteMm: number;
   /** Desloca a peça em volta do corpo (mm): + para a direita de quem olha a peça. */
   readonly desvioMm: number;
-  /** Gira a peça (graus, de 90 em 90) em relação ao fio na vertical. */
-  readonly girarGraus: 0 | 90 | 180 | 270;
+  /** Gira a peça (graus, no sentido horário de quem olha a face, de 0 a 359) em relação ao fio na vertical. */
+  readonly girarGraus: number;
   readonly cor: string;
   readonly estampa?: EstampaDaPeca;
 }
@@ -199,6 +199,11 @@ export const COR_DE_PARTIDA = '#3f7fb5';
 
 /** A configuração de partida de uma instância, pelo nome da peça. */
 export function configuracaoSugerida(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
+  const c = configuracaoPeloNome(instancia, largura);
+  return c.posicao === 'fora' ? c : { ...c, girarGraus: giroPelaForma(instancia, c.girarGraus, c.posicao) };
+}
+
+function configuracaoPeloNome(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
   const n = semAcento(instancia.peca.nome);
   const baixo = /saia|calca|bermuda|short|cos\b/.test(n);
   const base: ConfiguracaoDaInstancia = { posicao: 'fora', alturaDoTopo: baixo ? 'cintura' : 'ombro', ajusteMm: 0, desvioMm: 0, girarGraus: 0, cor: COR_DE_PARTIDA };
@@ -293,6 +298,185 @@ export function larguraDaFace(instancia: InstanciaDaPeca, girarGraus = 0): numbe
   return caixaDaFace(instancia, girarGraus).largura;
 }
 
+// ---- O alto pela forma
+
+/** A largura do contorno (na face) na altura `altura`: do primeiro ao último cruzamento da linha com o contorno. */
+function larguraNaAltura(u: ArrayLike<number>, v: ArrayLike<number>, altura: number): number {
+  let min = Infinity;
+  let max = -Infinity;
+  const n = u.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const va = v[i]!;
+    const vb = v[j]!;
+    if ((va - altura) * (vb - altura) > 0 || va === vb) continue;
+    const f = (altura - va) / (vb - va);
+    const x = u[i]! + (u[j]! - u[i]!) * f;
+    min = Math.min(min, x);
+    max = Math.max(max, x);
+  }
+  return max > min ? max - min : 0;
+}
+
+/**
+ * As pontas da peça (vista pela face, de pé): a largura perto do alto (a 4% do comprimento, ou 1 cm) menos a perto da
+ * barra, sobre a maior — positiva: o alto é mais largo; perto de 0: as duas iguais (não dá para saber pela forma).
+ */
+export function diferencaDasPontas(u: ArrayLike<number>, v: ArrayLike<number>): number {
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (let i = 0; i < v.length; i++) {
+    minV = Math.min(minV, v[i]!);
+    maxV = Math.max(maxV, v[i]!);
+  }
+  const faixa = Math.max(10, (maxV - minV) * 0.04);
+  if (maxV - minV <= 2 * faixa) return 0;
+  const alto = larguraNaAltura(u, v, maxV - faixa);
+  const barra = larguraNaAltura(u, v, minV + faixa);
+  const maior = Math.max(alto, barra);
+  return maior > 0 ? (alto - barra) / maior : 0;
+}
+
+/**
+ * Qual ponta vai em cima, pela posição: na perna, a mais larga (a cintura da calça; a barra afina); no resto, a mais
+ * estreita (o decote e os ombros sobre a barra da blusa, a cintura sobre a barra da saia, a cabeça da manga sobre o
+ * punho).
+ */
+export const pontaLargaEmCima = (posicao: PosicaoNoCorpo): boolean => posicao.startsWith('perna-');
+
+/**
+ * O giro (de 90 em 90, a partir de `girarGraus`) que deixa a ponta certa em cima, pela forma da peça: o mesmo giro, ou
+ * meia volta a mais. As pontas quase iguais (até 8%) não dizem nada: fica o giro dado. O fio continua na vertical: só
+ * o sentido muda — o arquivo de encaixe traz peças deitadas e viradas de qualquer jeito, e o sentido do fio no arquivo
+ * não diz qual ponta é o alto.
+ */
+export function giroPelaForma(instancia: InstanciaDaPeca, girarGraus: number, posicao: PosicaoNoCorpo): number {
+  // A manga: a cabeça (o lado mais abaulado) para cima, em qualquer ângulo (a manga vem inclinada nos arquivos de encaixe).
+  if (posicao === 'manga-direita' || posicao === 'manga-esquerda') {
+    const daManga = giroDaMangaPelaForma(instancia);
+    if (daManga !== null) return daManga;
+  }
+  const face = coordenadasDaFace(instancia, girarGraus, contornoComoPontos(instancia.contorno));
+  const d = diferencaDasPontas(face.u, face.v);
+  if (Math.abs(d) < 0.08) return girarGraus;
+  const largoEmCima = d > 0;
+  return largoEmCima === pontaLargaEmCima(posicao) ? girarGraus : normalizarGiro(girarGraus + 180);
+}
+
+/** O giro entre 0 e 359,9 (graus). */
+export function normalizarGiro(graus: number): number {
+  if (!Number.isFinite(graus)) return 0;
+  const g = ((graus % 360) + 360) % 360;
+  return Math.round(g * 10) / 10 === 360 ? 0 : Math.round(g * 10) / 10;
+}
+
+/**
+ * O bojo de um lado do contorno, na tela (x para a direita, y para cima): o quanto ele se afasta da corda (a reta entre
+ * as pontas), sobre o comprimento da corda, e a direção do bojo (de lado da corda para onde ele vai).
+ */
+function bojoDoLado(contorno: Contorno, de: number, ate: number): { readonly razao: number; readonly direcao: Ponto2D } {
+  const n = contorno.length;
+  const tela = (p: Ponto2D): Ponto2D => ({ x: p.y, y: -p.x });
+  const a = tela(contorno[de]!);
+  const b = tela(contorno[ate]!);
+  const corda = { x: b.x - a.x, y: b.y - a.y };
+  const L = Math.hypot(corda.x, corda.y);
+  if (L < 1e-6) return { razao: 0, direcao: { x: 0, y: 1 } };
+  const normal = { x: -corda.y / L, y: corda.x / L };
+  let maior = 0;
+  for (let i = de; i !== ate; i = (i + 1) % n) {
+    const p = tela(contorno[i]!);
+    const d = (p.x - a.x) * normal.x + (p.y - a.y) * normal.y;
+    if (Math.abs(d) > Math.abs(maior)) maior = d;
+  }
+  const s = maior >= 0 ? 1 : -1;
+  return { razao: Math.abs(maior) / L, direcao: { x: normal.x * s, y: normal.y * s } };
+}
+
+/**
+ * A cabeça de uma manga: o lado mais abaulado do contorno (a curva que vai na cava; o embaixo do braço e o punho são
+ * quase retos), se ele se afasta da corda ao menos 12% dela. `null`: nenhum lado assim.
+ */
+export function cabecaDaManga(contorno: Contorno): { readonly lado: LadoDoContorno; readonly direcao: Ponto2D } | null {
+  let melhor: { lado: LadoDoContorno; razao: number; direcao: Ponto2D } | null = null;
+  const perimetro = perimetroDe(contorno);
+  for (const lado of ladosDoContorno(contorno)) {
+    if (lado.comprimento < perimetro * 0.12) continue;
+    const b = bojoDoLado(contorno, lado.de, lado.ate);
+    if (b.razao >= 0.12 && (!melhor || b.razao > melhor.razao)) melhor = { lado, razao: b.razao, direcao: b.direcao };
+  }
+  return melhor ? { lado: melhor.lado, direcao: melhor.direcao } : null;
+}
+
+/**
+ * O eixo da manga: do alto da cabeça (o ponto dela mais longe da corda) ao meio do punho (o meio, pelo contorno, do
+ * lado mais longe do alto). A cabeça de uma manga de verdade não é simétrica (a da frente é mais cavada), e a
+ * perpendicular à corda sai torta: o punho ia para fora do eixo do braço e a manga se torcia. `null`: sem cabeça clara.
+ */
+export function eixoDaManga(contorno: Contorno): { readonly apice: Ponto2D; readonly punho: Ponto2D } | null {
+  const cabeca = cabecaDaManga(contorno);
+  if (!cabeca) return null;
+  const n = contorno.length;
+  const a = contorno[cabeca.lado.de]!;
+  const b = contorno[cabeca.lado.ate]!;
+  const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  let apice = a;
+  let maior = -1;
+  for (let i = cabeca.lado.de; i !== cabeca.lado.ate; i = (i + 1) % n) {
+    const p = contorno[i]!;
+    const d = Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / L;
+    if (d > maior) {
+      maior = d;
+      apice = p;
+    }
+  }
+  /** O ponto do meio de um lado, pelo comprimento. */
+  const meioDoLado = (de: number, ate: number): Ponto2D => {
+    const total = comprimentoDoTrecho(contorno, de, ate);
+    let andado = 0;
+    for (let i = de; i !== ate; i = (i + 1) % n) {
+      const p = contorno[i]!;
+      const q = contorno[(i + 1) % n]!;
+      const s = Math.hypot(q.x - p.x, q.y - p.y);
+      if (andado + s >= total / 2) {
+        const f = s > 0 ? (total / 2 - andado) / s : 0;
+        return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f };
+      }
+      andado += s;
+    }
+    return contorno[ate]!;
+  };
+  // O punho: dos lados com ao menos 10% do contorno, o mais oposto à cabeça — o mais longe do alto na direção
+  // contrária ao bojo (numa manga curta e larga, os cantos e o meio das laterais ficam tão longe do alto quanto o punho).
+  const perimetro = perimetroDe(contorno);
+  const bojo = { x: -cabeca.direcao.y, y: cabeca.direcao.x };
+  let punho: Ponto2D | null = null;
+  let maisOposto = Infinity;
+  for (const lado of ladosDoContorno(contorno)) {
+    if (lado.de === cabeca.lado.de && lado.ate === cabeca.lado.ate) continue;
+    if (lado.comprimento < perimetro * 0.1) continue;
+    const m = meioDoLado(lado.de, lado.ate);
+    const projecao = (m.x - apice.x) * bojo.x + (m.y - apice.y) * bojo.y;
+    if (projecao < maisOposto) {
+      maisOposto = projecao;
+      punho = m;
+    }
+  }
+  return punho ? { apice, punho } : null;
+}
+
+/** Na manga, o giro (graus) que põe o eixo dela de pé, com a cabeça em cima; `null`: sem cabeça clara. */
+export function giroDaMangaPelaForma(instancia: InstanciaDaPeca): number | null {
+  const eixo = eixoDaManga(instancia.contorno);
+  if (!eixo) return null;
+  const { cima } = eixosDaFace(instancia.peca.linhaDeFio, 0);
+  // Na tela (x = y do mundo, y para cima = −x do mundo): do punho ao alto.
+  const direcao = { x: eixo.apice.y - eixo.punho.y, y: -(eixo.apice.x - eixo.punho.x) };
+  // O giro é no sentido horário: de cima (o do fio) até o eixo.
+  const g = (Math.atan2(cima.y, cima.x) - Math.atan2(direcao.y, direcao.x)) * (180 / Math.PI);
+  return normalizarGiro(g);
+}
+
 // ---- A arrumação em volta do corpo
 
 export function alturaDoNivel(corpo: CorpoDoManequim, nivel: AlturaDoTopo): number {
@@ -340,9 +524,12 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
     const e2 = { x: 0, y: 0, z: -lado };
     const r = Math.max(W / (2 * Math.PI), braco.raio + 25);
     const inicio = -braco.raio * 0.8 + config.ajusteMm * -1;
+    // O alto da cabeça vai no alto do braço (e não o meio da caixa da peça, que numa manga torta fica fora do eixo).
+    const eixo = eixoDaManga(instancia.contorno);
+    const uDoApice = eixo ? coordenadasDaFace(instancia, config.girarGraus, [eixo.apice.x, eixo.apice.y]).u[0]! : 0;
     for (let i = 0; i < n; i++) {
       const l = inicio + (vMax - face.v[i]!);
-      const f = (face.u[i]! + config.desvioMm) / r;
+      const f = (face.u[i]! - uDoApice + config.desvioMm) / r;
       const c = { x: braco.inicio.x + d.x * l, y: braco.inicio.y + d.y * l, z: braco.inicio.z + d.z * l };
       saida[3 * i] = c.x + r * (Math.cos(f) * e1.x + Math.sin(f) * e2.x);
       saida[3 * i + 1] = c.y + r * (Math.cos(f) * e1.y + Math.sin(f) * e2.y);
@@ -424,22 +611,10 @@ interface LadoDoContorno {
   readonly comprimento: number;
 }
 
-/** Os lados do contorno: os trechos entre os cantos (onde a direção muda mais de 35°). */
+/** Os lados do contorno: os trechos entre os cantos. */
 export function ladosDoContorno(contorno: Contorno): LadoDoContorno[] {
   const n = contorno.length;
-  const cantos: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = contorno[(i - 1 + n) % n]!;
-    const b = contorno[i]!;
-    const c = contorno[(i + 1) % n]!;
-    const v1 = { x: b.x - a.x, y: b.y - a.y };
-    const v2 = { x: c.x - b.x, y: c.y - b.y };
-    const l1 = Math.hypot(v1.x, v1.y);
-    const l2 = Math.hypot(v2.x, v2.y);
-    if (l1 < 1e-9 || l2 < 1e-9) continue;
-    const cos = (v1.x * v2.x + v1.y * v2.y) / (l1 * l2);
-    if (cos < Math.cos((35 * Math.PI) / 180)) cantos.push(i);
-  }
+  const cantos = cantosDoContorno(contorno);
   if (cantos.length < 2) return [];
   const lados: LadoDoContorno[] = [];
   for (let k = 0; k < cantos.length; k++) {
@@ -592,6 +767,82 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
       invertida: p.invertida,
     });
   }
+  novas.push(...costurasDasMangas(corpo, instancias, montagem, candidatos, usados, novoId));
+  return novas;
+}
+
+/**
+ * A manga com as cavas: em cada manga posta num braço, a cabeça (o lado mais abaulado) vai com a cava da frente e a
+ * das costas do mesmo lado do corpo (os lados do alto do tronco mais perto do ombro), se a cabeça tem o comprimento
+ * das duas cavas juntas (até 10% a mais ou a menos: a folga da cabeça). A cabeça é dividida no ponto do contorno em
+ * que o comprimento da cava da frente acaba; a ponta de baixo de cada metade vai com a ponta de baixo da cava.
+ */
+function costurasDasMangas(
+  corpo: CorpoDoManequim,
+  instancias: readonly InstanciaDaPeca[],
+  montagem: Montagem3D,
+  candidatos: readonly { readonly inst: InstanciaDaPeca; readonly lado: LadoDoContorno; readonly arrumado: Float64Array }[],
+  usados: Set<string>,
+  novoId: () => string,
+): Costura3D[] {
+  const novas: Costura3D[] = [];
+  for (const manga of instancias) {
+    const config = montagem.pecas[manga.chave];
+    if (!config || (config.posicao !== 'manga-direita' && config.posicao !== 'manga-esquerda')) continue;
+    const cabeca = cabecaDaManga(manga.contorno);
+    if (!cabeca || usados.has(`${manga.chave}|${cabeca.lado.de}|${cabeca.lado.ate}`)) continue;
+    const lado = config.posicao === 'manga-direita' ? -1 : 1;
+    const ombro = config.posicao === 'manga-direita' ? corpo.bracos.direito.inicio : corpo.bracos.esquerdo.inicio;
+    // As cavas: os lados ainda livres do tronco, no alto, do lado do braço; a da frente (z > 0) e a das costas, as mais
+    // perto do ombro.
+    const doTronco = candidatos.filter((c) => {
+      const p = montagem.pecas[c.inst.chave]?.posicao;
+      if (p !== 'frente' && p !== 'costas' && p !== 'lado-direito' && p !== 'lado-esquerdo') return false;
+      if (usados.has(`${c.inst.chave}|${c.lado.de}|${c.lado.ate}`)) return false;
+      return c.arrumado[6]! * lado > 0;
+    });
+    const distanciaAoOmbro = (c: { arrumado: Float64Array }): number => Math.hypot(c.arrumado[6]! - ombro.x, c.arrumado[7]! - ombro.y);
+    const perto = doTronco.filter((c) => distanciaAoOmbro(c) < 260).sort((a, b) => distanciaAoOmbro(a) - distanciaAoOmbro(b));
+    const frente = perto.find((c) => c.arrumado[8]! > 0);
+    const costas = perto.find((c) => c.arrumado[8]! < 0);
+    if (!frente || !costas) continue;
+    const total = frente.lado.comprimento + costas.lado.comprimento;
+    if (Math.abs(cabeca.lado.comprimento - total) > total * 0.1) continue;
+    // A ponta da cabeça que vai para a frente: na manga direita, a da direita de quem olha a face (o e2 do braço é +z);
+    // na esquerda, a outra.
+    const faceDaManga = coordenadasDaFace(manga, config.girarGraus, contornoComoPontos(manga.contorno));
+    const deVaiParaFrente = (faceDaManga.u[cabeca.lado.de]! > faceDaManga.u[cabeca.lado.ate]!) === (lado < 0);
+    // O ponto de divisão: onde o comprimento da metade que começa em `de` chega ao da cava dela.
+    const alvo = (cabeca.lado.comprimento * (deVaiParaFrente ? frente.lado.comprimento : costas.lado.comprimento)) / total;
+    const n = manga.contorno.length;
+    let andado = 0;
+    let divisao = cabeca.lado.de;
+    let melhor = Infinity;
+    for (let i = cabeca.lado.de; i !== cabeca.lado.ate; i = (i + 1) % n) {
+      if (Math.abs(andado - alvo) < melhor) {
+        melhor = Math.abs(andado - alvo);
+        divisao = i;
+      }
+      andado += Math.hypot(manga.contorno[(i + 1) % n]!.x - manga.contorno[i]!.x, manga.contorno[(i + 1) % n]!.y - manga.contorno[i]!.y);
+    }
+    if (divisao === cabeca.lado.de || divisao === cabeca.lado.ate) continue;
+    const metades = [
+      { de: cabeca.lado.de, ate: divisao, cava: deVaiParaFrente ? frente : costas, comecaEmBaixo: true },
+      { de: divisao, ate: cabeca.lado.ate, cava: deVaiParaFrente ? costas : frente, comecaEmBaixo: false },
+    ];
+    for (const m of metades) {
+      // A ponta de baixo da cava: a mais baixa na arrumação.
+      const cavaComecaEmBaixo = m.cava.arrumado[1]! < m.cava.arrumado[13]!;
+      novas.push({
+        id: novoId(),
+        a: { chave: manga.chave, de: m.de, ate: m.ate, assinatura: manga.assinatura },
+        b: { chave: m.cava.inst.chave, de: m.cava.lado.de, ate: m.cava.lado.ate, assinatura: m.cava.inst.assinatura },
+        invertida: m.comecaEmBaixo !== cavaComecaEmBaixo,
+      });
+      usados.add(`${m.cava.inst.chave}|${m.cava.lado.de}|${m.cava.lado.ate}`);
+    }
+    usados.add(`${manga.chave}|${cabeca.lado.de}|${cabeca.lado.ate}`);
+  }
   return novas;
 }
 
@@ -654,7 +905,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
         alturaDoTopo: ALTURAS.includes(c.alturaDoTopo as AlturaDoTopo) ? (c.alturaDoTopo as AlturaDoTopo) : 'ombro',
         ajusteMm: numero(c.ajusteMm, 0),
         desvioMm: numero(c.desvioMm, 0),
-        girarGraus: girar === 90 || girar === 180 || girar === 270 ? girar : 0,
+        girarGraus: normalizarGiro(girar),
         cor: typeof c.cor === 'string' && /^#[0-9a-f]{6}$/i.test(c.cor) ? c.cor : COR_DE_PARTIDA,
       };
       const e = c.estampa;
@@ -698,7 +949,23 @@ export function configuracoesDasInstancias(instancias: readonly InstanciaDaPeca[
 export const corpoDaMontagem = (montagem: Montagem3D): CorpoDoManequim => corpoDoManequim(montagem.manequim.medidas);
 
 /** A malha de cada instância posta no corpo (as de fora não entram). */
-export function malhasDasInstancias(instancias: readonly InstanciaDaPeca[], configuracoes: Readonly<Record<string, ConfiguracaoDaInstancia>>, resolucaoMm: number): Map<string, MalhaDaPeca> {
+export function malhasDasInstancias(
+  instancias: readonly InstanciaDaPeca[],
+  configuracoes: Readonly<Record<string, ConfiguracaoDaInstancia>>,
+  resolucaoMm: number,
+  costuras: readonly Costura3D[] = [],
+): Map<string, MalhaDaPeca> {
+  // Os pontos do contorno em que as costuras começam e acabam ficam na borda da malha (os outros, só os cantos).
+  const pontosDasCosturas = new Map<string, number[]>();
+  for (const c of costuras) {
+    for (const lado of [c.a, c.b]) {
+      const inst = instancias.find((i) => i.chave === lado.chave);
+      if (!inst) continue;
+      const lista = pontosDasCosturas.get(inst.peca.id) ?? [];
+      lista.push(lado.de, lado.ate);
+      pontosDasCosturas.set(inst.peca.id, lista);
+    }
+  }
   const malhas = new Map<string, MalhaDaPeca>();
   const porPeca = new Map<string, MalhaDaPeca>();
   for (const inst of instancias) {
@@ -707,7 +974,7 @@ export function malhasDasInstancias(instancias: readonly InstanciaDaPeca[], conf
     // As cópias da mesma peça usam a mesma malha.
     let malha = porPeca.get(inst.peca.id);
     if (!malha) {
-      malha = malhaDaPeca(inst.contorno, resolucaoMm);
+      malha = malhaDaPeca(inst.contorno, resolucaoMm, pontosDasCosturas.get(inst.peca.id) ?? []);
       porPeca.set(inst.peca.id, malha);
     }
     malhas.set(inst.chave, malha);
@@ -715,4 +982,4 @@ export function malhasDasInstancias(instancias: readonly InstanciaDaPeca[], conf
   return malhas;
 }
 
-export { trechoDaBorda };
+export { cantosDoContorno, trechoDaBorda };

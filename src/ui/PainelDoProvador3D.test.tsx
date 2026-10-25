@@ -58,10 +58,22 @@ describe('PainelDoProvador3D', () => {
     expect(screen.getByLabelText('Topo de Frente da saia')).toHaveValue('cintura');
     expect(screen.getByRole('status')).toHaveTextContent('2 peça(s) em volta do corpo, 0 costura(s). Clique em Simular.');
     fireEvent.change(screen.getByLabelText('Onde vai Bolso'), { target: { value: 'lado-direito' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Girar Bolso' }));
-    expect(screen.getByRole('button', { name: 'Girar Bolso' })).toHaveTextContent('Girar 90° (90°)');
+    // O bolso (largo embaixo) posto num lado fica com a ponta estreita em cima; girar 15°, virar, e voltar pela forma.
+    expect(screen.getByLabelText('Giro de Bolso (graus)')).toHaveValue(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Girar Bolso 15° para a esquerda' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Girar Bolso 15° para a esquerda' }));
+    expect(screen.getByLabelText('Giro de Bolso (graus)')).toHaveValue(30);
+    fireEvent.click(screen.getByRole('button', { name: 'Girar Bolso 15° para a direita' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Virar Bolso' }));
+    expect(screen.getByLabelText('Giro de Bolso (graus)')).toHaveValue(195);
+    fireEvent.change(screen.getByLabelText('Giro de Bolso (graus)'), { target: { value: '-90' } });
+    expect(screen.getByLabelText('Giro de Bolso (graus)')).toHaveValue(270);
+    fireEvent.click(screen.getByRole('button', { name: 'Endireitar Bolso pela forma' }));
+    expect(screen.getByLabelText('Giro de Bolso (graus)')).toHaveValue(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Virar Bolso' }));
+    expect(screen.getByRole('img', { name: 'Bolso no corpo, com o alto em cima' })).toBeInTheDocument();
     await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
-    expect(ultima().pecas['b#0']).toMatchObject({ posicao: 'lado-direito', girarGraus: 90 });
+    expect(ultima().pecas['b#0']).toMatchObject({ posicao: 'lado-direito', girarGraus: 180 });
   });
 
   it('as costuras: as sugeridas, uma feita à mão pelos pontos, inverter e tirar', async () => {

@@ -1,6 +1,6 @@
 import type { Ponto2D } from '../core/geometria';
 import type { Molde } from './molde';
-import { eixosDaFace } from './montagem3d';
+import { diferencaDasPontas, eixoDaManga, eixosDaFace } from './montagem3d';
 
 /**
  * A estampa no encaixe, para a impressão digital do tecido (ADR 0113): cada molde do encaixe preenchido com a
@@ -29,6 +29,8 @@ export interface ImpressaoDigital {
   readonly sangriaMm: number;
   /** Imprime a linha de corte (um traço fino), para conferir o corte. */
   readonly linhaDeCorte: boolean;
+  /** O giro da estampa de cada peça (graus, no sentido horário), além do automático. Ausente: nenhum. */
+  readonly giroPorPeca?: Readonly<Record<string, number>>;
 }
 
 export const IMPRESSAO_VAZIA: ImpressaoDigital = { padrao: null, porPeca: {}, sangriaMm: 3, linhaDeCorte: true };
@@ -40,12 +42,18 @@ export function estampaDaPeca(config: ImpressaoDigital, pecaId: string): Estampa
   return pecaId in config.porPeca ? config.porPeca[pecaId]! : config.padrao;
 }
 
+const semAcento = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
 /**
- * Os eixos da peça no encaixe (na tela, o y para cima): o alto e a direita de quem olha a face. O fio dá a direção; o
- * sentido vem da peça como ela era antes dos giros (o giro acumulado é desfeito, a regra do alto é aplicada, e o giro
- * volta) — a peça que o encaixe virou de cabeça para baixo continua com a estampa de pé.
+ * Os eixos da peça no encaixe (na tela, o y para cima): o alto e a direita de quem olha a face.
+ * - O fio dá a direção. O sentido vem da peça como ela era antes dos giros (o giro acumulado é desfeito, a regra do
+ *   alto é aplicada, e o giro volta): a peça que o encaixe virou de cabeça para baixo continua com a estampa de pé.
+ * - Quando a forma diz qual ponta é o alto — a mais estreita (o decote e os ombros, a cintura da saia, a cabeça da
+ *   manga); numa calça, bermuda ou short, a mais larga —, vale a forma: o arquivo de encaixe traz peças viradas de
+ *   qualquer jeito, e muitas sem linha de fio.
+ * - Mais o giro pedido para a peça (graus, no sentido horário).
  */
-export function eixosDaPecaNoEncaixe(peca: Molde): { readonly cima: Ponto2D; readonly direita: Ponto2D } {
+export function eixosDaPecaNoEncaixe(peca: Molde, giroExtraGraus = 0): { readonly cima: Ponto2D; readonly direita: Ponto2D } {
   const t = (peca.anguloDeRotacaoGraus * Math.PI) / 180;
   const girar = (p: Ponto2D, a: number): Ponto2D => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) });
   // O fio na tela (x = y do mundo, y para cima = −x do mundo), desfeito o giro.
@@ -53,7 +61,29 @@ export function eixosDaPecaNoEncaixe(peca: Molde): { readonly cima: Ponto2D; rea
   const original = girar(fio, -t);
   // A mesma regra do provador 3D, na peça de origem (pontos de mentira com essa direção, na tela de volta ao mundo).
   const { cima } = eixosDaFace({ inicio: { x: 0, y: 0 }, fim: { x: -original.y, y: original.x } });
-  const c = girar(cima, t);
+  let c = girar(cima, t);
+  // A manga (pelo nome): o eixo dela, do meio do punho ao alto da cabeça — vem inclinada ou de lado nos arquivos de encaixe.
+  const eixo = /manga/.test(semAcento(peca.nome)) ? eixoDaManga(peca.contorno) : null;
+  if (eixo) {
+    const dx = eixo.apice.y - eixo.punho.y;
+    const dy = -(eixo.apice.x - eixo.punho.x);
+    const L = Math.hypot(dx, dy);
+    if (L > 0) c = { x: dx / L, y: dy / L };
+  }
+  // A forma: a largura perto de cada ponta, na peça vista com este alto.
+  const u: number[] = [];
+  const v: number[] = [];
+  for (const p of peca.contorno) {
+    const sx = p.y;
+    const sy = -p.x;
+    u.push(sx * c.y - sy * c.x);
+    v.push(sx * c.x + sy * c.y);
+  }
+  const d = diferencaDasPontas(u, v);
+  const largoEmCima = /calca|bermuda|short/.test(semAcento(peca.nome));
+  if (!eixo && Math.abs(d) >= 0.08 && d > 0 !== largoEmCima) c = { x: -c.x, y: -c.y };
+  const a = (giroExtraGraus * Math.PI) / 180;
+  if (a !== 0) c = { x: c.x * Math.cos(a) + c.y * Math.sin(a), y: -c.x * Math.sin(a) + c.y * Math.cos(a) };
   return { cima: c, direita: { x: c.y, y: -c.x } };
 }
 
@@ -72,8 +102,8 @@ export interface ColocacaoDaEstampa {
  * corrida a partir do canto de cima à esquerda da peça, com as cópias que cobrem a peça e a sangria; a localizada no
  * meio (mais o quanto sobe).
  */
-export function colocacaoNaPeca(peca: Molde, estampa: EstampaNoEncaixe, larguraPx: number, alturaPx: number, sangriaMm: number): ColocacaoDaEstampa {
-  const { cima, direita } = eixosDaPecaNoEncaixe(peca);
+export function colocacaoNaPeca(peca: Molde, estampa: EstampaNoEncaixe, larguraPx: number, alturaPx: number, sangriaMm: number, giroExtraGraus = 0): ColocacaoDaEstampa {
+  const { cima, direita } = eixosDaPecaNoEncaixe(peca, giroExtraGraus);
   // A peça na face: u para a direita, v para cima (na tela: sx = y do mundo, sy = −x do mundo).
   let minU = Infinity;
   let maxU = -Infinity;
@@ -144,5 +174,10 @@ export function lerImpressaoDigital(bruto: unknown): ImpressaoDigital {
   if (ehObjeto(bruto.porPeca)) for (const [id, e] of Object.entries(bruto.porPeca)) porPeca[id] = e === null ? null : lerEstampa(e);
   for (const [id, e] of Object.entries(porPeca)) if (e === null && bruto.porPeca && (bruto.porPeca as Record<string, unknown>)[id] !== null) delete porPeca[id];
   const sangria = typeof bruto.sangriaMm === 'number' && Number.isFinite(bruto.sangriaMm) ? Math.min(30, Math.max(0, bruto.sangriaMm)) : 3;
-  return { padrao: lerEstampa(bruto.padrao), porPeca, sangriaMm: sangria, linhaDeCorte: bruto.linhaDeCorte !== false };
+  const giroPorPeca: Record<string, number> = {};
+  if (ehObjeto(bruto.giroPorPeca)) {
+    for (const [id, g] of Object.entries(bruto.giroPorPeca)) if (typeof g === 'number' && Number.isFinite(g) && g % 360 !== 0) giroPorPeca[id] = ((g % 360) + 360) % 360;
+  }
+  const lida: ImpressaoDigital = { padrao: lerEstampa(bruto.padrao), porPeca, sangriaMm: sangria, linhaDeCorte: bruto.linhaDeCorte !== false };
+  return Object.keys(giroPorPeca).length > 0 ? { ...lida, giroPorPeca } : lida;
 }

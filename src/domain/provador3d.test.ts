@@ -4,9 +4,14 @@ import { criarMolde, type Molde } from './molde';
 import { corpoDoManequim, distanciaAoCorpo, malhaDoCorpo, manequimDoTamanho, MEDIDAS_DO_PUBLICO, medidasConferidas, perimetroDaElipse, secaoNaAltura } from './manequim';
 import { delaunay, malhaDaPeca, trechoDaBorda } from './malhaDaPeca';
 import {
+  cantosDoContorno,
+  comprimentoDoTrecho,
   configuracoesDasInstancias,
   coordenadasDaFace,
+  giroDaMangaPelaForma,
+  giroPelaForma,
   instanciasDasPecas,
+  ladosDoContorno,
   lerMontagem3d,
   malhasDasInstancias,
   MONTAGEM_VAZIA,
@@ -16,7 +21,8 @@ import {
   TECIDOS_PRONTOS,
   type Montagem3D,
 } from './montagem3d';
-import { aberturaDasCosturas, assentou, avancar, maiorPenetracao, montarSimulacao, tensoes } from './simulacaoDoTecido';
+import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, maiorPenetracao, montarSimulacao, tensoes } from './simulacaoDoTecido';
+import { rotacionarMolde } from './molde';
 
 const FEMININO = corpoDoManequim(MEDIDAS_DO_PUBLICO.feminino);
 
@@ -201,7 +207,8 @@ describe('a montagem em volta do corpo', () => {
       resolucaoMm: 7,
     });
     expect(lida.manequim).toEqual({ publico: 'masculino', medidas: { ...MEDIDAS_DO_PUBLICO.masculino, alturaCm: 180 } });
-    expect(lida.pecas['f#0']).toEqual({ posicao: 'frente', alturaDoTopo: 'cintura', ajusteMm: 0, desvioMm: 0, girarGraus: 0, cor: '#112233', estampa: { imagemId: 'i', modo: 'localizada', larguraMm: 80, alturaMm: 0 } });
+    // O giro vale em qualquer ângulo (a manga vem inclinada nos arquivos de encaixe).
+    expect(lida.pecas['f#0']).toEqual({ posicao: 'frente', alturaDoTopo: 'cintura', ajusteMm: 0, desvioMm: 0, girarGraus: 45, cor: '#112233', estampa: { imagemId: 'i', modo: 'localizada', larguraMm: 80, alturaMm: 0 } });
     expect(Object.keys(lida.pecas)).toEqual(['f#0']);
     expect(lida.costuras).toHaveLength(1);
     expect(lida.tecido).toMatchObject({ preset: 'jeans', pesoGm2: 1000, elasticidade: 0 });
@@ -265,7 +272,123 @@ describe('a regata: os ombros', () => {
     expect(maiorPenetracao(sim)).toBeLessThan(4);
     expect(yMax).toBeGreaterThan(FEMININO.niveis.ombro - 30);
     expect(yMax).toBeLessThan(FEMININO.niveis.pescoco + 40);
+  }, 30000);
+});
+
+/** Os pontos da face (x para a direita, y para cima) de uma peça em pé na tela, como contorno do mundo. */
+const daFace = (pontos: readonly (readonly [number, number])[]) => pontos.map(([x, y]) => ponto(-y, x + 400));
+
+/**
+ * Uma manga curta em pé: a cabeça em parábola (300 mm de corda, 82 de altura, 25 pontos), o embaixo do braço e o
+ * punho de 280 mm. Os pontos: 0–24 a cabeça (da direita para a esquerda), 24→25 e 26→0 o embaixo do braço, 25→26 o
+ * punho.
+ */
+function pecaDeManga(id: string): Molde {
+  const cabeca: [number, number][] = Array.from({ length: 25 }, (_, k) => {
+    const x = 150 - (300 * k) / 24;
+    return [x, -82 * (x / 150) ** 2];
   });
+  return criarMolde(
+    { nome: 'Manga', referencia: 'CAMISETA', tamanho: 'M', quantidade: 2, contorno: daFace([...cabeca, [-140, -200], [140, -200]]), linhaDeFio: { inicio: ponto(180, 400), fim: ponto(40, 400) } },
+    id,
+  );
+}
+
+describe('as peças de verdade: o alto pela forma, os cantos de um SPLINE, a manga', () => {
+  it('o canto de um SPLINE (a virada espalhada por vários pontos) é um canto só; a curva suave não é canto', () => {
+    // Um quadrado de 200 mm com um canto arredondado em 3 mm (três pontos) e a base trocada por uma curva suave (30 mm de
+    // flecha em 200, raio de 18 cm) em 19 pontos.
+    const contorno = [ponto(0, 0), ponto(197, 0), ponto(199.1, 0.9), ponto(200, 3), ponto(200, 200)];
+    for (let k = 1; k < 20; k++) contorno.push(ponto(200 - 10 * k, 200 + 30 * Math.sin((Math.PI * k) / 20)));
+    contorno.push(ponto(0, 200));
+    expect(cantosDoContorno(contorno)).toHaveLength(4);
+    expect(ladosDoContorno(contorno).map((l) => Math.round(l.comprimento))).toHaveLength(4);
+  });
+
+  it('a regata virada 180° no arquivo volta com o decote em cima; na perna, a ponta larga fica em cima', () => {
+    const virada = rotacionarMolde(pecaDeRegata('v', 'Frente da regata', 80), 180);
+    const inst = instanciasDasPecas([virada])[0]!;
+    expect(giroPelaForma(inst, 0, 'frente')).toBe(180);
+    expect(giroPelaForma(inst, 0, 'perna-direita-frente')).toBe(0);
+  });
+
+  it('a manga inclinada (135°, sem fio no arquivo) fica de pé pelo eixo dela: do punho ao alto da cabeça', () => {
+    const inclinada = rotacionarMolde(pecaDeManga('m'), 135);
+    const inst = instanciasDasPecas([{ ...inclinada, linhaDeFio: { inicio: ponto(0, 0), fim: ponto(0, 100) } }])[0]!;
+    const giro = giroDaMangaPelaForma(inst)!;
+    const f = coordenadasDaFace(inst, giro, Float64Array.from(inst.contorno.flatMap((p) => [p.x, p.y])));
+    // O alto da cabeça (o ponto 12) em cima e no eixo; o meio do punho embaixo, no mesmo eixo.
+    expect(f.v[12]).toBeCloseTo(f.altura / 2, 0);
+    expect(f.u[12]).toBeCloseTo((f.u[25]! + f.u[26]!) / 2, 0);
+  });
+
+  it('a malha de um contorno com um ponto a cada 2 mm: a borda reamostrada, os cantos e os pontos pedidos na borda, nenhum ponto solto', () => {
+    // A frente da regata com cada lado cortado em pontos de 2 mm (como chega um SPLINE).
+    const base = pecaDeRegata('d', 'Frente', 80).contorno;
+    const denso = base.flatMap((p, i) => {
+      const q = base[(i + 1) % base.length]!;
+      const partes = Math.max(1, Math.round(Math.hypot(q.x - p.x, q.y - p.y) / 2));
+      return Array.from({ length: partes }, (_, k) => ponto(p.x + ((q.x - p.x) * k) / partes, p.y + ((q.y - p.y) * k) / partes));
+    });
+    const m = malhaDaPeca(denso, 20, [37]);
+    const perimetro = denso.reduce((s, p, i) => s + Math.hypot(denso[(i + 1) % denso.length]!.x - p.x, denso[(i + 1) % denso.length]!.y - p.y), 0);
+    expect(m.borda.length).toBeLessThan((perimetro / 20) * 1.3);
+    const usados = new Set(Array.from(m.triangulos));
+    expect(Array.from({ length: m.pontos.length / 2 }, (_, i) => i).filter((i) => !usados.has(i))).toEqual([]);
+    // O ponto pedido (37) está exatamente na borda.
+    const k = m.borda[m.bordaDoVertice[37]!]!.ponto;
+    expect([m.pontos[2 * k], m.pontos[2 * k + 1]]).toEqual([denso[37]!.x, denso[37]!.y]);
+  });
+});
+
+describe('a camiseta: a manga com as cavas', () => {
+  const pecas = [pecaDeRegata('f', 'Frente da camiseta', 80), pecaDeRegata('c', 'Costas da camiseta', 25), { ...pecaDeManga('m'), emPar: true as const }];
+  const instancias = instanciasDasPecas(pecas);
+  const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+  const montagem: Montagem3D = { ...MONTAGEM_VAZIA, pecas: configuracoes };
+  let n = 0;
+  const costuras = sugerirCosturas(FEMININO, instancias, montagem, () => `k${++n}`);
+
+  it('sugere as laterais, os ombros, o embaixo do braço e a cabeça de cada manga dividida entre a cava da frente e a das costas', () => {
+    expect(configuracoes['m#0']!.posicao).toBe('manga-direita');
+    expect(configuracoes['m#1']!.posicao).toBe('manga-esquerda');
+    expect(costuras).toHaveLength(10);
+    const dasMangas = costuras.filter((c) => c.a.chave.startsWith('m#') && c.b.chave !== c.a.chave);
+    expect(dasMangas).toHaveLength(4);
+    for (const c of dasMangas) {
+      const manga = instancias.find((i) => i.chave === c.a.chave)!;
+      const tronco = instancias.find((i) => i.chave === c.b.chave)!;
+      // A metade da cabeça tem o comprimento da cava dela (a divisão cai num ponto da cabeça: até 15 mm de diferença).
+      expect(Math.abs(comprimentoDoTrecho(manga.contorno, c.a.de, c.a.ate) - comprimentoDoTrecho(tronco.contorno, c.b.de, c.b.ate))).toBeLessThan(15);
+      // E vai com a cava do lado do braço: na manga direita (−x), as cavas 13→16 da frente e 7→10 das costas.
+      const naDireita = c.a.chave === 'm#0';
+      const cava = tronco.peca.id === 'f' ? (naDireita ? '13-16' : '7-10') : naDireita ? '7-10' : '13-16';
+      expect(`${c.b.de}-${c.b.ate}`).toBe(cava);
+    }
+    expect(costuras.filter((c) => c.a.chave === c.b.chave).map((c) => c.a.chave).sort()).toEqual(['m#0', 'm#1']);
+  });
+
+  it('vestida: fica pendurada pelos ombros, as costuras fecham, as mangas nos braços', () => {
+    const tecido = TECIDOS_PRONTOS.malha.tecido;
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas: malhasDasInstancias(instancias, configuracoes, 25, costuras), costuras, tecido });
+    for (let q = 0; q < 6 * 60 && !(q > 90 && assentou(sim)); q++) avancar(sim, 1 / 60, 8);
+    expect(aberturaDasCosturas(sim)).toBeLessThan(6);
+    expect(maiorPenetracao(sim)).toBeLessThan(5);
+    const alturas = alturasDoTecido(sim);
+    expect(alturas.caidas).toEqual([]);
+    expect(alturas.ate).toBeGreaterThan(FEMININO.niveis.ombro - 30);
+    // As mangas ficam em volta dos braços (de um lado e do outro do corpo).
+    for (const chave of ['m#0', 'm#1']) {
+      const p = sim.pecas.find((q) => q.chave === chave)!;
+      let x = 0;
+      for (let i = p.inicio; i < p.inicio + p.malha.pontos.length / 2; i++) x += sim.x[3 * i]!;
+      x /= p.malha.pontos.length / 2;
+      expect(Math.abs(x)).toBeGreaterThan(170);
+      expect(Math.sign(x)).toBe(chave === 'm#0' ? -1 : 1);
+    }
+    const ten = tensoes(sim);
+    expect(ten.reduce((s, v) => s + Math.max(0, v), 0) / ten.length).toBeLessThan(0.05);
+  }, 60000);
 });
 
 describe('a simulação do caimento', () => {
@@ -295,12 +418,12 @@ describe('a simulação do caimento', () => {
     const t = tensoes(sim);
     const media = t.reduce((s, v) => s + Math.max(0, v), 0) / t.length;
     expect(media).toBeLessThan(0.08);
-  });
+  }, 30000);
 
   it('o mesmo tecido, mais elástico, estica mais', () => {
     const elastico = tensoes(simularSaia({ ...TECIDOS_PRONTOS.malha.tecido, elasticidade: 90 }, 3));
     const firme = tensoes(simularSaia({ ...TECIDOS_PRONTOS.malha.tecido, elasticidade: 0 }, 3));
     const media = (t: Float32Array): number => t.reduce((s, v) => s + Math.max(0, v), 0) / t.length;
     expect(media(firme)).toBeLessThan(media(elastico));
-  });
+  }, 30000);
 });

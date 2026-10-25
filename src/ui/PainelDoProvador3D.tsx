@@ -23,8 +23,10 @@ import {
   comprimentoDoTrecho,
   configuracoesDasInstancias,
   coordenadasDaFace,
+  giroPelaForma,
   instanciasDasPecas,
   ladosDoContorno,
+  normalizarGiro,
   malhasDasInstancias,
   problemasDaCostura,
   ROTULO_DA_ALTURA,
@@ -160,7 +162,7 @@ export function PainelDoProvador3D(props: {
   const obterMontada = useCallback((): Montada => {
     if (montadaRef.current && montadaRef.current.chave === chaveDaFisica) return montadaRef.current;
     const corpo = corpoDoManequim(montagem.manequim.medidas);
-    const malhas = malhasDasInstancias(instancias, montagem.pecas, montagem.resolucaoMm);
+    const malhas = malhasDasInstancias(instancias, montagem.pecas, montagem.resolucaoMm, costurasValidas);
     const sim = montarSimulacao({ corpo, instancias, configuracoes: montagem.pecas, malhas, costuras: costurasValidas, tecido: montagem.tecido });
     const uvs = new Map<string, Float64Array>();
     for (const p of sim.pecas) {
@@ -526,7 +528,10 @@ function PartePecas(props: {
   if (props.instancias.length === 0) return <p className="nota-do-formulario">O projeto não tem peças.</p>;
   return (
     <section aria-label="Peças" className="secao-do-provador lista-de-pecas-3d">
-      <p className="nota-do-formulario">Cada peça vai a um lugar do corpo, com o fio na vertical. A segunda de um par (a manga esquerda) já sai espelhada.</p>
+      <p className="nota-do-formulario">
+        Cada peça vai a um lugar do corpo; a figura mostra como ela fica, com o alto em cima. O alto vem da forma (a ponta estreita em cima; na perna, a larga; na manga, a cabeça) — confira e gire se
+        precisar. A segunda de um par (a manga esquerda) já sai espelhada.
+      </p>
       {props.instancias.map((inst) => {
         const c = props.montagem.pecas[inst.chave]!;
         const fora = c.posicao === 'fora';
@@ -535,11 +540,20 @@ function PartePecas(props: {
             <div className="titulo-da-peca-3d">
               <input type="color" aria-label={`Cor de ${inst.nome}`} value={c.cor} onChange={(e) => props.onMudar(inst.chave, { cor: e.target.value })} />
               <strong>{inst.nome}</strong>
+              {!fora && <MiniaturaDaFace instancia={inst} girarGraus={c.girarGraus} cor={c.cor} />}
             </div>
             <div className="campos-da-peca-3d">
               <label>
                 Onde vai
-                <select aria-label={`Onde vai ${inst.nome}`} value={c.posicao} onChange={(e) => props.onMudar(inst.chave, { posicao: e.target.value as PosicaoNoCorpo })}>
+                <select
+                  aria-label={`Onde vai ${inst.nome}`}
+                  value={c.posicao}
+                  onChange={(e) => {
+                    // A posição nova pode pedir a outra ponta em cima (na perna, a larga): o alto é refeito pela forma.
+                    const posicao = e.target.value as PosicaoNoCorpo;
+                    props.onMudar(inst.chave, posicao === 'fora' ? { posicao } : { posicao, girarGraus: giroPelaForma(inst, c.girarGraus, posicao) });
+                  }}
+                >
                   {(Object.keys(ROTULO_DA_POSICAO) as PosicaoNoCorpo[]).map((p) => (
                     <option key={p} value={p}>
                       {ROTULO_DA_POSICAO[p]}
@@ -567,9 +581,28 @@ function PartePecas(props: {
                     Para o lado (mm)
                     <input type="number" step={10} aria-label={`Para o lado ${inst.nome}`} value={c.desvioMm} onChange={(e) => props.onMudar(inst.chave, { desvioMm: Number(e.target.value) || 0 })} />
                   </label>
-                  <button type="button" aria-label={`Girar ${inst.nome}`} onClick={() => props.onMudar(inst.chave, { girarGraus: ((c.girarGraus + 90) % 360) as ConfiguracaoDaInstancia['girarGraus'] })}>
-                    Girar 90° ({c.girarGraus}°)
-                  </button>
+                  <div className="giro-da-peca" role="group" aria-label={`Giro de ${inst.nome}`}>
+                    <span>Giro</span>
+                    <button type="button" aria-label={`Girar ${inst.nome} 15° para a esquerda`} title="Girar 15° no sentido anti-horário" onClick={() => props.onMudar(inst.chave, { girarGraus: normalizarGiro(c.girarGraus + 15) })}>
+                      ↺ 15°
+                    </button>
+                    <input
+                      type="number"
+                      step={5}
+                      aria-label={`Giro de ${inst.nome} (graus)`}
+                      value={c.girarGraus}
+                      onChange={(e) => props.onMudar(inst.chave, { girarGraus: normalizarGiro(Number(e.target.value) || 0) })}
+                    />
+                    <button type="button" aria-label={`Girar ${inst.nome} 15° para a direita`} title="Girar 15° no sentido horário" onClick={() => props.onMudar(inst.chave, { girarGraus: normalizarGiro(c.girarGraus - 15) })}>
+                      ↻ 15°
+                    </button>
+                    <button type="button" aria-label={`Virar ${inst.nome}`} onClick={() => props.onMudar(inst.chave, { girarGraus: normalizarGiro(c.girarGraus + 180) })}>
+                      Virar 180°
+                    </button>
+                    <button type="button" aria-label={`Endireitar ${inst.nome} pela forma`} title="O alto pela forma da peça" onClick={() => props.onMudar(inst.chave, { girarGraus: giroPelaForma(inst, 0, c.posicao) })}>
+                      Pela forma
+                    </button>
+                  </div>
                   <label>
                     Estampa
                     <select
@@ -627,6 +660,21 @@ function PartePecas(props: {
       })}
       {props.imagens.length === 0 && <p className="nota-do-formulario">As estampas vêm das imagens do modelo (Modelo › Imagens).</p>}
     </section>
+  );
+}
+
+/** A peça como vai no corpo, pequena: vista pela face, com o giro, e a seta do alto. */
+function MiniaturaDaFace(props: { readonly instancia: InstanciaDaPeca; readonly girarGraus: number; readonly cor: string }): React.JSX.Element {
+  const c = props.instancia.contorno;
+  const face = coordenadasDaFace(props.instancia, props.girarGraus, Float64Array.from(c.flatMap((p) => [p.x, p.y])));
+  const lado = 56;
+  const escala = (lado - 8) / Math.max(face.largura, face.altura, 1);
+  const pontos = Array.from(face.u, (u, i) => `${(lado / 2 + u * escala).toFixed(1)},${(lado / 2 + 4 - face.v[i]! * escala).toFixed(1)}`).join(' ');
+  return (
+    <svg className="miniatura-da-face" width={lado} height={lado + 6} role="img" aria-label={`${props.instancia.nome} no corpo, com o alto em cima`}>
+      <path d={`M${lado / 2 - 5},7 L${lado / 2},1 L${lado / 2 + 5},7`} fill="none" stroke="#d9480f" strokeWidth={1.8} />
+      <polygon points={pontos} fill={props.cor} fillOpacity={0.35} stroke={props.cor} strokeWidth={1.2} />
+    </svg>
   );
 }
 

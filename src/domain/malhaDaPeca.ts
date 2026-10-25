@@ -25,6 +25,66 @@ export interface MalhaDaPeca {
   readonly areas: Float64Array;
 }
 
+/** Quanto o contorno vira (graus) em volta do ponto, olhando `janela` mm para trás e para a frente. */
+function viradaNoPonto(contorno: Contorno, acumulado: Float64Array, i: number, janela: number): number {
+  const n = contorno.length;
+  const perimetro = acumulado[n]!;
+  /** O ponto a `d` mm do ponto i, andando pelo contorno (d negativo: para trás). */
+  const aDistancia = (d: number): Ponto2D => {
+    let alvo = (acumulado[i]! + d) % perimetro;
+    if (alvo < 0) alvo += perimetro;
+    let lo = 0;
+    let hi = n;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (acumulado[m]! <= alvo) lo = m;
+      else hi = m;
+    }
+    const a = contorno[lo % n]!;
+    const b = contorno[(lo + 1) % n]!;
+    const L = acumulado[lo + 1]! - acumulado[lo]!;
+    const f = L > 0 ? (alvo - acumulado[lo]!) / L : 0;
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  };
+  const p = contorno[i]!;
+  const antes = aDistancia(-janela);
+  const depois = aDistancia(janela);
+  const v1 = { x: p.x - antes.x, y: p.y - antes.y };
+  const v2 = { x: depois.x - p.x, y: depois.y - p.y };
+  const l1 = Math.hypot(v1.x, v1.y);
+  const l2 = Math.hypot(v2.x, v2.y);
+  if (l1 < 1e-9 || l2 < 1e-9) return 0;
+  return (Math.acos(Math.max(-1, Math.min(1, (v1.x * v2.x + v1.y * v2.y) / (l1 * l2)))) * 180) / Math.PI;
+}
+
+/**
+ * Os cantos do contorno: onde ele vira mais de 35° numa janela de 6 mm para cada lado — a curva que vem de um SPLINE
+ * chega em muitos pontos, e a virada de um canto se espalha por dois ou três deles — e, de cada virada, só o ponto em
+ * que ela é maior. Numa curva de raio de 2 cm para cima a janela vira menos de 35°: não é canto.
+ */
+export function cantosDoContorno(contorno: Contorno, janelaMm = 6): number[] {
+  const n = contorno.length;
+  if (n < 3) return [];
+  const acumulado = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) acumulado[i + 1] = acumulado[i]! + Math.hypot(contorno[(i + 1) % n]!.x - contorno[i]!.x, contorno[(i + 1) % n]!.y - contorno[i]!.y);
+  const perimetro = acumulado[n]!;
+  if (perimetro <= 0) return [];
+  const janela = Math.min(janelaMm, perimetro / 8);
+  const virada = Array.from({ length: n }, (_, i) => viradaNoPonto(contorno, acumulado, i, janela));
+  const candidatos = virada.map((v, i) => (v > 35 ? i : -1)).filter((i) => i >= 0);
+  // Um canto por virada: dos candidatos a menos de duas janelas um do outro, o de maior virada.
+  const distancia = (a: number, b: number): number => {
+    const d = Math.abs(acumulado[a]! - acumulado[b]!);
+    return Math.min(d, perimetro - d);
+  };
+  const cantos: number[] = [];
+  for (const i of [...candidatos].sort((a, b) => virada[b]! - virada[a]!)) {
+    if (cantos.some((c) => distancia(c, i) < 2 * janela)) continue;
+    cantos.push(i);
+  }
+  return cantos.sort((a, b) => a - b);
+}
+
 function dentroDoPoligono(p: Ponto2D, poligono: Contorno): boolean {
   let dentro = false;
   for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
@@ -121,36 +181,90 @@ export function delaunay(xs: Float64Array): number[] {
   return saida;
 }
 
-/** A malha da peça pelo contorno (o do molde, na ordem dele). */
-export function malhaDaPeca(contorno: Contorno, espacoMm: number): MalhaDaPeca {
+/**
+ * A malha da peça pelo contorno (o do molde, na ordem dele). A borda é amostrada pela curva do contorno de `espacoMm`
+ * em `espacoMm` (mais ou menos), passando exatamente pelos cantos e pelos pontos de `manter` (onde as costuras
+ * começam e acabam). Os outros pontos do molde não entram — a curva de um SPLINE chega com um ponto a cada 2 ou 3 mm, e
+ * eles fariam triângulos finíssimos, quase sem massa, que estouram a simulação —: cada um aponta para a amostra mais
+ * perto dele pelo contorno.
+ */
+export function malhaDaPeca(contorno: Contorno, espacoMm: number, manter: readonly number[] = []): MalhaDaPeca {
   const h = Math.max(2, espacoMm);
   const n = contorno.length;
   const xs: number[] = [];
   const borda: { ponto: number; s: number }[] = [];
-  const bordaDoVertice: number[] = [];
-  let s = 0;
-  for (let i = 0; i < n; i++) {
-    const a = contorno[i]!;
-    const b = contorno[(i + 1) % n]!;
-    const L = Math.hypot(b.x - a.x, b.y - a.y);
-    const partes = Math.max(1, Math.ceil(L / h - 0.15));
-    bordaDoVertice.push(borda.length);
-    for (let k = 0; k < partes; k++) {
-      const f = k / partes;
+  const acumulado = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) acumulado[i + 1] = acumulado[i]! + Math.hypot(contorno[(i + 1) % n]!.x - contorno[i]!.x, contorno[(i + 1) % n]!.y - contorno[i]!.y);
+  const perimetro = acumulado[n]!;
+  const fixos = [...new Set([...cantosDoContorno(contorno), ...manter.filter((i) => Number.isInteger(i) && i >= 0 && i < n)])].sort((a, b) => a - b);
+  if (fixos.length === 0) fixos.push(0);
+  /** O ponto do contorno a `s` mm do ponto 0 (dando a volta). */
+  const naDistancia = (sAlvo: number): Ponto2D => {
+    let alvo = sAlvo % perimetro;
+    if (alvo < 0) alvo += perimetro;
+    let lo = 0;
+    let hi = n;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (acumulado[m]! <= alvo) lo = m;
+      else hi = m;
+    }
+    const a = contorno[lo % n]!;
+    const b = contorno[(lo + 1) % n]!;
+    const L = acumulado[lo + 1]! - acumulado[lo]!;
+    const f = L > 0 ? (alvo - acumulado[lo]!) / L : 0;
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  };
+  const amostraDoFixo = new Map<number, number>();
+  for (let k = 0; k < fixos.length; k++) {
+    const i0 = fixos[k]!;
+    const i1 = fixos[(k + 1) % fixos.length]!;
+    const s0 = acumulado[i0]!;
+    let s1 = acumulado[i1]!;
+    if (s1 <= s0) s1 += perimetro;
+    const partes = Math.max(1, Math.round((s1 - s0) / h));
+    for (let q = 0; q < partes; q++) {
+      const sq = s0 + ((s1 - s0) * q) / partes;
+      const p = q === 0 ? contorno[i0]! : naDistancia(sq);
       // Pontos repetidos (um ponto do contorno sobre o outro) entram uma vez só.
-      const x = a.x + (b.x - a.x) * f;
-      const y = a.y + (b.y - a.y) * f;
       const ultimo = borda.length > 0 ? borda[borda.length - 1]!.ponto : -1;
-      if (ultimo >= 0 && Math.hypot(xs[2 * ultimo]! - x, xs[2 * ultimo + 1]! - y) < 1e-6) {
-        if (k === 0) bordaDoVertice[bordaDoVertice.length - 1] = borda.length - 1;
+      if (ultimo >= 0 && Math.hypot(xs[2 * ultimo]! - p.x, xs[2 * ultimo + 1]! - p.y) < 1e-6) {
+        if (q === 0) amostraDoFixo.set(i0, borda.length - 1);
         continue;
       }
-      xs.push(x, y);
-      borda.push({ ponto: xs.length / 2 - 1, s: s + L * f });
+      if (q === 0) amostraDoFixo.set(i0, borda.length);
+      xs.push(p.x, p.y);
+      borda.push({ ponto: xs.length / 2 - 1, s: sq % perimetro });
     }
-    s += L;
   }
-  const perimetro = s;
+  // A borda na ordem do contorno (a partir do ponto 0), e cada ponto do molde com a sua amostra.
+  const ordem = borda.map((b, i) => ({ ...b, i })).sort((a, b) => a.s - b.s);
+  const novaPosicao = new Map<number, number>();
+  ordem.forEach((b, k) => novaPosicao.set(b.i, k));
+  const bordaOrdenada = ordem.map(({ ponto, s }) => ({ ponto, s }));
+  borda.length = 0;
+  borda.push(...bordaOrdenada);
+  const bordaDoVertice: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const fixo = amostraDoFixo.get(i);
+    if (fixo !== undefined) {
+      bordaDoVertice.push(novaPosicao.get(fixo)!);
+      continue;
+    }
+    // A amostra mais perto pelo contorno.
+    const si = acumulado[i]!;
+    let melhor = 0;
+    let menor = Infinity;
+    for (let k = 0; k < borda.length; k++) {
+      const d0 = Math.abs(borda[k]!.s - si);
+      const d = Math.min(d0, perimetro - d0);
+      if (d < menor) {
+        menor = d;
+        melhor = k;
+      }
+    }
+    bordaDoVertice.push(melhor);
+  }
   // O miolo: grade triangular, a pelo menos meio espaço da borda.
   let minX = Infinity;
   let minY = Infinity;
@@ -176,9 +290,16 @@ export function malhaDaPeca(contorno: Contorno, espacoMm: number): MalhaDaPeca {
   }
   const pontos = Float64Array.from(xs);
   const todos = delaunay(pontos);
-  // Fora: o triângulo cujo centro ou o meio de uma aresta cai fora da peça.
+  // Fora: o triângulo cujo centro ou o meio de uma aresta cai fora da peça. Rente à borda (até 30% do espaço da malha)
+  // ainda vale: numa curva côncava (a cava, o decote) a reta entre duas amostras seguidas da borda passa um pouco por
+  // fora — sem essa folga, os triângulos da borda saíam todos, e os pontos dela ficavam soltos.
   const tri: number[] = [];
   const ponto = (i: number): Ponto2D => ({ x: pontos[2 * i]!, y: pontos[2 * i + 1]! });
+  const rente = (p: Ponto2D, folga: number): boolean => {
+    for (let i = 0; i < n; i++) if (distanciaAoSegmento(p, contorno[i]!, contorno[(i + 1) % n]!) <= folga) return true;
+    return false;
+  };
+  const dentroOuRente = (p: Ponto2D, folga: number): boolean => dentroDoPoligono(p, contorno) || rente(p, folga);
   for (let k = 0; k < todos.length; k += 3) {
     const a = ponto(todos[k]!);
     const b = ponto(todos[k + 1]!);
@@ -187,8 +308,8 @@ export function malhaDaPeca(contorno: Contorno, espacoMm: number): MalhaDaPeca {
     if (Math.abs(area) < h * h * 1e-4) continue;
     const meio = (p: Ponto2D, q: Ponto2D): Ponto2D => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
     const centro = { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3 };
-    if (!dentroDoPoligono(centro, contorno)) continue;
-    if (![meio(a, b), meio(b, c), meio(c, a)].every((m) => dentroDoPoligono(m, contorno) || Math.min(...contorno.map((_, i) => distanciaAoSegmento(m, contorno[i]!, contorno[(i + 1) % n]!))) < 1e-6)) continue;
+    if (!dentroOuRente(centro, h * 0.15)) continue;
+    if (![meio(a, b), meio(b, c), meio(c, a)].every((m) => dentroOuRente(m, h * 0.3))) continue;
     // Todos no mesmo sentido (anti-horário nas coordenadas da peça).
     if (area > 0) tri.push(todos[k]!, todos[k + 1]!, todos[k + 2]!);
     else tri.push(todos[k]!, todos[k + 2]!, todos[k + 1]!);

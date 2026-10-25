@@ -63,6 +63,15 @@ export function PainelDaImpressaoDigital(props: {
     return e !== null && imagem(e.imagemId) !== undefined;
   }).length;
   const paginas = props.mesa ? trechosDoComprimento(props.mesa.comprimentoMm).length : 0;
+  /** Gira a estampa de uma peça (graus, + anti-horário), além do automático (o alto pela forma). */
+  const girarEstampa = (id: string, graus: number): void =>
+    setConfig((c) => {
+      const giro = ((((c.giroPorPeca?.[id] ?? 0) - graus) % 360) + 360) % 360;
+      const giroPorPeca = { ...(c.giroPorPeca ?? {}) };
+      if (giro === 0) delete giroPorPeca[id];
+      else giroPorPeca[id] = giro;
+      return { ...c, giroPorPeca };
+    });
 
   return (
     <Sobreposicao titulo="Estampa no encaixe" onFechar={fechar}>
@@ -108,6 +117,7 @@ export function PainelDaImpressaoDigital(props: {
                   <th scope="col">Estampa</th>
                   <th scope="col">Como</th>
                   <th scope="col">Largura (mm)</th>
+                  <th scope="col">Alto da estampa</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,6 +168,17 @@ export function PainelDaImpressaoDigital(props: {
                           '—'
                         )}
                       </td>
+                      <td>
+                        <span className="giro-da-estampa">
+                          <button type="button" aria-label={`Girar a estampa de ${p.nome} para a esquerda`} title="Girar 15° no sentido anti-horário" onClick={() => girarEstampa(p.id, 15)}>
+                            ↺
+                          </button>
+                          <span aria-label={`Giro da estampa de ${p.nome}`}>{config.giroPorPeca?.[p.id] ?? 0}°</span>
+                          <button type="button" aria-label={`Girar a estampa de ${p.nome} para a direita`} title="Girar 15° no sentido horário" onClick={() => girarEstampa(p.id, -15)}>
+                            ↻
+                          </button>
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -189,7 +210,7 @@ export function PainelDaImpressaoDigital(props: {
           >
             {exportando ? 'Gerando o PDF…' : 'Exportar PDF para impressão (1:1)'}
           </button>
-          <small>Só a área das peças leva tinta; a estampa fica de pé no fio de cada peça.</small>
+          <small>Só a área das peças leva tinta; a estampa fica de pé em cada peça (pela forma dela; gire na tabela se precisar).</small>
         </p>
       </div>
     </Sobreposicao>
@@ -274,7 +295,7 @@ function Previa(props: {
             </g>
           );
         }
-        const c = colocacaoNaPeca(p, e, img.larguraPx, img.alturaPx, props.config.sangriaMm);
+        const c = colocacaoNaPeca(p, e, img.larguraPx, img.alturaPx, props.config.sangriaMm, props.config.giroPorPeca?.[p.id] ?? 0);
         const m = compor(MUNDO_PARA_PREVIA, c.imagemParaMundo);
         const id = `estampa-${k}`;
         return (

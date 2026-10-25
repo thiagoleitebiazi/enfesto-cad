@@ -50,6 +50,8 @@ export interface Simulacao {
   tempo: number;
   /** O maior movimento no último quadro (mm/s), para saber quando parou. */
   velocidadeMaxima: number;
+  /** A parte dos pontos que ainda se mexe (de 0 a 1), no último quadro. */
+  fracaoEmMovimento: number;
 }
 
 export interface ParametrosDoTecido {
@@ -63,6 +65,18 @@ export interface ParametrosDoTecido {
 
 export const TEMPO_DA_COSTURA_S = 1.2;
 const GRAVIDADE = 9810;
+/** A maior velocidade de um ponto do tecido (mm/s). */
+const VELOCIDADE_MAXIMA = 3000;
+/** Quantas vezes o estiramento e as costuras são resolvidos em cada passo. */
+const VOLTAS_POR_PASSO = 3;
+/**
+ * O atrito durante a costura, sobre o do tecido: pouco, para a peça deslizar enquanto é vestida (com o atrito todo, a
+ * manga comprida ficava presa esticada e a costura de baixo do braço não fechava), mas não nada (sem atrito, a saia
+ * apertada num corpo que afina para cima subia como um elástico num cone).
+ */
+const ATRITO_NA_COSTURA = 0.3;
+/** Abaixo disto (mm/s), o ponto está parado. */
+const PARADO_MM_S = 15;
 
 /** As propriedades do tecido (de 0 a 100) nos números da física. */
 export function parametrosDoTecido(t: Tecido3D): ParametrosDoTecido {
@@ -136,8 +150,11 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
       comprimentosDasDobras.push(dist2d(m.dobras[k]!, m.dobras[k + 1]!));
     }
   }
+  // Uma massa mínima por ponto (a quarta parte da média): o ponto de um triângulo muito fino, quase sem área, não fica
+  // leve demais (a correção iria toda para ele, e a malha estouraria).
+  const media = totalDePontos > 0 ? massa.reduce((s, m) => s + m, 0) / totalDePontos : 0;
   const w = new Float64Array(totalDePontos);
-  for (let i = 0; i < totalDePontos; i++) w[i] = massa[i]! > 0 ? 1 / massa[i]! : 0;
+  for (let i = 0; i < totalDePontos; i++) w[i] = media > 0 ? 1 / Math.max(massa[i]!, media * 0.25) : 0;
   // As costuras: cada ponto de um lado com o ponto do outro na mesma fração do trecho.
   const costuraA: number[] = [];
   const costuraB1: number[] = [];
@@ -200,6 +217,7 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     parametros,
     tempo: 0,
     velocidadeMaxima: Infinity,
+    fracaoEmMovimento: 1,
   };
 }
 
@@ -238,7 +256,10 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
   const alfaE = par.complacenciaDoEstiramento / (dt * dt);
   const alfaF = par.complacenciaDaFlexao / (dt * dt);
   const alfaC = 1e-8 / (dt * dt);
+  const tocou = new Uint8Array(n);
+  const normalDoToque = new Float64Array(3 * n);
   let maior = 0;
+  let mexendo = 0;
   for (let s = 0; s < subpassos; s++) {
     const costurando = sim.tempo < TEMPO_DA_COSTURA_S;
     const g = costurando ? 0 : GRAVIDADE;
@@ -256,10 +277,13 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       x[3 * i + 1] = x[3 * i + 1]! + v[3 * i + 1]! * dt;
       x[3 * i + 2] = x[3 * i + 2]! + v[3 * i + 2]! * dt;
     }
-    resolverDistancias(x, w, sim.arestas, sim.comprimentos, alfaE);
     resolverDistancias(x, w, sim.dobras, sim.comprimentosDasDobras, alfaF);
     // As costuras: a distância de partida vai a zero durante a costura.
     const fracao = Math.max(0, 1 - sim.tempo / (TEMPO_DA_COSTURA_S * 0.8));
+    // O estiramento e as costuras, duas vezes por passo (a colisão, que é o que custa, uma só): com uma volta só a
+    // conta não chegava lá, e a camiseta pendurada pelos ombros esticava o dobro do real na costura do ombro.
+    for (let volta = 0; volta < VOLTAS_POR_PASSO; volta++) {
+    resolverDistancias(x, w, sim.arestas, sim.comprimentos, alfaE);
     for (let k = 0; k < sim.costuraA.length; k++) {
       const a = sim.costuraA[k]!;
       const b1 = sim.costuraB1[k]!;
@@ -292,7 +316,9 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       x[3 * b2 + 1] = x[3 * b2 + 1]! - k2 * ny;
       x[3 * b2 + 2] = x[3 * b2 + 2]! - k2 * nz;
     }
+    }
     // O corpo e o chão: empurram para fora, com atrito.
+    tocou.fill(0);
     for (let i = 0; i < n; i++) {
       if (w[i] === 0) continue;
       let px = x[3 * i]!;
@@ -313,6 +339,10 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         ny = 1;
       }
       if (fundo > 0) {
+        tocou[i] = 1;
+        normalDoToque[3 * i] = nx;
+        normalDoToque[3 * i + 1] = ny;
+        normalDoToque[3 * i + 2] = nz;
         px += nx * fundo;
         py += ny * fundo;
         pz += nz * fundo;
@@ -326,15 +356,17 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         const tz = mz - normal * nz;
         const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
         if (tl > 1e-12) {
-          const corte = Math.min(1, (par.atrito * fundo) / tl);
+          // Na costura o tecido desliza solto (como a peça que se veste): com atrito ele ficava preso esticado onde encostou.
+          const corte = Math.min(1, ((costurando ? ATRITO_NA_COSTURA : 1) * par.atrito * fundo) / tl);
           px -= tx * corte;
           py -= ty * corte;
           pz -= tz * corte;
         }
         // Empurrado para fora de um pedaço do corpo, o ponto pode ter entrado no outro (na axila, entre as pernas):
-        // confere de novo.
-        const c2 = distanciaAoCorpo(sim.corpo, px, py, pz);
-        if (c2.d < par.espessura) {
+        // confere de novo, até três vezes.
+        for (let volta = 0; volta < 3; volta++) {
+          const c2 = distanciaAoCorpo(sim.corpo, px, py, pz);
+          if (c2.d >= par.espessura) break;
           px += c2.nx * (par.espessura - c2.d);
           py += c2.ny * (par.espessura - c2.d);
           pz += c2.nz * (par.espessura - c2.d);
@@ -345,17 +377,42 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       }
     }
     for (let i = 0; i < n; i++) {
-      const vx = (x[3 * i]! - anterior[3 * i]!) / dt;
-      const vy = (x[3 * i + 1]! - anterior[3 * i + 1]!) / dt;
-      const vz = (x[3 * i + 2]! - anterior[3 * i + 2]!) / dt;
+      let vx = (x[3 * i]! - anterior[3 * i]!) / dt;
+      let vy = (x[3 * i + 1]! - anterior[3 * i + 1]!) / dt;
+      let vz = (x[3 * i + 2]! - anterior[3 * i + 2]!) / dt;
+      // O empurrão do corpo não vira velocidade para fora (o tecido não quica): sem isso, na axila, entre o braço e o
+      // tronco, os empurrões se somavam e lançavam o ponto longe.
+      if (tocou[i]) {
+        const nx = normalDoToque[3 * i]!;
+        const ny = normalDoToque[3 * i + 1]!;
+        const nz = normalDoToque[3 * i + 2]!;
+        const vn = vx * nx + vy * ny + vz * nz;
+        if (vn > 0) {
+          vx -= vn * nx;
+          vy -= vn * ny;
+          vz -= vn * nz;
+        }
+      }
+      // E nenhum ponto passa de 3 m/s: um tecido assentando nunca anda tão rápido.
+      const rapidez = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      if (rapidez > VELOCIDADE_MAXIMA) {
+        vx *= VELOCIDADE_MAXIMA / rapidez;
+        vy *= VELOCIDADE_MAXIMA / rapidez;
+        vz *= VELOCIDADE_MAXIMA / rapidez;
+      }
       v[3 * i] = vx;
       v[3 * i + 1] = vy;
       v[3 * i + 2] = vz;
-      if (s === subpassos - 1) maior = Math.max(maior, Math.sqrt(vx * vx + vy * vy + vz * vz));
+      if (s === subpassos - 1) {
+        const r = Math.sqrt(vx * vx + vy * vy + vz * vz);
+        maior = Math.max(maior, r);
+        if (r >= PARADO_MM_S) mexendo++;
+      }
     }
     sim.tempo += dt;
   }
   sim.velocidadeMaxima = maior;
+  sim.fracaoEmMovimento = n > 0 ? mexendo / n : 0;
 }
 
 /**
@@ -401,7 +458,8 @@ export function botoesDaSimulacao(sim: Simulacao, instancias: readonly Instancia
 
 /** A simulação parou: passou a costura e o tecido quase não se mexe. */
 export function assentou(sim: Simulacao): boolean {
-  return sim.tempo > TEMPO_DA_COSTURA_S + 0.5 && sim.velocidadeMaxima < 15;
+  // Menos de 2% dos pontos ainda se mexendo: uns poucos tremendo numa junção (a axila) não seguram a simulação até o fim.
+  return sim.tempo > TEMPO_DA_COSTURA_S + 0.5 && sim.fracaoEmMovimento < 0.02;
 }
 
 /** O quanto cada triângulo está esticado (a maior aresta: 0,05 = 5% mais comprida que no molde; negativo: encolhida). */

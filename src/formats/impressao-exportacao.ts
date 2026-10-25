@@ -54,7 +54,7 @@ export async function gerarPdfParaImpressaoDigital(
       const imagem = estampa ? imagens.get(estampa.imagemId) : undefined;
       if (estampa && imagem) {
         const recorte = config.sangriaMm > 0 ? deslocarContornoSeguro(corte, config.sangriaMm) : corte;
-        const colocacao = colocacaoNaPeca(peca, estampa, imagem.larguraPx, imagem.alturaPx, config.sangriaMm);
+        const colocacao = colocacaoNaPeca(peca, estampa, imagem.larguraPx, imagem.alturaPx, config.sangriaMm, config.giroPorPeca?.[peca.id] ?? 0);
         doc.save();
         doc.transform(...mundoParaPagina);
         tracar(doc, recorte);

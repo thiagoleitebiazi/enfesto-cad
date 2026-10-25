@@ -3585,6 +3585,13 @@ input[type='radio'] {
   gap: 6px;
 }
 
+.giro-da-estampa {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
 .estampa-por-peca h4 {
   margin: 0 0 6px;
   font-size: 13px;
@@ -4037,6 +4044,27 @@ input[type='radio'] {
   border-radius: var(--raio-sm);
 }
 
+.miniatura-da-face {
+  flex: none;
+  margin-left: auto;
+  border: 1px solid var(--cinza-200);
+  border-radius: var(--raio-sm);
+  background: #fff;
+}
+
+.giro-da-peca {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--cinza-700);
+}
+
+.giro-da-peca input[type='number'] {
+  width: 62px;
+}
+
 .campos-da-peca-3d {
   display: flex;
   flex-wrap: wrap;
@@ -4067,15 +4095,18 @@ input[type='radio'] {
   font-size: 13px;
 }
 
+/* Cada costura: o texto à esquerda, os dois botões juntos à direita; os avisos embaixo, na largura toda. */
 .lista-de-costuras li {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 8px;
+  gap: 4px 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--cinza-150);
 }
 
 .lista-de-costuras li small {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   color: var(--erro-texto);
 }
 

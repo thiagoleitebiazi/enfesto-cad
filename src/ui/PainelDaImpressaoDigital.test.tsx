@@ -54,6 +54,11 @@ describe('PainelDaImpressaoDigital', () => {
     fireEvent.change(screen.getByLabelText('Estampa de Frente'), { target: { value: '__sem__' } });
     expect(screen.getByRole('status')).toHaveTextContent('1 de 2 peça(s) com estampa');
     fireEvent.change(screen.getByLabelText('Sangria'), { target: { value: '5' } });
+    // A estampa das costas girada à mão: 15° para a direita, duas vezes, e de volta uma (ficam 15°).
+    fireEvent.click(screen.getByRole('button', { name: 'Girar a estampa de Costas para a direita' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Girar a estampa de Costas para a direita' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Girar a estampa de Costas para a esquerda' }));
+    expect(screen.getByLabelText('Giro da estampa de Costas')).toHaveTextContent('15°');
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF para impressão (1:1)' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('PDF para impressão salvo em C:\\saida\\impressao.pdf'));
     const exportada = (onExportar.mock.calls[0] as unknown as [ImpressaoDigital])[0];
@@ -62,6 +67,7 @@ describe('PainelDaImpressaoDigital', () => {
       porPeca: { c: { imagemId: 'flor', modo: 'localizada', larguraMm: 120, alturaMm: 0 }, f: null },
       sangriaMm: 5,
       linhaDeCorte: true,
+      giroPorPeca: { c: 15 },
     });
     await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
     expect(ultima()).toEqual(exportada);
