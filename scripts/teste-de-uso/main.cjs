@@ -1290,6 +1290,21 @@ async function principal() {
     `${statusDoProvador} ${avisoDeQueda}`,
   );
   await foto('35-provador-saia.png');
+  // O brilho e a transparência (ADR 0131): só a vista muda — a saia continua assentada, sem recomeçar a simulação.
+  await parteDaJanela('Tecido');
+  await espera(300);
+  await noCampo('Brilho', '85');
+  await noCampo('Transparência', '55');
+  await espera(800);
+  await espera(600);
+  const depoisDoBrilho = await js(`((document.querySelector('[role=dialog] .status-do-provador') || {}).textContent || '')`);
+  conferir('o brilho e a transparência mudam só a vista: a saia continua assentada', depoisDoBrilho.startsWith('Assentou'), depoisDoBrilho.slice(0, 80));
+  await foto('35b-saia-com-brilho-e-transparencia.png');
+  await parteDaJanela('Tecido');
+  await noCampo('Brilho', '0');
+  await noCampo('Transparência', '0');
+  await espera(300);
+  await espera(300);
   await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.trim() === 'Mapa de tensão').querySelector('input')`);
   await espera(800);
   const legenda = await js(`((document.querySelector('[role=dialog] .legenda-da-tensao') || {}).textContent || '')`);

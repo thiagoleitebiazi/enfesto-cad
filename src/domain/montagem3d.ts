@@ -124,6 +124,10 @@ export interface Tecido3D {
   readonly rigidez: number;
   /** De 0 (escorrega) a 100 (agarra no corpo). */
   readonly atrito: number;
+  /** De 0 (fosco, como o algodão) a 100 (brilha, como o cetim): o reflexo da luz no tecido (ADR 0131). Só na vista. */
+  readonly brilho?: number;
+  /** De 0 (opaco) a 100 (deixa ver o corpo, como o voal): ADR 0131. Só na vista. */
+  readonly transparencia?: number;
 }
 
 export const TECIDOS_PRONTOS: Readonly<Record<Exclude<PresetDeTecido, 'personalizado'>, { readonly nome: string; readonly tecido: Tecido3D }>> = {
@@ -133,7 +137,7 @@ export const TECIDOS_PRONTOS: Readonly<Record<Exclude<PresetDeTecido, 'personali
   moletom: { nome: 'Moletom', tecido: { preset: 'moletom', pesoGm2: 300, elasticidade: 45, elasticidadeNaTrama: 55, elasticidadeNoVies: 50, rigidez: 55, atrito: 60 } },
   tricoline: { nome: 'Tricoline (algodão plano)', tecido: { preset: 'tricoline', pesoGm2: 120, elasticidade: 10, elasticidadeNaTrama: 18, elasticidadeNoVies: 78, rigidez: 45, atrito: 40 } },
   jeans: { nome: 'Jeans', tecido: { preset: 'jeans', pesoGm2: 380, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 70, rigidez: 85, atrito: 55 } },
-  seda: { nome: 'Seda / viscose', tecido: { preset: 'seda', pesoGm2: 90, elasticidade: 15, elasticidadeNaTrama: 22, elasticidadeNoVies: 85, rigidez: 5, atrito: 20 } },
+  seda: { nome: 'Seda / viscose', tecido: { preset: 'seda', pesoGm2: 90, elasticidade: 15, elasticidadeNaTrama: 22, elasticidadeNoVies: 85, rigidez: 5, atrito: 20, brilho: 55, transparencia: 10 } },
   linho: { nome: 'Linho', tecido: { preset: 'linho', pesoGm2: 180, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 72, rigidez: 65, atrito: 45 } },
 };
 
@@ -974,6 +978,8 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
     ...(typeof t.elasticidadeNoVies === 'number' ? { elasticidadeNoVies: limite(t.elasticidadeNoVies, 70) } : {}),
     rigidez: limite(t.rigidez, 20),
     atrito: limite(t.atrito, 50),
+    ...(typeof t.brilho === 'number' ? { brilho: limite(t.brilho, 0) } : {}),
+    ...(typeof t.transparencia === 'number' ? { transparencia: limite(t.transparencia, 0) } : {}),
   };
   const resolucaoMm = [12, 20, 30].includes(bruto.resolucaoMm as number) ? (bruto.resolucaoMm as number) : 20;
   return { manequim, pecas, costuras, tecido, resolucaoMm };

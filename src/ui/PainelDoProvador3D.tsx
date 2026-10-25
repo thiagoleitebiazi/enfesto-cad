@@ -148,7 +148,9 @@ export function PainelDoProvador3D(props: {
     instancias.map((i) => [i.chave, i.assinatura]),
     montagem.manequim.medidas,
     montagem.resolucaoMm,
-    montagem.tecido,
+    // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
+    // recomeça a simulação.
+    { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined },
     costurasValidas,
     Object.entries(montagem.pecas).map(([k, c]) => [k, c.posicao, c.alturaDoTopo, c.ajusteMm, c.desvioMm, c.girarGraus]),
   ]);
@@ -250,11 +252,19 @@ export function PainelDoProvador3D(props: {
         const uv = estampas.has(p.chave) ? m.uvs.get(p.chave) : undefined;
         pecas.push(uv ? { ...base, uv } : base);
       }
-      const tecido: TecidoParaDesenhar = { x: m.sim.x, triangulos: m.sim.triangulos, pecas, botoes: m.botoes, ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}) };
+      const tecido: TecidoParaDesenhar = {
+        x: m.sim.x,
+        triangulos: m.sim.triangulos,
+        pecas,
+        botoes: m.botoes,
+        ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}),
+        ...(montagem.tecido.brilho ? { brilho: montagem.tecido.brilho } : {}),
+        ...(montagem.tecido.transparencia ? { transparencia: montagem.tecido.transparencia } : {}),
+      };
       desenharCena(ctx, montarCena(proj, m.malhaDoCorpo, tecido), estampas);
       return true;
     },
-    [obterMontada, montagem.pecas, instancias, imagensProntas, modo, tonsDaImagem],
+    [obterMontada, montagem.pecas, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem],
   );
 
   const desenhar = useCallback((): void => {
@@ -984,9 +994,15 @@ function ParteManequim(props: {
 
 function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: number; readonly onMudar: (t: Tecido3D) => void; readonly onResolucao: (r: number) => void }): React.JSX.Element {
   const t = props.tecido;
-  const regua = (chave: 'elasticidade' | 'elasticidadeNaTrama' | 'elasticidadeNoVies' | 'rigidez' | 'atrito', rotulo: string, de: string, ate: string): React.JSX.Element => {
-    // A trama e o viés de um tecido guardado sem eles são os do fio (a mesma elasticidade em toda direção).
-    const valor = t[chave] ?? t.elasticidade;
+  const regua = (
+    chave: 'elasticidade' | 'elasticidadeNaTrama' | 'elasticidadeNoVies' | 'rigidez' | 'atrito' | 'brilho' | 'transparencia',
+    rotulo: string,
+    de: string,
+    ate: string,
+  ): React.JSX.Element => {
+    // A trama e o viés de um tecido guardado sem eles são os do fio (a mesma elasticidade em toda direção); sem brilho
+    // nem transparência, fosco e opaco.
+    const valor = t[chave] ?? (chave === 'brilho' || chave === 'transparencia' ? 0 : t.elasticidade);
     return (
     <label className={`regua-do-tecido${chave === 'elasticidadeNaTrama' || chave === 'elasticidadeNoVies' ? ' regua-da-direcao' : ''}`}>
       {rotulo}: {valor}
@@ -1028,6 +1044,8 @@ function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: n
         {regua('elasticidadeNoVies', 'No viés (45°)', 'não cede', 'cede muito')}
         {regua('rigidez', 'Rigidez', 'mole (cai)', 'firme (arma)')}
         {regua('atrito', 'Atrito', 'escorrega', 'agarra')}
+        {regua('brilho', 'Brilho', 'fosco (algodão)', 'brilha (cetim)')}
+        {regua('transparencia', 'Transparência', 'opaco', 'deixa ver (voal)')}
         <label>
           Malha da simulação
           <select value={props.resolucaoMm} onChange={(e) => props.onResolucao(Number(e.target.value))}>

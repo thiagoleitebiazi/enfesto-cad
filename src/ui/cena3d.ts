@@ -94,6 +94,10 @@ export type ItemDaCena =
       readonly cor: readonly [number, number, number];
       /** A luz que bate (0 a 1). */
       readonly luz: number;
+      /** O reflexo do tecido que brilha (0 a 1): a cor vai para o branco (ADR 0131). */
+      readonly reflexo?: number;
+      /** A opacidade do tecido transparente (de 0,15 a 1): o corpo aparece por trás (ADR 0131). */
+      readonly opacidade?: number;
       /** A estampa: a instância e as coordenadas da face (u, v seguidos) dos três pontos. */
       readonly estampa?: { readonly chave: string; readonly uv: Float64Array };
     }
@@ -125,6 +129,9 @@ export interface TecidoParaDesenhar {
   readonly tensoes?: ArrayLike<number>;
   /** Os botões (os furos do molde): o triângulo, a posição nele (b1, b2; b0 = 1 − b1 − b2) e o raio (mm). */
   readonly botoes?: readonly { readonly triangulo: number; readonly b1: number; readonly b2: number; readonly raio: number }[];
+  /** O brilho e a transparência do tecido, de 0 a 100 (ADR 0131). */
+  readonly brilho?: number;
+  readonly transparencia?: number;
 }
 
 export const COR_DO_CORPO: readonly [number, number, number] = [212, 205, 196];
@@ -178,6 +185,10 @@ export function montarCena(proj: Projecao, corpo: MalhaParaDesenhar | null, teci
     }
   }
   if (tecido) {
+    const brilho = tecido.tensoes ? 0 : (tecido.brilho ?? 0) / 100;
+    // Mesmo o mais transparente guarda um pouco da cor (o voal não some).
+    const opacidade = 1 - 0.85 * ((tecido.transparencia ?? 0) / 100);
+    const vista = { ...(opacidade < 1 ? { opacidade } : {}) };
     for (const peca of tecido.pecas) {
       for (let k = 0; k < peca.quantidade; k++) {
         const t = peca.primeiroTriangulo + k;
@@ -192,6 +203,28 @@ export function montarCena(proj: Projecao, corpo: MalhaParaDesenhar | null, teci
         const luz = (0.35 + 0.65 * Math.max(0, s * (r.nx * L.x + r.ny * L.y + r.nz * L.z))) * (daFace ? 1 : 0.72);
         const cor = tecido.tensoes ? corDaTensao(tecido.tensoes[t]!) : peca.cor;
         const uv = peca.uv && daFace && !tecido.tensoes ? peca.uv : null;
+        // O reflexo (Blinn-Phong): o meio do caminho entre a luz e o olho, contra a normal da face que se vê. Quanto
+        // mais brilho, mais forte e mais estreito (o cetim tem o risco de luz; o tafetá, uma mancha larga).
+        let reflexo = 0;
+        if (brilho > 0) {
+          let vx = P.x - tecido.x[3 * a]!;
+          let vy = P.y - tecido.x[3 * a + 1]!;
+          let vz = P.z - tecido.x[3 * a + 2]!;
+          const vl = Math.hypot(vx, vy, vz) || 1;
+          vx /= vl;
+          vy /= vl;
+          vz /= vl;
+          let hx = L.x + vx;
+          let hy = L.y + vy;
+          let hz = L.z + vz;
+          const hl = Math.hypot(hx, hy, hz) || 1;
+          hx /= hl;
+          hy /= hl;
+          hz /= hl;
+          const nh = Math.max(0, s * (r.nx * hx + r.ny * hy + r.nz * hz));
+          reflexo = Math.min(0.9, brilho * Math.pow(nh, 8 + 60 * brilho) * 1.3);
+        }
+        const daVista = { ...vista, ...(reflexo > 0.01 ? { reflexo } : {}) };
         // O tecido fica a poucos milímetros do corpo: na ordem, ele vem um pouco à frente (senão um triângulo grande do
         // corpo, com o meio mais perto da câmera, o cobriria).
         r.z -= 25 + 20 * (peca.camada ?? 0);
@@ -199,8 +232,8 @@ export function montarCena(proj: Projecao, corpo: MalhaParaDesenhar | null, teci
           const ia = a - peca.inicio;
           const ib = b - peca.inicio;
           const ic = c - peca.inicio;
-          itens.push({ tipo: 'triangulo', tela: r.tela, z: r.z, cor, luz, estampa: { chave: peca.chave, uv: Float64Array.of(uv[2 * ia]!, uv[2 * ia + 1]!, uv[2 * ib]!, uv[2 * ib + 1]!, uv[2 * ic]!, uv[2 * ic + 1]!) } });
-        } else itens.push({ tipo: 'triangulo', tela: r.tela, z: r.z, cor, luz });
+          itens.push({ tipo: 'triangulo', tela: r.tela, z: r.z, cor, luz, ...daVista, estampa: { chave: peca.chave, uv: Float64Array.of(uv[2 * ia]!, uv[2 * ia + 1]!, uv[2 * ib]!, uv[2 * ib + 1]!, uv[2 * ic]!, uv[2 * ic + 1]!) } });
+        } else itens.push({ tipo: 'triangulo', tela: r.tela, z: r.z, cor, luz, ...daVista });
       }
     }
     for (const botao of tecido.botoes ?? []) {
@@ -284,6 +317,9 @@ export function desenharCena(ctx: CanvasRenderingContext2D, itens: readonly Item
     ctx.closePath();
     const estampa = item.estampa ? estampas.get(item.estampa.chave) : undefined;
     const l = item.luz;
+    // O tecido transparente: o corpo por trás aparece; sem o traço, que dobraria a cor nas emendas dos triângulos.
+    const transparente = item.opacidade !== undefined && item.opacidade < 1;
+    ctx.globalAlpha = item.opacidade ?? 1;
     if (estampa && item.estampa) {
       // A cor de baixo, já com a luz (com o traço, que fecha as frestas entre os triângulos), e a estampa no tom da
       // luz por cima — sem película de sombra, que marcaria as emendas dos triângulos.
@@ -293,7 +329,7 @@ export function desenharCena(ctx: CanvasRenderingContext2D, itens: readonly Item
       ctx.strokeStyle = ctx.fillStyle;
       ctx.lineWidth = 0.6;
       ctx.fill();
-      ctx.stroke();
+      if (!transparente) ctx.stroke();
       const faceParaTela = afimDeTresPontos(item.estampa.uv, t);
       const padrao = estampa.padroes[tom];
       if (faceParaTela && padrao) {
@@ -303,16 +339,23 @@ export function desenharCena(ctx: CanvasRenderingContext2D, itens: readonly Item
         ctx.strokeStyle = padrao;
         ctx.fill();
         // O traço com a própria estampa fecha as frestas entre os triângulos (sem ele, a cor de baixo aparece em linhas).
-        ctx.stroke();
+        if (!transparente) ctx.stroke();
+      }
+      if (item.reflexo) {
+        ctx.fillStyle = `rgba(255,255,255,${item.reflexo.toFixed(3)})`;
+        ctx.fill();
       }
     } else {
-      const cor = `rgb(${Math.round(item.cor[0] * l)},${Math.round(item.cor[1] * l)},${Math.round(item.cor[2] * l)})`;
+      const k = item.reflexo ?? 0;
+      const tom = (c: number): number => Math.round(c * l + (255 - c * l) * k);
+      const cor = `rgb(${tom(item.cor[0])},${tom(item.cor[1])},${tom(item.cor[2])})`;
       ctx.fillStyle = cor;
       ctx.strokeStyle = cor;
       ctx.lineWidth = 0.6;
       ctx.fill();
-      ctx.stroke();
+      if (!transparente) ctx.stroke();
     }
+    ctx.globalAlpha = 1;
   }
 }
 

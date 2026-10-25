@@ -132,6 +132,17 @@ describe('PainelDoProvador3D', () => {
     expect(ultima().manequim).toMatchObject({ publico: 'masculino', tamanhoDaFicha: 'M', medidas: { ...MEDIDAS_DO_PUBLICO.masculino, quadrilCm: 98 } });
   });
 
+  it('o brilho e a transparência (ADR 0131): a seda já brilha; as réguas mudam o tecido', async () => {
+    const { ultima } = abrir();
+    aba('Tecido');
+    expect(screen.getByLabelText('Brilho')).toHaveValue('0');
+    fireEvent.change(screen.getByLabelText('Tecido pronto'), { target: { value: 'seda' } });
+    expect(screen.getByLabelText('Brilho')).toHaveValue('55');
+    expect(screen.getByLabelText('Transparência')).toHaveValue('10');
+    fireEvent.change(screen.getByLabelText('Transparência'), { target: { value: '70' } });
+    await waitFor(() => expect(ultima().tecido).toMatchObject({ preset: 'personalizado', brilho: 55, transparencia: 70 }), { timeout: 2000 });
+  });
+
   it('o tecido: o pronto e o personalizado', async () => {
     const { ultima, onGuardar } = abrir();
     aba('Tecido');
