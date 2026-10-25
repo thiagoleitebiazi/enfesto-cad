@@ -387,6 +387,7 @@ import { PainelDaFilaDeEncaixes } from './ui/PainelDaFilaDeEncaixes';
 import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
+import { encaixeComOMoldeDeAgora, type EncaixeComOMoldeDeAgora } from './domain/encaixeAtualizado';
 import { PainelDeExportacaoPdf, type OpcoesDeExportacaoEscolhidas } from './ui/PainelDeExportacaoPdf';
 import { PainelDeBiblioteca } from './ui/PainelDeBiblioteca';
 import { PainelDeHistorico } from './ui/PainelDeHistorico';
@@ -2969,10 +2970,21 @@ export default function App(): React.JSX.Element {
       const resultado = trabalho?.resultado;
       if (!trabalho || !resultado || resultado.pecasColocadas.length === 0) return;
       const motivos: string[] = [];
+      // O encaixe ligado ao molde (ADR 0125): as peças que mudaram depois do encaixe entram como estão agora, no lugar
+      // e na posição em que o encaixe pôs as de antes.
+      let ligado: EncaixeComOMoldeDeAgora | null = null;
       if (trabalho.projetoId !== projetoAtual.id) {
         motivos.push(`este encaixe é do projeto "${trabalho.projetoNome}" (${trabalho.projetoCodigo}), e o aberto é "${projetoAtual.nome}" (${projetoAtual.codigo})`);
       } else if (impressaoDigitalDoMolde(pecas) !== trabalho.impressaoDasPecas) {
-        motivos.push('as peças do projeto mudaram depois que o encaixe entrou na fila');
+        try {
+          // As de agora preparadas como as do encaixe: com os tamanhos e as simetrias abertas, se ele pediu.
+          let preparadas: readonly Molde[] = pecas;
+          if (trabalho.opcoes.todosOsTamanhos) preparadas = expandirTamanhos(preparadas, proximoId);
+          if (trabalho.opcoes.abrirSimetrias) preparadas = abrirSimetrias(preparadas, proximoId);
+          ligado = encaixeComOMoldeDeAgora(resultado.pecasColocadas, trabalho.pecas, preparadas);
+        } catch (e) {
+          motivos.push(`as peças do projeto mudaram depois que o encaixe entrou na fila, e as de agora não puderam ser preparadas como as dele (${e instanceof Error ? e.message : String(e)}): ele entra com as peças de antes`);
+        }
       }
       const mesa = (e: ConfiguracaoDeEnfesto | null): string =>
         e ? [e.larguraUtilMm, e.comprimentoMm, e.margemLateralMm, e.margemDeExtremidadeMm, e.distanciaMinimaEntrePecasMm].join('|') : '';
@@ -2985,17 +2997,38 @@ export default function App(): React.JSX.Element {
       ) {
         return;
       }
-      const novasPecas = resultado.pecasColocadas.map((p) => p.molde);
+      const novasPecas = ligado ? [...ligado.pecas, ...ligado.novas] : resultado.pecasColocadas.map((p) => p.molde);
       aplicarMudanca(novasPecas);
       setSelecionadoId(null);
       setIdsSelecionadosEmLote(new Set());
       registrarEventoEPersistir(
         'execucao-de-nesting',
         { pecas: novasPecas, tecido, enfesto },
-        `Encaixe da fila (${descricaoDasOpcoes(trabalho.opcoes)}): ${resultado.pecasColocadas.length} peça(s) colocada(s), ${numeroComVirgula(resultado.aproveitamentoPercentual, 1)}% de aproveitamento`,
+        `Encaixe da fila (${descricaoDasOpcoes(trabalho.opcoes)}): ${resultado.pecasColocadas.length} peça(s) colocada(s), ${numeroComVirgula(resultado.aproveitamentoPercentual, 1)}% de aproveitamento${ligado && ligado.atualizadas.length > 0 ? ` — com o molde de agora em ${ligado.atualizadas.length} peça(s)` : ''}`,
       );
       filaDeEncaixes.mudar((f) => marcarAplicado(f, id, new Date().toISOString()));
       setMostrarFilaDeEncaixes(false);
+      if (ligado) {
+        const nomes = (lista: readonly string[]): string => lista.map((n) => `“${n}”`).join(', ');
+        const umaOuMais = (lista: readonly string[], uma: string, mais: string): string => `${nomes(lista)} ${lista.length === 1 ? uma : mais}`;
+        const partes: string[] = [];
+        if (ligado.atualizadas.length > 0) partes.push(umaOuMais(ligado.atualizadas, 'mudou depois do encaixe e entrou como está agora, no lugar da de antes', 'mudaram depois do encaixe e entraram como estão agora, no lugar das de antes'));
+        if (ligado.foraDoProjeto.length > 0) partes.push(umaOuMais(ligado.foraDoProjeto, 'saiu do projeto e ficou fora da mesa', 'saíram do projeto e ficaram fora da mesa'));
+        if (ligado.foraDoEncaixe.length > 0) partes.push(umaOuMais(ligado.foraDoEncaixe, 'não está no encaixe', 'não estão no encaixe') + (ligado.novas.length > 0 ? ' (a peça nova continua no projeto, onde estava)' : ''));
+        if (ligado.comoNoEncaixe.length > 0) partes.push(umaOuMais(ligado.comoNoEncaixe, 'ficou como no encaixe (há mais de uma peça com esse nome e tamanho)', 'ficaram como no encaixe (há mais de uma peça com esse nome e tamanho)'));
+        const conflitos = validarProjeto(novasPecas, enfesto).filter((p) => p.tipo === 'sobreposicao' || p.tipo === 'espacamento-insuficiente' || p.tipo === 'fora-dos-limites').length;
+        const fim =
+          conflitos > 0
+            ? ` A validação acha ${conflitos} ${conflitos === 1 ? 'problema' : 'problemas'} de sobreposição, distância entre os moldes ou limite da mesa: afaste as peças ou faça o encaixe de novo.`
+            : ligado.foraDoEncaixe.length > 0
+              ? ' Faça o encaixe de novo para pôr tudo na mesa.'
+              : '';
+        setAviso({
+          texto: partes.length > 0 ? `Encaixe aplicado com o molde de agora: ${partes.join('; ')}.${fim}` : `Encaixe aplicado: as peças só mudaram de lugar no projeto, e ficam onde o encaixe as pôs.${fim}`,
+          pecas: novasPecas,
+          selecionadoId: null,
+        });
+      }
     },
     [filaDeEncaixes, projetoAtual, pecas, enfesto, tecido, aplicarMudanca, registrarEventoEPersistir],
   );

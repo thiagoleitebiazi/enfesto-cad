@@ -457,6 +457,59 @@ async function principal() {
     filaGravada.trabalhos.map((t) => t.situacao + (t.aplicadoEmIso ? ' (aplicado)' : '')).join(', '),
   );
 
+  // 5b. O encaixe ligado ao molde (ADR 0125): o outro encaixe da fila foi calculado com as peças de antes. A margem de
+  // costura da peça 1 muda; aplicar o outro põe a peça 1 de agora (com a margem nova) no lugar em que ele a pôs, e as
+  // outras como ele as pôs. Dois Desfazer voltam ao que era.
+  const outroDaFila = JSON.parse(fs.readFileSync(path.join(DADOS, 'fila-de-encaixes.json'), 'utf8')).trabalhos.find((t) => !t.aplicadoEmIso);
+  const antesDaCostura = await pecasGravadas();
+  await clicarEm(`Array.from(document.querySelectorAll('.lista-de-pecas li')).find(li => li.textContent.startsWith('molde-de-teste-1')).querySelector('button')`);
+  await espera(300);
+  await aba('Produção');
+  await espera(300);
+  await botao('Costura');
+  await espera(500);
+  const margemDeAntes = Number(antesDaCostura.find((p) => p.nome === 'molde-de-teste-1').margemDeCosturaMm);
+  const margemNova = margemDeAntes + 6;
+  await js(`(() => { const c = Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.trim().startsWith('Margem de costura')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, ${JSON.stringify(String(margemNova))}); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await espera(200);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Aplicar')`);
+  await espera(500);
+  await clicarEm(`document.querySelector('.barra-de-status .indicador-da-fila')`);
+  await espera(600);
+  await clicarEm(`Array.from(document.querySelectorAll('.tabela-da-fila tbody tr')).find(tr => !tr.innerText.includes('Aplicado')).querySelector('.botao-primario')`);
+  await espera(800);
+  const recadoDoLigado = await js(`((document.querySelector('.faixa-de-instrucao') || {}).textContent || '')`);
+  await foto('14b-encaixe-com-o-molde-de-agora.png');
+  const depoisDoLigado = await pecasGravadas();
+  const mesmoContorno = (a, b) => a.length === b.length && a.every((p, k) => Math.hypot(p.x - b[k].x, p.y - b[k].y) < 0.01);
+  const postaDe = (nome) => outroDaFila.resultado.pecasColocadas.find((c) => c.molde.nome === nome).molde;
+  const peca1 = depoisDoLigado.find((p) => p.nome === 'molde-de-teste-1');
+  conferir(
+    'a peça mudada depois do encaixe entra com a margem nova, no lugar em que o encaixe a pôs; as outras como ele as pôs',
+    depoisDoLigado.length === outroDaFila.resultado.pecasColocadas.length &&
+      Number(peca1.margemDeCosturaMm) === margemNova &&
+      depoisDoLigado.every((p) => mesmoContorno(p.contorno, postaDe(p.nome).contorno)) &&
+      depoisDoLigado.filter((p) => p.nome !== 'molde-de-teste-1').every((p) => p.margemDeCosturaMm === postaDe(p.nome).margemDeCosturaMm),
+    `margem ${peca1 && peca1.margemDeCosturaMm} (pedida ${margemNova}); ${depoisDoLigado.map((p) => p.nome + (mesmoContorno(p.contorno, postaDe(p.nome).contorno) ? ' no lugar' : ' FORA do lugar')).join(', ')}`,
+  );
+  conferir(
+    'o recado diz que a peça entrou com o molde de agora',
+    recadoDoLigado.startsWith('Encaixe aplicado com o molde de agora') && recadoDoLigado.includes('“molde-de-teste-1” mudou depois do encaixe'),
+    recadoDoLigado.slice(0, 220),
+  );
+  for (let k = 0; k < 2; k++) {
+    await clicarEm(`document.querySelector('button[title="Desfazer (Ctrl+Z)"]')`);
+    await espera(300);
+  }
+  const desfeito = await pecasGravadas();
+  conferir(
+    'dois Desfazer voltam às peças de antes da costura',
+    desfeito.length === antesDaCostura.length && desfeito.every((p, i) => p.margemDeCosturaMm === antesDaCostura[i].margemDeCosturaMm && mesmoContorno(p.contorno, antesDaCostura[i].contorno)),
+    desfeito.map((p) => `${p.nome} ${p.margemDeCosturaMm}`).join(', '),
+  );
+  await aba('Encaixe');
+  await espera(300);
+
   // 6. Os grupos do encaixe (ADR 0103): uma peça no grupo "Entretela", pela janela do Nesting automático; calcular e
   // aplicar: o resultado diz o trecho de cada grupo, e a mesa mostra o nome do grupo e a divisa.
   await botao('Nesting Automático');

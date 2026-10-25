@@ -64,7 +64,7 @@ inventa.
 | DXF de entrada e de saída | ✅ (ADR 0090, 0096) | — |
 | Forro, entretela e vista gerados a partir da peça principal | ✅ (Produção › Forro, entretela e vista: a vista pelo trecho, o forro sem ele, a entretela recuada, nos grupos do encaixe, ADR 0124) | — |
 | Biblioteca de bases aprovadas para virar modelos novos | 🟡 (Duplicar projeto; Variantes) | L |
-| Mudança no molde atualiza o encaixe ligado | 🟡 (as peças na mesa são as do projeto; o plano avisa que o molde mudou) | L |
+| Mudança no molde atualiza o encaixe ligado | ✅ ADR 0125 (o encaixe da fila entra com as peças de agora; o plano de corte guardado fica com os valores de então, e avisa) | L |
 
 ## 4. Encaixe e servidor de encaixe
 
@@ -186,7 +186,7 @@ O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entr
 | Da referência | Situação |
 |---|---|
 | Forro, entretela e vista gerados da peça principal | ✅ ADR 0124 |
-| A mudança no molde atualiza o encaixe ligado | ⬜ (hoje o plano avisa que o molde mudou) |
+| A mudança no molde atualiza o encaixe ligado | ✅ ADR 0125 |
 | Biblioteca de bases aprovadas para virar modelos novos | ⬜ (hoje: duplicar o projeto, variantes) |
 | Consumo de tecido estimado pelas áreas do desenho técnico (antes do molde) | ⬜ |
 | Extrair de uma vez todas as regiões fechadas do desenho ("vários modelos com um clique") | ⬜ (hoje: uma região por clique) |
