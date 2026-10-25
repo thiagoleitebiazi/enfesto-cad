@@ -4618,13 +4618,76 @@ input[type='radio'] {
   width: auto;
   max-width: 100%;
   aspect-ratio: 4 / 5;
-  margin: 0 auto;
+  margin: 0;
   border: 1px solid var(--cinza-300);
   border-radius: var(--raio-md);
   background: #fff;
   box-shadow: var(--sombra-leve);
   touch-action: none;
   user-select: none;
+}
+
+/* O quadro da folha (ADR 0116): a folha e, por cima dela no canto de baixo, o zoom e a grade. */
+.quadro-da-folha {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.controles-da-folha {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--cinza-300);
+  border-radius: var(--raio-md);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--sombra-media);
+}
+
+.controles-da-folha button {
+  min-width: 28px;
+  padding: 3px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.controles-da-folha .zoom-da-folha {
+  min-width: 48px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--azul-600);
+}
+
+.controles-da-folha button.item-selecionado {
+  border-color: var(--azul-600);
+  background: var(--azul-600);
+  color: #fff;
+  font-weight: 600;
+}
+
+.folha-do-desenho.vista-de-perto {
+  cursor: grab;
+}
+
+.folha-do-desenho.arrastando-a-vista {
+  cursor: grabbing;
+}
+
+/* A grade: papel milimetrado azul, fino em qualquer zoom. */
+.grade-da-folha line {
+  stroke: #d6e4f5;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.grade-da-folha line.grade-forte {
+  stroke: #8fb0dc;
+  stroke-width: 1;
 }
 
 .folha-do-desenho.ferramenta-reta,
@@ -4646,6 +4709,7 @@ input[type='radio'] {
   stroke: #b6bdc8;
   stroke-width: 0.6;
   stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
 }
 
 .destaque-do-desenho path,
@@ -4660,6 +4724,14 @@ rect.destaque-do-desenho {
   fill: #ffffff;
   stroke: #1565c0;
   stroke-width: 1;
+}
+
+/* O realce e o traço em desenho com a mesma espessura na tela em qualquer zoom. */
+.destaque-do-desenho path,
+.destaque-do-desenho rect,
+rect.destaque-do-desenho,
+.traco-em-desenho {
+  vector-effect: non-scaling-stroke;
 }
 
 .traco-em-desenho {

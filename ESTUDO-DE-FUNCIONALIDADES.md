@@ -39,7 +39,7 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Desenho técnico vetorial (croqui frente e costas) | ✅ (ADR 0107; exporta SVG e vai no PDF da ficha) | — |
+| Desenho técnico vetorial (croqui frente e costas) | ✅ (ADR 0107; exporta SVG e vai no PDF da ficha; zoom, grade e ímã, ADR 0116) | — |
 | Espelhamento automático (desenha um lado, o outro sai) | ✅ (ADR 0107) | — |
 | Biblioteca de formas (golas, punhos, bolsos) e de bases técnicas; manequins técnicos | ✅ (13 formas, 6 bases, 2 manequins, ADR 0107) | — |
 | Linhas de costura e acabamento no desenho (pespontos, instruções) | ✅ (estilos costura e pesponto, e textos, ADR 0107) | — |

@@ -617,6 +617,35 @@ async function principal() {
     JSON.stringify(naFolhaDoDesenho),
   );
   await foto('22-desenho-tecnico.png');
+
+  // 9b. O zoom e a grade da folha (ADR 0116): a roda do mouse aproxima no bolso (pelo sistema, como a mão faz), e a
+  // grade aparece; o botão do zoom volta à folha inteira.
+  const caixaDaFolha = () => js(`document.querySelector('.folha-do-desenho').getAttribute('viewBox')`);
+  const noBolso = await pontoDaFolhaNaTela(145, 230);
+  let caixaDePerto = await caixaDaFolha();
+  for (const sentido of [120, -120]) {
+    for (let k = 0; k < 4 && caixaDePerto === '0 0 400 500'; k++) {
+      win.webContents.sendInputEvent({ type: 'mouseWheel', x: noBolso.x, y: noBolso.y, deltaX: 0, deltaY: sentido, canScroll: true });
+      await espera(150);
+    }
+    caixaDePerto = await caixaDaFolha();
+    if (caixaDePerto !== '0 0 400 500') break;
+  }
+  await clicarEm(`Array.from(document.querySelectorAll('[role=toolbar][aria-label="Zoom e grade"] button')).find(b => b.textContent.trim() === 'Grade')`);
+  await espera(300);
+  const [xDePerto, yDePerto, larguraDePerto, alturaDePerto] = caixaDePerto.split(' ').map(Number);
+  const linhasDaGrade = Number(await js(`document.querySelectorAll('.folha-do-desenho .grade-da-folha line').length`));
+  const zoomNaTela = await js(`document.querySelector('.controles-da-folha .zoom-da-folha').textContent`);
+  conferir(
+    'a roda do mouse aproxima no bolso (ele fica na janela), e a grade aparece',
+    larguraDePerto < 400 && 145 > xDePerto && 145 < xDePerto + larguraDePerto && 230 > yDePerto && 230 < yDePerto + alturaDePerto && linhasDaGrade > 0,
+    `viewBox ${caixaDePerto} / ${zoomNaTela} / ${linhasDaGrade} linha(s) da grade`,
+  );
+  await foto('22b-desenho-de-perto-com-grade.png');
+  await clicarEm(`document.querySelector('.controles-da-folha .zoom-da-folha')`);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=toolbar][aria-label="Zoom e grade"] button')).find(b => b.textContent.trim() === 'Grade')`);
+  await espera(300);
+  conferir('o botão do zoom volta à folha inteira', (await caixaDaFolha()) === '0 0 400 500', await caixaDaFolha());
   await botaoNaJanela('Exportar SVG');
   await espera(1200);
   const svgs = fs.readdirSync(SAIDA).filter((f) => f.startsWith('desenho-tecnico-') && f.endsWith('.svg'));

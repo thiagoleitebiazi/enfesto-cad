@@ -161,3 +161,92 @@ describe('PainelDoDesenhoTecnico', () => {
     expect(onGuardar).not.toHaveBeenCalled();
   });
 });
+
+describe('PainelDoDesenhoTecnico — o zoom e a grade (ADR 0116)', () => {
+  const zoom = () => within(screen.getByRole('toolbar', { name: 'Zoom e grade' }));
+
+  it('aproximar: a folha mostra a metade do meio, e o clique cai no ponto certo da folha', async () => {
+    const { folha, clicar, onGuardar, ultimo } = abrir();
+    expect(folha.getAttribute('viewBox')).toBe('0 0 400 500');
+    expect(zoom().getByRole('button', { name: 'Afastar' })).toBeDisabled();
+    fireEvent.click(zoom().getByRole('button', { name: 'Aproximar' }));
+    expect(folha.getAttribute('viewBox')).toBe('100 125 200 250');
+    expect(zoom().getByRole('button', { name: '200%' })).toBeInTheDocument();
+    // O quadro tem 400 × 500 px: o canto do quadro é o ponto (100, 125) da folha; o meio, (200, 250).
+    ferramenta('Reta');
+    clicar(0, 0);
+    clicar(200, 250);
+    fireEvent.doubleClick(folha);
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
+    expect((ultimo().elementos[0] as TracoDoDesenho).pontos).toEqual([
+      { x: 100, y: 125 },
+      { x: 200, y: 250 },
+    ]);
+    // "200%" volta à folha inteira.
+    fireEvent.click(zoom().getByRole('button', { name: '200%' }));
+    expect(folha.getAttribute('viewBox')).toBe('0 0 400 500');
+  });
+
+  it('a roda do mouse aproxima no ponto do mouse; as teclas + − 0', () => {
+    const { folha } = abrir();
+    fireEvent.wheel(folha, { deltaY: -100, clientX: 0, clientY: 0 });
+    // O canto (0, 0) fica parado no canto do quadro.
+    const [x, y, largura] = folha.getAttribute('viewBox')!.split(' ').map(Number);
+    expect([x, y]).toEqual([0, 0]);
+    expect(largura).toBeCloseTo(400 / 1.2, 6);
+    fireEvent.keyDown(folha, { key: '0' });
+    expect(folha.getAttribute('viewBox')).toBe('0 0 400 500');
+    fireEvent.keyDown(folha, { key: '+' });
+    fireEvent.keyDown(folha, { key: '+' });
+    expect(zoom().getByRole('button', { name: '400%' })).toBeInTheDocument();
+    fireEvent.keyDown(folha, { key: '-' });
+    expect(zoom().getByRole('button', { name: '200%' })).toBeInTheDocument();
+  });
+
+  it('de perto, arrastar o vazio (com Selecionar) anda pela folha', () => {
+    const { folha } = abrir();
+    fireEvent.click(zoom().getByRole('button', { name: 'Aproximar' }));
+    // 2 px da tela por unidade da folha: 100 px para a direita andam 50 para a esquerda na folha.
+    fireEvent.pointerDown(folha, { clientX: 200, clientY: 250, pointerId: 1 });
+    fireEvent.pointerMove(folha, { clientX: 300, clientY: 250, pointerId: 1 });
+    fireEvent.pointerUp(folha, { clientX: 300, clientY: 250, pointerId: 1 });
+    expect(folha.getAttribute('viewBox')).toBe('50 125 200 250');
+  });
+
+  it('a grade aparece; com o ímã, os pontos novos e o ponto arrastado param no cruzamento', async () => {
+    const { folha, clicar, onGuardar, ultimo } = abrir();
+    expect(zoom().getByRole('button', { name: 'Ímã' })).toBeDisabled();
+    fireEvent.click(zoom().getByRole('button', { name: 'Grade' }));
+    expect(folha.querySelectorAll('.grade-da-folha line').length).toBe(39 + 49);
+    expect(folha.querySelectorAll('.grade-da-folha line.grade-forte').length).toBe(7 + 9);
+    fireEvent.click(zoom().getByRole('button', { name: 'Ímã' }));
+    expect(zoom().getByRole('button', { name: 'Ímã' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByLabelText('Espelhar o que desenhar'));
+    ferramenta('Reta');
+    clicar(123, 207);
+    clicar(151, 262);
+    fireEvent.doubleClick(folha);
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
+    expect((ultimo().elementos[0] as TracoDoDesenho).pontos).toEqual([
+      { x: 120, y: 210 },
+      { x: 150, y: 260 },
+    ]);
+    // Arrastar o primeiro ponto (o traço está escolhido) para perto de (163, 228): para em (160, 230).
+    ferramenta('Selecionar');
+    fireEvent.pointerDown(folha, { clientX: 121, clientY: 209, pointerId: 1 });
+    fireEvent.pointerMove(folha, { clientX: 164, clientY: 227, pointerId: 1 });
+    fireEvent.pointerUp(folha, { clientX: 164, clientY: 227, pointerId: 1 });
+    await waitFor(() => expect((ultimo().elementos[0] as TracoDoDesenho).pontos[0]).toEqual({ x: 160, y: 230 }), { timeout: 2000 });
+  });
+
+  it('só para ver: o zoom e a grade funcionam, o ímã não; de perto, arrastar anda pela folha', () => {
+    const { folha } = abrir({ somenteLeitura: 'A ficha está aprovada (versão 1): o desenho só pode ser visto.' });
+    fireEvent.click(zoom().getByRole('button', { name: 'Aproximar' }));
+    fireEvent.click(zoom().getByRole('button', { name: 'Grade' }));
+    expect(zoom().getByRole('button', { name: 'Ímã' })).toBeDisabled();
+    fireEvent.pointerDown(folha, { clientX: 200, clientY: 250, pointerId: 1 });
+    fireEvent.pointerMove(folha, { clientX: 200, clientY: 150, pointerId: 1 });
+    fireEvent.pointerUp(folha, { clientX: 200, clientY: 150, pointerId: 1 });
+    expect(folha.getAttribute('viewBox')).toBe('100 175 200 250');
+  });
+});
