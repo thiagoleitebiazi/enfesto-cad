@@ -103,6 +103,7 @@ function propsBase(): Props {
     onEntrarModoRetangulo: vi.fn(),
     onEntrarModoSentidoDoFio: vi.fn(),
     onExtrairTodasAsRegioes: vi.fn(),
+    onPontoDeCasamento: vi.fn(),
     onAbrirCostura: vi.fn(),
     onRemoverCostura: vi.fn(),
     podeRemoverCostura: true,
@@ -305,10 +306,20 @@ describe('BarraDeFerramentas: abas', () => {
       Piques: ['Inserir', 'Remover pique', 'Pique texto', 'Múltiplos'],
       'Editar piques': ['Alinhar', 'Cadastrar pique', 'Substituir', 'Alterar'],
       'Linhas auxiliares': ['Inserir ou remover'],
+      'Listras e xadrez': ['Ponto de casamento'],
       Furos: ['Furo'],
     });
     fireEvent.click(botao('Furo'));
     expect(props.onEntrarModoNovoFuro).toHaveBeenCalledTimes(1);
+  });
+
+  it('Marcações: "Ponto de casamento" abre a ferramenta, e fica apertado enquanto ligada (ADR 0130)', () => {
+    const props = renderizar('Marcações');
+    fireEvent.click(botao('Ponto de casamento'));
+    expect(props.onPontoDeCasamento).toHaveBeenCalledTimes(1);
+    cleanup();
+    renderizar('Marcações', { modo: 'ponto-de-casamento' });
+    expect(botao('Ponto de casamento')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('cada ferramenta da aba Marcações pede a sua, e a que está em uso fica pressionada', () => {

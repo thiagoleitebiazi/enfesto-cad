@@ -44,6 +44,7 @@ import { formatarMm } from './medidas';
 import type { MedicaoResolvida } from './medicao';
 import { ehMac, gestoDaRoda } from './rodaDoMouse';
 import type { ImagemDoModelo } from '../domain/imagens';
+import { grupoDaMarcaDeCasamento } from '../domain/risco';
 
 const ESPESSURA_REGUA_PX = 24;
 const COR_FUNDO = '#dde1e6';
@@ -58,6 +59,9 @@ const COR_FIO = '#c62828';
 const COR_LINHA_DE_CORTE = '#6b7280';
 const COR_PIQUE = '#8e24aa';
 const COR_MARCA = '#00838f';
+/** O ponto de casamento principal (vermelho) e o de um grupo (laranja), como no desenho do risco (ADR 0130). */
+const COR_PONTO_DE_CASAMENTO = '#d32f2f';
+const COR_PONTO_DE_CASAMENTO_DO_GRUPO = '#ef8a00';
 const COR_EM_EDICAO = '#2e7d32';
 const COR_REGUA_FUNDO = '#f7f8fa';
 const COR_REGUA_TRACO = '#5a6270';
@@ -123,6 +127,7 @@ export type ModoDeDesenho =
   | 'definir-cerca'
   | 'retangulo'
   | 'sentido-do-fio'
+  | 'ponto-de-casamento'
   | 'medir-distancia'
   | 'medir-perimetro'
   | 'comparar-perimetros'
@@ -1041,6 +1046,29 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           continue;
         }
         const p = mundoParaTela(marca.posicao, transform);
+        // O ponto de casamento (ADR 0130): o principal, um círculo vermelho; o de um grupo, um losango laranja com o
+        // nome — como no desenho do risco.
+        const grupo = grupoDaMarcaDeCasamento(marca.rotulo);
+        if (grupo !== null) {
+          ctx.beginPath();
+          if (grupo === '') ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+          else {
+            ctx.moveTo(p.x, p.y - 7);
+            ctx.lineTo(p.x + 7, p.y);
+            ctx.lineTo(p.x, p.y + 7);
+            ctx.lineTo(p.x - 7, p.y);
+            ctx.closePath();
+          }
+          ctx.fillStyle = grupo === '' ? COR_PONTO_DE_CASAMENTO : COR_PONTO_DE_CASAMENTO_DO_GRUPO;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          desenharRotuloComFundo(ctx, grupo === '' ? 'casamento' : grupo, p.x, p.y - 12, grupo === '' ? COR_PONTO_DE_CASAMENTO : COR_PONTO_DE_CASAMENTO_DO_GRUPO);
+          continue;
+        }
         ctx.beginPath();
         ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
         ctx.fillStyle = COR_MARCA;

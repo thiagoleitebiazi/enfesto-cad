@@ -370,9 +370,11 @@ import {
   distancia,
   retanguloEnvolvente,
   deslocarContornoParaFora,
+  pontoDentroDoContorno,
   type Ponto2D,
   type PosicaoNoContorno,
 } from './core/geometria';
+import { comPontoDeCasamento, grupoLimpo, nomeDoPontoDeCasamento } from './domain/pontosDeCasamento';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
@@ -553,6 +555,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'raio-do-arco'; readonly indice: number }
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'forro-entretela-vista' }
+  | { readonly tipo: 'ponto-de-casamento' }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
   | { readonly tipo: 'dobrar' }
@@ -680,6 +683,8 @@ export default function App(): React.JSX.Element {
   const [trecho, setTrecho] = useState<TrechoEmEdicao>(SEM_TRECHO);
   const [dialogoDeFerramenta, setDialogoDeFerramenta] = useState<DialogoDeFerramenta | null>(null);
   const [recadoDaFerramenta, setRecadoDaFerramenta] = useState<string | null>(null);
+  // O grupo do ponto de casamento que os cliques põem (ADR 0130): '' é o ponto principal.
+  const [grupoDoPontoDeCasamento, setGrupoDoPontoDeCasamento] = useState('');
   const [curvasDoUsuario, setCurvasDoUsuario] = useState<readonly CurvaCadastrada[]>(() =>
     lerCurvasCadastradas(window.localStorage),
   );
@@ -3356,6 +3361,26 @@ export default function App(): React.JSX.Element {
         setModo('definir-fio');
         return;
       }
+      if (modo === 'ponto-de-casamento') {
+        // A peça debaixo do clique: a selecionada, se o clique cai nela; senão, a de cima.
+        const alvo =
+          pecaSelecionada && pontoDentroDoContorno(mundo, pecaSelecionada.contorno)
+            ? pecaSelecionada
+            : [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
+        if (!alvo) {
+          setRecadoDaFerramenta('Clique dentro de uma peça');
+          return;
+        }
+        try {
+          const resultado = comPontoDeCasamento(alvo, grupoDoPontoDeCasamento, mundo, proximoId());
+          aplicarMudanca(pecas.map((p) => (p.id === alvo.id ? resultado.molde : p)));
+          const nome = nomeDoPontoDeCasamento(grupoDoPontoDeCasamento);
+          setRecadoDaFerramenta(`${nome.charAt(0).toUpperCase()}${nome.slice(1)} ${resultado.movido ? 'mudou de lugar' : 'foi posto'} em “${alvo.nome}”`);
+        } catch (e) {
+          setRecadoDaFerramenta(e instanceof Error ? e.message : String(e));
+        }
+        return;
+      }
       if (modo === 'sentido-do-fio' && selecionadoId) {
         const inicio = pontosEmEdicao[0];
         if (!inicio) {
@@ -3904,6 +3929,8 @@ export default function App(): React.JSX.Element {
     },
     [
       modo,
+      grupoDoPontoDeCasamento,
+      pecaSelecionada,
       opcoesDeMarcacao,
       piquesCadastrados,
       mudarCadastroDePiques,
@@ -4604,6 +4631,8 @@ export default function App(): React.JSX.Element {
         return 'Mover ponto: arraste um ponto da peça selecionada. Para mover vários juntos, use Shift+clique ou um retângulo em volta deles, e arraste um dos escolhidos. Esc sai.';
       case 'inserir-ponto':
         return 'Inserir ponto: clique sobre o contorno da peça selecionada, onde o ponto novo deve ficar. Esc sai.';
+      case 'ponto-de-casamento':
+        return `${recadoDaFerramenta ? `${recadoDaFerramenta} — ` : ''}Ponto de casamento (${nomeDoPontoDeCasamento(grupoDoPontoDeCasamento)}): clique na peça, no ponto em que passa a linha do desenho (a listra). Em outra peça, o mesmo grupo cai na mesma listra; na mesma peça, o ponto muda de lugar. Esc sai.`;
       case 'excluir-ponto':
         return `${recadoDaFerramenta ? `${recadoDaFerramenta} — ` : ''}Excluir ponto: clique num ponto da peça selecionada para tirá-lo do contorno. Esc sai.`;
       case 'arredondar-ou-chanfrar':
@@ -4763,6 +4792,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoRetangulo={entrarModoRetangulo}
         onEntrarModoSentidoDoFio={entrarModoSentidoDoFio}
         onExtrairTodasAsRegioes={extrairTodasAsRegioesDaSelecionada}
+        onPontoDeCasamento={pecas.length > 0 ? () => setDialogoDeFerramenta({ tipo: 'ponto-de-casamento' }) : undefined}
         onAbrirCostura={() => setMostrarCostura(true)}
         onRemoverCostura={removerCostura}
         podeRemoverCostura={alvosDeCostura.some((p) => p.margemDeCosturaMm > 0)}
@@ -5392,6 +5422,30 @@ export default function App(): React.JSX.Element {
             }
             entrarModoDeConstrucao('bainha');
             setOpcoesDeBainha(opcoes);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'ponto-de-casamento' && (
+        <DialogoDeCampos
+          titulo="Ponto de casamento"
+          campos={[
+            {
+              tipo: 'texto',
+              id: 'grupo',
+              rotulo: 'Grupo (em branco: o ponto principal, que cai na linha do desenho)',
+              inicial: grupoDoPontoDeCasamento,
+              opcional: true,
+            },
+          ]}
+          nota="O risco de um tecido listrado ou xadrez põe cada peça onde o ponto dela cai numa linha do desenho. O ponto principal (em branco) cai na linha de referência do tecido; o de um grupo (manga, bolso) cai na mesma listra que o do mesmo grupo nas outras peças — na cava da frente e na cabeça da manga, a listra da cava passa pela manga. Depois de continuar, clique nas peças."
+          rotuloDoBotao="Continuar"
+          onAplicar={(valores) => {
+            const grupo = grupoLimpo(String(valores.grupo ?? ''));
+            if (/[:\-–—]/.test(grupo)) return 'O nome do grupo não pode ter dois-pontos nem traço (eles separam o nome no rótulo).';
+            setGrupoDoPontoDeCasamento(grupo);
+            entrarModoDeConstrucao('ponto-de-casamento');
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta(null)}

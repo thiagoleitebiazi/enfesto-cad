@@ -121,6 +121,8 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoSentidoDoFio: () => void;
   /** "Extrair todas" (ADR 0128): uma peça para cada região da selecionada, de uma vez. */
   readonly onExtrairTodasAsRegioes?: () => void;
+  /** "Ponto de casamento" (ADR 0130): a marca que casa listras e xadrez; ausente sem peças. */
+  readonly onPontoDeCasamento?: (() => void) | undefined;
   readonly onAbrirCostura: () => void;
   readonly onRemoverCostura: () => void;
   /** Alguma das peças selecionadas tem margem de costura para remover. */
@@ -1294,6 +1296,18 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 />
               </div>
               {/* O furo não é da aba da referência: fica num grupo à parte, para continuar à mão. */}
+              <div className="grupo-de-ferramentas" role="group" aria-label="Listras e xadrez">
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Ponto de', 'casamento']}
+                  icone="ponto-de-casamento"
+                  pressionado={props.modo === 'ponto-de-casamento'}
+                  dica="Ponto de casamento: o ponto da peça que cai numa linha do desenho do tecido listrado ou xadrez — o principal, ou o de um grupo (a cava da frente e a cabeça da manga na mesma listra). O risco do planejamento casa as peças por ele"
+                  falta={props.onPontoDeCasamento ? null : 'Não há peças no projeto'}
+                  onClick={() => props.onPontoDeCasamento?.()}
+                />
+              </div>
+
               <div className="grupo-de-ferramentas" role="group" aria-label="Furos">
                 <Ferramenta
                   tamanho="grande"

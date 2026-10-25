@@ -1603,6 +1603,109 @@ async function principal() {
   await espera(400);
   conferir('o Desfazer tira as quatro peças de uma vez', (await pecasGravadas()).length === comAPala.length, '');
 
+  // 18. O ponto de casamento (ADR 0130): Marcações › Ponto de casamento. Com o mouse, o ponto principal na pala e o do
+  // grupo "manga" na pala e na saia de teste; as marcas ficam nas peças com o rótulo que o risco lê ("casamento",
+  // "casamento: manga"), e o desenho mostra o círculo vermelho e os losangos laranja com o nome.
+  await clicarEm(`document.querySelector('button[aria-label="Ajustar à tela"]')`);
+  await espera(500);
+  const dentroDe = (q, c) => {
+    let dentro = false;
+    for (let i = 0, j = c.length - 1; i < c.length; j = i++) {
+      if (c[i].y > q.y !== c[j].y > q.y && q.x < ((c[j].x - c[i].x) * (q.y - c[i].y)) / (c[j].y - c[i].y) + c[i].x) dentro = !dentro;
+    }
+    return dentro;
+  };
+  // O ponto da peça mais longe da borda dela e das peças postas depois dela (o clique acerta a de cima): nesse zoom,
+  // um pixel tem uns 6 mm, e o ponto perto da borda cai fora.
+  const pontoSoDela = (peca, todas) => {
+    const depoisDela = todas.slice(todas.indexOf(peca) + 1);
+    const aoSegmento = (q, a, b) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const l2 = dx * dx + dy * dy;
+      const s = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / l2));
+      return Math.hypot(q.x - (a.x + s * dx), q.y - (a.y + s * dy));
+    };
+    const aBorda = (q, c) => Math.min(...c.map((a, i) => aoSegmento(q, a, c[(i + 1) % c.length])));
+    const c = caixa(peca.contorno);
+    let melhor = null;
+    for (let i = 1; i < 24; i++) {
+      for (let j = 1; j < 24; j++) {
+        const q = { x: c.minX + ((c.maxX - c.minX) * i) / 24, y: c.minY + ((c.maxY - c.minY) * j) / 24 };
+        if (!dentroDe(q, peca.contorno) || depoisDela.some((p) => dentroDe(q, p.contorno))) continue;
+        const folga = Math.min(aBorda(q, peca.contorno), ...depoisDela.map((p) => aBorda(q, p.contorno)));
+        if (!melhor || folga > melhor.folga) melhor = { q, folga };
+      }
+    }
+    return melhor ? melhor.q : null;
+  };
+  const antesDosPontos = await pecasGravadas();
+  const palaComPontos = antesDosPontos.find((p) => p.nome === 'pala-de-teste');
+  const saiaComPonto = antesDosPontos.find((p) => p.nome === 'saia-de-teste-1');
+  await aba('Marcações');
+  await espera(300);
+  // A conta da posição na tela é refeita depois de entrar na ferramenta: a faixa de instrução aparece em cima do
+  // desenho e o empurra para baixo.
+  let naTelaDosPontos = null;
+  const calibrarOsPontos = async () => {
+    const tela = JSON.parse(await js(`JSON.stringify(document.querySelector('.area-de-desenho-container canvas').getBoundingClientRect())`));
+    const p1 = await lerXY(150, 100);
+    const p2 = await lerXY(850, 450);
+    const k = (850 - 150) / (p2.y - p1.y);
+    naTelaDosPontos = (mundo) => ({ x: Math.round(tela.left + 150 + (mundo.y - p1.y) * k), y: Math.round(tela.top + 100 + (mundo.x - p1.x) * k) });
+  };
+  const clicarNoMundo = async (mundo) => {
+    const p = naTelaDosPontos(mundo);
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+    await espera(100);
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    await espera(400);
+  };
+  const pontoNaPala = palaComPontos && pontoSoDela(palaComPontos, antesDosPontos);
+  const pontoNaSaia = saiaComPonto && pontoSoDela(saiaComPonto, antesDosPontos);
+  const porPonto = async (grupo, ondes) => {
+    await botao('Ponto de casamento');
+    await espera(500);
+    await noCampo('Grupo (em branco: o ponto principal, que cai na linha do desenho)', grupo);
+    await botaoNaJanela('Continuar');
+    await espera(400);
+    await calibrarOsPontos();
+    for (const onde of ondes) await clicarNoMundo(onde);
+  };
+  if (pontoNaPala && pontoNaSaia) {
+    await porPonto('', [pontoNaPala]);
+    await porPonto('Manga', [{ x: pontoNaPala.x + 50, y: pontoNaPala.y + 70 }, pontoNaSaia]);
+  }
+  const recadoDosPontos = await js(`((document.querySelector('.faixa-de-instrucao') || {}).textContent || '')`);
+  await foto('47-pontos-de-casamento.png');
+  await tecla('Escape');
+  await espera(300);
+  // De perto (a roda do mouse aproxima no ponto, pelo sistema): o círculo vermelho e os losangos laranja, com os nomes.
+  if (pontoNaPala) {
+    await calibrarOsPontos();
+    const alvoDaRoda = naTelaDosPontos(pontoNaPala);
+    const zoomNaBarra = async () => Number(((await js(`document.querySelector('.barra-de-status').innerText`)).match(/Zoom: (\d+)%/) || [])[1] || 0);
+    const antes = await zoomNaBarra();
+    let sentido = -120;
+    for (let k = 0; k < 10; k++) {
+      win.webContents.sendInputEvent({ type: 'mouseWheel', x: alvoDaRoda.x, y: alvoDaRoda.y, deltaX: 0, deltaY: sentido, canScroll: true });
+      await espera(150);
+      if (k === 0 && (await zoomNaBarra()) < antes) sentido = -sentido;
+    }
+    await espera(400);
+    await foto('47a-pontos-de-perto.png');
+  }
+  const comOsPontos = await pecasGravadas();
+  const rotulos = (nome) => (comOsPontos.find((p) => p.nome === nome) || { marcas: [] }).marcas.map((m) => m.rotulo).filter((r) => r && r.startsWith('casamento'));
+  conferir(
+    'o ponto de casamento com o mouse: o principal e o "manga" na pala, o "manga" na saia, com os rótulos que o risco lê',
+    JSON.stringify(rotulos('pala-de-teste')) === '["casamento","casamento: manga"]' &&
+      JSON.stringify(rotulos('saia-de-teste-1')) === '["casamento: manga"]' &&
+      recadoDosPontos.startsWith('O ponto “casamento: manga” foi posto em “saia-de-teste-1”'),
+    `pala ${JSON.stringify(rotulos('pala-de-teste'))}, saia ${JSON.stringify(rotulos('saia-de-teste-1'))} / ${recadoDosPontos.slice(0, 90)}`,
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));
