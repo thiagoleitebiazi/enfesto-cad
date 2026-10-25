@@ -3,6 +3,10 @@ import type { Ponto2D } from '../core/geometria';
 import { area, pontoDentroDoContorno } from '../core/geometria';
 import {
   aplicarHomografia,
+  aplicarLente,
+  desfazerLente,
+  estimarLente,
+  lenteDaFoto,
   eixoPrincipal,
   encostaNaBorda,
   escalarReconhecido,
@@ -293,5 +297,68 @@ describe('a digitalização — a linha simplificada (ADR 0121)', () => {
     // O trecho de 12 mm não é curto: a linha em L fica com o canto.
     const emL = [pt(0, 0), pt(30, 0), pt(30, 12), pt(30, 40)];
     expect(simplificarLinha(emL, 1, 5)).toEqual([pt(0, 0), pt(30, 0), pt(30, 40)]);
+  });
+});
+
+describe('a digitalização — a lente (ADR 0122)', () => {
+  const LENTE = lenteDaFoto(600, 720, 0.1);
+  const CANTOS_CERTOS: Quadrilatero = [pt(60, 40), pt(520, 80), pt(560, 690), pt(30, 640)];
+  const h = homografia([pt(0, 0), pt(140, 0), pt(140, 190), pt(0, 190)], CANTOS_CERTOS);
+  /** Os cantos e os meios dos lados como saem na foto (curvados pela lente). */
+  const naFoto = (p: Ponto2D): Ponto2D => aplicarLente(LENTE, aplicarHomografia(h, p));
+  const cantosNaFoto = [pt(0, 0), pt(140, 0), pt(140, 190), pt(0, 190)].map(naFoto) as unknown as Quadrilatero;
+  const meiosNaFoto = [pt(70, 0), pt(140, 95), pt(70, 190), pt(0, 95)].map(naFoto) as unknown as Quadrilatero;
+
+  /** A foto do celular: cada pixel, desfeita a lente e a perspectiva, cai num ponto da placa (o molde a 20 mm). */
+  function fotoComLente(): ImagemDePixels {
+    const foto = imagem(600, 720, 100);
+    const daPlaca = homografia(CANTOS_CERTOS, [pt(0, 0), pt(140, 0), pt(140, 190), pt(0, 190)]);
+    const papel = PAPEL.map((p) => pt(p.x + 20, p.y + 20));
+    const furo = FURO.map((p) => pt(p.x + 20, p.y + 20));
+    const fio = FIO.map((p) => pt(p.x + 20, p.y + 20));
+    for (let y = 0; y < 720; y++) {
+      for (let x = 0; x < 600; x++) {
+        const q = aplicarHomografia(daPlaca, desfazerLente(LENTE, pt(x + 0.5, y + 0.5)));
+        let tom = 100;
+        if (q.x >= 0 && q.y >= 0 && q.x <= 140 && q.y <= 190) tom = 60;
+        if (pontoDentroDoContorno(q, papel)) tom = pontoDentroDoContorno(q, fio) ? 40 : pontoDentroDoContorno(q, furo) ? 60 : 220;
+        const o = (y * 600 + x) * 4;
+        foto.dados[o] = foto.dados[o + 1] = foto.dados[o + 2] = tom;
+      }
+    }
+    return foto;
+  }
+
+  it('desfazer e aplicar a lente são a volta um do outro', () => {
+    for (const p of [pt(10, 10), pt(300, 360), pt(590, 700), pt(450, 120)]) {
+      const volta = aplicarLente(LENTE, desfazerLente(LENTE, p));
+      expect(volta.x).toBeCloseTo(p.x, 6);
+      expect(volta.y).toBeCloseTo(p.y, 6);
+    }
+  });
+
+  it('pelos meios dos lados, acha a curvatura da lente: os lados voltam a ser retos', () => {
+    const e = estimarLente(600, 720, cantosNaFoto, meiosNaFoto);
+    expect(e.k).toBeCloseTo(0.1, 2);
+    expect(e.foraDaRetaAntesPx).toBeGreaterThan(3);
+    expect(e.foraDaRetaDepoisPx).toBeLessThan(0.1);
+    // Sem curvatura (os meios na reta), fica sem.
+    const reto = [pt(70, 0), pt(140, 95), pt(70, 190), pt(0, 95)].map((p) => aplicarHomografia(h, p)) as unknown as Quadrilatero;
+    expect(Math.abs(estimarLente(600, 720, CANTOS_CERTOS, reto).k)).toBeLessThan(0.002);
+  });
+
+  it('a foto curvada pela lente: corrigida a lente, o molde de 100 × 150 sai na medida; sem corrigir, sai torto', () => {
+    const foto = fotoComLente();
+    const medir = (lente: ReturnType<typeof lenteDaFoto> | null) => {
+      const plana = retificar(foto, cantosNaFoto, 140, 190, 0.5, lente);
+      const r = reconhecerMolde(plana, pt(60 / 0.5, 150 / 0.5), opcoes(0.5));
+      if ('erro' in r) throw new Error(r.erro);
+      const m = medidasDoContorno(r.contorno);
+      return Math.max(Math.abs(m.largura - 100), Math.abs(m.altura - 150), Math.abs(m.area - 15000 + 8) / 150);
+    };
+    const comLente = medir(lenteDaFoto(600, 720, estimarLente(600, 720, cantosNaFoto, meiosNaFoto).k));
+    const semLente = medir(null);
+    expect(comLente).toBeLessThan(1);
+    expect(semLente).toBeGreaterThan(2 * comLente);
   });
 });

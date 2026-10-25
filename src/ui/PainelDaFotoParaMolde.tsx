@@ -6,6 +6,8 @@ import type { ImagemDoModelo } from '../domain/imagens';
 import {
   escalaDaRetificada,
   escalarReconhecido,
+  estimarLente,
+  lenteDaFoto,
   limiarDeOtsu,
   medidasDoContorno,
   reconhecerMolde,
@@ -26,6 +28,8 @@ const REFERENCIAS: ReadonlyArray<readonly [string, number, number]> = [
   ['Placa de corte A1 (900 × 600 mm)', 900, 600],
 ];
 const NOMES_DOS_CANTOS = ['em cima à esquerda', 'em cima à direita', 'embaixo à direita', 'embaixo à esquerda'];
+/** Os lados da referência, na ordem dos cantos (do 1 ao 2, do 2 ao 3…), para a lente (ADR 0122). */
+const NOMES_DOS_LADOS = ['de cima', 'da direita', 'de baixo', 'da esquerda'];
 
 /** O ponto da imagem (em pixels) de um clique na tela, com a imagem encaixada no quadro (sem distorcer). */
 function pontoNaImagem(svg: SVGSVGElement, largura: number, altura: number, clienteX: number, clienteY: number): Ponto2D {
@@ -58,6 +62,9 @@ export function PainelDaFotoParaMolde(props: {
   const [foto, setFoto] = useState<{ readonly id: string; readonly pixels: ImagemDePixels } | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [cantos, setCantos] = useState<readonly Ponto2D[]>([]);
+  // A lente (ADR 0122): um ponto na borda de cada lado da referência, depois dos cantos.
+  const [corrigirLente, setCorrigirLente] = useState(false);
+  const [meios, setMeios] = useState<readonly Ponto2D[]>([]);
   const [larguraMm, setLarguraMm] = useState<number | null>(297);
   const [alturaMm, setAlturaMm] = useState<number | null>(210);
   const [mmPorPxPedido, setMmPorPxPedido] = useState(0.5);
@@ -96,6 +103,9 @@ export function PainelDaFotoParaMolde(props: {
     };
   }, [imagem, lerPixels]);
   const fotoPronta = foto && foto.id === imagemId ? foto.pixels : null;
+  const lenteEstimada =
+    corrigirLente && fotoPronta && cantos.length === 4 && meios.length === 4 ? estimarLente(fotoPronta.largura, fotoPronta.altura, cantos as unknown as Quadrilatero, meios as unknown as Quadrilatero) : null;
+  const faltaALente = corrigirLente && !semPerspectiva && meios.length !== 4;
 
   const corrigir = (): void => {
     if (!fotoPronta || !imagem) return;
@@ -108,8 +118,10 @@ export function PainelDaFotoParaMolde(props: {
       } else {
         if (cantos.length !== 4) throw new Error('Marque os quatro cantos da referência.');
         if (!larguraMm || !alturaMm) throw new Error('Diga a largura e a altura da referência (mm).');
+        if (corrigirLente && !lenteEstimada) throw new Error('Para corrigir a lente, marque um ponto na borda de cada lado da referência.');
         escala = escalaDaRetificada(larguraMm, alturaMm, mmPorPxPedido);
-        pixels = retificar(fotoPronta, cantos as unknown as Quadrilatero, larguraMm, alturaMm, mmPorPxPedido);
+        const lente = lenteEstimada ? lenteDaFoto(fotoPronta.largura, fotoPronta.altura, lenteEstimada.k) : null;
+        pixels = retificar(fotoPronta, cantos as unknown as Quadrilatero, larguraMm, alturaMm, mmPorPxPedido, lente);
       }
       setPlana({ pixels, mmPorPx: escala, url: props.paraDataUrl(pixels) });
       setLimiar(limiarDeOtsu(tonsDeCinza(pixels)));
@@ -143,7 +155,13 @@ export function PainelDaFotoParaMolde(props: {
   const aoClicarNaFoto = (ev: React.MouseEvent<SVGSVGElement>): void => {
     if (!fotoPronta || plana) return;
     const p = pontoNaImagem(ev.currentTarget, fotoPronta.largura, fotoPronta.altura, ev.clientX, ev.clientY);
+    // Com a lente, depois dos 4 cantos vêm os 4 pontos dos lados; o clique seguinte recomeça.
+    if (corrigirLente && cantos.length === 4 && meios.length < 4) {
+      setMeios([...meios, p]);
+      return;
+    }
     setCantos(cantos.length >= 4 ? [p] : [...cantos, p]);
+    setMeios([]);
   };
   const aoClicarNaPlana = (ev: React.MouseEvent<SVGSVGElement>): void => {
     if (!plana) return;
@@ -179,6 +197,7 @@ export function PainelDaFotoParaMolde(props: {
                   onChange={(e) => {
                     setImagemId(e.target.value);
                     setCantos([]);
+                    setMeios([]);
                     setPlana(null);
                     setSemente(null);
                   }}
@@ -203,8 +222,30 @@ export function PainelDaFotoParaMolde(props: {
             {!semPerspectiva && (
               <>
                 <p className="nota-do-formulario">
-                  {cantos.length < 4 ? `Clique o canto ${NOMES_DOS_CANTOS[cantos.length]} da referência (${cantos.length} de 4).` : 'Os quatro cantos estão marcados.'}
+                  {cantos.length < 4
+                    ? `Clique o canto ${NOMES_DOS_CANTOS[cantos.length]} da referência (${cantos.length} de 4).`
+                    : faltaALente
+                      ? `A lente: clique um ponto na borda do lado ${NOMES_DOS_LADOS[meios.length]} da referência, perto do meio (${meios.length} de 4).`
+                      : 'Os quatro cantos estão marcados.'}
                 </p>
+                <label className="opcao-em-linha" title="A lente do celular curva as retas perto da borda da foto: um ponto na borda de cada lado da referência mostra quanto">
+                  <input
+                    type="checkbox"
+                    checked={corrigirLente}
+                    disabled={plana !== null}
+                    onChange={(e) => {
+                      setCorrigirLente(e.target.checked);
+                      setMeios([]);
+                    }}
+                  />
+                  Corrigir a curvatura da lente (mais 4 cliques)
+                </label>
+                {lenteEstimada && (
+                  <p className={`resultado-da-lente${lenteEstimada.foraDaRetaDepoisPx < 1.5 ? ' lente-boa' : ' lente-ruim'}`} role="status">
+                    A lente: os lados estavam a {numeroComVirgula(lenteEstimada.foraDaRetaAntesPx, 1)} px da reta; corrigida, a {numeroComVirgula(lenteEstimada.foraDaRetaDepoisPx, 1)} px.
+                    {lenteEstimada.foraDaRetaDepoisPx >= 1.5 ? ' Confira os pontos: algum pode não estar na borda.' : ''}
+                  </p>
+                )}
                 <label>
                   Referência
                   <select
@@ -254,11 +295,17 @@ export function PainelDaFotoParaMolde(props: {
               </button>
             ) : (
               <span className="acoes-em-linha">
-                <button type="button" className="botao-primario" disabled={!fotoPronta || (!semPerspectiva && cantos.length !== 4)} onClick={corrigir}>
-                  {semPerspectiva ? 'Usar a foto' : 'Corrigir a perspectiva'}
+                <button type="button" className="botao-primario" disabled={!fotoPronta || (!semPerspectiva && (cantos.length !== 4 || faltaALente))} onClick={corrigir}>
+                  {semPerspectiva ? 'Usar a foto' : corrigirLente ? 'Corrigir a lente e a perspectiva' : 'Corrigir a perspectiva'}
                 </button>
                 {cantos.length > 0 && (
-                  <button type="button" onClick={() => setCantos([])}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCantos([]);
+                      setMeios([]);
+                    }}
+                  >
                     Limpar os cantos
                   </button>
                 )}
@@ -277,6 +324,17 @@ export function PainelDaFotoParaMolde(props: {
               >
                 <image href={imagem.dados} width={fotoPronta.largura} height={fotoPronta.altura} />
                 {cantos.length > 1 && <polygon className="cantos-marcados" points={cantos.map((p) => `${p.x},${p.y}`).join(' ')} />}
+                {meios.map((p, i) => (
+                  <rect
+                    key={`meio${i}`}
+                    className="meio-marcado"
+                    x={p.x - Math.max(4, fotoPronta.largura / 120)}
+                    y={p.y - Math.max(4, fotoPronta.largura / 120)}
+                    width={2 * Math.max(4, fotoPronta.largura / 120)}
+                    height={2 * Math.max(4, fotoPronta.largura / 120)}
+                    transform={`rotate(45 ${p.x} ${p.y})`}
+                  />
+                ))}
                 {cantos.map((p, i) => (
                   <g key={i}>
                     <circle className="canto-marcado" cx={p.x} cy={p.y} r={Math.max(4, fotoPronta.largura / 120)} />

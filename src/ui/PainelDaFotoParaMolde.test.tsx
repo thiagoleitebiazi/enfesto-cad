@@ -142,3 +142,24 @@ describe('PainelDaFotoParaMolde', () => {
     expect(screen.getByLabelText('Medidas do molde')).toHaveTextContent('fio marcado');
   });
 });
+
+describe('PainelDaFotoParaMolde — a lente (ADR 0122)', () => {
+  it('com a lente, depois dos cantos pede um ponto em cada lado; diz o quanto os lados estavam curvos e corrige', async () => {
+    abrir();
+    const foto = await screen.findByRole('img', { name: 'Foto para marcar os cantos' });
+    fireEvent.click(screen.getByLabelText('Corrigir a curvatura da lente (mais 4 cliques)'));
+    for (const [x, y] of [[60, 40], [520, 80], [560, 690], [30, 640]]) fireEvent.click(foto, { clientX: x, clientY: y });
+    expect(screen.getByText(/A lente: clique um ponto na borda do lado de cima da referência/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Corrigir a lente e a perspectiva' })).toBeDisabled();
+    // A foto do teste não tem lente: os pontos do meio dos lados estão nas retas.
+    const h = homografia([pt(0, 0), pt(140, 0), pt(140, 190), pt(0, 190)], [pt(60, 40), pt(520, 80), pt(560, 690), pt(30, 640)]);
+    for (const p of [pt(70, 0), pt(140, 95), pt(70, 190), pt(0, 95)].map((q) => aplicarHomografia(h, q))) fireEvent.click(foto, { clientX: p.x, clientY: p.y });
+    expect(screen.getByText('Os quatro cantos estão marcados.')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/A lente: os lados estavam a 0,0 px da reta; corrigida, a 0,0 px\./);
+    expect(foto.querySelectorAll('.meio-marcado')).toHaveLength(4);
+    fireEvent.change(screen.getByLabelText('Largura da referência'), { target: { value: '140' } });
+    fireEvent.change(screen.getByLabelText('Altura da referência'), { target: { value: '190' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Corrigir a lente e a perspectiva' }));
+    expect(await screen.findByRole('img', { name: 'Foto corrigida' })).toBeInTheDocument();
+  });
+});

@@ -5,7 +5,8 @@ import { area, perimetro, pontoDentroDoContorno, retanguloEnvolvente, simplifica
  * A digitalização do molde de papel pela foto (ADR 0109). A foto (os pixels, RGBA) passa por:
  *
  * 1. **a correção da perspectiva**: os quatro cantos de um retângulo de medida conhecida (uma placa de corte, uma
- *    folha A4), clicados na foto, dão a homografia; a foto vira a vista de cima, em escala (mm por pixel);
+ *    folha A4), clicados na foto, dão a homografia; a foto vira a vista de cima, em escala (mm por pixel). Antes,
+ *    se pedida, a da lente: um ponto no meio de cada lado da referência dá a curvatura da lente (ADR 0122);
  * 2. **a separação do molde**: o limiar (Otsu, ou o escolhido) separa o papel do fundo, e o clique dentro do molde
  *    escolhe a região (os pixels ligados a ele);
  * 3. **o contorno**: seguido pelas bordas dos pixels (a medida exata, sem o meio pixel do centro) e simplificado
@@ -68,6 +69,98 @@ export function aplicarHomografia(h: Homografia, p: Ponto2D): Ponto2D {
   return { x: (h[0] * p.x + h[1] * p.y + h[2]) / w, y: (h[3] * p.x + h[4] * p.y + h[5]) / w };
 }
 
+// ---- A lente (ADR 0122)
+
+/**
+ * A curvatura da lente, de um coeficiente, em volta do meio da foto: o ponto `d` da foto vai ao lugar sem a lente
+ * `c + (d − c)·(1 + k·r²)`, com `r` a distância ao meio sobre a meia diagonal da foto. `k > 0` desfaz o barril (as
+ * retas que a lente do celular curva para fora); `k < 0`, a almofada. Escrita assim (da foto para o lugar certo), a
+ * conta é direta; a volta (do lugar certo para a foto), por Newton, é única na foto inteira para |k| ≤ 0,3.
+ */
+export interface Lente {
+  readonly k: number;
+  readonly centro: Ponto2D;
+  readonly raio: number;
+}
+
+/** O maior |k| procurado. */
+export const K_MAXIMO_DA_LENTE = 0.3;
+
+export function lenteDaFoto(largura: number, altura: number, k: number): Lente {
+  return { k, centro: { x: largura / 2, y: altura / 2 }, raio: Math.hypot(largura, altura) / 2 };
+}
+
+/** O ponto da foto no lugar sem a lente. */
+export function desfazerLente(l: Lente, d: Ponto2D): Ponto2D {
+  const dx = d.x - l.centro.x;
+  const dy = d.y - l.centro.y;
+  const f = 1 + (l.k * (dx * dx + dy * dy)) / (l.raio * l.raio);
+  return { x: l.centro.x + dx * f, y: l.centro.y + dy * f };
+}
+
+/** O ponto sem a lente de volta à foto (Newton no raio: r·(1 + k·r²) = r do lugar certo). */
+export function aplicarLente(l: Lente, u: Ponto2D): Ponto2D {
+  const ux = (u.x - l.centro.x) / l.raio;
+  const uy = (u.y - l.centro.y) / l.raio;
+  const ru = Math.hypot(ux, uy);
+  if (ru < 1e-12 || l.k === 0) return u;
+  let r = ru;
+  for (let i = 0; i < 12; i++) {
+    const g = r * (1 + l.k * r * r) - ru;
+    const dg = 1 + 3 * l.k * r * r;
+    if (Math.abs(dg) < 1e-12) break;
+    const passo = g / dg;
+    r -= passo;
+    if (Math.abs(passo) < 1e-12) break;
+  }
+  const s = r / ru;
+  return { x: l.centro.x + ux * s * l.raio, y: l.centro.y + uy * s * l.raio };
+}
+
+/** A distância do ponto à reta que passa por `a` e `b`. */
+function distanciaAReta(p: Ponto2D, a: Ponto2D, b: Ponto2D): number {
+  const l = Math.hypot(b.x - a.x, b.y - a.y);
+  return l === 0 ? Math.hypot(p.x - a.x, p.y - a.y) : Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / l;
+}
+
+export interface LenteEstimada {
+  readonly k: number;
+  /** O quanto os pontos dos lados ficam fora da reta dos cantos (a média quadrática, em pixels da foto). */
+  readonly foraDaRetaAntesPx: number;
+  readonly foraDaRetaDepoisPx: number;
+}
+
+/**
+ * A curvatura da lente pelos pontos do meio dos lados da referência (um em cada lado: de cima, da direita, de baixo,
+ * da esquerda, na ordem dos cantos): o `k` que, desfeita a lente, deixa cada ponto na reta entre os dois cantos do
+ * seu lado. Procura de −0,3 a 0,3 (uma varredura e o ajuste fino pela seção áurea).
+ */
+export function estimarLente(largura: number, altura: number, cantos: Quadrilatero, meios: Quadrilatero): LenteEstimada {
+  const erro = (k: number): number => {
+    const l = lenteDaFoto(largura, altura, k);
+    let s = 0;
+    for (let i = 0; i < 4; i++) {
+      const d = distanciaAReta(desfazerLente(l, meios[i]!), desfazerLente(l, cantos[i]!), desfazerLente(l, cantos[(i + 1) % 4]!));
+      s += d * d;
+    }
+    return Math.sqrt(s / 4);
+  };
+  let melhor = 0;
+  for (let k = -K_MAXIMO_DA_LENTE; k <= K_MAXIMO_DA_LENTE + 1e-9; k += 0.005) if (erro(k) < erro(melhor)) melhor = k;
+  // O ajuste fino em volta do melhor da varredura.
+  let a = Math.max(-K_MAXIMO_DA_LENTE, melhor - 0.005);
+  let b = Math.min(K_MAXIMO_DA_LENTE, melhor + 0.005);
+  const razao = (Math.sqrt(5) - 1) / 2;
+  for (let i = 0; i < 40; i++) {
+    const c = b - razao * (b - a);
+    const d = a + razao * (b - a);
+    if (erro(c) < erro(d)) b = d;
+    else a = c;
+  }
+  const k = (a + b) / 2;
+  return { k, foraDaRetaAntesPx: erro(0), foraDaRetaDepoisPx: erro(k) };
+}
+
 /** A escala da foto corrigida: a pedida, ou mais grossa se o lado maior passaria do máximo. */
 export function escalaDaRetificada(larguraMm: number, alturaMm: number, mmPorPxPedido: number): number {
   return Math.max(mmPorPxPedido, Math.max(larguraMm, alturaMm) / LADO_MAXIMO_DA_RETIFICADA);
@@ -78,10 +171,13 @@ export function escalaDaRetificada(larguraMm: number, alturaMm: number, mmPorPxP
  * embaixo à direita, embaixo à esquerda) vira uma imagem de `larguraMm × alturaMm` na escala `mmPorPx`, com cada
  * pixel lido da foto (bilinear). O que cai fora da foto fica branco.
  */
-export function retificar(foto: ImagemDePixels, cantos: Quadrilatero, larguraMm: number, alturaMm: number, mmPorPx: number): ImagemDePixels {
+export function retificar(foto: ImagemDePixels, cantos: Quadrilatero, larguraMm: number, alturaMm: number, mmPorPx: number, lente: Lente | null = null): ImagemDePixels {
   if (!(larguraMm > 0) || !(alturaMm > 0)) throw new Error('A largura e a altura do retângulo de referência precisam ser maiores que zero.');
   const escala = escalaDaRetificada(larguraMm, alturaMm, mmPorPx);
-  const h = homografia([{ x: 0, y: 0 }, { x: larguraMm, y: 0 }, { x: larguraMm, y: alturaMm }, { x: 0, y: alturaMm }], cantos);
+  // Com a lente, a perspectiva é a dos cantos no lugar certo, e cada pixel volta à foto pela lente.
+  const comLente = lente !== null && lente.k !== 0 ? lente : null;
+  const cantosCertos = comLente ? (cantos.map((c) => desfazerLente(comLente, c)) as unknown as Quadrilatero) : cantos;
+  const h = homografia([{ x: 0, y: 0 }, { x: larguraMm, y: 0 }, { x: larguraMm, y: alturaMm }, { x: 0, y: alturaMm }], cantosCertos);
   const largura = Math.max(1, Math.round(larguraMm / escala));
   const altura = Math.max(1, Math.round(alturaMm / escala));
   const dados = new Uint8ClampedArray(largura * altura * 4);
@@ -90,7 +186,8 @@ export function retificar(foto: ImagemDePixels, cantos: Quadrilatero, larguraMm:
   const f = foto.dados;
   for (let j = 0; j < altura; j++) {
     for (let i = 0; i < largura; i++) {
-      const p = aplicarHomografia(h, { x: (i + 0.5) * escala, y: (j + 0.5) * escala });
+      const certo = aplicarHomografia(h, { x: (i + 0.5) * escala, y: (j + 0.5) * escala });
+      const p = comLente ? aplicarLente(comLente, certo) : certo;
       const x = p.x - 0.5;
       const y = p.y - 0.5;
       const o = (j * largura + i) * 4;

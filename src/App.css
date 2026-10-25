@@ -5363,6 +5363,33 @@ rect.destaque-do-desenho,
   stroke-width: 2;
 }
 
+/* A lente (ADR 0122): o ponto na borda de cada lado (um losango azul) e o resultado. */
+.meio-marcado {
+  fill: #1e88e5;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.resultado-da-lente {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 4px solid var(--cinza-300);
+  border-radius: var(--raio-sm);
+  font-size: 12px;
+}
+
+.resultado-da-lente.lente-boa {
+  border-left-color: var(--grupo-6);
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.resultado-da-lente.lente-ruim {
+  border-left-color: #c62828;
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
 .canto-marcado {
   fill: #e65100;
   stroke: #fff;

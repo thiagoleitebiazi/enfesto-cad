@@ -774,7 +774,8 @@ async function principal() {
     JSON.stringify(colecoesGravadas.colecoes.map((c) => ({ nome: c.nome, modelos: c.modelos.map((m) => [m.nome, m.categoria, !!m.projetoId, m.tarefas.length]) }))),
   );
 
-  // 11. O molde da foto (ADR 0109): uma foto desenhada aqui — a placa de 140 × 190 mm fotografada torta, com o papel
+  // 11. O molde da foto (ADR 0109, 0121, 0122): uma foto desenhada aqui — a placa de 140 × 190 mm fotografada torta e
+  // curvada pela lente do celular, com o papel
   // de 100 × 150 mm (um furo, o traço do fio e um pique em V) — entra pelo campo de arquivo de verdade; os 4 cantos e
   // o clique dentro do molde com o mouse; as medidas e os achados; a peça criada no projeto.
   const CANTOS_DA_FOTO = [
@@ -792,7 +793,24 @@ async function principal() {
     ],
     CANTOS_DA_FOTO,
   );
-  const projetar = (pontos) => pontos.map(([x, y]) => aplicarHomografiaDoTeste(h, x, y));
+  // A lente do celular (ADR 0122): a foto sai curvada em barril (o ponto certo vai para mais perto do meio); as retas
+  // da placa e do papel viram curvas, por isso cada lado é desenhado em muitos pedaços.
+  const LENTE_DA_FOTO = { k: 0.08, cx: 300, cy: 360, raio: Math.hypot(600, 720) / 2 };
+  const comLente = ([x, y]) => {
+    const ux = (x - LENTE_DA_FOTO.cx) / LENTE_DA_FOTO.raio;
+    const uy = (y - LENTE_DA_FOTO.cy) / LENTE_DA_FOTO.raio;
+    const ru = Math.hypot(ux, uy);
+    if (ru < 1e-12) return [x, y];
+    let r = ru;
+    for (let i = 0; i < 12; i++) r -= (r * (1 + LENTE_DA_FOTO.k * r * r) - ru) / (1 + 3 * LENTE_DA_FOTO.k * r * r);
+    return [LENTE_DA_FOTO.cx + (ux * r * LENTE_DA_FOTO.raio) / ru, LENTE_DA_FOTO.cy + (uy * r * LENTE_DA_FOTO.raio) / ru];
+  };
+  const naFotoComLente = ([x, y]) => comLente(aplicarHomografiaDoTeste(h, x, y));
+  const projetar = (pontos) =>
+    pontos.flatMap(([x, y], i) => {
+      const [qx, qy] = pontos[(i + 1) % pontos.length];
+      return Array.from({ length: 24 }, (_, k) => naFotoComLente([x + ((qx - x) * k) / 24, y + ((qy - y) * k) / 24]));
+    });
   /** Um trecho de traço de caneta de `w` mm de a até b (em mm da placa), meio traço a mais em cada ponta. */
   const trechoDeCaneta = ([ax, ay], [bx, by], w) => {
     const l = Math.hypot(bx - ax, by - ay);
@@ -857,11 +875,29 @@ async function principal() {
     win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
     await espera(250);
   };
-  for (const [x, y] of CANTOS_DA_FOTO) await clicarNaImagem('svg[aria-label="Foto para marcar os cantos"]', x, y, 600, 720);
+  // Os cantos e, com a lente ligada, um ponto na borda de cada lado (onde a foto curva a reta), como a mão faz.
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.includes('Corrigir a curvatura da lente')).querySelector('input')`);
+  await espera(200);
+  for (const canto of [[0, 0], [140, 0], [140, 190], [0, 190]]) {
+    const [x, y] = naFotoComLente(canto);
+    await clicarNaImagem('svg[aria-label="Foto para marcar os cantos"]', x, y, 600, 720);
+  }
+  for (const meio of [[70, 0], [140, 95], [70, 190], [0, 95]]) {
+    const [x, y] = naFotoComLente(meio);
+    await clicarNaImagem('svg[aria-label="Foto para marcar os cantos"]', x, y, 600, 720);
+  }
   await noCampo('Largura da referência', '140');
   await noCampo('Altura da referência', '190');
+  await espera(300);
+  const resultadoDaLente = await js(`((document.querySelector('[role=dialog] .resultado-da-lente') || {}).textContent || '')`);
+  const [antesDaLente, depoisDaLente] = (resultadoDaLente.match(/estavam a ([\d,]+) px da reta; corrigida, a ([\d,]+) px/) || []).slice(1).map((v) => Number(String(v).replace(',', '.')));
+  conferir(
+    'a lente do celular: os pontos dos lados, fora da reta dos cantos, voltam para ela (até 1,5 px)',
+    antesDaLente > 3 && depoisDaLente <= 1.5,
+    resultadoDaLente,
+  );
   await foto('27-cantos-da-foto.png');
-  await botaoNaJanela('Corrigir a perspectiva');
+  await botaoNaJanela('Corrigir a lente e a perspectiva');
   await espera(1500);
   await clicarNaImagem('svg[aria-label="Foto corrigida"]', 140, 300, 280, 380);
   await espera(1200);
@@ -881,7 +917,7 @@ async function principal() {
   await noCampo('Nome', 'Frente da foto');
   await botaoNaJanela('Criar a peça');
   await espera(1200);
-  const criadasDaFoto = await js(`((document.querySelector('[role=dialog] [role=status]') || {}).textContent || '')`);
+  const criadasDaFoto = await js(`(Array.from(document.querySelectorAll('[role=dialog] [role=status]')).map((s) => s.textContent).find((t) => t.includes('criada')) || '')`);
   conferir(
     'a peça entra na lista, e a janela fica pronta para outro molde da mesma foto',
     (await janela()) === 'Molde da foto' && criadasDaFoto.includes('Frente da foto') && (await lista()).some((n) => n.startsWith('Frente da foto')),
