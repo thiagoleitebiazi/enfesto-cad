@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PontoDeMedida } from './fichaTecnica';
-import { csvDoGuia, guiaDeMedidas, htmlDoGuia, lerRegrasDeCaimento, recomendarTamanho, regraSugerida, regrasDaFicha } from './recomendacaoDeTamanho';
+import { csvDoGuia, elasticidadeDoTecido, guiaDeMedidas, htmlDoGuia, lerElasticidadeDaRecomendacao, lerRegrasDeCaimento, recomendarTamanho, regraSugerida, regrasDaFicha } from './recomendacaoDeTamanho';
 
 /** A tabela de uma camisa (a peça pronta): busto e quadril de P a GG, e o comprimento. */
 const MEDIDAS: PontoDeMedida[] = [
@@ -96,5 +96,38 @@ describe('a recomendação de tamanho — o guia de medidas para a loja', () => 
   it('a leitura das regras guardadas', () => {
     expect(lerRegrasDeCaimento({ a: { usar: true, tipo: 'comprimento', folgaCm: 0, peso: 1 }, b: { usar: 'sim' }, c: null })).toEqual({ a: { usar: true, tipo: 'comprimento', folgaCm: 0, peso: 1 } });
     expect(lerRegrasDeCaimento(undefined)).toEqual({});
+  });
+});
+
+describe('a recomendação de tamanho — o tecido que cede (ADR 0119)', () => {
+  const CORPO_GRANDE = { busto: 113, quadril: 115, comp: 76 };
+
+  it('no tecido plano, o corpo maior que o GG não veste em nenhum; na malha com elastano, o GG veste esticando', () => {
+    const plano = recomendarTamanho(FICHA, REGRAS, CORPO_GRANDE);
+    expect(plano.tamanhos.every((t) => !t.veste)).toBe(true);
+    expect(plano.explicacao[0]).toMatch(/Nenhum tamanho veste/);
+    const malha = recomendarTamanho(FICHA, REGRAS, CORPO_GRANDE, elasticidadeDoTecido('malha-com-elastano'));
+    expect(malha.recomendado).toBe('GG');
+    const gg = malha.tamanhos.find((t) => t.tamanho === 'GG')!;
+    expect(gg.veste).toBe(true);
+    const busto = gg.pontos.find((p) => p.pontoId === 'busto')!;
+    // 110 cm de peça, cedendo 15%: 16,5 cm a mais; o comprimento não cede.
+    expect(busto).toMatchObject({ cedeCm: 16.5, aperta: false, esticaParaVestir: true });
+    expect(gg.pontos.find((p) => p.pontoId === 'comp')!.cedeCm).toBe(0);
+    expect(malha.explicacao).toContain('O tecido cede até 15% na volta: o tamanho um pouco menor que o corpo ainda veste (justo, esticado no corpo).');
+    expect(malha.explicacao.some((l) => l.startsWith('Busto: corpo 113,0 cm') && l.includes('cede até 16,5 cm') && l.endsWith('e veste esticando.'))).toBe(true);
+  });
+
+  it('a malha que cede pouco não salva o tamanho muito menor: aperta, e diz que mesmo cedendo', () => {
+    const r = recomendarTamanho(FICHA, REGRAS, { busto: 120, quadril: 122, comp: 76 }, elasticidadeDoTecido('malha'));
+    expect(r.tamanhos.every((t) => !t.veste)).toBe(true);
+    expect(r.explicacao[0]).toMatch(/mesmo com o tecido cedendo/);
+  });
+
+  it('a leitura do projeto: sem ela, o plano; o personalizado fica entre 0 e 40%', () => {
+    expect(lerElasticidadeDaRecomendacao(undefined)).toEqual({ tecido: 'plano', cedePercentual: 0 });
+    expect(lerElasticidadeDaRecomendacao({ tecido: 'malha' })).toEqual({ tecido: 'malha', cedePercentual: 5 });
+    expect(lerElasticidadeDaRecomendacao({ tecido: 'personalizado', cedePercentual: 60 })).toEqual({ tecido: 'personalizado', cedePercentual: 40 });
+    expect(lerElasticidadeDaRecomendacao({ tecido: 'lã', cedePercentual: 10 })).toEqual({ tecido: 'plano', cedePercentual: 0 });
   });
 });

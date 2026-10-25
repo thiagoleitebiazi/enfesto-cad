@@ -727,7 +727,9 @@ async function principal() {
     });
     await espera(60);
   }
-  await espera(200);
+  // Mais um passo pequeno no mesmo lugar: a coluna debaixo do mouse é a do último movimento já desenhado.
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: daModelagem.x + 2, y: daModelagem.y + 2, button: 'left', modifiers: ['leftButtonDown'] });
+  await espera(400);
   const noMeioDoArrasto = JSON.parse(
     await js(
       `JSON.stringify({ modelagem: document.querySelector('[data-etapa="modelagem"]').className, producao: document.querySelector('[data-etapa="producao"]').className, rotulo: ((document.querySelector('[data-etapa="modelagem"] .o-que-o-arrasto-faz') || {}).textContent || '') })`,
@@ -930,6 +932,25 @@ async function principal() {
   await noCampo('Folga de Busto', '6');
   await espera(300);
   await foto('32-caimento.png');
+  // 12a. O tecido que cede (ADR 0119): com a malha com elastano, o corpo maior que o GG (busto 113, quadril 115) veste
+  // o GG esticando — no tecido plano, nenhum tamanho vestiria.
+  await noCampo('Tecido', 'malha-com-elastano');
+  await espera(300);
+  await parteDaJanela('Recomendar');
+  await noCampo('Corpo: Busto', '113');
+  await noCampo('Corpo: Quadril', '115');
+  await espera(300);
+  const comElastano = JSON.parse(
+    await js(
+      `JSON.stringify({ grande: (document.querySelector('[role=dialog] .tamanho-grande') || {}).textContent, titulo: ((document.querySelector('[role=dialog] .cartao-do-tamanho strong') || {}).textContent || ''), estica: document.querySelectorAll('[role=dialog] .tabela-da-comparacao td.medida-estica').length, tecido: ((document.querySelector('[role=dialog] .tecido-da-recomendacao') || {}).textContent || '') })`,
+    ),
+  );
+  conferir(
+    'na malha com elastano, o corpo de busto 113 veste o GG esticando (a célula roxa), com o tecido dito',
+    comElastano.grande === 'GG' && comElastano.titulo === 'Tamanho recomendado' && comElastano.estica > 0 && comElastano.tecido.includes('Malha com elastano'),
+    JSON.stringify(comElastano),
+  );
+  await foto('32b-malha-que-cede.png');
   await fecharJanela();
   await espera(1200);
   const projetoComCaimento = fs
@@ -942,6 +963,11 @@ async function principal() {
     'a folga do busto (6 cm) ficou guardada no projeto, e as medidas da pessoa não',
     !!regraDoBusto && regraDoBusto.r.folgaCm === 6 && regraDoBusto.r.usar === true && !JSON.stringify(projetoComCaimento).includes('"corpo'),
     regraDoBusto ? JSON.stringify(regraDoBusto) : 'sem regras no projeto',
+  );
+  conferir(
+    'o tecido da recomendação (malha com elastano, 15%) ficou guardado no projeto',
+    !!projetoComCaimento && JSON.stringify(projetoComCaimento.elasticidadeDaRecomendacao) === '{"tecido":"malha-com-elastano","cedePercentual":15}',
+    projetoComCaimento ? JSON.stringify(projetoComCaimento.elasticidadeDaRecomendacao) : '—',
   );
   // A tela de quem usa (1920 × 1080 a 150%: 1280 × 720): a aba Modelo, com o grupo Loja, cabe sem rolar.
   win.setBounds({ x: 0, y: 0, width: 1280, height: 720 });

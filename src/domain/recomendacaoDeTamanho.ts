@@ -10,6 +10,9 @@ import { textoCsv } from '../core/csv';
  * corpo de cada tamanho) sai das mesmas regras, para a loja.
  *
  * As medidas da pessoa não são gravadas (são dados pessoais): só a regra de caimento fica no projeto.
+ *
+ * O tecido entra pela elasticidade (ADR 0119): a volta da peça de malha cede no corpo, e o tamanho que é um pouco menor
+ * que o corpo ainda veste; no tecido plano, não.
  */
 
 export type TipoDoPonto = 'circunferencia' | 'comprimento';
@@ -30,6 +33,46 @@ export interface RegraDoPonto {
 
 /** As regras de caimento do projeto, por ponto de medida (pelo id do ponto). */
 export type RegrasDeCaimento = Readonly<Record<string, RegraDoPonto>>;
+
+// ---- O tecido (ADR 0119)
+
+export type TecidoDaRecomendacao = 'plano' | 'malha' | 'malha-com-elastano' | 'personalizado';
+
+export const TECIDOS_DA_RECOMENDACAO: Readonly<Record<Exclude<TecidoDaRecomendacao, 'personalizado'>, { readonly nome: string; readonly cedePercentual: number }>> = {
+  plano: { nome: 'Tecido plano (não estica)', cedePercentual: 0 },
+  malha: { nome: 'Malha (cede um pouco: 5%)', cedePercentual: 5 },
+  'malha-com-elastano': { nome: 'Malha com elastano (cede 15%)', cedePercentual: 15 },
+};
+
+/** O máximo do personalizado: mais que isso, a peça fica marcando o corpo. */
+export const CEDE_MAXIMO_PERCENTUAL = 40;
+
+/**
+ * O tecido da peça na recomendação: quanto a volta da peça cede no corpo, confortável, sem ficar marcando (% da
+ * medida da peça). É menos que o quanto o tecido estica no teste da mão: a peça não pode vestir esticada no limite.
+ */
+export interface ElasticidadeDaRecomendacao {
+  readonly tecido: TecidoDaRecomendacao;
+  readonly cedePercentual: number;
+}
+
+export const SEM_ELASTICIDADE: ElasticidadeDaRecomendacao = { tecido: 'plano', cedePercentual: 0 };
+
+/** A elasticidade de um dos tecidos da lista (o personalizado fica com o número dado, entre 0 e o máximo). */
+export function elasticidadeDoTecido(tecido: TecidoDaRecomendacao, personalizadoPercentual = 0): ElasticidadeDaRecomendacao {
+  if (tecido === 'personalizado') return { tecido, cedePercentual: Math.min(CEDE_MAXIMO_PERCENTUAL, Math.max(0, personalizadoPercentual)) };
+  return { tecido, cedePercentual: TECIDOS_DA_RECOMENDACAO[tecido].cedePercentual };
+}
+
+/** A elasticidade guardada no projeto, conferida (sem ela, ou quebrada: o tecido plano). */
+export function lerElasticidadeDaRecomendacao(bruto: unknown): ElasticidadeDaRecomendacao {
+  if (typeof bruto !== 'object' || bruto === null) return SEM_ELASTICIDADE;
+  const x = bruto as Record<string, unknown>;
+  const tecido = x.tecido;
+  if (tecido !== 'plano' && tecido !== 'malha' && tecido !== 'malha-com-elastano' && tecido !== 'personalizado') return SEM_ELASTICIDADE;
+  const personalizado = typeof x.cedePercentual === 'number' && Number.isFinite(x.cedePercentual) ? x.cedePercentual : 0;
+  return elasticidadeDoTecido(tecido, personalizado);
+}
 
 const semAcento = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -63,8 +106,12 @@ export interface AvaliacaoDoPonto {
   readonly toleranciaCm: number;
   /** Peça − ideal (positivo: maior que o ideal). */
   readonly diferencaCm: number;
-  /** Na volta: a peça, mesmo no máximo da tolerância, é menor que o corpo. */
+  /** Na volta: quanto a peça cede no corpo pelo tecido (cm; 0 no plano e no comprimento). */
+  readonly cedeCm: number;
+  /** Na volta: a peça, mesmo no máximo da tolerância e cedendo o que o tecido cede, é menor que o corpo. */
   readonly aperta: boolean;
+  /** Na volta: a peça é menor que o corpo, mas veste porque o tecido cede (malha). */
+  readonly esticaParaVestir: boolean;
 }
 
 export interface AvaliacaoDoTamanho {
@@ -90,14 +137,19 @@ export interface Recomendacao {
 const cm = (v: number): string => `${numeroComVirgula(v, 1)} cm`;
 
 /** Avalia cada tamanho da ficha para as medidas do corpo (cm, pelo id do ponto) e recomenda um. */
-export function recomendarTamanho(ficha: Pick<FichaTecnica, 'medidas' | 'tamanhos'>, regras: RegrasDeCaimento, corpoCm: Readonly<Record<string, number>>): Recomendacao {
+export function recomendarTamanho(
+  ficha: Pick<FichaTecnica, 'medidas' | 'tamanhos'>,
+  regras: RegrasDeCaimento,
+  corpoCm: Readonly<Record<string, number>>,
+  elasticidade: ElasticidadeDaRecomendacao = SEM_ELASTICIDADE,
+): Recomendacao {
   const faltando: string[] = [];
   const usados = ficha.medidas.filter((p) => regras[p.id]?.usar);
   if (usados.length === 0) faltando.push('Escolha ao menos um ponto de medida para comparar (por exemplo, o busto ou o quadril).');
   const comCorpo = usados.filter((p) => corpoCm[p.id] !== undefined && corpoCm[p.id]! > 0);
   for (const p of usados) if (!comCorpo.includes(p)) faltando.push(`Falta a medida do corpo: ${p.nome}.`);
   if (ficha.tamanhos.length === 0) faltando.push('A ficha não tem tamanhos (aba Descrição).');
-  const tamanhos = ficha.tamanhos.map((t) => avaliarTamanho(t, comCorpo, regras, corpoCm));
+  const tamanhos = ficha.tamanhos.map((t) => avaliarTamanho(t, comCorpo, regras, corpoCm, elasticidade.cedePercentual / 100));
   const avaliaveis = tamanhos.filter((t) => t.pontos.length === comCorpo.length && t.pontos.length > 0);
   if (comCorpo.length > 0 && avaliaveis.length === 0) faltando.push('Nenhum tamanho tem todas as medidas usadas na tabela da ficha.');
   if (faltando.length > 0 && (comCorpo.length === 0 || avaliaveis.length === 0)) return { tamanhos, recomendado: null, alternativa: null, explicacao: [], faltando };
@@ -106,16 +158,19 @@ export function recomendarTamanho(ficha: Pick<FichaTecnica, 'medidas' | 'tamanho
   const alternativa = melhor.veste ? vizinhoQueTambemServe(ficha.tamanhos, avaliaveis, melhor) : null;
   const explicacao: string[] = [];
   if (!melhor.veste) {
-    const apertados = melhor.pontos.filter((p) => p.aperta).map((p) => `${p.nome} (${cm(p.corpoCm - (p.pecaCm + p.toleranciaCm))} a menos que o corpo)`);
+    const apertados = melhor.pontos.filter((p) => p.aperta).map((p) => `${p.nome} (${cm(p.corpoCm - (p.pecaCm + p.cedeCm + p.toleranciaCm))} a menos que o corpo${p.cedeCm > 0 ? ', mesmo com o tecido cedendo' : ''})`);
     explicacao.push(`Nenhum tamanho veste com a folga pedida: o ${melhor.tamanho} é o que mais se aproxima, mas aperta em ${apertados.join(', ')}.`);
   } else {
     explicacao.push(`O ${melhor.tamanho} é o que mais se aproxima do caimento pedido${alternativa ? `; o ${alternativa} também serve (a pessoa está entre os dois)` : ''}.`);
+  }
+  if (elasticidade.cedePercentual > 0) {
+    explicacao.push(`O tecido cede até ${numeroComVirgula(elasticidade.cedePercentual, 0)}% na volta: o tamanho um pouco menor que o corpo ainda veste (justo, esticado no corpo).`);
   }
   for (const p of melhor.pontos) {
     const comoFica = Math.abs(p.diferencaCm) < 0.05 ? 'na medida certa' : p.diferencaCm > 0 ? `${cm(p.diferencaCm)} a mais que o ideal (mais folgado)` : `${cm(-p.diferencaCm)} a menos que o ideal (mais justo)`;
     explicacao.push(
       p.tipo === 'circunferencia'
-        ? `${p.nome}: corpo ${cm(p.corpoCm)} + folga ${cm(p.idealCm - p.corpoCm)} = ${cm(p.idealCm)}; o ${melhor.tamanho} tem ${cm(p.pecaCm)} (± ${numeroComVirgula(p.toleranciaCm, 1)}): ${comoFica}.`
+        ? `${p.nome}: corpo ${cm(p.corpoCm)} + folga ${cm(p.idealCm - p.corpoCm)} = ${cm(p.idealCm)}; o ${melhor.tamanho} tem ${cm(p.pecaCm)} (± ${numeroComVirgula(p.toleranciaCm, 1)}${p.cedeCm > 0 ? `; cede até ${cm(p.cedeCm)}` : ''}): ${comoFica}${p.esticaParaVestir ? ', e veste esticando' : ''}.`
         : `${p.nome}: o ideal é ${cm(p.idealCm)}; o ${melhor.tamanho} tem ${cm(p.pecaCm)} (± ${numeroComVirgula(p.toleranciaCm, 1)}): ${comoFica}.`,
     );
   }
@@ -136,7 +191,7 @@ function vizinhoQueTambemServe(ordem: readonly string[], avaliaveis: readonly Av
   return vizinhos[0]?.tamanho ?? null;
 }
 
-function avaliarTamanho(tamanho: string, pontos: readonly PontoDeMedida[], regras: RegrasDeCaimento, corpoCm: Readonly<Record<string, number>>): AvaliacaoDoTamanho {
+function avaliarTamanho(tamanho: string, pontos: readonly PontoDeMedida[], regras: RegrasDeCaimento, corpoCm: Readonly<Record<string, number>>, cede: number): AvaliacaoDoTamanho {
   const avaliados: AvaliacaoDoPonto[] = [];
   let nota = 0;
   let desvio = 0;
@@ -148,11 +203,14 @@ function avaliarTamanho(tamanho: string, pontos: readonly PontoDeMedida[], regra
     const corpo = corpoCm[p.id]!;
     const ideal = corpo + regra.folgaCm;
     const diferenca = peca - ideal;
-    const aperta = regra.tipo === 'circunferencia' && peca + p.toleranciaCm < corpo;
+    // A volta da malha cede no corpo: ela aperta só se nem cedendo chega no corpo.
+    const cedeCm = regra.tipo === 'circunferencia' ? peca * cede : 0;
+    const menorQueOCorpo = regra.tipo === 'circunferencia' && peca + p.toleranciaCm < corpo;
+    const aperta = menorQueOCorpo && peca + cedeCm + p.toleranciaCm < corpo;
     nota += regra.peso * (diferenca < 0 ? 3 : 1) * Math.abs(diferenca);
     desvio += regra.peso * Math.abs(diferenca);
     pesos += regra.peso;
-    avaliados.push({ pontoId: p.id, nome: p.nome, tipo: regra.tipo, corpoCm: corpo, idealCm: ideal, pecaCm: peca, toleranciaCm: p.toleranciaCm, diferencaCm: diferenca, aperta });
+    avaliados.push({ pontoId: p.id, nome: p.nome, tipo: regra.tipo, corpoCm: corpo, idealCm: ideal, pecaCm: peca, toleranciaCm: p.toleranciaCm, diferencaCm: diferenca, cedeCm, aperta, esticaParaVestir: menorQueOCorpo && !aperta });
   }
   return { tamanho, pontos: avaliados, nota, desvioCm: pesos > 0 ? desvio / pesos : 0, veste: avaliados.length > 0 && !avaliados.some((p) => p.aperta) };
 }

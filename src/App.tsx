@@ -158,12 +158,12 @@ import {
   piquesComOCodigo,
   textoPerto,
 } from './domain/anotacoes';
-import { definirAutor, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import { definirAutor, definirElasticidadeDaRecomendacao, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
 import { lerImpressaoDigital, type ImpressaoDigital } from './domain/impressaoDigital';
 import { gerarPdfParaImpressaoDigital } from './formats/impressao-exportacao';
 import { lerPainelDeInspiracao, type PainelDeInspiracao as PainelDeInspiracaoDoModelo } from './domain/inspiracao';
 import { lerMontagem3d, type Montagem3D } from './domain/montagem3d';
-import { lerRegrasDeCaimento, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
+import { lerElasticidadeDaRecomendacao, lerRegrasDeCaimento, type ElasticidadeDaRecomendacao, type RegrasDeCaimento } from './domain/recomendacaoDeTamanho';
 import { definirDesenhoDaFicha, encaixeParaConsumo, fichaEditavel, lerFichaTecnica, novaFichaTecnica, ROTULO_DA_SITUACAO_DA_FICHA, type FichaTecnica, type PontoDeMedida } from './domain/fichaTecnica';
 import { DESENHO_VAZIO, type DesenhoTecnico } from './domain/desenhoTecnico';
 import { PainelDoDesenhoTecnico } from './ui/PainelDoDesenhoTecnico';
@@ -1791,6 +1791,18 @@ export default function App(): React.JSX.Element {
     (regras: RegrasDeCaimento) => {
       setProjetoAtual((atual) => {
         const atualizado = definirRegrasDeCaimento(atual, regras, new Date().toISOString());
+        persistirProjeto(atualizado);
+        return atualizado;
+      });
+    },
+    [persistirProjeto],
+  );
+
+  /** O tecido da recomendação (quanto a volta cede no corpo) vai para o projeto e é gravado (ADR 0119). */
+  const guardarElasticidadeDaRecomendacao = useCallback(
+    (elasticidade: ElasticidadeDaRecomendacao) => {
+      setProjetoAtual((atual) => {
+        const atualizado = definirElasticidadeDaRecomendacao(atual, elasticidade, new Date().toISOString());
         persistirProjeto(atualizado);
         return atualizado;
       });
@@ -4827,8 +4839,10 @@ export default function App(): React.JSX.Element {
         <PainelDeRecomendacaoDeTamanho
           ficha={lerFichaTecnica(projetoAtual.fichaTecnica)}
           regrasGuardadas={lerRegrasDeCaimento(projetoAtual.regrasDeCaimento)}
+          elasticidadeGuardada={lerElasticidadeDaRecomendacao(projetoAtual.elasticidadeDaRecomendacao)}
           parteInicial={recomendacaoAberta}
           onGuardarRegras={guardarRegrasDeCaimento}
+          onGuardarElasticidade={guardarElasticidadeDaRecomendacao}
           onAbrirMedidas={() => {
             setRecomendacaoAberta(null);
             abrirFichaTecnica('medidas');

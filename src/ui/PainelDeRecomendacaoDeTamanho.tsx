@@ -3,16 +3,21 @@ import { Sobreposicao } from './Sobreposicao';
 import { CampoDeNumero } from './CampoDeNumero';
 import type { FichaTecnica } from '../domain/fichaTecnica';
 import {
+  CEDE_MAXIMO_PERCENTUAL,
   csvDoGuia,
+  elasticidadeDoTecido,
   guiaDeMedidas,
   htmlDoGuia,
   recomendarTamanho,
   regraSugerida,
   regrasDaFicha,
   ROTULO_DO_TIPO_DO_PONTO,
+  TECIDOS_DA_RECOMENDACAO,
   type AvaliacaoDoPonto,
+  type ElasticidadeDaRecomendacao,
   type RegraDoPonto,
   type RegrasDeCaimento,
+  type TecidoDaRecomendacao,
   type TipoDoPonto,
 } from '../domain/recomendacaoDeTamanho';
 import { numeroComVirgula } from '../core/numeros';
@@ -25,6 +30,7 @@ const comSinal = (v: number): string => (Math.abs(v) < 0.05 ? '0' : `${v > 0 ? '
 /** Como a medida da peça fica perto do ideal: a cor da célula da tabela de comparação. */
 function classeDoPonto(p: AvaliacaoDoPonto): string {
   if (p.aperta) return 'medida-aperta';
+  if (p.esticaParaVestir) return 'medida-estica';
   if (Math.abs(p.diferencaCm) <= p.toleranciaCm) return 'medida-certa';
   return p.diferencaCm < 0 ? 'medida-justa' : 'medida-folgada';
 }
@@ -38,8 +44,11 @@ export function PainelDeRecomendacaoDeTamanho(props: {
   /** A ficha técnica do projeto (`null`: ainda não feita). */
   readonly ficha: FichaTecnica | null;
   readonly regrasGuardadas: RegrasDeCaimento;
+  /** O tecido da peça (quanto a volta cede no corpo), guardado no projeto (ADR 0119). */
+  readonly elasticidadeGuardada: ElasticidadeDaRecomendacao;
   readonly parteInicial?: ParteDaRecomendacao;
   readonly onGuardarRegras: (regras: RegrasDeCaimento) => void;
+  readonly onGuardarElasticidade: (elasticidade: ElasticidadeDaRecomendacao) => void;
   /** Abre a ficha técnica na tabela de medidas. */
   readonly onAbrirMedidas: () => void;
   readonly onSalvarTexto: (sugestaoDeNome: string, conteudo: string) => Promise<string | null>;
@@ -51,6 +60,11 @@ export function PainelDeRecomendacaoDeTamanho(props: {
   const [parte, setParte] = useState<ParteDaRecomendacao>(props.parteInicial ?? 'recomendar');
   const [corpo, setCorpo] = useState<Record<string, number>>({});
   const [salvoEm, setSalvoEm] = useState<string | null>(null);
+  const [elasticidade, setElasticidade] = useState(props.elasticidadeGuardada);
+  const mudarElasticidade = (e: ElasticidadeDaRecomendacao): void => {
+    setElasticidade(e);
+    props.onGuardarElasticidade(e);
+  };
 
   // A regra mudada vai para o projeto meio segundo depois da última mudança (e ao fechar).
   const { onGuardarRegras } = props;
@@ -98,8 +112,10 @@ export function PainelDeRecomendacaoDeTamanho(props: {
                 </button>
               ))}
             </div>
-            {parte === 'recomendar' && <ParteRecomendar ficha={ficha} regras={regras} corpo={corpo} setCorpo={setCorpo} onVerCaimento={() => setParte('caimento')} />}
-            {parte === 'caimento' && <ParteCaimento ficha={ficha} regras={regras} setRegras={setRegras} />}
+            {parte === 'recomendar' && (
+              <ParteRecomendar ficha={ficha} regras={regras} elasticidade={elasticidade} corpo={corpo} setCorpo={setCorpo} onVerCaimento={() => setParte('caimento')} />
+            )}
+            {parte === 'caimento' && <ParteCaimento ficha={ficha} regras={regras} setRegras={setRegras} elasticidade={elasticidade} onElasticidade={mudarElasticidade} />}
             {parte === 'guia' && (
               <ParteGuia
                 ficha={ficha}
@@ -123,14 +139,15 @@ export function PainelDeRecomendacaoDeTamanho(props: {
 function ParteRecomendar(props: {
   readonly ficha: FichaTecnica;
   readonly regras: RegrasDeCaimento;
+  readonly elasticidade: ElasticidadeDaRecomendacao;
   readonly corpo: Readonly<Record<string, number>>;
   readonly setCorpo: (c: Record<string, number>) => void;
   readonly onVerCaimento: () => void;
 }): React.JSX.Element {
-  const { ficha, regras, corpo } = props;
+  const { ficha, regras, corpo, elasticidade } = props;
   const usados = ficha.medidas.filter((p) => regras[p.id]?.usar);
   const preenchidos = usados.filter((p) => (corpo[p.id] ?? 0) > 0);
-  const r = preenchidos.length > 0 ? recomendarTamanho(ficha, regras, corpo) : null;
+  const r = preenchidos.length > 0 ? recomendarTamanho(ficha, regras, corpo, elasticidade) : null;
   const avaliacoes = new Map((r?.tamanhos ?? []).map((t) => [t.tamanho, t]));
   const classeDoTamanho = (t: string): string => {
     if (!r) return 'tamanho-neutro';
@@ -174,6 +191,12 @@ function ParteRecomendar(props: {
             </label>
           ))
         )}
+        <p className={`tecido-da-recomendacao${elasticidade.cedePercentual > 0 ? ' tecido-que-cede' : ''}`}>
+          Tecido: <strong>{nomeDoTecido(elasticidade)}</strong>{' '}
+          <button type="button" onClick={props.onVerCaimento}>
+            Mudar
+          </button>
+        </p>
         <button type="button" disabled={Object.keys(corpo).length === 0} onClick={() => props.setCorpo({})}>
           Limpar as medidas
         </button>
@@ -266,7 +289,8 @@ function ParteRecomendar(props: {
               <span className="medida-certa">na medida (dentro da tolerância)</span>
               <span className="medida-folgada">mais folgado</span>
               <span className="medida-justa">mais justo</span>
-              <span className="medida-aperta">aperta (menor que o corpo)</span>
+              {elasticidade.cedePercentual > 0 && <span className="medida-estica">veste esticando (o tecido cede)</span>}
+              <span className="medida-aperta">{elasticidade.cedePercentual > 0 ? 'aperta (nem cedendo chega no corpo)' : 'aperta (menor que o corpo)'}</span>
             </p>
             <ul className="explicacao-da-recomendacao">
               {r.explicacao.slice(1).map((l) => (
@@ -282,11 +306,58 @@ function ParteRecomendar(props: {
 
 // ---- Caimento
 
-function ParteCaimento(props: { readonly ficha: FichaTecnica; readonly regras: RegrasDeCaimento; readonly setRegras: (r: RegrasDeCaimento) => void }): React.JSX.Element {
-  const { ficha, regras } = props;
+/** O nome do tecido escolhido, com quanto ele cede. */
+function nomeDoTecido(e: ElasticidadeDaRecomendacao): string {
+  return e.tecido === 'personalizado' ? `personalizado (cede ${numeroComVirgula(e.cedePercentual, 0)}%)` : TECIDOS_DA_RECOMENDACAO[e.tecido].nome;
+}
+
+function ParteCaimento(props: {
+  readonly ficha: FichaTecnica;
+  readonly regras: RegrasDeCaimento;
+  readonly setRegras: (r: RegrasDeCaimento) => void;
+  readonly elasticidade: ElasticidadeDaRecomendacao;
+  readonly onElasticidade: (e: ElasticidadeDaRecomendacao) => void;
+}): React.JSX.Element {
+  const { ficha, regras, elasticidade } = props;
   const mudar = (id: string, regra: RegraDoPonto): void => props.setRegras({ ...regras, [id]: regra });
   return (
     <section aria-label="Caimento">
+      <fieldset className="tecido-do-caimento">
+        <legend>O tecido da peça</legend>
+        <label>
+          Tecido
+          <select
+            value={elasticidade.tecido}
+            onChange={(e) => {
+              const tecido = e.target.value as TecidoDaRecomendacao;
+              props.onElasticidade(elasticidadeDoTecido(tecido, elasticidade.cedePercentual));
+            }}
+          >
+            {(Object.keys(TECIDOS_DA_RECOMENDACAO) as Exclude<TecidoDaRecomendacao, 'personalizado'>[]).map((t) => (
+              <option key={t} value={t}>
+                {TECIDOS_DA_RECOMENDACAO[t].nome}
+              </option>
+            ))}
+            <option value="personalizado">Personalizado</option>
+          </select>
+        </label>
+        {elasticidade.tecido === 'personalizado' && (
+          <label>
+            Quanto a volta cede no corpo (%)
+            <CampoDeNumero
+              rotulo="Quanto a volta cede no corpo (%)"
+              valor={elasticidade.cedePercentual}
+              casas={0}
+              className="campo-curto"
+              onMudar={(v) => props.onElasticidade(elasticidadeDoTecido('personalizado', v ?? 0))}
+            />
+          </label>
+        )}
+        <p className="nota-do-formulario">
+          Na malha, a volta da peça (o busto, o quadril) cede no corpo: o tamanho um pouco menor que o corpo ainda veste, justo. É menos que o quanto o tecido estica na mão (até{' '}
+          {CEDE_MAXIMO_PERCENTUAL}%): a peça não pode vestir esticada no limite. Os comprimentos não cedem.
+        </p>
+      </fieldset>
       <p className="nota-do-formulario">
         A folga é quanto a peça pronta deve ter a mais que o corpo (o caimento do modelo: justo, regular, amplo). Nos comprimentos, a medida da peça deve bater com a da pessoa. O peso diz o
         que manda na escolha (o busto numa camisa, o quadril numa calça).

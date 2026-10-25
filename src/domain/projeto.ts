@@ -5,7 +5,7 @@ import type { ImagemDoModelo } from './imagens';
 import type { PlanoDeCorte } from './planoDeCorte';
 import type { PlanoGuardado } from './planejamento';
 import type { FichaTecnica } from './fichaTecnica';
-import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
+import type { ElasticidadeDaRecomendacao, RegrasDeCaimento } from './recomendacaoDeTamanho';
 import type { Montagem3D } from './montagem3d';
 import type { PainelDeInspiracao } from './inspiracao';
 import type { ImpressaoDigital } from './impressaoDigital';
@@ -105,6 +105,8 @@ export interface Projeto {
   readonly fichaTecnica?: FichaTecnica;
   /** As regras de caimento da recomendação de tamanho (a folga de cada ponto de medida, ADR 0110). */
   readonly regrasDeCaimento?: RegrasDeCaimento;
+  /** O tecido da peça na recomendação de tamanho: quanto a volta cede no corpo (ADR 0119). */
+  readonly elasticidadeDaRecomendacao?: ElasticidadeDaRecomendacao;
   /** O provador 3D: o manequim, onde vai cada peça, as costuras, o tecido e as cores (ADR 0111). */
   readonly montagem3d?: Montagem3D;
   /** O painel de inspiração do modelo (as imagens, as notas, o conceito, a paleta; os rascunhos da IA), ADR 0112. */
@@ -224,6 +226,11 @@ export function definirMontagem3d(projeto: Projeto, montagem: Montagem3D, agoraI
 /** O projeto com as regras de caimento da recomendação de tamanho. */
 export function definirRegrasDeCaimento(projeto: Projeto, regras: RegrasDeCaimento, agoraIso: string): Projeto {
   return { ...projeto, regrasDeCaimento: regras, modificadoEmIso: agoraIso };
+}
+
+/** O projeto com o tecido da recomendação de tamanho (ADR 0119). */
+export function definirElasticidadeDaRecomendacao(projeto: Projeto, elasticidade: ElasticidadeDaRecomendacao, agoraIso: string): Projeto {
+  return { ...projeto, elasticidadeDaRecomendacao: elasticidade, modificadoEmIso: agoraIso };
 }
 
 /** O projeto com a ficha técnica (nova ou mudada). */

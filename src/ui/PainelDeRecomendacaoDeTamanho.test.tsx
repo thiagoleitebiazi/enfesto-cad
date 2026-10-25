@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { novaFichaTecnica, type FichaTecnica } from '../domain/fichaTecnica';
-import type { RegrasDeCaimento } from '../domain/recomendacaoDeTamanho';
+import { SEM_ELASTICIDADE, type ElasticidadeDaRecomendacao, type RegrasDeCaimento } from '../domain/recomendacaoDeTamanho';
 import { PainelDeRecomendacaoDeTamanho, type ParteDaRecomendacao } from './PainelDeRecomendacaoDeTamanho';
 
 afterEach(() => cleanup());
@@ -19,8 +19,9 @@ const FICHA: FichaTecnica = {
   ],
 };
 
-function abrir(opcoes: { readonly ficha?: FichaTecnica | null; readonly parte?: ParteDaRecomendacao; readonly regras?: RegrasDeCaimento } = {}) {
+function abrir(opcoes: { readonly ficha?: FichaTecnica | null; readonly parte?: ParteDaRecomendacao; readonly regras?: RegrasDeCaimento; readonly elasticidade?: ElasticidadeDaRecomendacao } = {}) {
   const onGuardarRegras = vi.fn();
+  const onGuardarElasticidade = vi.fn();
   const onAbrirMedidas = vi.fn();
   const onSalvarTexto = vi.fn(async (nome: string, conteudo: string) => (conteudo === '' ? null : `C:\\Downloads\\${nome}`));
   const onFechar = vi.fn();
@@ -28,14 +29,16 @@ function abrir(opcoes: { readonly ficha?: FichaTecnica | null; readonly parte?: 
     <PainelDeRecomendacaoDeTamanho
       ficha={opcoes.ficha === undefined ? FICHA : opcoes.ficha}
       regrasGuardadas={opcoes.regras ?? {}}
+      elasticidadeGuardada={opcoes.elasticidade ?? SEM_ELASTICIDADE}
       parteInicial={opcoes.parte ?? 'recomendar'}
       onGuardarRegras={onGuardarRegras}
+      onGuardarElasticidade={onGuardarElasticidade}
       onAbrirMedidas={onAbrirMedidas}
       onSalvarTexto={onSalvarTexto}
       onFechar={onFechar}
     />,
   );
-  return { onGuardarRegras, onAbrirMedidas, onSalvarTexto, onFechar };
+  return { onGuardarRegras, onGuardarElasticidade, onAbrirMedidas, onSalvarTexto, onFechar };
 }
 
 const digitar = (rotulo: string, valor: string) => fireEvent.change(screen.getByLabelText(rotulo), { target: { value: valor } });
@@ -131,5 +134,31 @@ describe('PainelDeRecomendacaoDeTamanho', () => {
     await waitFor(() => expect(onSalvarTexto).toHaveBeenCalledTimes(2));
     expect(onSalvarTexto.mock.calls[1]![0]).toBe('guia-de-medidas-CAM-01.html');
     expect(onSalvarTexto.mock.calls[1]![1]).toContain('<title>Guia de medidas — Camisa</title>');
+  });
+});
+
+describe('PainelDeRecomendacaoDeTamanho — o tecido que cede (ADR 0119)', () => {
+  it('no plano, o corpo maior que o GG não veste; escolhida a malha com elastano no Caimento, o GG veste esticando (roxo)', () => {
+    const { onGuardarElasticidade } = abrir();
+    digitar('Corpo: Busto', '113');
+    digitar('Corpo: Quadril', '115');
+    expect(screen.getByText('O mais próximo (aperta)')).toBeInTheDocument();
+    expect(screen.getByText(/Tecido plano \(não estica\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Mudar' }));
+    fireEvent.change(screen.getByLabelText('Tecido'), { target: { value: 'malha-com-elastano' } });
+    expect(onGuardarElasticidade).toHaveBeenLastCalledWith({ tecido: 'malha-com-elastano', cedePercentual: 15 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Recomendar' }));
+    expect(screen.getByText('Tamanho recomendado')).toBeInTheDocument();
+    expect(screen.getByLabelText('Tamanho recomendado: GG')).toBeInTheDocument();
+    expect(document.querySelectorAll('.tabela-da-comparacao td.medida-estica').length).toBeGreaterThan(0);
+    expect(screen.getByText('veste esticando (o tecido cede)')).toBeInTheDocument();
+  });
+
+  it('o personalizado: o número fica entre 0 e 40%', () => {
+    const { onGuardarElasticidade } = abrir({ parte: 'caimento', elasticidade: { tecido: 'personalizado', cedePercentual: 10 } });
+    const campo = screen.getByLabelText('Quanto a volta cede no corpo (%)');
+    fireEvent.change(campo, { target: { value: '70' } });
+    fireEvent.blur(campo);
+    expect(onGuardarElasticidade).toHaveBeenLastCalledWith({ tecido: 'personalizado', cedePercentual: 40 });
   });
 });

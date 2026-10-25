@@ -132,7 +132,7 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| Recomendação de tamanho pelas medidas do corpo e a tabela de medidas, com a explicação | ✅ (Modelo › Loja: a folga de cada ponto, o "entre dois tamanhos", o guia de medidas em CSV e HTML, ADR 0110) | a loja virtual é S |
+| Recomendação de tamanho pelas medidas do corpo e a tabela de medidas, com a explicação | ✅ (Modelo › Loja: a folga de cada ponto, o "entre dois tamanhos", o guia de medidas em CSV e HTML, ADR 0110; o tecido que cede — malha, malha com elastano, ADR 0119) | a loja virtual é S |
 | Provador virtual, busca visual, combinações de looks | ⬜ | S (loja virtual e serviços) |
 
 ## 10. Integrações
