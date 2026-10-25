@@ -353,7 +353,12 @@ function LinhaDoTrabalho(props: {
                   Abrir o projeto
                 </button>
               )}
-              <button type="button" className={props.aberto ? 'botao-primario' : undefined} onClick={props.onAplicar}>
+              <button
+                type="button"
+                className={props.aberto ? 'botao-primario' : undefined}
+                title={props.aberto ? 'Põe o encaixe na mesa. As peças que mudaram depois dele entram como estão agora, no lugar das de antes (Ctrl+Z desfaz).' : undefined}
+                onClick={props.onAplicar}
+              >
                 {props.aberto ? 'Aplicar no projeto' : 'Aplicar no aberto…'}
               </button>
             </>
