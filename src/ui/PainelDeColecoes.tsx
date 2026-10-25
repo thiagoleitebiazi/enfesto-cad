@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { FolhaDoDesenho } from './FolhaDoDesenho';
 import type { Projeto } from '../domain/projeto';
@@ -8,6 +8,7 @@ import {
   adicionarComentario,
   adicionarTarefa,
   andamentoDaColecao,
+  aplicarMudancaPeloQuadro,
   aprovarPiloto,
   avancarEtapa,
   cancelarModelo,
@@ -18,6 +19,8 @@ import {
   ETAPAS,
   linhaDoTempo,
   marcarTarefa,
+  MUDANCA_PEDE_COMENTARIO,
+  mudancaPeloQuadro,
   novaColecao,
   novoModelo,
   pedirAlteracaoDaPiloto,
@@ -31,6 +34,7 @@ import {
   revisaoDaPiloto,
   ROTULO_DA_ESTACAO,
   ROTULO_DA_ETAPA,
+  ROTULO_DA_MUDANCA_PELO_QUADRO,
   salvarColecao,
   salvarModelo,
   voltarEtapa,
@@ -39,6 +43,7 @@ import {
   type Estacao,
   type EtapaDoModelo,
   type ModeloDaColecao,
+  type MudancaPeloQuadro,
   type PendenciaDePrazo,
 } from '../domain/colecoes';
 import { numeroComVirgula } from '../core/numeros';
@@ -260,16 +265,26 @@ export function PainelDeColecoes(props: {
               )}
               {parte === 'etapas' && (
                 <ParteEtapas
+                  key={colecao.id}
                   colecao={colecao}
                   hoje={props.hoje}
                   travado={props.somenteLeitura}
                   onAbrirModelo={setModeloAbertoId}
-                  onAvancar={(m) =>
-                    void mudarColecao(
-                      (c) => salvarModelo(c, avancarEtapa(m, { responsavel: props.responsavelSugerido || colecao.responsavel, comentario: '', agoraIso: props.agoraIso() })),
-                      `“${m.nome}” foi para ${ROTULO_DA_ETAPA[ETAPAS[ETAPAS.indexOf(m.etapa) + 1]!].toLowerCase()}.`,
-                    )
-                  }
+                  quemSugerido={props.responsavelSugerido || colecao.responsavel}
+                  onMudar={(m, mudanca, comentario, quem) => {
+                    let para: EtapaDoModelo = m.etapa;
+                    return mudarColecao(
+                      (c) => {
+                        const mudado = aplicarMudancaPeloQuadro(m, mudanca, { responsavel: quem, comentario, agoraIso: props.agoraIso() });
+                        para = mudado.etapa;
+                        return salvarModelo(c, mudado);
+                      },
+                      null,
+                    ).then((ok) => {
+                      if (ok) setMensagem(`“${m.nome}” foi para ${ROTULO_DA_ETAPA[para].toLowerCase()}.`);
+                      return ok;
+                    });
+                  }}
                 />
               )}
               {parte === 'tarefas' && (
@@ -483,44 +498,190 @@ function ParteMix(props: {
 
 // ---- As etapas (o quadro)
 
-function ParteEtapas(props: { readonly colecao: Colecao; readonly hoje: string; readonly travado: boolean; readonly onAbrirModelo: (id: string) => void; readonly onAvancar: (m: ModeloDaColecao) => void }): React.JSX.Element {
+/** O cartão sendo arrastado no quadro (ADR 0118): onde o mouse apertou, quanto andou e a coluna debaixo dele. */
+interface ArrastoDoCartao {
+  readonly modelo: ModeloDaColecao;
+  readonly x0: number;
+  readonly y0: number;
+  readonly dx: number;
+  readonly dy: number;
+  /** Andou mais de 5 px: é arrasto, não clique. */
+  readonly andou: boolean;
+  readonly sobre: EtapaDoModelo | null;
+}
+
+/** A mudança que pede o motivo (ou, na aprovação da piloto, a confirmação) antes de valer. */
+interface PedidoDeMudanca {
+  readonly modelo: ModeloDaColecao;
+  readonly mudanca: MudancaPeloQuadro;
+  readonly para: EtapaDoModelo;
+}
+
+const PERGUNTA_DA_MUDANCA: Readonly<Record<MudancaPeloQuadro, string>> = {
+  avancar: 'Comentário (opcional)',
+  voltar: 'Por que a etapa volta',
+  aprovar: 'Comentário da aprovação (opcional)',
+  'pedir-alteracao': 'O que alterar na piloto',
+  cancelar: 'Por que o modelo sai da coleção',
+  reabrir: 'Comentário (opcional)',
+};
+
+/**
+ * O quadro das etapas: uma coluna por etapa. O cartão se arrasta de uma coluna para outra pelas regras do fluxo
+ * (ADR 0118): enquanto arrasta, as colunas que valem ficam verdes e dizem o que acontece; as outras, apagadas. Voltar,
+ * cancelar e pedir alteração perguntam o motivo; aprovar a piloto pede a confirmação.
+ */
+function ParteEtapas(props: {
+  readonly colecao: Colecao;
+  readonly hoje: string;
+  readonly travado: boolean;
+  readonly onAbrirModelo: (id: string) => void;
+  /** Quem muda as etapas, já sabido (o autor do programa ou o responsável da coleção); vazio: a janela pergunta. */
+  readonly quemSugerido: string;
+  readonly onMudar: (m: ModeloDaColecao, mudanca: MudancaPeloQuadro, comentario: string, quem: string) => Promise<boolean>;
+}): React.JSX.Element {
   const colunas: EtapaDoModelo[] = [...ETAPAS, 'cancelado'];
+  const [arrasto, setArrasto] = useState<ArrastoDoCartao | null>(null);
+  const [pedido, setPedido] = useState<PedidoDeMudanca | null>(null);
+  const [comentario, setComentario] = useState('');
+  const [quem, setQuem] = useState(props.quemSugerido);
+  // Depois de um arrasto, o clique que o navegador manda no fim não abre o modelo.
+  const acabouDeArrastarRef = useRef(false);
+
+  /** A mudança vale na hora; a que pede o motivo (ou a confirmação, ou sem saber quem muda) abre o pedido. */
+  const pedir = (m: ModeloDaColecao, mudanca: MudancaPeloQuadro, para: EtapaDoModelo): void => {
+    if (MUDANCA_PEDE_COMENTARIO[mudanca] || mudanca === 'aprovar' || quem.trim() === '') {
+      setComentario('');
+      setPedido({ modelo: m, mudanca, para });
+    } else void props.onMudar(m, mudanca, '', quem);
+  };
+
+  const soltar = (): void => {
+    const a = arrasto;
+    setArrasto(null);
+    if (!a?.andou) return;
+    acabouDeArrastarRef.current = true;
+    const para = a.sobre;
+    const mudanca = para ? mudancaPeloQuadro(a.modelo, para) : null;
+    if (para && mudanca) pedir(a.modelo, mudanca, para);
+  };
+
   return (
-    <section aria-label="Etapas" className="quadro-das-etapas">
-      {colunas.map((etapa) => {
-        const daEtapa = props.colecao.modelos.filter((m) => m.etapa === etapa);
-        return (
-          <div key={etapa} className={`coluna-da-etapa etapa-${etapa}`} aria-label={`Etapa ${ROTULO_DA_ETAPA[etapa]}`}>
-            <h4>
-              {ROTULO_DA_ETAPA[etapa]} <span>({daEtapa.length})</span>
-            </h4>
-            {daEtapa.map((m) => {
-              const atrasado = m.prazo !== '' && m.prazo < props.hoje && etapa !== 'producao' && etapa !== 'cancelado';
-              return (
-                <div key={m.id} className="cartao-da-etapa">
-                  <button type="button" className="nome-do-cartao" onClick={() => props.onAbrirModelo(m.id)}>
-                    {m.nome}
-                  </button>
-                  <small className={atrasado ? 'texto-de-erro' : undefined}>
-                    {m.responsavel || '—'} · {m.prazo ? diaEscrito(m.prazo) : 'sem prazo'}
-                  </small>
-                  {etapa !== 'producao' && etapa !== 'cancelado' && etapa !== 'aprovacao' && (
-                    <button type="button" disabled={props.travado} onClick={() => props.onAvancar(m)} aria-label={`Avançar ${m.nome}`}>
-                      Avançar →
+    <>
+      <p className="quem-muda-as-etapas">
+        <label>
+          Quem muda as etapas
+          <input value={quem} disabled={props.travado} placeholder="O nome de quem decide" onChange={(ev) => setQuem(ev.target.value)} />
+        </label>
+        <span className="nota-do-formulario">Arraste o cartão para a etapa seguinte, para a de antes ou para Cancelado.</span>
+      </p>
+      {pedido && (
+        <form
+          className="pedido-de-mudanca"
+          aria-label="Mudança de etapa"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            void props.onMudar(pedido.modelo, pedido.mudanca, comentario, quem).then((ok) => ok && setPedido(null));
+          }}
+        >
+          <p>
+            <strong>“{pedido.modelo.nome}”</strong>: {ROTULO_DA_ETAPA[pedido.modelo.etapa]} → {ROTULO_DA_ETAPA[pedido.para]}
+          </p>
+          <label>
+            Quem decide
+            <input value={quem} autoFocus={quem.trim() === ''} onChange={(ev) => setQuem(ev.target.value)} />
+          </label>
+          <label>
+            {PERGUNTA_DA_MUDANCA[pedido.mudanca]}
+            <textarea rows={2} value={comentario} autoFocus={quem.trim() !== ''} onChange={(ev) => setComentario(ev.target.value)} />
+          </label>
+          <p className="acoes-da-fila">
+            <button type="submit" className="botao-primario" disabled={quem.trim() === '' || (MUDANCA_PEDE_COMENTARIO[pedido.mudanca] && comentario.trim() === '')}>
+              {pedido.mudanca === 'aprovar' ? 'Aprovar a piloto' : 'Confirmar'}
+            </button>
+            <button type="button" onClick={() => setPedido(null)}>
+              Desistir
+            </button>
+          </p>
+        </form>
+      )}
+      <section
+        aria-label="Etapas"
+        className={`quadro-das-etapas${arrasto?.andou ? ' arrastando-cartao' : ''}`}
+        onPointerMove={(ev) => {
+          if (!arrasto) return;
+          const dx = ev.clientX - arrasto.x0;
+          const dy = ev.clientY - arrasto.y0;
+          // O cartão arrastado não pega o mouse: o que está debaixo dele é a coluna.
+          const coluna = (ev.target as Element).closest('[data-etapa]');
+          setArrasto({ ...arrasto, dx, dy, andou: arrasto.andou || Math.hypot(dx, dy) > 5, sobre: coluna ? (coluna.getAttribute('data-etapa') as EtapaDoModelo) : null });
+        }}
+        onPointerUp={soltar}
+        onPointerLeave={() => setArrasto(null)}
+        onPointerCancel={() => setArrasto(null)}
+      >
+        {colunas.map((etapa) => {
+          const daEtapa = props.colecao.modelos.filter((m) => m.etapa === etapa);
+          const mudancaAqui = arrasto?.andou ? mudancaPeloQuadro(arrasto.modelo, etapa) : null;
+          const destino = !arrasto?.andou || etapa === arrasto.modelo.etapa ? '' : !mudancaAqui ? ' destino-invalido' : arrasto.sobre === etapa ? ' destino-sob-o-cartao' : ' destino-valido';
+          return (
+            <div key={etapa} data-etapa={etapa} className={`coluna-da-etapa etapa-${etapa}${destino}`} aria-label={`Etapa ${ROTULO_DA_ETAPA[etapa]}`}>
+              <h4>
+                {ROTULO_DA_ETAPA[etapa]} <span>({daEtapa.length})</span>
+              </h4>
+              {mudancaAqui && <p className="o-que-o-arrasto-faz">{ROTULO_DA_MUDANCA_PELO_QUADRO[mudancaAqui]}</p>}
+              {daEtapa.map((m) => {
+                const atrasado = m.prazo !== '' && m.prazo < props.hoje && etapa !== 'producao' && etapa !== 'cancelado';
+                const arrastado = arrasto?.andou === true && arrasto.modelo.id === m.id;
+                return (
+                  <div
+                    key={m.id}
+                    className={`cartao-da-etapa${props.travado ? '' : ' cartao-arrastavel'}${arrastado ? ' cartao-arrastado' : ''}`}
+                    style={arrastado ? { transform: `translate(${arrasto.dx}px, ${arrasto.dy}px) rotate(2deg)` } : undefined}
+                    title={props.travado ? undefined : 'Arraste para outra etapa'}
+                    onPointerDown={(ev) => {
+                      if (props.travado || ev.button !== 0) return;
+                      // Os botões de ação clicam; o nome e o resto do cartão também arrastam.
+                      const alvo = ev.target as Element;
+                      if (alvo.closest('button') && !alvo.closest('.nome-do-cartao')) return;
+                      acabouDeArrastarRef.current = false;
+                      setArrasto({ modelo: m, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, andou: false, sobre: null });
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="nome-do-cartao"
+                      onClick={() => {
+                        if (acabouDeArrastarRef.current) {
+                          acabouDeArrastarRef.current = false;
+                          return;
+                        }
+                        props.onAbrirModelo(m.id);
+                      }}
+                    >
+                      {m.nome}
                     </button>
-                  )}
-                  {etapa === 'aprovacao' && (
-                    <button type="button" onClick={() => props.onAbrirModelo(m.id)}>
-                      Aprovar a piloto…
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </section>
+                    <small className={atrasado ? 'texto-de-erro' : undefined}>
+                      {m.responsavel || '—'} · {m.prazo ? diaEscrito(m.prazo) : 'sem prazo'}
+                    </small>
+                    {etapa !== 'producao' && etapa !== 'cancelado' && etapa !== 'aprovacao' && (
+                      <button type="button" disabled={props.travado} onClick={() => pedir(m, 'avancar', ETAPAS[ETAPAS.indexOf(etapa) + 1]!)} aria-label={`Avançar ${m.nome}`}>
+                        Avançar →
+                      </button>
+                    )}
+                    {etapa === 'aprovacao' && (
+                      <button type="button" onClick={() => props.onAbrirModelo(m.id)}>
+                        Aprovar a piloto…
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </section>
+    </>
   );
 }
 

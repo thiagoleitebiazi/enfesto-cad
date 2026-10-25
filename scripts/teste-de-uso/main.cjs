@@ -707,6 +707,51 @@ async function principal() {
   const croquiNoCartao = Number(await js(`document.querySelectorAll('[role=dialog] .cartao-do-modelo svg').length`));
   conferir('o mix mostra o cartão com o croqui, a categoria e a etapa', croquiNoCartao === 1 && cartao.includes('Camiseta') && cartao.includes('Criação'), cartao.slice(0, 120));
   await foto('25-mix-da-colecao.png');
+
+  // 10b. O cartão arrastado no quadro das etapas (ADR 0118), com o mouse de verdade (pelo sistema): da Criação para a
+  // Modelagem; no meio do arrasto, a Modelagem fica verde e diz "Avançar", a Produção fica apagada.
+  await parteDaJanela('Etapas');
+  await espera(300);
+  const centroDe = async (seletor) =>
+    JSON.parse(await js(`(() => { const r = document.querySelector(${JSON.stringify(seletor)}).getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + Math.min(r.height / 2, 60)) }); })()`));
+  const doCartao = await centroDe('[data-etapa="criacao"] .cartao-da-etapa .nome-do-cartao');
+  const daModelagem = await centroDe('[data-etapa="modelagem"]');
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: doCartao.x, y: doCartao.y, button: 'left', clickCount: 1 });
+  for (let k = 1; k <= 8; k++) {
+    win.webContents.sendInputEvent({
+      type: 'mouseMove',
+      x: Math.round(doCartao.x + ((daModelagem.x - doCartao.x) * k) / 8),
+      y: Math.round(doCartao.y + ((daModelagem.y - doCartao.y) * k) / 8),
+      button: 'left',
+      modifiers: ['leftButtonDown'],
+    });
+    await espera(60);
+  }
+  await espera(200);
+  const noMeioDoArrasto = JSON.parse(
+    await js(
+      `JSON.stringify({ modelagem: document.querySelector('[data-etapa="modelagem"]').className, producao: document.querySelector('[data-etapa="producao"]').className, rotulo: ((document.querySelector('[data-etapa="modelagem"] .o-que-o-arrasto-faz') || {}).textContent || '') })`,
+    ),
+  );
+  await foto('25b-arrastando-o-cartao.png');
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: daModelagem.x, y: daModelagem.y, button: 'left', clickCount: 1 });
+  await espera(500);
+  // O teste não tem o autor nem o responsável da coleção: a janela pergunta quem decide, em vez de falhar.
+  const pedidoDeQuem = await js(`((document.querySelector('[role=dialog] .pedido-de-mudanca') || {}).textContent || '')`);
+  await foto('25c-quem-decide.png');
+  await noCampo('Quem decide', 'Pessoa do teste');
+  await botaoNaJanela('Confirmar');
+  await espera(800);
+  const naModelagem = await js(`((document.querySelector('[data-etapa="modelagem"] .cartao-da-etapa') || {}).textContent || '')`);
+  conferir(
+    'arrastar o cartão com o mouse: a Modelagem verde com "Avançar", a Produção apagada; solto, pergunta quem decide e vai para a Modelagem',
+    noMeioDoArrasto.modelagem.includes('destino-sob-o-cartao') &&
+      noMeioDoArrasto.rotulo === 'Avançar' &&
+      noMeioDoArrasto.producao.includes('destino-invalido') &&
+      pedidoDeQuem.includes('Criação → Modelagem') &&
+      naModelagem.startsWith('Modelo 1'),
+    `${JSON.stringify(noMeioDoArrasto)} / ${pedidoDeQuem.slice(0, 60)} / ${naModelagem.slice(0, 60)}`,
+  );
   await fecharJanela();
   await espera(500);
   const prazosNaBarra = await js(`((document.querySelector('.barra-de-status .indicador-de-prazos') || {}).textContent || '')`);

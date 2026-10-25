@@ -28,7 +28,7 @@ inventa.
 |---|---|---|
 | Coleções (estação, ano, datas), vários projetos dentro de uma estrutura | ✅ (ADR 0108) | — |
 | Mix de produtos num quadro (cores, formas, tecidos, categorias) | ✅ (cartões com o croqui, resumo e filtros, ADR 0108) | — |
-| Fluxo por etapas (criação → modelagem → piloto → aprovação → produção), responsáveis e prazos por modelo | ✅ (com o quadro das etapas, ADR 0108) | — |
+| Fluxo por etapas (criação → modelagem → piloto → aprovação → produção), responsáveis e prazos por modelo | ✅ (com o quadro das etapas, ADR 0108; o cartão arrastado entre as colunas pelas regras do fluxo, ADR 0118) | — |
 | Tarefas e pendências por pessoa; avisos de prazo | ✅ (avisos dentro do programa, na barra de status, ADR 0108) | S (e-mail/celular) |
 | Aprovação da peça-piloto (aprovar / pedir alteração), comentários e revisões com histórico | ✅ (ADR 0108; e a aprovação da ficha, ADR 0105) | — |
 | Painéis de andamento e atrasos; linha do tempo do lançamento | ✅ (ADR 0108) | — |

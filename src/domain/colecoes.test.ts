@@ -3,6 +3,7 @@ import {
   adicionarComentario,
   adicionarTarefa,
   andamentoDaColecao,
+  aplicarMudancaPeloQuadro,
   aprovarPiloto,
   avancarEtapa,
   avisoDePrazos,
@@ -16,6 +17,8 @@ import {
   lerColecoes,
   linhaDoTempo,
   marcarTarefa,
+  MUDANCA_PEDE_COMENTARIO,
+  mudancaPeloQuadro,
   novaColecao,
   novoModelo,
   pedirAlteracaoDaPiloto,
@@ -187,5 +190,38 @@ describe('os relatórios e o arquivo', () => {
     expect(lida.arquivo.colecoes[0]!.modelos).toHaveLength(3);
     expect(lerColecoes(null).arquivo).toEqual(COLECOES_VAZIAS);
     expect(lerColecoes({ versaoDoFormato: 7, colecoes: [] }).maisNovo).toBe(true);
+  });
+});
+
+describe('o cartão arrastado no quadro das etapas (ADR 0118)', () => {
+  it('a coluna seguinte avança, a de antes volta, o cancelado cancela; pular etapa não vale', () => {
+    const m = novoModelo({ nome: 'Camiseta', etapa: 'modelagem' }, 'm');
+    expect(mudancaPeloQuadro(m, 'piloto')).toBe('avancar');
+    expect(mudancaPeloQuadro(m, 'criacao')).toBe('voltar');
+    expect(mudancaPeloQuadro(m, 'cancelado')).toBe('cancelar');
+    expect(mudancaPeloQuadro(m, 'aprovacao')).toBeNull();
+    expect(mudancaPeloQuadro(m, 'producao')).toBeNull();
+    expect(mudancaPeloQuadro(m, 'modelagem')).toBeNull();
+  });
+
+  it('da aprovação: a produção aprova a piloto, a piloto pede alteração; do cancelado, só a etapa em que estava', () => {
+    const naAprovacao = novoModelo({ nome: 'Camiseta', etapa: 'aprovacao' }, 'm');
+    expect(mudancaPeloQuadro(naAprovacao, 'producao')).toBe('aprovar');
+    expect(mudancaPeloQuadro(naAprovacao, 'piloto')).toBe('pedir-alteracao');
+    expect(mudancaPeloQuadro(naAprovacao, 'modelagem')).toBeNull();
+    const cancelado = cancelarModelo(novoModelo({ nome: 'Camiseta', etapa: 'piloto' }, 'm'), d({ comentario: 'Saiu da coleção' }));
+    expect(mudancaPeloQuadro(cancelado, 'piloto')).toBe('reabrir');
+    expect(mudancaPeloQuadro(cancelado, 'criacao')).toBeNull();
+  });
+
+  it('a mudança feita pelas mesmas regras dos botões: o motivo pedido, o histórico, a revisão da piloto', () => {
+    expect(MUDANCA_PEDE_COMENTARIO.voltar && MUDANCA_PEDE_COMENTARIO.cancelar && MUDANCA_PEDE_COMENTARIO['pedir-alteracao']).toBe(true);
+    expect(MUDANCA_PEDE_COMENTARIO.avancar || MUDANCA_PEDE_COMENTARIO.aprovar || MUDANCA_PEDE_COMENTARIO.reabrir).toBe(false);
+    const m = novoModelo({ nome: 'Camiseta', etapa: 'aprovacao' }, 'm');
+    expect(() => aplicarMudancaPeloQuadro(m, 'pedir-alteracao', d())).toThrow(/o que alterar na piloto/);
+    const alterado = aplicarMudancaPeloQuadro(m, 'pedir-alteracao', d({ comentario: 'Gola mais aberta' }));
+    expect(alterado).toMatchObject({ etapa: 'piloto', alteracoesDaPiloto: 1 });
+    expect(aplicarMudancaPeloQuadro(alterado, 'avancar', d()).etapa).toBe('aprovacao');
+    expect(aplicarMudancaPeloQuadro(m, 'aprovar', d()).etapa).toBe('producao');
   });
 });

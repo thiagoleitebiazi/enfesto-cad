@@ -5052,6 +5052,90 @@ rect.destaque-do-desenho,
   font-size: 11px;
 }
 
+/* O cartão arrastado entre as etapas (ADR 0118): ele segue o mouse; a coluna que vale fica verde e diz o que acontece,
+   a que não vale fica apagada. */
+.cartao-da-etapa.cartao-arrastavel {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.cartao-da-etapa.cartao-arrastado {
+  position: relative;
+  z-index: 5;
+  border-color: var(--azul-600);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+
+.quadro-das-etapas.arrastando-cartao {
+  cursor: grabbing;
+}
+
+.coluna-da-etapa.destino-valido {
+  outline: 2px dashed var(--grupo-6);
+  outline-offset: -2px;
+  background: #effaf3;
+}
+
+.coluna-da-etapa.destino-sob-o-cartao {
+  outline: 3px solid var(--grupo-6);
+  outline-offset: -3px;
+  background: #d6f1e0;
+}
+
+.coluna-da-etapa.destino-invalido {
+  opacity: 0.4;
+}
+
+.o-que-o-arrasto-faz {
+  margin: 0;
+  padding: 3px 6px;
+  border-radius: var(--raio-sm);
+  background: var(--grupo-6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.quem-muda-as-etapas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 14px;
+  margin: 0 0 8px;
+}
+
+.quem-muda-as-etapas label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.pedido-de-mudanca {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-left: 5px solid var(--grupo-4);
+  border-radius: var(--raio-md);
+  background: #fff6e8;
+}
+
+.pedido-de-mudanca p {
+  margin: 0;
+}
+
+.pedido-de-mudanca label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+
 .barras-das-etapas {
   display: flex;
   flex-direction: column;

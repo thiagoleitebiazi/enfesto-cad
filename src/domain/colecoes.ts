@@ -296,11 +296,69 @@ export function cancelarModelo(m: ModeloDaColecao, d: DadosDaMudanca): ModeloDaC
   return mudarPara(m, 'cancelado', d);
 }
 
+/** A etapa em que o modelo cancelado estava (a da última vez que foi cancelado; sem histórico, a criação). */
+export const etapaAntesDoCancelamento = (m: ModeloDaColecao): EtapaDoModelo => [...m.historico].reverse().find((h) => h.para === 'cancelado')?.de ?? 'criacao';
+
 /** O cancelado volta para a etapa em que estava. */
 export function reabrirModelo(m: ModeloDaColecao, d: DadosDaMudanca): ModeloDaColecao {
   if (m.etapa !== 'cancelado') throw new Error('Só o modelo cancelado é reaberto.');
-  const antes = [...m.historico].reverse().find((h) => h.para === 'cancelado')?.de ?? 'criacao';
-  return mudarPara(m, antes, d);
+  return mudarPara(m, etapaAntesDoCancelamento(m), d);
+}
+
+// ---- O quadro das etapas (ADR 0118): o cartão arrastado de uma coluna para outra
+
+export type MudancaPeloQuadro = 'avancar' | 'voltar' | 'aprovar' | 'pedir-alteracao' | 'cancelar' | 'reabrir';
+
+export const ROTULO_DA_MUDANCA_PELO_QUADRO: Readonly<Record<MudancaPeloQuadro, string>> = {
+  avancar: 'Avançar',
+  voltar: 'Voltar (diga o motivo)',
+  aprovar: 'Aprovar a piloto',
+  'pedir-alteracao': 'Pedir alteração da piloto',
+  cancelar: 'Cancelar (diga o motivo)',
+  reabrir: 'Reabrir',
+};
+
+/** As mudanças que pedem o comentário (o motivo de voltar ou cancelar, o que alterar na piloto). */
+export const MUDANCA_PEDE_COMENTARIO: Readonly<Record<MudancaPeloQuadro, boolean>> = {
+  avancar: false,
+  voltar: true,
+  aprovar: false,
+  'pedir-alteracao': true,
+  cancelar: true,
+  reabrir: false,
+};
+
+/**
+ * O que soltar o cartão do modelo na coluna `para` faz, pelas regras do fluxo: a etapa seguinte avança (da aprovação,
+ * a produção é aprovar a piloto); a de antes volta (da aprovação, a piloto é pedir alteração); o cancelado cancela; do
+ * cancelado, a etapa em que estava reabre. Pular etapa, ou a mesma coluna: `null` (nada).
+ */
+export function mudancaPeloQuadro(m: ModeloDaColecao, para: EtapaDoModelo): MudancaPeloQuadro | null {
+  if (para === m.etapa) return null;
+  if (m.etapa === 'cancelado') return para === etapaAntesDoCancelamento(m) ? 'reabrir' : null;
+  if (para === 'cancelado') return 'cancelar';
+  if (m.etapa === 'aprovacao') return para === 'producao' ? 'aprovar' : para === 'piloto' ? 'pedir-alteracao' : null;
+  if (para === proxima(m.etapa)) return 'avancar';
+  if (para === anterior(m.etapa)) return 'voltar';
+  return null;
+}
+
+/** A mudança do quadro feita pelas mesmas regras dos botões (o histórico, o motivo, a revisão da piloto). */
+export function aplicarMudancaPeloQuadro(m: ModeloDaColecao, mudanca: MudancaPeloQuadro, d: DadosDaMudanca): ModeloDaColecao {
+  switch (mudanca) {
+    case 'avancar':
+      return avancarEtapa(m, d);
+    case 'voltar':
+      return voltarEtapa(m, d);
+    case 'aprovar':
+      return aprovarPiloto(m, d);
+    case 'pedir-alteracao':
+      return pedirAlteracaoDaPiloto(m, d);
+    case 'cancelar':
+      return cancelarModelo(m, d);
+    case 'reabrir':
+      return reabrirModelo(m, d);
+  }
 }
 
 /** A revisão da piloto de agora (1, 2, 3…). */

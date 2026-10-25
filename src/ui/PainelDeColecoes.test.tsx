@@ -177,3 +177,75 @@ describe('PainelDeColecoes', () => {
     expect(within(screen.getByRole('complementary', { name: 'Coleções' })).getByText('Verão 27')).toBeInTheDocument();
   });
 });
+
+describe('PainelDeColecoes — arrastar o cartão entre as etapas (ADR 0118)', () => {
+  const coluna = (nome: string) => screen.getByLabelText(`Etapa ${nome}`);
+  /** Aperta no nome do cartão, passa pela coluna e solta nela. */
+  const arrastar = (cartao: string, para: string, soltar = true): void => {
+    fireEvent.pointerDown(screen.getByRole('button', { name: cartao }), { clientX: 10, clientY: 10, button: 0, pointerId: 1 });
+    fireEvent.pointerMove(coluna(para), { clientX: 180, clientY: 30, pointerId: 1 });
+    if (soltar) fireEvent.pointerUp(coluna(para), { clientX: 180, clientY: 30, pointerId: 1 });
+  };
+
+  it('para a coluna seguinte: avança; enquanto arrasta, a coluna que vale fica verde e diz o que faz, a outra apagada', async () => {
+    abrir(comUmaColecao(), { parte: 'etapas' });
+    arrastar('Camiseta básica', 'Modelagem', false);
+    expect(coluna('Modelagem')).toHaveClass('destino-sob-o-cartao');
+    expect(within(coluna('Modelagem')).getByText('Avançar')).toBeInTheDocument();
+    expect(coluna('Cancelado')).toHaveClass('destino-valido');
+    expect(coluna('Peça-piloto')).toHaveClass('destino-invalido');
+    fireEvent.pointerUp(coluna('Modelagem'), { clientX: 180, clientY: 30, pointerId: 1 });
+    await waitFor(() => expect(within(coluna('Modelagem')).getByText('Camiseta básica')).toBeInTheDocument());
+    expect(screen.getByRole('alert')).toHaveTextContent('“Camiseta básica” foi para modelagem.');
+    // O clique do fim do arrasto não abre o modelo.
+    fireEvent.click(screen.getByRole('button', { name: 'Camiseta básica' }));
+    expect(screen.queryByRole('button', { name: '← Voltar ao mix' })).toBeNull();
+    // Um clique de verdade abre.
+    fireEvent.click(screen.getByRole('button', { name: 'Camiseta básica' }));
+    expect(screen.getByRole('button', { name: '← Voltar ao mix' })).toBeInTheDocument();
+  });
+
+  it('pular etapa não vale: o cartão fica onde estava', () => {
+    abrir(comUmaColecao(), { parte: 'etapas' });
+    arrastar('Camiseta básica', 'Peça-piloto');
+    expect(within(coluna('Criação')).getByText('Camiseta básica')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Mudança de etapa' })).toBeNull();
+  });
+
+  it('da aprovação para a piloto: pede o que alterar; confirmado, volta na revisão seguinte', async () => {
+    abrir(comUmaColecao(), { parte: 'etapas' });
+    arrastar('Bermuda', 'Peça-piloto');
+    const pedido = screen.getByRole('form', { name: 'Mudança de etapa' });
+    expect(pedido).toHaveTextContent('“Bermuda”: Aprovação → Peça-piloto');
+    expect(within(pedido).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    fireEvent.change(within(pedido).getByLabelText('O que alterar na piloto'), { target: { value: 'Barra mais curta' } });
+    fireEvent.click(within(pedido).getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(within(coluna('Peça-piloto')).getByText('Bermuda')).toBeInTheDocument());
+    expect(screen.queryByRole('form', { name: 'Mudança de etapa' })).toBeNull();
+  });
+
+  it('da aprovação para a produção: pede a confirmação (aprovar a piloto); desistir não muda nada', async () => {
+    abrir(comUmaColecao(), { parte: 'etapas' });
+    arrastar('Bermuda', 'Produção');
+    fireEvent.click(screen.getByRole('button', { name: 'Desistir' }));
+    expect(within(coluna('Aprovação')).getByText('Bermuda')).toBeInTheDocument();
+    arrastar('Bermuda', 'Produção');
+    fireEvent.click(screen.getByRole('button', { name: 'Aprovar a piloto' }));
+    await waitFor(() => expect(within(coluna('Produção')).getByText('Bermuda')).toBeInTheDocument());
+  });
+});
+
+describe('PainelDeColecoes — sem saber quem muda as etapas (ADR 0118)', () => {
+  it('o "Avançar →" (e o arrasto) pergunta quem decide, em vez de falhar', async () => {
+    abrir(comUmaColecao(), { parte: 'etapas' });
+    fireEvent.change(screen.getByLabelText('Quem muda as etapas'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Avançar Camiseta básica' }));
+    const pedido = screen.getByRole('form', { name: 'Mudança de etapa' });
+    expect(within(pedido).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    fireEvent.change(within(pedido).getByLabelText('Quem decide'), { target: { value: 'Bruno' } });
+    fireEvent.click(within(pedido).getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(within(screen.getByLabelText('Etapa Modelagem')).getByText('Camiseta básica')).toBeInTheDocument());
+    // O nome fica para as próximas mudanças.
+    expect(screen.getByLabelText('Quem muda as etapas')).toHaveValue('Bruno');
+  });
+});
