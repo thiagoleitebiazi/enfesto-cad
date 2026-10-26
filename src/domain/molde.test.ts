@@ -37,6 +37,8 @@ import {
   origemDaPecaImportada,
   alteradaDesdeAImportacao,
   type DadosDeNovoMolde,
+  inclinacaoDaPeca,
+  INCLINACAO_MAXIMA_GRAUS,
 } from './molde';
 
 function dadosBase(sobrescrever: Partial<DadosDeNovoMolde> = {}): DadosDeNovoMolde {
@@ -868,5 +870,18 @@ describe('cortar em pares e a origem da importação', () => {
     expect(alteradaDesdeAImportacao(espelharMolde(rotacionarMolde(transladarMolde(importada, ponto(500, 70), 'x'), 90), 'y'))).toBe(false);
     expect(alteradaDesdeAImportacao(moverPontoDoMolde(importada, 2, ponto(260, 410)))).toBe(true);
     expect(alteradaDesdeAImportacao(peca)).toBeNull();
+  });
+});
+
+describe('a inclinação do fio no encaixe (ADR 0135)', () => {
+  it('as rotações do encaixe ganham as inclinadas; a validação aceita dentro da tolerância', () => {
+    const r = { permite180: true, permite90e270: false, inclinacaoGraus: 2 };
+    expect(rotacoesNoEncaixe(r, false)).toEqual([0, 1, 2, 359, 358, 180, 181, 182, 179, 178]);
+    expect(rotacoesNoEncaixe({ ...r, inclinacaoGraus: 0 }, false)).toEqual([0, 180]);
+    expect(rotacaoEhPermitida(r, 358.5)).toBe(true);
+    expect(rotacaoEhPermitida(r, 182)).toBe(true);
+    expect(rotacaoEhPermitida(r, 183)).toBe(false);
+    // Acima do limite, vale o limite (5°).
+    expect(inclinacaoDaPeca({ ...r, inclinacaoGraus: 12 })).toBe(INCLINACAO_MAXIMA_GRAUS);
   });
 });

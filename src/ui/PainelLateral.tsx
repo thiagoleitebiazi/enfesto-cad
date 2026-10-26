@@ -1,5 +1,5 @@
 import type { Molde, RestricaoDeRotacao } from '../domain/molde';
-import { dimensoesDoMolde, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
+import { dimensoesDoMolde, INCLINACAO_MAXIMA_GRAUS, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
 import { retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
 
@@ -222,6 +222,24 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
               }
             />
             Permitir espelhamento
+          </label>
+          <label className="opcao-em-linha">
+            Inclinação no encaixe (°, até {INCLINACAO_MAXIMA_GRAUS})
+            <input
+              type="number"
+              min={0}
+              max={INCLINACAO_MAXIMA_GRAUS}
+              step={0.5}
+              aria-label="Inclinação no encaixe"
+              title="O quanto o fio tolera: no encaixe, a peça pode girar até isso para cada lado de cada rotação permitida, para caber melhor"
+              className="campo-curto"
+              value={peca.restricaoDeRotacao.inclinacaoGraus ?? 0}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isFinite(v)) return;
+                props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, inclinacaoGraus: Math.min(INCLINACAO_MAXIMA_GRAUS, Math.max(0, v)) } });
+              }}
+            />
           </label>
         </fieldset>
 

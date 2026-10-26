@@ -163,7 +163,7 @@ const molde = objeto(
     margemDeCosturaMm: naoNegativo,
     linhaDeFio: objeto({ inicio: pt, fim: pt }),
     quantidade: (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : undefined),
-    restricaoDeRotacao: objeto({ permite180: logico, permite90e270: logico }, { permiteEspelhamento: logico }),
+    restricaoDeRotacao: objeto({ permite180: logico, permite90e270: logico }, { permiteEspelhamento: logico, inclinacaoGraus: numero }),
     anguloDeRotacaoGraus: numero,
   },
   {

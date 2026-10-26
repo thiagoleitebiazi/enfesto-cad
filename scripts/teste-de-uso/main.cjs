@@ -1804,6 +1804,23 @@ async function principal() {
     manga ? `cabeça ${cabecaDaManga.toFixed(1)} mm, ${manga.piques.length} pique(s)` : JSON.stringify(comAManga.map((p) => p.nome)),
   );
 
+  // 20. A inclinação do fio no encaixe (ADR 0135): no painel da peça, 2° de inclinação ficam gravados na peça.
+  await clicarEm(`Array.from(document.querySelectorAll('.lista-de-pecas li')).find(li => li.textContent.startsWith('Manga')).querySelector('button')`);
+  await espera(400);
+  await aba('Modelo');
+  await botao('Propriedades');
+  await espera(500);
+  await js(`(() => { const c = document.querySelector('input[aria-label="Inclinação no encaixe"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, '2'); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await espera(400);
+  await fecharJanela();
+  await espera(300);
+  const comInclinacao = (await pecasGravadas()).find((p) => p.nome === 'Manga');
+  conferir(
+    'a inclinação no encaixe, no painel da peça, fica gravada (2°)',
+    !!comInclinacao && comInclinacao.restricaoDeRotacao.inclinacaoGraus === 2,
+    comInclinacao ? JSON.stringify(comInclinacao.restricaoDeRotacao) : 'sem a manga',
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));

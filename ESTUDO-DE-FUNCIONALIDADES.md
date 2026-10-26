@@ -48,7 +48,7 @@ inventa.
 | Cadastro de materiais e aviamentos reutilizável entre coleções | ✅ (biblioteca de materiais, ADR 0104; importar de uma planilha colada ou de um CSV, ADR 0115) | — |
 | Tabela de medidas com tolerâncias por tamanho | ✅ (ficha técnica, com a colagem da planilha, ADR 0105) | — |
 | Sequência operacional (operações, máquina, tempo) | ✅ (ficha técnica, ADR 0105) | — |
-| Consumo de tecido estimado pelo desenho | 🟡 (pelo encaixe da mesa na ficha, ADR 0105, e pelo plano de corte — mais preciso que pelo croqui) | L |
+| Consumo de tecido estimado pelo desenho | ✅ ADR 0127 (pelas áreas do croqui na escala das cotas) | L |
 | Pré-custo (tecido + aviamentos + mão de obra + indiretos → custo e preço) e simulador de meta de custo | ✅ (ADR 0106; o custo de cada tamanho pela graduação, na tela e no PDF da ficha, ADR 0115) | — |
 | Atualizar vários produtos do mix de uma vez | ✅ (o preço na biblioteca muda o custo de todos; aba Custos dos modelos, ADR 0106) | — |
 | Exportar a ficha (PDF) | ✅ (ADR 0105) | — |
@@ -74,7 +74,7 @@ inventa.
 | Margens de segurança, restrição do fio, rotação por brilho/estampa, simetria | ✅ | — |
 | Grupos de peças que ficam juntas no encaixe (ex.: as que vão à entretela) | ✅ (um trecho do comprimento por grupo, nos dois métodos e no planejamento, ADR 0103; a divisa e o nome dos trechos no PDF, no DXF e no PLT, ADR 0115) | — |
 | Desviar de furos e manchas do tecido | ✅ (defeitos com posição, no plano) | — |
-| Listras e xadrez casados | 🟡 (casamento por um ponto por peça) | L (mais pontos) |
+| Listras e xadrez casados | ✅ ADR 0089, 0129, 0130 (por mais de um ponto; a ferramenta Ponto de casamento) | L |
 | Combinação de tamanhos e o melhor tipo de enfesto sugeridos | ✅ (composição dos riscos no plano) | — |
 | Parâmetros de enfesto fixados como padrão | ✅ (configuração do plano) | — |
 | Consumo, eficiência e perda antes do corte; relatórios para o financeiro | ✅ (plano, relatório, custo) | — |
@@ -197,3 +197,18 @@ O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entr
 Ficam de fora, como na primeira rodada:
 - a colaboração na nuvem e os avisos por e-mail ou celular, que precisam de servidor;
 - a ligação com as máquinas de corte, que precisa do equipamento.
+
+## Terceira rodada do estudo (2026-10-26)
+
+Fontes lidas: as páginas oficiais de todos os produtos da referência listados no site (o encaixe, o servidor de
+encaixes, a modelagem, o 3D, o estúdio de criação, o desenho e a ficha, a criação por IA), comparadas com o que o
+Enfesto CAD já faz e com as duas rodadas anteriores. Fica de fora o que depende de servidor, de máquina ou de serviço de
+terceiros (já dito acima).
+
+| Da referência | Situação |
+|---|---|
+| Ângulos no encaixe: a inclinação que o fio tolera, para a peça caber melhor | ✅ ADR 0135 |
+| Variações de cor do modelo (a cartela), no desenho e no 3D | ⬜ |
+| Poses do manequim para as imagens de catálogo | ⬜ |
+| Imagem em alta resolução, com luz e sombra; o movimento (o giro em vídeo) | ⬜ |
+| Mudar de uma vez todo o mix da coleção (trocar um material em todos os modelos) | ⬜ |

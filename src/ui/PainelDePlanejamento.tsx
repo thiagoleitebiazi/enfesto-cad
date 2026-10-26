@@ -978,7 +978,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     <td>{p.emPar ? 'sim (dir. e esq.)' : 'não'}</td>
                     <td>{p.grupo || '—'}</td>
                     <td>
-                      {rotacoesPermitidas(p.restricao).join('°, ')}°{p.restricao.permiteEspelhamento && !p.emPar ? ', espelhar' : ''}
+                      {rotacoesPermitidas(p.restricao).join('°, ')}°{p.restricao.permiteEspelhamento && !p.emPar ? ', espelhar' : ''}{p.restricao.inclinacaoGraus ? ` (± ${String(p.restricao.inclinacaoGraus).replace('.', ',')}° de inclinação)` : ''}
                     </td>
                     <td>
                       {escreverM(p.larguraMm)} × {escreverM(p.comprimentoMm)}

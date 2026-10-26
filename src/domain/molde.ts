@@ -40,7 +40,15 @@ export interface RestricaoDeRotacao {
   readonly permite90e270: boolean;
   /** Permite usar a versão espelhada (imagem de espelho) da peça — nunca presumido, mesmo padrão da rotação. */
   readonly permiteEspelhamento?: boolean;
+  /**
+   * A inclinação que o fio tolera (graus, até `INCLINACAO_MAXIMA_GRAUS`): no encaixe, a peça pode girar até isso para
+   * um lado e para o outro de cada rotação permitida, para caber melhor (ADR 0135). Ausente ou 0: nenhuma.
+   */
+  readonly inclinacaoGraus?: number;
 }
+
+/** A maior inclinação do fio aceita no encaixe (graus). */
+export const INCLINACAO_MAXIMA_GRAUS = 5;
 
 export const RESTRICAO_PADRAO: RestricaoDeRotacao = {
   permite180: false,
@@ -1338,11 +1346,25 @@ export function rotacoesPermitidas(restricao: RestricaoDeRotacao): readonly numb
  */
 export function rotacoesNoEncaixe(restricao: RestricaoDeRotacao, tecidoDeSentidoUnico: boolean): readonly number[] {
   const permitidas = rotacoesPermitidas(restricao);
-  return tecidoDeSentidoUnico ? permitidas.filter((a) => a === 0 || a === 90) : permitidas;
+  const base = tecidoDeSentidoUnico ? permitidas.filter((a) => a === 0 || a === 90) : permitidas;
+  // A inclinação (ADR 0135): cada rotação também com a peça inclinada metade e o todo da tolerância, para cada lado.
+  const inclinacao = inclinacaoDaPeca(restricao);
+  if (inclinacao === 0) return base;
+  return base.flatMap((a) => [a, ...[inclinacao / 2, inclinacao, -inclinacao / 2, -inclinacao].map((d) => normalizarAngulo(a + d))]);
 }
 
-/** Verdadeiro se `anguloGraus` (rotação proposta, qualquer valor) corresponde a uma das rotações permitidas. */
+/** A inclinação da peça, dentro do limite (0 sem ela). */
+export function inclinacaoDaPeca(restricao: RestricaoDeRotacao): number {
+  const i = restricao.inclinacaoGraus ?? 0;
+  return Number.isFinite(i) ? Math.min(INCLINACAO_MAXIMA_GRAUS, Math.max(0, i)) : 0;
+}
+
+/** Verdadeiro se `anguloGraus` (rotação proposta, qualquer valor) corresponde a uma das rotações permitidas, ou a uma delas inclinada dentro da tolerância. */
 export function rotacaoEhPermitida(restricao: RestricaoDeRotacao, anguloGraus: number): boolean {
   const alvo = normalizarAngulo(anguloGraus);
-  return rotacoesPermitidas(restricao).some((permitida) => Math.abs(permitida - alvo) < 1e-6);
+  const folga = inclinacaoDaPeca(restricao) + 1e-6;
+  return rotacoesPermitidas(restricao).some((permitida) => {
+    const d = Math.abs(permitida - alvo);
+    return Math.min(d, 360 - d) <= folga;
+  });
 }

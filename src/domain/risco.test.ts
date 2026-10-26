@@ -357,3 +357,26 @@ describe('fazerRisco — casamento de listras e xadrez', () => {
     expect(conferirCasamento([{ ...posta, pontoDeCasamento: ponto(10, 230) }], { rapportComprimentoMm: 100, faseComprimentoMm: 30, faseLarguraMm: 0 })).toEqual([]);
   });
 });
+
+describe('fazerRisco — a inclinação do fio (ADR 0135)', () => {
+  // Uma tira de 100 × 1000 mm desenhada 3° torta: reta, ela tem 100 mm de largura; torta, uns 152.
+  const torta = (id: string, inclinacaoGraus = 0): Molde => {
+    const a = (3 * Math.PI) / 180;
+    const gira = (x: number, y: number) => ponto(50 + (x - 50) * Math.cos(a) - (y - 500) * Math.sin(a), 500 + (x - 50) * Math.sin(a) + (y - 500) * Math.cos(a));
+    return retangulo(id, 'Tira', 100, 1000, {
+      contorno: [gira(0, 0), gira(100, 0), gira(100, 1000), gira(0, 1000)],
+      restricaoDeRotacao: { permite180: false, permite90e270: false, inclinacaoGraus },
+    });
+  };
+  const seis = (inclinacao: number) => fazerRisco(Array.from({ length: 6 }, (_, i) => copia(torta(`t${i}`, inclinacao))), { M: 6 }, { ...opcoes, larguraMm: 620 });
+
+  it('sem inclinação, cabem 4 na largura (duas fileiras); com 3°, as 6 numa fileira só, retas', () => {
+    const sem = gerado(seis(0));
+    const com = gerado(seis(3));
+    expect(sem.comprimentoMm).toBeGreaterThan(1900);
+    expect(com.comprimentoMm).toBeLessThan(1010);
+    // A peça foi girada −3° (ou 357°): dentro da tolerância, e o contorno sem sobreposição.
+    expect(com.pecas.every((p) => Math.min(Math.abs(p.anguloGraus - 357), Math.abs(p.anguloGraus + 3)) < 1e-6)).toBe(true);
+    conferirGeometria(com, 3);
+  });
+});
