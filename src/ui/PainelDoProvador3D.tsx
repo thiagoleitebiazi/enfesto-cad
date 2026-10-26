@@ -47,7 +47,7 @@ import {
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
 import { cameraDeFrente, corDaTensao, corRgb, desenharCena, luzDoTom, montarCena, pontoDoCorpoNaTela, projecao, TONS_DA_ESTAMPA, type Camera3D, type EstampaPronta, type TecidoParaDesenhar } from './cena3d';
 import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
-import type { Ponto3D } from '../domain/manequim';
+import { ROTULO_DA_POSE, type PoseDoManequim, type Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
 
 type AbaDoProvador = 'pecas' | 'costuras' | 'manequim' | 'tecido' | 'imagem' | 'desenho';
@@ -155,6 +155,7 @@ export function PainelDoProvador3D(props: {
   const chaveDaFisica = JSON.stringify([
     instancias.map((i) => [i.chave, i.assinatura]),
     montagem.manequim.medidas,
+    montagem.manequim.pose ?? 'padrao',
     montagem.resolucaoMm,
     // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
     // recomeça a simulação.
@@ -173,7 +174,7 @@ export function PainelDoProvador3D(props: {
   /** A simulação da montagem de agora (refeita se a física mudou). */
   const obterMontada = useCallback((): Montada => {
     if (montadaRef.current && montadaRef.current.chave === chaveDaFisica) return montadaRef.current;
-    const corpo = corpoDoManequim(montagem.manequim.medidas);
+    const corpo = corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose);
     const malhas = malhasDasInstancias(instancias, montagem.pecas, montagem.resolucaoMm, costurasValidas);
     const sim = montarSimulacao({ corpo, instancias, configuracoes: montagem.pecas, malhas, costuras: costurasValidas, tecido: montagem.tecido });
     const uvs = new Map<string, Float64Array>();
@@ -534,7 +535,7 @@ export function PainelDoProvador3D(props: {
               montagem={montagem}
               onMudar={(costuras) => setMontagem((m) => ({ ...m, costuras }))}
               onSugerir={() => {
-                const novas = sugerirCosturas(corpoDoManequim(montagem.manequim.medidas), instancias, montagem, props.novoId);
+                const novas = sugerirCosturas(corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose), instancias, montagem, props.novoId);
                 setMensagem(novas.length > 0 ? `${novas.length} costura(s) sugerida(s): confira na lista.` : 'Nenhuma costura nova a sugerir (as que sobram se escolhem à mão).');
                 if (novas.length > 0) setMontagem((m) => ({ ...m, costuras: [...m.costuras, ...novas] }));
               }}
@@ -547,7 +548,8 @@ export function PainelDoProvador3D(props: {
               ficha={props.ficha}
               regras={props.regrasDeCaimento}
               onMudar={(manequim) => {
-                setMontagem((m) => ({ ...m, manequim }));
+                // A pose fica quando o público ou as medidas mudam (o campo da pose a manda junto).
+                setMontagem((m) => ({ ...m, manequim: { ...manequim, ...(!('pose' in manequim) && m.manequim.pose ? { pose: m.manequim.pose } : {}) } }));
                 setCamera(cameraDeFrente(manequim.medidas.alturaCm * 10));
               }}
             />
@@ -918,7 +920,7 @@ function ParteCosturas(props: {
     const [a, b] = lados as [{ chave: string; de: number; ate: number }, { chave: string; de: number; ate: number }];
     const ia = props.instancias.find((i) => i.chave === a.chave)!;
     const ib = props.instancias.find((i) => i.chave === b.chave)!;
-    const corpo = corpoDoManequim(props.montagem.manequim.medidas);
+    const corpo = corpoDoManequim(props.montagem.manequim.medidas, props.montagem.manequim.pose);
     const invertida = sentidoSugerido(corpo, { inst: ia, config: props.montagem.pecas[a.chave]!, de: a.de, ate: a.ate }, { inst: ib, config: props.montagem.pecas[b.chave]!, de: b.de, ate: b.ate });
     props.onMudar([...props.montagem.costuras, { id: props.novoId(), a: { chave: a.chave, de: a.de, ate: a.ate, assinatura: ia.assinatura }, b: { chave: b.chave, de: b.de, ate: b.ate, assinatura: ib.assinatura }, invertida }]);
     setLados((l) => l.map((x) => ({ ...x, de: null, ate: null })));
@@ -1036,6 +1038,23 @@ function ParteManequim(props: {
   return (
     <section aria-label="Manequim" className="secao-do-provador">
       <form className="formulario-de-sobreposicao campos-do-manequim" onSubmit={(e) => e.preventDefault()}>
+        <label>
+          Pose
+          <select
+            aria-label="Pose do manequim"
+            value={manequim.pose ?? 'padrao'}
+            onChange={(e) => {
+              const pose = e.target.value as PoseDoManequim;
+              props.onMudar({ ...manequim, pose });
+            }}
+          >
+            {(Object.keys(ROTULO_DA_POSE) as PoseDoManequim[]).map((p) => (
+              <option key={p} value={p}>
+                {ROTULO_DA_POSE[p]}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Público
           <select

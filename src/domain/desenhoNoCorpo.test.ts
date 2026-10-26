@@ -55,3 +55,24 @@ describe('o desenho no corpo vira o pré-molde (ADR 0134)', () => {
     expect(pontoDoCorpoNaTela(proj, malhaDoCorpo(corpo), 5, 5)).toBeNull();
   });
 });
+
+describe('as poses do manequim (ADR 0138)', () => {
+  const graus = (b: { inicio: Ponto3D; meio: Ponto3D }): number => (Math.atan2(Math.abs(b.meio.x - b.inicio.x), b.inicio.y - b.meio.y) * 180) / Math.PI;
+  it('o braço sai do corpo no ângulo de cada pose; o tronco não muda', () => {
+    const m = MEDIDAS_DO_PUBLICO.feminino;
+    expect(graus(corpoDoManequim(m).bracos.esquerdo)).toBeCloseTo(15, 6);
+    expect(graus(corpoDoManequim(m, 'bracos-abaixados').bracos.direito)).toBeCloseTo(7, 6);
+    expect(graus(corpoDoManequim(m, 'bracos-abertos').bracos.esquerdo)).toBeCloseTo(60, 6);
+    expect(corpoDoManequim(m, 'bracos-abertos').tronco).toEqual(corpoDoManequim(m).tronco);
+  });
+
+  it('mãos na cintura: o antebraço volta, e a mão fica no lado do quadril, na altura da cintura', () => {
+    const c = corpoDoManequim(MEDIDAS_DO_PUBLICO.feminino, 'maos-na-cintura');
+    for (const b of [c.bracos.direito, c.bracos.esquerdo]) {
+      expect(Math.abs(b.fim.x)).toBeLessThan(Math.abs(b.meio.x));
+      expect(Math.abs(b.fim.y - c.niveis.cintura)).toBeLessThan(0.05 * c.alturaMm);
+      const s = secaoNaAltura(c, c.niveis.cintura)!;
+      expect(Math.abs(b.fim.x)).toBeGreaterThan(s.a);
+    }
+  });
+});

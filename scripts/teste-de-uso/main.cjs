@@ -1418,6 +1418,22 @@ async function principal() {
     pontosNoCorpo === '4 ponto(s) no corpo.' && comPreMolde.length === antesDoPreMolde.length + 1 && comPreMolde.some((n) => n.startsWith('Pré-molde do corpo')),
     `${pontosNoCorpo} / ${JSON.stringify(comPreMolde.slice(-2))} / ${recadoDoPreMolde.slice(0, 100)}`,
   );
+  // A pose (ADR 0138): braços abaixados para a foto de catálogo; a roupa assenta de novo no corpo nessa pose.
+  await parteDaJanela('Manequim');
+  await espera(300);
+  await noCampo('Pose do manequim', 'bracos-abaixados');
+  await espera(600);
+  await botaoNaJanela('Simular');
+  let statusNaPose = '';
+  for (let i = 0; i < 120; i++) {
+    await espera(500);
+    statusNaPose = await js(`((document.querySelector('[role=dialog] .status-do-provador') || {}).textContent || '')`);
+    if (/^(Assentou|Parou)/.test(statusNaPose)) break;
+  }
+  await botaoNaJanela('Frente');
+  await espera(600);
+  await foto('35f-pose-bracos-abaixados.png');
+  conferir('a pose de braços abaixados: a roupa assenta de novo no corpo', statusNaPose.startsWith('Assentou'), statusNaPose.slice(0, 90));
   await fecharJanela();
   await espera(800);
 

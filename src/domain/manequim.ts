@@ -179,7 +179,23 @@ function elipse(perimetro: number, k: number): { a: number; b: number } {
 const p3 = (x: number, y: number, z: number): Ponto3D => ({ x, y, z });
 
 /** Monta o corpo pelas medidas. */
-export function corpoDoManequim(medidasDadas: MedidasDoManequim): CorpoDoManequim {
+/**
+ * A pose do manequim (ADR 0138): os braços. A de vestir é a de sempre (um pouco afastados, para as mangas caírem); as
+ * outras são para as imagens de catálogo.
+ */
+export type PoseDoManequim = 'padrao' | 'bracos-abaixados' | 'bracos-abertos' | 'maos-na-cintura';
+
+export const ROTULO_DA_POSE: Readonly<Record<PoseDoManequim, string>> = {
+  padrao: 'Braços um pouco afastados (para vestir)',
+  'bracos-abaixados': 'Braços abaixados (catálogo)',
+  'bracos-abertos': 'Braços abertos',
+  'maos-na-cintura': 'Mãos na cintura',
+};
+
+/** Quanto o braço sai do corpo (graus, da vertical) em cada pose. */
+const ABERTURA_DA_POSE: Readonly<Record<PoseDoManequim, number>> = { padrao: 15, 'bracos-abaixados': 7, 'bracos-abertos': 60, 'maos-na-cintura': 32 };
+
+export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoManequim = 'padrao'): CorpoDoManequim {
   const m = medidasConferidas(medidasDadas);
   const H = m.alturaCm * 10;
   const gancho = m.entrepernaCm * 10;
@@ -215,12 +231,23 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim): CorpoDoManequi
   ];
 
   // Os braços, um pouco abertos (15°), saindo do ombro.
-  const abertura = (15 * Math.PI) / 180;
+  const abertura = (ABERTURA_DA_POSE[pose] * Math.PI) / 180;
   const braco = (lado: -1 | 1): BracoOuPerna => {
     const inicio = p3(lado * (meioOmbro - raioDoBraco * 0.75), ombro - raioDoBraco * 0.9, 0);
     const d = p3(lado * Math.sin(abertura), -Math.cos(abertura), 0);
     const L = m.comprimentoDoBracoCm * 10;
     const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, 0);
+    if (pose === 'maos-na-cintura') {
+      // O antebraço volta do cotovelo para a cintura: a mão no lado do quadril, um pouco à frente.
+      const s = secaoNaAltura({ tronco } as unknown as CorpoDoManequim, cintura)!;
+      const alvo = p3(lado * (s.a + raioDoBraco * 0.5), cintura + 0.01 * H, s.b * 0.25);
+      const dx = alvo.x - meio.x;
+      const dy = alvo.y - meio.y;
+      const dz = alvo.z - meio.z;
+      const l = Math.hypot(dx, dy, dz) || 1;
+      const k = Math.min(1, (L * 0.45) / l);
+      return { inicio, meio, fim: p3(meio.x + dx * k, meio.y + dy * k, meio.z + dz * k), raio: raioDoBraco };
+    }
     const fim = p3(inicio.x + d.x * L, inicio.y + d.y * L, 0);
     return { inicio, meio, fim, raio: raioDoBraco };
   };

@@ -138,6 +138,16 @@ describe('PainelDoProvador3D', () => {
     expect(ultima().manequim).toMatchObject({ publico: 'masculino', tamanhoDaFicha: 'M', medidas: { ...MEDIDAS_DO_PUBLICO.masculino, quadrilCm: 98 } });
   });
 
+  it('a pose do manequim (ADR 0138): guardada na montagem, e fica quando o público muda', async () => {
+    const { ultima } = abrir();
+    aba('Manequim');
+    expect(screen.getByLabelText('Pose do manequim')).toHaveValue('padrao');
+    fireEvent.change(screen.getByLabelText('Pose do manequim'), { target: { value: 'bracos-abertos' } });
+    await waitFor(() => expect(ultima().manequim.pose).toBe('bracos-abertos'), { timeout: 2000 });
+    fireEvent.change(screen.getByLabelText('Público'), { target: { value: 'masculino' } });
+    await waitFor(() => expect(ultima().manequim).toMatchObject({ publico: 'masculino', pose: 'bracos-abertos' }), { timeout: 2000 });
+  });
+
   it('o brilho e a transparência (ADR 0131): a seda já brilha; as réguas mudam o tecido', async () => {
     const { ultima } = abrir();
     aba('Tecido');

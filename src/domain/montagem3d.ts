@@ -1,7 +1,7 @@
 import type { Contorno, Ponto2D } from '../core/geometria';
 import type { Molde } from './molde';
 import { abrirSimetrias } from './anotacoes';
-import { corpoDoManequim, medidasConferidas, MEDIDAS_DO_PUBLICO, perimetroDaElipse, semiEixosMaximosDoTronco, type CorpoDoManequim, type MedidasDoManequim, type PublicoDoManequim } from './manequim';
+import { corpoDoManequim, medidasConferidas, MEDIDAS_DO_PUBLICO, perimetroDaElipse, ROTULO_DA_POSE, semiEixosMaximosDoTronco, type CorpoDoManequim, type MedidasDoManequim, type PoseDoManequim, type PublicoDoManequim } from './manequim';
 import { cantosDoContorno, malhaDaPeca, trechoDaBorda, type MalhaDaPeca } from './malhaDaPeca';
 
 /**
@@ -148,6 +148,8 @@ export interface ManequimDaMontagem {
   readonly medidas: MedidasDoManequim;
   /** O tamanho da ficha usado para as medidas (ausente: as do público, ou digitadas). */
   readonly tamanhoDaFicha?: string;
+  /** A pose (ADR 0138); ausente: a de vestir. */
+  readonly pose?: PoseDoManequim;
 }
 
 export interface Montagem3D {
@@ -934,7 +936,13 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
   const medidas = medidasConferidas(
     Object.fromEntries((Object.keys(base) as (keyof MedidasDoManequim)[]).map((k) => [k, numero(medidasBrutas[k], base[k])])) as unknown as MedidasDoManequim,
   );
-  const manequim: ManequimDaMontagem = typeof m.tamanhoDaFicha === 'string' ? { publico, medidas, tamanhoDaFicha: m.tamanhoDaFicha } : { publico, medidas };
+  const pose = typeof m.pose === 'string' && m.pose in ROTULO_DA_POSE && m.pose !== 'padrao' ? (m.pose as PoseDoManequim) : null;
+  const manequim: ManequimDaMontagem = {
+    publico,
+    medidas,
+    ...(typeof m.tamanhoDaFicha === 'string' ? { tamanhoDaFicha: m.tamanhoDaFicha } : {}),
+    ...(pose ? { pose } : {}),
+  };
   const pecas: Record<string, ConfiguracaoDaInstancia> = {};
   if (ehObjeto(bruto.pecas)) {
     for (const [chave, c] of Object.entries(bruto.pecas)) {
@@ -1101,7 +1109,7 @@ export function pontosCosturadosDaPecaDeCima(inst: InstanciaDaPeca, girarGraus: 
 }
 
 /** O corpo da montagem. */
-export const corpoDaMontagem = (montagem: Montagem3D): CorpoDoManequim => corpoDoManequim(montagem.manequim.medidas);
+export const corpoDaMontagem = (montagem: Montagem3D): CorpoDoManequim => corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose);
 
 /** A malha de cada instância posta no corpo (as de fora não entram). */
 export function malhasDasInstancias(
