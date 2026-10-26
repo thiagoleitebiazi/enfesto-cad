@@ -2127,6 +2127,74 @@ async function principal() {
   await fecharJanela();
   await espera(300);
 
+  // 23. Os looks da coleção (ADR 0145): um segundo modelo na coleção do teste; um look com os dois — o croqui do
+  // ligado ao projeto aparece, a prancha sai em HTML com os dois cartões e o croqui, e o look fica gravado.
+  await aba('Modelo');
+  await espera(300);
+  await botao('Coleções');
+  await espera(800);
+  await botaoNaJanela('Novo modelo');
+  await espera(500);
+  await botaoNaJanela('Guardar o modelo');
+  await espera(300);
+  await botaoNaJanela('← Voltar ao mix');
+  await espera(300);
+  await parteDaJanela('Looks');
+  await espera(300);
+  await noCampo('Nome do look', 'Look do teste');
+  await js(`(() => { for (const c of document.querySelectorAll('[role=dialog] [aria-label="Modelos do look"] input[type=checkbox]')) c.click(); return 1; })()`);
+  await espera(200);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim().startsWith('Guardar o look'))`);
+  await espera(600);
+  const lookNaTela = JSON.parse(await js(`JSON.stringify((() => { const a = document.querySelector('[role=dialog] article.look-da-colecao'); return a ? { texto: a.innerText.replace(/\\s+/g, ' '), croquis: a.querySelectorAll('[data-modelo] svg').length, modelos: a.querySelectorAll('[data-modelo]').length } : null; })())`));
+  await foto('51-look-da-colecao.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] article.look-da-colecao button')).find(b => b.textContent.trim() === 'Salvar a prancha (HTML)')`);
+  await espera(1000);
+  const prancha = fs.existsSync(path.join(SAIDA, 'look-Look-do-teste.html')) ? fs.readFileSync(path.join(SAIDA, 'look-Look-do-teste.html'), 'utf8') : '';
+  const looksGravados = (JSON.parse(fs.readFileSync(path.join(DADOS, 'colecoes.json'), 'utf8')).colecoes[0] || {}).looks || [];
+  conferir(
+    'o look da coleção: os dois modelos lado a lado (o croqui do ligado ao projeto), a prancha em HTML com os dois e o croqui, e o look gravado',
+    !!lookNaTela && lookNaTela.modelos === 2 && lookNaTela.croquis >= 1 && (prancha.match(/<figure>/g) || []).length === 2 && prancha.includes('<svg') && looksGravados.length === 1 && looksGravados[0].modeloIds.length === 2,
+    `${JSON.stringify(lookNaTela).slice(0, 200)} | prancha ${prancha.length} bytes | ${looksGravados.length} look(s) gravado(s)`,
+  );
+  await fecharJanela();
+  await espera(300);
+
+  // 24. A busca por imagem na biblioteca (ADR 0145): a foto do molde de papel (a que está no projeto) escolhida na
+  // busca acha esse projeto primeiro, quase igual; os projetos sem imagem são contados.
+  const comFoto = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', n), 'utf8')))
+    .find((p) => Array.isArray(p.imagens) && p.imagens.length > 0);
+  await abrirABiblioteca();
+  await js(
+    `(async () => {
+      const blob = await (await fetch(${JSON.stringify(comFoto ? comFoto.imagens[0].dados : '')})).blob();
+      const transferencia = new DataTransfer();
+      transferencia.items.add(new File([blob], 'foto-da-vitrine.png', { type: blob.type || 'image/png' }));
+      const campo = document.querySelector('input[aria-label="Imagem para buscar"]');
+      campo.files = transferencia.files;
+      campo.dispatchEvent(new Event('change', { bubbles: true }));
+      return 1;
+    })()`,
+  );
+  let achados = '';
+  for (let i = 0; i < 40 && !achados; i++) {
+    await espera(250);
+    achados = await js(`(document.querySelector('[role=dialog] .busca-por-imagem [role=status]') || {}).innerText || ''`);
+  }
+  await js(`(() => { const s = document.querySelector('[role=dialog] .busca-por-imagem'); if (s) s.scrollIntoView(); return 1; })()`);
+  await foto('52-busca-por-imagem.png');
+  const primeiroAchado = await js(`((document.querySelector('[role=dialog] .busca-por-imagem .parecidos li strong') || {}).textContent || '')`);
+  conferir(
+    'a busca por imagem: a foto do projeto acha esse projeto primeiro, quase igual, e conta os sem imagem',
+    !!comFoto && primeiroAchado === comFoto.nome && /parecido (9\d|100)%/.test(achados) && /sem imagem ficaram de fora/.test(achados),
+    `${comFoto ? comFoto.nome : 'nenhum projeto com foto'} | ${achados.replace(/\s+/g, ' ').slice(0, 220)}`,
+  );
+  await fecharJanela();
+  await espera(300);
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));

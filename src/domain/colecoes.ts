@@ -1,4 +1,5 @@
 import { textoCsv } from '../core/csv';
+import { lerLooks, type LookDaColecao } from './looks';
 
 /**
  * A gestão de coleção (ADR 0108): o PLM local — as coleções (estação, ano, lançamento, marcos), os modelos de cada
@@ -100,6 +101,8 @@ export interface Colecao {
   readonly modelos: readonly ModeloDaColecao[];
   readonly arquivada: boolean;
   readonly criadaEmIso: string;
+  /** Os looks: combinações de modelos desta coleção (ADR 0145). */
+  readonly looks?: readonly LookDaColecao[];
 }
 
 export interface ArquivoDeColecoes {
@@ -584,6 +587,7 @@ export function lerColecoes(bruto: unknown): { readonly arquivo: ArquivoDeColeco
       modelos: modelos.filter((m): m is ModeloDaColecao => m !== null),
       arquivada: c.arquivada === true,
       criadaEmIso: texto(c.criadaEmIso),
+      ...(Array.isArray(c.looks) ? { looks: lerLooks(c.looks) } : {}),
     });
   });
   const maisNovo = typeof bruto.versaoDoFormato === 'number' && bruto.versaoDoFormato > VERSAO_DAS_COLECOES;

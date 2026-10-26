@@ -133,7 +133,7 @@ inventa.
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
 | Recomendação de tamanho pelas medidas do corpo e a tabela de medidas, com a explicação | ✅ (Modelo › Loja: a folga de cada ponto, o "entre dois tamanhos", o guia de medidas em CSV e HTML, ADR 0110; o tecido que cede — malha, malha com elastano, ADR 0119) | a loja virtual é S |
-| Provador virtual, busca visual, combinações de looks | ⬜ | S (loja virtual e serviços) |
+| Provador virtual, busca visual, combinações de looks | 🟡 (os looks da coleção, com a prancha; a busca por imagem na biblioteca, pela forma e pelas cores, ADR 0145; o provador 3D e a recomendação de tamanho, ADR 0110–0111) | S (a loja virtual para o cliente) |
 
 ## 10. Integrações
 
@@ -225,3 +225,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Os modelos da equipe num lugar só, sem duas pessoas mudando o mesmo | ✅ pela biblioteca numa pasta da rede, com a trava de edição: ADR 0142 |
 | Servidor de encaixes recebendo os pedidos de várias estações | ✅ pela fila na rede (uma pasta; a estação que atende calcula): ADR 0143 |
 | Copiar o molde de papel pelo quadro de captura (a mesa digitalizadora) | ✅ pela porta serial ou pelo registro colado: ADR 0144 (não testado numa mesa física) |
+| Combinar os modelos em looks; achar o modelo parecido com uma foto | ✅ os looks da coleção e a busca por imagem: ADR 0145 (a loja virtual continua de fora) |

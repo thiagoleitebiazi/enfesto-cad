@@ -5714,3 +5714,65 @@ rect.destaque-do-desenho,
   width: 3em;
   text-align: center;
 }
+
+/* Os looks da coleção e a busca por imagem (ADR 0145). */
+.look-da-colecao {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cor-borda);
+  border-left: 4px solid #db2777;
+  border-radius: 8px;
+  background: color-mix(in srgb, #db2777 5%, transparent);
+}
+.look-da-colecao header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.modelos-do-look {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+.modelos-do-look figure {
+  margin: 0;
+  width: 180px;
+}
+.modelos-do-look figcaption {
+  display: flex;
+  flex-direction: column;
+}
+.modelos-para-o-look {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 6px 0;
+}
+.busca-por-imagem {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--cor-borda);
+  border-left: 4px solid #db2777;
+  border-radius: 8px;
+}
+.busca-por-imagem .parecidos {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.busca-por-imagem .parecidos li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.busca-por-imagem .parecidos img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--cor-borda);
+}

@@ -249,3 +249,34 @@ describe('PainelDeColecoes — sem saber quem muda as etapas (ADR 0118)', () => 
     expect(screen.getByLabelText('Quem muda as etapas')).toHaveValue('Bruno');
   });
 });
+
+describe('PainelDeColecoes — os looks (ADR 0145)', () => {
+  it('um look de dois modelos: os croquis lado a lado, as cores em comum, a prancha em HTML; e tirar', async () => {
+    let arquivo = comUmaColecao();
+    const c = arquivo.colecoes[0]!;
+    arquivo = salvarColecao(arquivo, salvarModelo(c, { ...c.modelos.find((m) => m.id === 'm1')!, projetoId: 'p1', cores: ['Branco', 'Preto'] }));
+    const { onSalvarTexto } = abrir(arquivo, { parte: 'looks', comProjeto: true });
+    expect(screen.getByRole('tab', { name: 'Looks (0)' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.change(screen.getByLabelText('Nome do look'), { target: { value: 'Básico' } });
+    const grupo = screen.getByRole('group', { name: 'Modelos do look' });
+    fireEvent.click(within(grupo).getByLabelText('Camiseta básica'));
+    expect(screen.getByRole('button', { name: 'Guardar o look (1 modelo(s))' })).toBeDisabled();
+    fireEvent.click(within(grupo).getByLabelText('Bermuda'));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar o look (2 modelo(s))' }));
+    const look = await screen.findByRole('article', { name: 'Look Básico' });
+    expect(screen.getByRole('tab', { name: 'Looks (1)' })).toBeInTheDocument();
+    expect(within(look).getByText('cores em comum: Preto')).toBeInTheDocument();
+    expect(look.querySelector('[data-modelo="m1"] svg')).not.toBeNull();
+    expect(within(look).getByText('sem projeto')).toBeInTheDocument();
+    fireEvent.click(within(look).getByRole('button', { name: 'Salvar a prancha (HTML)' }));
+    await waitFor(() => expect(onSalvarTexto).toHaveBeenCalled());
+    const [nome, html] = onSalvarTexto.mock.calls.at(-1) as unknown as [string, string];
+    expect(nome).toBe('look-Basico.html');
+    expect(html).toContain('<h1>Básico</h1>');
+    expect(html).toContain('cores em comum: Preto');
+    expect(html.match(/<figure>/g)).toHaveLength(2);
+    expect(html).toContain('<svg');
+    fireEvent.click(within(look).getByRole('button', { name: 'Tirar o look' }));
+    await waitFor(() => expect(screen.queryByRole('article', { name: 'Look Básico' })).toBeNull());
+  });
+});

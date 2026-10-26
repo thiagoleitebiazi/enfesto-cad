@@ -47,8 +47,9 @@ import {
   type PendenciaDePrazo,
 } from '../domain/colecoes';
 import { numeroComVirgula } from '../core/numeros';
+import { coresEmComum, guardarLook, htmlDaPrancha, looksDaColecao, MAXIMO_DE_MODELOS_NO_LOOK, tirarLook } from '../domain/looks';
 
-export type ParteDaColecao = 'mix' | 'etapas' | 'tarefas' | 'andamento';
+export type ParteDaColecao = 'mix' | 'looks' | 'etapas' | 'tarefas' | 'andamento';
 
 const situacaoDoPrazo = (dias: number): string => (dias < 0 ? `atrasado ${-dias} dia(s)` : dias === 0 ? 'hoje' : `em ${dias} dia(s)`);
 const ehCor = (texto: string): boolean => /^#[0-9a-f]{6}$/i.test(texto.trim());
@@ -105,6 +106,7 @@ export function PainelDeColecoes(props: {
 
   const PARTES: ReadonlyArray<readonly [ParteDaColecao, string]> = [
     ['mix', `Mix (${colecao?.modelos.length ?? 0})`],
+    ['looks', `Looks (${colecao ? looksDaColecao(colecao).length : 0})`],
     ['etapas', 'Etapas'],
     ['tarefas', 'Tarefas e prazos'],
     ['andamento', 'Andamento'],
@@ -263,6 +265,17 @@ export function PainelDeColecoes(props: {
                   onExportar={() => void props.onSalvarTexto(`mix-${colecao.nome.replace(/[^A-Za-z0-9._-]+/g, '-')}.csv`, csvDoMix(colecao)).then((c) => c && setMensagem(`Salvo em ${c}.`))}
                 />
               )}
+              {parte === 'looks' && (
+                <ParteLooks
+                  key={colecao.id}
+                  colecao={colecao}
+                  projetos={props.projetos}
+                  travado={props.somenteLeitura}
+                  novoId={props.novoId}
+                  onMudar={mudarColecao}
+                  onSalvarTexto={(nome, conteudo) => props.onSalvarTexto(nome, conteudo).then((c) => c && setMensagem(`Salvo em ${c}.`))}
+                />
+              )}
               {parte === 'etapas' && (
                 <ParteEtapas
                   key={colecao.id}
@@ -417,6 +430,124 @@ function CartaoDoModelo(props: { readonly modelo: ModeloDaColecao; readonly proj
         {m.responsavel || 'sem responsável'} · {m.prazo ? `${diaEscrito(m.prazo)}${atrasado ? ' (atrasado)' : ''}` : 'sem prazo'}
       </small>
     </button>
+  );
+}
+
+/**
+ * Os looks (ADR 0145): combinações de 2 a 4 modelos da coleção, vistas lado a lado pelos croquis, com as cores em
+ * comum; a prancha de cada um sai em HTML (com os croquis da tela), para mandar a quem aprova.
+ */
+function ParteLooks(props: {
+  readonly colecao: Colecao;
+  readonly projetos: readonly Projeto[];
+  readonly travado: boolean;
+  readonly novoId: () => string;
+  readonly onMudar: (fazer: (c: Colecao) => Colecao, sucesso: string | null) => Promise<boolean>;
+  readonly onSalvarTexto: (nome: string, conteudo: string) => Promise<unknown>;
+}): React.JSX.Element {
+  const { colecao } = props;
+  const looks = looksDaColecao(colecao);
+  const [nome, setNome] = useState('');
+  const [nota, setNota] = useState('');
+  const [escolhidos, setEscolhidos] = useState<readonly string[]>([]);
+  const projetoDe = (m: ModeloDaColecao): Projeto | undefined => props.projetos.find((p) => p.id === m.projetoId);
+  const disponiveis = colecao.modelos.filter((m) => m.etapa !== 'cancelado');
+
+  const guardar = async (): Promise<void> => {
+    const look = { id: props.novoId(), nome, modeloIds: escolhidos, nota };
+    if (await props.onMudar((c) => guardarLook(c, look), `Look “${nome.trim()}” guardado.`)) {
+      setNome('');
+      setNota('');
+      setEscolhidos([]);
+    }
+  };
+
+  return (
+    <section aria-label="Looks" className="looks-da-colecao">
+      <p className="nota-do-formulario">
+        Combinações de 2 a {MAXIMO_DE_MODELOS_NO_LOOK} modelos desta coleção que vão juntos, vistas lado a lado pelos croquis, com as cores que eles têm em comum. A
+        prancha de cada look sai em HTML, para mandar a quem aprova.
+      </p>
+      {looks.length === 0 && <p className="nota-do-formulario">Nenhum look ainda: escolha os modelos abaixo.</p>}
+      {looks.map((l) => {
+        const modelos = l.modeloIds.map((id) => colecao.modelos.find((m) => m.id === id)!);
+        const comum = coresEmComum(modelos);
+        return (
+          <article key={l.id} className="look-da-colecao" aria-label={`Look ${l.nome}`}>
+            <header>
+              <strong>{l.nome}</strong>
+              <span>{comum.length > 0 ? `cores em comum: ${comum.join(', ')}` : 'sem cor em comum'}</span>
+              {l.nota && <span>{l.nota}</span>}
+              <span className="acoes-da-fila">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const cartao = e.currentTarget.closest('.look-da-colecao');
+                    const croquis = modelos.map((m) => cartao?.querySelector(`[data-modelo="${m.id}"] svg`)?.outerHTML ?? null);
+                    const html = htmlDaPrancha(
+                      colecao.nome,
+                      l,
+                      modelos.map((m, i) => ({ nome: m.nome, referencia: m.referencia, cores: m.cores, tecido: m.tecido, croquiSvg: croquis[i] ?? null })),
+                      comum,
+                    );
+                    void props.onSalvarTexto(`look-${l.nome.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '-')}.html`, html);
+                  }}
+                >
+                  Salvar a prancha (HTML)
+                </button>
+                <button type="button" disabled={props.travado} onClick={() => void props.onMudar((c) => tirarLook(c, l.id), `Look “${l.nome}” tirado.`)}>
+                  Tirar o look
+                </button>
+              </span>
+            </header>
+            <div className="modelos-do-look">
+              {modelos.map((m) => {
+                const projeto = projetoDe(m);
+                return (
+                  <figure key={m.id} data-modelo={m.id}>
+                    <span className="croqui-do-cartao">{projeto ? (CroquiDoProjeto({ projeto }) ?? <span className="sem-croqui">sem croqui</span>) : <span className="sem-croqui">sem projeto</span>}</span>
+                    <figcaption>
+                      <strong>{m.nome}</strong>
+                      <small>
+                        {m.referencia || 'sem referência'}
+                        {m.tecido ? ` · ${m.tecido}` : ''}
+                      </small>
+                      {m.cores.length > 0 && <small>{m.cores.join(', ')}</small>}
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
+          </article>
+        );
+      })}
+      <fieldset className="grupo-de-opcoes-do-formulario">
+        <legend>Novo look</legend>
+        <label>
+          Nome do look
+          <input type="text" value={nome} maxLength={80} onChange={(e) => setNome(e.target.value)} />
+        </label>
+        <div role="group" aria-label="Modelos do look" className="modelos-para-o-look">
+          {disponiveis.map((m) => (
+            <label key={m.id} className="opcao-em-linha">
+              <input
+                type="checkbox"
+                checked={escolhidos.includes(m.id)}
+                onChange={(e) => setEscolhidos((lista) => (e.target.checked ? [...lista, m.id] : lista.filter((id) => id !== m.id)))}
+              />
+              {m.nome}
+            </label>
+          ))}
+        </div>
+        <label>
+          Nota (opcional)
+          <input type="text" value={nota} maxLength={200} onChange={(e) => setNota(e.target.value)} />
+        </label>
+        <button type="button" className="botao-primario" disabled={props.travado || escolhidos.length < 2 || nome.trim() === ''} onClick={() => void guardar()}>
+          Guardar o look ({escolhidos.length} modelo(s))
+        </button>
+      </fieldset>
+    </section>
   );
 }
 

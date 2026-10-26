@@ -10,6 +10,7 @@ import {
 import { ROTULO_DO_TIPO } from '../domain/enfesto';
 import type { AcessoAPasta } from '../domain/pastaCompartilhada';
 import { BibliotecaNaRede } from './BibliotecaNaRede';
+import { BuscaPorImagem } from './BuscaPorImagem';
 
 interface PainelDeBibliotecaProps {
   readonly projetos: readonly Projeto[];
@@ -231,6 +232,7 @@ export function PainelDeBiblioteca(props: PainelDeBibliotecaProps): React.JSX.El
           </ul>
         )}
       </div>
+      <BuscaPorImagem projetos={props.projetos} onAbrir={props.onAbrir} />
       {props.pastaDaRede && props.projetoParaEnviarARede && props.onTrazerDaRede && (
         <BibliotecaNaRede
           pasta={props.pastaDaRede}
