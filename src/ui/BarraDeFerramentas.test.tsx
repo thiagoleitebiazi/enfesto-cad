@@ -104,6 +104,7 @@ function propsBase(): Props {
     onEntrarModoSentidoDoFio: vi.fn(),
     onExtrairTodasAsRegioes: vi.fn(),
     onPontoDeCasamento: vi.fn(),
+    onComponentePronto: vi.fn(),
     onAbrirCostura: vi.fn(),
     onRemoverCostura: vi.fn(),
     podeRemoverCostura: true,
@@ -230,7 +231,7 @@ describe('BarraDeFerramentas: abas', () => {
     renderizar('Produção');
 
     expect(gruposDaAba()).toEqual({
-      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Extrair todas', 'Molde da foto'],
+      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Extrair todas', 'Molde da foto', 'Componente pronto'],
       'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar', 'Forro, entretela e vista'],
       Costura: ['Costura', 'Remover costura', 'Converter em contorno', 'Converter em costura'],
       'Pregas e Pences': ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences'],
@@ -766,6 +767,12 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     cleanup();
     renderizar('Conferência', { modo: 'cota-raio' });
     expect(botao('Raio')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('Produção: "Componente pronto" abre a escolha do componente (ADR 0133)', () => {
+    const props = renderizar('Produção');
+    fireEvent.click(botao('Componente pronto'));
+    expect(props.onComponentePronto).toHaveBeenCalledTimes(1);
   });
 
   it('Produção: "Extrair todas" age na peça selecionada, de uma vez (ADR 0128)', () => {

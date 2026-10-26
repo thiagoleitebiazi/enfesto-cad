@@ -1743,6 +1743,30 @@ async function principal() {
     `pala ${JSON.stringify(rotulos('pala-de-teste'))}, saia ${JSON.stringify(rotulos('saia-de-teste-1'))} / ${recadoDosPontos.slice(0, 90)}`,
   );
 
+  // 19. O componente pronto (ADR 0133): Produção › Componente pronto › Manga, com a cava de 46 cm: a peça nova entra
+  // depois das da mesa, e a cabeça mede a cava mais a folga de 1,5 cm.
+  const antesDoComponente = await pecasGravadas();
+  await aba('Produção');
+  await espera(300);
+  await botao('Componente pronto');
+  await espera(500);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] fieldset label')).find(l => l.textContent.trim().startsWith('Manga —')).querySelector('input')`);
+  await botaoNaJanela('Continuar');
+  await espera(400);
+  await noCampo('Cava, frente e costas (mm)', '460');
+  await botaoNaJanela('Criar');
+  await espera(800);
+  await foto('48-manga-pronta.png');
+  const comAManga = await pecasGravadas();
+  const manga = comAManga.find((p) => p.nome === 'Manga');
+  const cabecaDaManga = manga ? manga.contorno.slice(0, 33).reduce((s, p, i, c) => (i === 0 ? 0 : s + Math.hypot(p.x - c[i - 1].x, p.y - c[i - 1].y)), 0) : 0;
+  const fimDasDeAntes2 = Math.max(...antesDoComponente.flatMap((p) => p.contorno.map((q) => q.y)));
+  conferir(
+    'a manga pronta: a cabeça mede a cava (46 cm) mais a folga (1,5 cm), depois das peças da mesa',
+    !!manga && comAManga.length === antesDoComponente.length + 1 && Math.abs(cabecaDaManga - 475) < 1 && Math.min(...manga.contorno.map((q) => q.y)) > fimDasDeAntes2,
+    manga ? `cabeça ${cabecaDaManga.toFixed(1)} mm, ${manga.piques.length} pique(s)` : JSON.stringify(comAManga.map((p) => p.nome)),
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));

@@ -91,6 +91,7 @@ export type NomeDoIcone =
   | 'extrair-molde'
   | 'extrair-todas'
   | 'ponto-de-casamento'
+  | 'componente-pronto'
   | 'digitalizar'
   | 'sentido-do-fio'
   | 'linha-de-simetria'
@@ -671,6 +672,13 @@ const CAMINHOS: Record<NomeDoIcone, React.ReactNode> = {
     <>
       <path d="M3 3h8v9H3z" strokeDasharray="2.2 1.8" />
       <path d="M9 8h8v9H9z" fill="currentColor" fillOpacity="0.18" />
+    </>
+  ),
+  // Uma manga e um bolso prontos, lado a lado.
+  'componente-pronto': (
+    <>
+      <path d="M2 8c2-5 7-5 9 0l-1 9H3z" />
+      <path d="M12 6h6v8l-3 2-3-2z" fill="currentColor" fillOpacity="0.2" />
     </>
   ),
   // As listras do tecido e o ponto de casamento sobre uma delas.

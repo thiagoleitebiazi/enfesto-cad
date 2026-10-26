@@ -192,7 +192,7 @@ O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entr
 | Extrair de uma vez todas as regiões fechadas do desenho ("vários modelos com um clique") | ✅ ADR 0128 |
 | Listras e xadrez casados por mais de um ponto | ✅ ADR 0129 |
 | Desenhar a roupa no manequim 3D e tirar os pré-moldes 2D | ⬜ |
-| Zíper como aviamento no 3D; brilho e transparência; biblioteca de componentes (golas, mangas) | 🟡 brilho e transparência: ADR 0131; zíper: ADR 0132 |
+| Zíper como aviamento no 3D; brilho e transparência; biblioteca de componentes (golas, mangas) | ✅ brilho e transparência: ADR 0131; zíper: ADR 0132; componentes: ADR 0133 |
 
 Ficam de fora, como na primeira rodada:
 - a colaboração na nuvem e os avisos por e-mail ou celular, que precisam de servidor;

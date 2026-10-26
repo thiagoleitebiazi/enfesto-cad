@@ -375,6 +375,7 @@ import {
   type PosicaoNoContorno,
 } from './core/geometria';
 import { comPontoDeCasamento, grupoLimpo, nomeDoPontoDeCasamento } from './domain/pontosDeCasamento';
+import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } from './domain/componentes';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
@@ -556,6 +557,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'bainha' }
   | { readonly tipo: 'forro-entretela-vista' }
   | { readonly tipo: 'ponto-de-casamento' }
+  | { readonly tipo: 'componente' }
+  | { readonly tipo: 'medidas-do-componente'; readonly componente: TipoDeComponente }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
   | { readonly tipo: 'dobrar' }
@@ -4792,6 +4795,7 @@ export default function App(): React.JSX.Element {
         onEntrarModoRetangulo={entrarModoRetangulo}
         onEntrarModoSentidoDoFio={entrarModoSentidoDoFio}
         onExtrairTodasAsRegioes={extrairTodasAsRegioesDaSelecionada}
+        onComponentePronto={() => setDialogoDeFerramenta({ tipo: 'componente' })}
         onPontoDeCasamento={pecas.length > 0 ? () => setDialogoDeFerramenta({ tipo: 'ponto-de-casamento' }) : undefined}
         onAbrirCostura={() => setMostrarCostura(true)}
         onRemoverCostura={removerCostura}
@@ -5422,6 +5426,55 @@ export default function App(): React.JSX.Element {
             }
             entrarModoDeConstrucao('bainha');
             setOpcoesDeBainha(opcoes);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta(null)}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'componente' && (
+        <DialogoDeCampos
+          titulo="Componente pronto"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'tipo',
+              rotulo: 'Componente',
+              opcoes: (Object.keys(COMPONENTES) as TipoDeComponente[]).map((t) => ({ valor: t, rotulo: `${COMPONENTES[t].nome} — ${COMPONENTES[t].descricao}` })),
+              inicial: 'bolso-chapa',
+            },
+          ]}
+          nota="O componente sai uma peça nova, pelas medidas que você der na janela seguinte: com o fio, a costura de 10 mm, a dobra e os piques. Ela entra depois das peças da mesa, e muda como qualquer peça."
+          rotuloDoBotao="Continuar"
+          onAplicar={(valores) => {
+            setDialogoDeFerramenta({ tipo: 'medidas-do-componente', componente: valores.tipo as TipoDeComponente });
+            return null;
+          }}
+          // A janela fecha depois de aplicar: só a da escolha, para a das medidas ficar aberta.
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'componente' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'medidas-do-componente' && (
+        <DialogoDeCampos
+          titulo={COMPONENTES[dialogoDeFerramenta.componente].nome}
+          campos={COMPONENTES[dialogoDeFerramenta.componente].campos.map((c) => ({ tipo: 'medida' as const, id: c.id, rotulo: c.rotulo, inicial: paraCampo(c.padraoMm) }))}
+          nota={COMPONENTES[dialogoDeFerramenta.componente].descricao}
+          rotuloDoBotao="Criar"
+          onAplicar={(valores) => {
+            const tipo = dialogoDeFerramenta.componente;
+            try {
+              const medidas = Object.fromEntries(COMPONENTES[tipo].campos.map((c) => [c.id, Number(valores[c.id])]));
+              const nova = componenteNoProjeto(componente(tipo, medidas, proximoId), pecas);
+              const novasPecas = [...pecas, nova];
+              aplicarMudanca(novasPecas);
+              setSelecionadoId(nova.id);
+              setIdsSelecionadosEmLote(new Set());
+              const retangulo = retanguloDoDesenho(novasPecas, enfesto, imagens);
+              if (retangulo) setTransform(enquadrarRetanguloDoMundo(retangulo, tamanhoDaTela));
+              setAviso({ texto: `Componente “${COMPONENTES[tipo].nome}” criado pelas medidas, depois das peças da mesa.`, pecas: novasPecas, selecionadoId: nova.id });
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            setDialogoDeFerramenta(null);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta(null)}

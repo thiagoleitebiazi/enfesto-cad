@@ -121,6 +121,8 @@ interface BarraDeFerramentasProps {
   readonly onEntrarModoSentidoDoFio: () => void;
   /** "Extrair todas" (ADR 0128): uma peça para cada região da selecionada, de uma vez. */
   readonly onExtrairTodasAsRegioes?: () => void;
+  /** "Componente pronto" (ADR 0133): o bolso, o punho, o cós, a gola, a manga, pelas medidas. */
+  readonly onComponentePronto?: () => void;
   /** "Ponto de casamento" (ADR 0130): a marca que casa listras e xadrez; ausente sem peças. */
   readonly onPontoDeCasamento?: (() => void) | undefined;
   readonly onAbrirCostura: () => void;
@@ -1020,6 +1022,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Molde da foto: a foto do molde de papel sobre uma folha ou placa de medida conhecida vira peça — os 4 cantos corrigem a perspectiva; o contorno, os furos, os piques e o fio saem sozinhos, para revisar e conferir"
                   onClick={props.onAbrirMoldeDaFoto}
                 />
+                {props.onComponentePronto && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Componente', 'pronto']}
+                    icone="componente-pronto"
+                    dica="Componente pronto: o bolso chapa, o punho, o cós, a gola padre e a manga básica, feitos pelas medidas — com o fio, a costura, a dobra e os piques; a manga sai com a cabeça medida para a cava"
+                    onClick={props.onComponentePronto}
+                  />
+                )}
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Complementar moldes">
