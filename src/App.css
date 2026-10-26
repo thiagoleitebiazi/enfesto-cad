@@ -5686,3 +5686,31 @@ rect.destaque-do-desenho,
   margin: 8px 0 0;
   font-weight: 600;
 }
+
+/* A mesa digitalizadora (ADR 0144). */
+.painel-da-mesa-digitalizadora .estado-da-mesa {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-left: 4px solid #0d9488;
+  border-radius: 6px;
+  background: color-mix(in srgb, #0d9488 9%, transparent);
+}
+.painel-da-mesa-digitalizadora .estado-da-mesa p {
+  margin: 6px 0 0;
+}
+.painel-da-mesa-digitalizadora .escolha-da-porta ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.painel-da-mesa-digitalizadora textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+}
+.botoes-da-mesa th {
+  width: 3em;
+  text-align: center;
+}

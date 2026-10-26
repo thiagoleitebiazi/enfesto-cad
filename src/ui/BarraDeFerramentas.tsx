@@ -180,6 +180,8 @@ interface BarraDeFerramentasProps {
   readonly podeAbrirProgramas: boolean;
   /** Produção > Molde da foto: a foto do molde de papel vira peça (a perspectiva, o contorno, os furos, os piques e o fio, ADR 0109). */
   readonly onAbrirMoldeDaFoto: () => void;
+  /** Produção > Mesa digitalizadora: o molde de papel copiado ponto a ponto com o cursor da mesa (ADR 0144). */
+  readonly onAbrirMesaDigitalizadora?: () => void;
   /** Abre as imagens do modelo: pelo "Imagens", ou pelo "Digitalizar" (com os passos para copiar um molde de papel). */
   readonly onAbrirImagens: (como: 'imagens' | 'digitalizar') => void;
   /** As ferramentas da aba Graduação, na peça selecionada. */
@@ -1032,6 +1034,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Molde da foto: a foto do molde de papel sobre uma folha ou placa de medida conhecida vira peça — os 4 cantos corrigem a perspectiva; o contorno, os furos, os piques e o fio saem sozinhos, para revisar e conferir"
                   onClick={props.onAbrirMoldeDaFoto}
                 />
+                {props.onAbrirMesaDigitalizadora && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Mesa', 'digitalizadora']}
+                    icone="digitalizar"
+                    dica="Mesa digitalizadora: o molde de papel preso na mesa é copiado ponto a ponto com o cursor (canto, curva, pique, fio, fechar), pela porta serial — ou pelo registro da mesa colado"
+                    onClick={props.onAbrirMesaDigitalizadora}
+                  />
+                )}
                 {props.onComponentePronto && (
                   <Ferramenta
                     tamanho="grande"

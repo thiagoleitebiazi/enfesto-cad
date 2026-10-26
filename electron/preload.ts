@@ -146,6 +146,20 @@ const api = {
       ipcRenderer.removeListener('menu-editar', ouvinte);
     };
   },
+  /** A mesa digitalizadora (ADR 0144): a lista das portas seriais, quando a janela pede uma. Devolve a função que para de ouvir. */
+  aoEscolherPortaSerial(ouvir: (portas: ReadonlyArray<{ readonly id: string; readonly nome: string }>) => void): () => void {
+    const ouvinte = (_evento: Electron.IpcRendererEvent, portas: unknown): void => {
+      if (Array.isArray(portas)) ouvir(portas.filter((p): p is { id: string; nome: string } => typeof p?.id === 'string' && typeof p?.nome === 'string'));
+    };
+    ipcRenderer.on('escolher-porta-serial', ouvinte);
+    return () => {
+      ipcRenderer.removeListener('escolher-porta-serial', ouvinte);
+    };
+  },
+  /** A porta escolhida (vazia: cancelar). */
+  escolherPortaSerial(id: string): void {
+    ipcRenderer.send('porta-serial-escolhida', id);
+  },
   /** Faz a ação no texto do campo em foco (desfazer, copiar, colar…), pelo próprio motor. */
   editarTexto(acao: AcaoDeEdicao): void {
     ipcRenderer.send('editar-texto', acao);

@@ -92,7 +92,7 @@ inventa.
 | Reconhecer sozinho o contorno e virar vetor editável | ✅ (o clique dentro do molde, com o limiar ajustável, ADR 0109) | — |
 | Reconhecer piques, furos e a linha do fio | ✅ (os piques em V, os furos redondos, o traço do fio; o fio também à mão, ADR 0109; os outros traços de caneta — a pence, a marca do bolso — viram linhas internas, ADR 0121) | — |
 | Vários moldes numa foto, cada um uma peça | ✅ (um clique por molde, ADR 0109) | — |
-| Quadro de captura | ⬜ | H |
+| Quadro de captura | ✅ (a mesa digitalizadora pela porta serial, ou o registro dela colado: canto, curva, pique, fio, fechar, desfazer, ADR 0144) | H (não testado numa mesa física) |
 
 ## 6. 3D
 
@@ -224,3 +224,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Trocar ordens, estoque e consumo com o ERP | ✅ pela pasta de troca, sem servidor: ADR 0141 |
 | Os modelos da equipe num lugar só, sem duas pessoas mudando o mesmo | ✅ pela biblioteca numa pasta da rede, com a trava de edição: ADR 0142 |
 | Servidor de encaixes recebendo os pedidos de várias estações | ✅ pela fila na rede (uma pasta; a estação que atende calcula): ADR 0143 |
+| Copiar o molde de papel pelo quadro de captura (a mesa digitalizadora) | ✅ pela porta serial ou pelo registro colado: ADR 0144 (não testado numa mesa física) |

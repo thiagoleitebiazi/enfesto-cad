@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -954,6 +954,32 @@ ipcMain.handle('pasta-apagar', async (_evento, p: PedidoNaPasta) => {
   return raiz ? apagarNaPasta(raiz, p.tipo, p.subpasta, p.nome) : false;
 });
 
+/**
+ * A mesa digitalizadora pela porta serial (ADR 0144): quando a interface pede uma porta (`navigator.serial.requestPort`),
+ * a lista das portas chega aqui; ela vai para a interface, que mostra a lista, e a escolha volta por
+ * 'porta-serial-escolhida' (vazia: cancelada). Um pedido anterior sem resposta é cancelado.
+ */
+let escolhaDePortaPendente: ((portId: string) => void) | null = null;
+
+function prepararPortaSerial(): void {
+  session.defaultSession.on('select-serial-port', (evento, portas, conteudo, responder) => {
+    evento.preventDefault();
+    escolhaDePortaPendente?.('');
+    escolhaDePortaPendente = responder;
+    registrarDiagnostico(`porta-serial-pedida portas=${portas.length}`);
+    conteudo.send(
+      'escolher-porta-serial',
+      portas.map((p) => ({ id: p.portId, nome: p.displayName ? `${p.displayName} (${p.portName})` : p.portName })),
+    );
+  });
+}
+
+ipcMain.on('porta-serial-escolhida', (_evento, id: unknown) => {
+  const responder = escolhaDePortaPendente;
+  escolhaDePortaPendente = null;
+  responder?.(typeof id === 'string' ? id : '');
+});
+
 ipcMain.handle('ia-estado', () => estadoDaIa(arquivoDaIa(), cofreDoSistema));
 
 ipcMain.handle('ia-guardar-chave', async (_evento, dados: { chave?: unknown; modelo?: unknown }) => {
@@ -1066,6 +1092,7 @@ if (!instanciaUnica) {
     // sistema tem de ter o menu do programa (Sair, ⌘Q) e o Editar (sem ele, ⌘C/⌘V não funcionam nem nos campos).
     Menu.setApplicationMenu(NO_MAC ? menuDoMac() : null);
     registrarProtocoloDoApp();
+    prepararPortaSerial();
     if (await perguntarSeAbriuDireito()) return;
     criarJanelaPrincipal();
   });

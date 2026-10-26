@@ -364,6 +364,8 @@ import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { gerarPlt } from './formats/plt-exportacao';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
+import { PainelDaMesaDigitalizadora } from './ui/PainelDaMesaDigitalizadora';
+import type { PecaDaMesa } from './domain/mesaDigitalizadora';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import {
@@ -2060,6 +2062,12 @@ export default function App(): React.JSX.Element {
 
   // ---- O molde da foto (aba Produção, ADR 0109): a peça nova vai depois das outras, com os furos, os piques e o fio.
   const [mostrarMoldeDaFoto, setMostrarMoldeDaFoto] = useState(false);
+  // A mesa digitalizadora (ADR 0144): as peças fechadas com o cursor entram depois das da mesa, com os piques e o fio.
+  const [mostrarMesaDigitalizadora, setMostrarMesaDigitalizadora] = useState(false);
+  const escolhaDePortaSerial = useMemo(() => {
+    const api = window.enfestoCad;
+    return api ? { aoEscolher: api.aoEscolherPortaSerial.bind(api), escolher: api.escolherPortaSerial.bind(api) } : null;
+  }, []);
   const criarPecaDaFoto = useCallback(
     (d: { readonly nome: string; readonly tamanho: string; readonly quantidade: number; readonly molde: MoldeReconhecido }): string | null => {
       try {
@@ -2093,6 +2101,33 @@ export default function App(): React.JSX.Element {
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
       }
+    },
+    [pecas, tecido, enfesto, aplicarMudanca, registrarEventoEPersistir, mudarVistaPara, tamanhoDaTela],
+  );
+
+  const criarPecasDaMesa = useCallback(
+    (lista: readonly PecaDaMesa[]): readonly string[] => {
+      let novasPecas = [...pecas];
+      const nomes: string[] = [];
+      const jaFeitas = pecas.filter((p) => p.nome.startsWith('Peça da mesa ')).length;
+      for (const peca of lista) {
+        const id = proximoId();
+        const nome = `Peça da mesa ${jaFeitas + nomes.length + 1}`;
+        const molde = criarMolde(
+          { nome, referencia: '', tamanho: '', contorno: peca.contorno, linhaDeFio: peca.linhaDeFio, piques: peca.piques.map((q) => ({ id: proximoId(), posicao: q.posicao, indiceAresta: q.indiceAresta })) },
+          id,
+        );
+        novasPecas = [...novasPecas, componenteNoProjeto(molde, novasPecas)];
+        nomes.push(nome);
+      }
+      aplicarMudanca(novasPecas);
+      const ultima = novasPecas[novasPecas.length - 1];
+      if (ultima) {
+        setSelecionadoId(ultima.id);
+        mudarVistaPara(enquadrarRetanguloDoMundo(retanguloEnvolvente(ultima.contorno), tamanhoDaTela));
+      }
+      registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Mesa digitalizadora: ${nomes.join(', ')}`);
+      return nomes;
     },
     [pecas, tecido, enfesto, aplicarMudanca, registrarEventoEPersistir, mudarVistaPara, tamanhoDaTela],
   );
@@ -4890,6 +4925,7 @@ export default function App(): React.JSX.Element {
         onAbrirInspiracao={setInspiracaoAberta}
         onAbrirImpressaoDigital={() => setMostrarImpressaoDigital(true)}
         onAbrirMoldeDaFoto={() => setMostrarMoldeDaFoto(true)}
+        onAbrirMesaDigitalizadora={() => setMostrarMesaDigitalizadora(true)}
         onEntrarModoCurva={() => entrarModoNaPecaSelecionada('curva')}
         onEntrarModoArco2Pontos={() => entrarModoNaPecaSelecionada('arco-2-pontos')}
         onEntrarModoArco3Pontos={() => entrarModoNaPecaSelecionada('arco-3-pontos')}
@@ -5129,6 +5165,9 @@ export default function App(): React.JSX.Element {
           onSalvarTexto={salvarTexto}
           onFechar={() => setRecomendacaoAberta(null)}
         />
+      )}
+      {mostrarMesaDigitalizadora && (
+        <PainelDaMesaDigitalizadora onCriarPecas={criarPecasDaMesa} escolhaDePorta={escolhaDePortaSerial} onFechar={() => setMostrarMesaDigitalizadora(false)} />
       )}
       {mostrarMoldeDaFoto && (
         <PainelDaFotoParaMolde

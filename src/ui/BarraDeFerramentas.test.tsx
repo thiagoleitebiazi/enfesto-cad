@@ -80,6 +80,7 @@ function propsBase(): Props {
     onExportarDxf: vi.fn(),
     onExportarPlt: vi.fn(),
     onExportarIso: vi.fn(),
+    onAbrirMesaDigitalizadora: vi.fn(),
     onSalvar: vi.fn(),
     onSalvarComo: vi.fn(),
     onAbrirBiblioteca: vi.fn(),
@@ -232,7 +233,7 @@ describe('BarraDeFerramentas: abas', () => {
     renderizar('Produção');
 
     expect(gruposDaAba()).toEqual({
-      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Extrair todas', 'Molde da foto', 'Componente pronto'],
+      'Definir moldes': ['Extrair molde', 'Criar molde', 'Digitalizar', 'Sentido do fio', 'Extrair todas', 'Molde da foto', 'Mesa digitalizadora', 'Componente pronto'],
       'Complementar moldes': ['Linha de simetria', 'Bainha', 'Dobrar', 'Desdobrar', 'Forro, entretela e vista'],
       Costura: ['Costura', 'Remover costura', 'Converter em contorno', 'Converter em costura'],
       'Pregas e Pences': ['Pregas', 'Pence no contorno', 'Pence interna', 'Fechar pence', 'Transferir pence', 'Múltiplas pences'],

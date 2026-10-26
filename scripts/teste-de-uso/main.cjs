@@ -2079,6 +2079,54 @@ async function principal() {
     `${paraNaTroca} / ${recadoDaTroca.slice(0, 160)}`,
   );
 
+  // 22. A mesa digitalizadora (ADR 0144): Produção › Mesa digitalizadora. "Ligar a mesa" pede a porta ao programa — a
+  // lista das portas deste computador aparece (ou "nenhuma porta"), e Cancelar não liga. Depois, o registro de uma mesa
+  // colado (dois retângulos tocados a 1000 linhas por polegada, o segundo com um pique) vira duas peças no desenho.
+  for (let i = 0; i < 3 && (await janela()) !== 'nenhuma'; i++) {
+    await fecharJanela();
+    await espera(300);
+  }
+  const antesDaMesa = await pecasGravadas();
+  await aba('Produção');
+  await espera(300);
+  await botao('Mesa digitalizadora');
+  await espera(500);
+  const abriuAMesa = (await janela()) === 'Mesa digitalizadora';
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Ligar a mesa (porta serial)…')`);
+  let escolhaDaPorta = '';
+  for (let i = 0; i < 20 && !escolhaDaPorta; i++) {
+    await espera(250);
+    escolhaDaPorta = await js(`(document.querySelector('[role=dialog] .escolha-da-porta') || {}).innerText || ''`);
+  }
+  await foto('49-mesa-digitalizadora-portas.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] .escolha-da-porta button')).find(b => b.textContent.trim() === 'Cancelar')`);
+  let recadoDaMesa = '';
+  for (let i = 0; i < 20 && !recadoDaMesa.includes('Nenhuma porta foi escolhida'); i++) {
+    await espera(250);
+    recadoDaMesa = await js(`(document.querySelector('[role=dialog] .estado-da-mesa [role=status]') || {}).textContent || ''`);
+  }
+  conferir(
+    'a mesa digitalizadora: "Ligar a mesa" mostra as portas deste computador (ou que não há nenhuma), e Cancelar não liga',
+    abriuAMesa && (escolhaDaPorta.includes('Nenhuma porta serial encontrada') || escolhaDaPorta.includes('Usar ')) && recadoDaMesa.includes('Nenhuma porta foi escolhida'),
+    `${escolhaDaPorta.replace(/\s+/g, ' ').slice(0, 160)} | ${recadoDaMesa}`,
+  );
+  await clicarEm(`document.querySelector('[role=dialog] details summary')`);
+  const registroDaMesa = ['0,0,1', '4000,0,1', '4000,2000,1', '0,2000,1', '0,0,5', '0,0,1', '2000,0,1', '2000,1000,3', '2000,2000,1', '0,2000,1', '0,0,5'].join('\n');
+  await js(`(() => { const a = document.querySelector('[role=dialog] textarea[aria-label="Registro da mesa"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(a, ${JSON.stringify(registroDaMesa)}); a.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Ler o registro')`);
+  await espera(800);
+  await foto('50-mesa-digitalizadora-pecas.png');
+  const comAsDaMesa = await pecasGravadas();
+  const daMesa = comAsDaMesa.filter((p) => p.nome.startsWith('Peça da mesa '));
+  const larguraDaPrimeira = daMesa[0] ? Math.max(...daMesa[0].contorno.map((q) => q.y)) - Math.min(...daMesa[0].contorno.map((q) => q.y)) : 0;
+  conferir(
+    'o registro da mesa colado vira duas peças no desenho: 101,6 mm de largura (4000 linhas a 1000 por polegada), a segunda com o pique',
+    comAsDaMesa.length === antesDaMesa.length + 2 && daMesa.length === 2 && Math.abs(larguraDaPrimeira - 101.6) < 0.01 && daMesa[1].piques.length === 1,
+    `${daMesa.map((p) => `${p.nome}: ${p.contorno.length} pontos, ${p.piques.length} pique(s)`).join('; ')} | largura ${larguraDaPrimeira.toFixed(2)} mm`,
+  );
+  await fecharJanela();
+  await espera(300);
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));
