@@ -437,3 +437,30 @@ export function corRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   return m ? [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)] : [79, 124, 172];
 }
+
+/**
+ * O ponto do corpo debaixo de um ponto da tela (o desenho no corpo, ADR 0134): o triângulo do corpo que contém o ponto
+ * na tela, o mais perto da câmera; o ponto 3D pelos mesmos pesos dos três cantos. `null` fora do corpo.
+ */
+export function pontoDoCorpoNaTela(proj: Projecao, corpo: MalhaParaDesenhar, sx: number, sy: number): { readonly x: number; readonly y: number; readonly z: number } | null {
+  const v = corpo.vertices;
+  let melhor: { z: number; x: number; y: number; zz: number } | null = null;
+  const T = corpo.triangulos.length / 3;
+  for (let t = 0; t < T; t++) {
+    const i = [corpo.triangulos[3 * t]!, corpo.triangulos[3 * t + 1]!, corpo.triangulos[3 * t + 2]!];
+    const p = i.map((k) => proj.projetar(v[3 * k]!, v[3 * k + 1]!, v[3 * k + 2]!));
+    if (!p[0] || !p[1] || !p[2]) continue;
+    const [a, b, c] = p as [NonNullable<(typeof p)[0]>, NonNullable<(typeof p)[0]>, NonNullable<(typeof p)[0]>];
+    const d = (b.sy - c.sy) * (a.sx - c.sx) + (c.sx - b.sx) * (a.sy - c.sy);
+    if (Math.abs(d) < 1e-12) continue;
+    const w0 = ((b.sy - c.sy) * (sx - c.sx) + (c.sx - b.sx) * (sy - c.sy)) / d;
+    const w1 = ((c.sy - a.sy) * (sx - c.sx) + (a.sx - c.sx) * (sy - c.sy)) / d;
+    const w2 = 1 - w0 - w1;
+    if (w0 < -1e-9 || w1 < -1e-9 || w2 < -1e-9) continue;
+    const z = w0 * a.z + w1 * b.z + w2 * c.z;
+    if (melhor && z >= melhor.z) continue;
+    const em = (eixo: number): number => w0 * v[3 * i[0]! + eixo]! + w1 * v[3 * i[1]! + eixo]! + w2 * v[3 * i[2]! + eixo]!;
+    melhor = { z, x: em(0), y: em(1), zz: em(2) };
+  }
+  return melhor ? { x: melhor.x, y: melhor.y, z: melhor.zz } : null;
+}

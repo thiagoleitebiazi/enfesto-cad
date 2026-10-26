@@ -1365,6 +1365,43 @@ async function principal() {
     montagemGravada ? `${JSON.stringify(posicoesGravadas)}, ${montagemGravada.costuras.length} costura(s)` : 'sem montagem',
   );
 
+  // 13b. O desenho no corpo (ADR 0134): o provador aberto de novo; de frente, quatro cliques no tronco (o peito e a
+  // cintura, dos dois lados do meio); "Tirar o pré-molde" põe a peça desenrolada no projeto. Fica por último no
+  // provador: a peça nova muda a lista dele.
+  await aba('Conferência');
+  await botao('Provador 3D');
+  await espera(2000);
+  await botaoNaJanela('Frente');
+  await espera(500);
+  await parteDaJanela('Desenhar no corpo');
+  await espera(300);
+  const telaDoProvador = JSON.parse(await js(`JSON.stringify(document.querySelector('[role=dialog] canvas').getBoundingClientRect())`));
+  for (const [fx, fy] of [[-0.04, 0.3], [0.04, 0.3], [0.04, 0.4], [-0.04, 0.4]]) {
+    const x = Math.round(telaDoProvador.left + telaDoProvador.width * (0.5 + fx));
+    const y = Math.round(telaDoProvador.top + telaDoProvador.height * fy);
+    win.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+    await espera(80);
+    win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+    await espera(250);
+  }
+  const pontosNoCorpo = await js(`((document.querySelector('[role=dialog] section[aria-label="Desenhar no corpo"] .resumo-do-plano') || {}).textContent || '')`);
+  await foto('35d-desenho-no-corpo.png');
+  // Com o provador aberto, o projeto não é gravado pelo atalho: a conferência é pela lista de peças da tela.
+  const antesDoPreMolde = await lista();
+  await botaoNaJanela('Tirar o pré-molde');
+  await espera(800);
+  const recadoDoPreMolde = await js(`((document.querySelector('[role=dialog] .controles-do-provador [role=alert]') || {}).textContent || '')`);
+  const comPreMolde = await lista();
+  await foto('35e-pre-molde-tirado.png');
+  conferir(
+    'o desenho no corpo: quatro pontos no tronco viram o pré-molde no projeto',
+    pontosNoCorpo === '4 ponto(s) no corpo.' && comPreMolde.length === antesDoPreMolde.length + 1 && comPreMolde.some((n) => n.startsWith('Pré-molde do corpo')),
+    `${pontosNoCorpo} / ${JSON.stringify(comPreMolde.slice(-2))} / ${recadoDoPreMolde.slice(0, 100)}`,
+  );
+  await fecharJanela();
+  await espera(800);
+
   // 14. A inspiração e a IA (ADR 0112): Modelo › Criação › Inspiração; duas imagens desenhadas na hora entram pelo
   // campo de arquivo, com as cores tiradas delas; a categoria, a nota, a paleta; a IA sem chave; a chave de teste
   // guardada cifrada (o arquivo não a mostra); o croqui com uma referência, pelo serviço de mentira (a chave só no

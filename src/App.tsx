@@ -5036,6 +5036,7 @@ export default function App(): React.JSX.Element {
           onSalvarArquivo={salvarArquivoDoProvador}
           novoId={() => `costura-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
           onFechar={() => setMostrarProvador3D(false)}
+          onCriarPeca={(peca) => aplicarMudanca([...pecas, componenteNoProjeto(peca, pecas)])}
         />
       )}
       {recomendacaoAberta && (

@@ -45,10 +45,12 @@ import {
   type Tecido3D,
 } from '../domain/montagem3d';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
-import { cameraDeFrente, corDaTensao, corRgb, desenharCena, luzDoTom, montarCena, projecao, TONS_DA_ESTAMPA, type Camera3D, type EstampaPronta, type TecidoParaDesenhar } from './cena3d';
+import { cameraDeFrente, corDaTensao, corRgb, desenharCena, luzDoTom, montarCena, pontoDoCorpoNaTela, projecao, TONS_DA_ESTAMPA, type Camera3D, type EstampaPronta, type TecidoParaDesenhar } from './cena3d';
+import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
+import type { Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
 
-type AbaDoProvador = 'pecas' | 'costuras' | 'manequim' | 'tecido' | 'imagem';
+type AbaDoProvador = 'pecas' | 'costuras' | 'manequim' | 'tecido' | 'imagem' | 'desenho';
 
 interface EstadoDaSimulacao {
   readonly fase: 'arrumado' | 'costurando' | 'caindo' | 'assentou' | 'parado';
@@ -97,6 +99,8 @@ export function PainelDoProvador3D(props: {
   readonly onSalvarArquivo: (nome: string, bytes: ArrayBuffer) => Promise<string | null>;
   readonly novoId: () => string;
   readonly onFechar: () => void;
+  /** O pré-molde tirado do desenho no corpo (ADR 0134) vai para o projeto. */
+  readonly onCriarPeca?: (peca: Molde) => void;
 }): React.JSX.Element {
   const instancias = useMemo(() => instanciasDasPecas(props.pecas), [props.pecas]);
   const [montagem, setMontagem] = useState<Montagem3D>(() => ({ ...props.montagemGuardada, pecas: configuracoesDasInstancias(instancias, props.montagemGuardada) }));
@@ -107,6 +111,10 @@ export function PainelDoProvador3D(props: {
   const [simulando, setSimulando] = useState(false);
   const [estado, setEstado] = useState<EstadoDaSimulacao>({ fase: 'arrumado', tempo: 0 });
   const [mensagem, setMensagem] = useState<string | null>(null);
+  // O desenho no corpo (ADR 0134): os pontos clicados no tronco, a folga e o nome do pré-molde.
+  const [pontosDoDesenho, setPontosDoDesenho] = useState<readonly Ponto3D[]>([]);
+  const [folgaDoDesenho, setFolgaDoDesenho] = useState(4);
+  const [nomeDoDesenho, setNomeDoDesenho] = useState('Pré-molde do corpo');
   const [imagensProntas, setImagensProntas] = useState<ReadonlyMap<string, HTMLImageElement>>(new Map());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const montadaRef = useRef<Montada | null>(null);
@@ -266,9 +274,25 @@ export function PainelDoProvador3D(props: {
           .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
       desenharCena(ctx, montarCena(proj, m.malhaDoCorpo, tecido), estampas);
+      // O desenho no corpo, por cima: o contorno vermelho, fechado com três pontos ou mais, e os pontos.
+      const naTela = pontosDoDesenho.map((p) => proj.projetar(p.x, p.y, p.z)).filter((p): p is NonNullable<typeof p> => p !== null);
+      if (naTela.length > 0) {
+        ctx.strokeStyle = '#d32f2f';
+        ctx.fillStyle = '#d32f2f';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        naTela.forEach((p, i) => (i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy)));
+        if (naTela.length >= 3) ctx.closePath();
+        ctx.stroke();
+        for (const p of naTela) {
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, 4, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
       return true;
     },
-    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem],
+    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem, pontosDoDesenho],
   );
 
   const desenhar = useCallback((): void => {
@@ -430,6 +454,21 @@ export function PainelDoProvador3D(props: {
             className="canvas-do-provador"
             aria-label="O manequim com as peças em 3D (arraste para girar, a roda aproxima)"
             onPointerDown={(e) => {
+              if (aba === 'desenho') {
+                // Desenhando no corpo: o clique põe um ponto no tronco (não gira a vista).
+                const canvas = e.currentTarget;
+                const r = canvas.getBoundingClientRect();
+                const m = obterMontada();
+                const proj = projecao(camera, canvas.width, canvas.height, m.corpo.alturaMm);
+                const p = pontoDoCorpoNaTela(proj, m.malhaDoCorpo, ((e.clientX - r.left) * canvas.width) / Math.max(1, r.width), ((e.clientY - r.top) * canvas.height) / Math.max(1, r.height));
+                if (!p || !pontoNoTronco(m.corpo, p)) {
+                  setMensagem('Clique no tronco do manequim (não na cabeça, nos braços ou nas pernas). Para girar, saia da aba "Desenhar no corpo".');
+                  return;
+                }
+                setMensagem(null);
+                setPontosDoDesenho((lista) => [...lista, p]);
+                return;
+              }
               arrastoRef.current = { x: e.clientX, y: e.clientY, camera };
               e.currentTarget.setPointerCapture?.(e.pointerId);
             }}
@@ -475,6 +514,7 @@ export function PainelDoProvador3D(props: {
                 ['manequim', 'Manequim'],
                 ['tecido', 'Tecido'],
                 ['imagem', 'Imagem'],
+                ['desenho', 'Desenhar no corpo'],
               ] as const
             ).map(([id, rotulo]) => (
               <button key={id} type="button" role="tab" aria-selected={aba === id} className={aba === id ? 'item-selecionado' : undefined} onClick={() => setAba(id)}>
@@ -519,6 +559,50 @@ export function PainelDoProvador3D(props: {
               onMudar={(tecido) => setMontagem((m) => ({ ...m, tecido }))}
               onResolucao={(resolucaoMm) => setMontagem((m) => ({ ...m, resolucaoMm }))}
             />
+          )}
+          {aba === 'desenho' && (
+            <section aria-label="Desenhar no corpo" className="secao-do-provador">
+              <p className="nota-do-formulario">
+                Clique no tronco do manequim, em volta da peça que você quer (de frente, de lado ou de costas — os botões de cima viram a vista). O contorno vermelho
+                acompanha. "Tirar o pré-molde" desenrola o desenho: a altura fica de pé, e o caminho em volta do corpo, desde o meio da frente, fica deitado, com a
+                folga pedida. O pré-molde sai colado ao corpo, para ajustar como qualquer peça.
+              </p>
+              <p className="resumo-do-plano">{pontosDoDesenho.length} ponto(s) no corpo.</p>
+              <p className="acoes-da-fila">
+                <button type="button" disabled={pontosDoDesenho.length === 0} onClick={() => setPontosDoDesenho((l) => l.slice(0, -1))}>
+                  Desfazer o último ponto
+                </button>
+                <button type="button" disabled={pontosDoDesenho.length === 0} onClick={() => setPontosDoDesenho([])}>
+                  Recomeçar o desenho
+                </button>
+              </p>
+              <label>
+                Folga (%)
+                <CampoDeNumero rotulo="Folga do pré-molde" valor={folgaDoDesenho} casas={1} onMudar={(v) => v !== null && setFolgaDoDesenho(v)} />
+              </label>
+              <label>
+                Nome da peça
+                <input aria-label="Nome do pré-molde" value={nomeDoDesenho} onChange={(e) => setNomeDoDesenho(e.target.value)} />
+              </label>
+              <p className="acoes-da-fila">
+                <button
+                  type="button"
+                  className="botao-primario"
+                  disabled={pontosDoDesenho.length < 3 || !props.onCriarPeca}
+                  onClick={() => {
+                    try {
+                      const peca = preMoldeDoDesenho(obterMontada().corpo, pontosDoDesenho, folgaDoDesenho, nomeDoDesenho, `pre-molde-${props.novoId()}`);
+                      props.onCriarPeca?.(peca);
+                      setMensagem(`“${peca.nome}” foi para o projeto, depois das peças da mesa (o desenho continua aqui).`);
+                    } catch (erro) {
+                      setMensagem(erro instanceof Error ? erro.message : String(erro));
+                    }
+                  }}
+                >
+                  Tirar o pré-molde
+                </button>
+              </p>
+            </section>
           )}
           {aba === 'imagem' && (
             <section aria-label="Imagem" className="secao-do-provador">
