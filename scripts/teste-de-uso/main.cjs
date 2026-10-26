@@ -1690,6 +1690,59 @@ async function principal() {
   await abrirABiblioteca();
   conferir('abre a Biblioteca', (await janela()) === 'Biblioteca de trabalhos', await janela());
   const nomeDaBase = await js(`(document.querySelector('.lista-da-biblioteca li.item-selecionado strong') || {}).textContent || ''`);
+
+  // A biblioteca na rede (ADR 0142): escolher a pasta, publicar o projeto aberto, pegar para editar (a trava com o
+  // nome), devolver (a trava sai); depois, uma trava de outra pessoa posta na pasta aparece na linha, e o "Pegar
+  // para editar" some.
+  const pastaDaRede = path.join(SAIDA, 'biblioteca-na-rede');
+  fs.rmSync(pastaDaRede, { recursive: true, force: true });
+  fs.mkdirSync(pastaDaRede, { recursive: true });
+  const naRede = (rotulo) => clicarEm(`Array.from(document.querySelectorAll('.biblioteca-na-rede button')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
+  const recadoDaRede = () => js(`(document.querySelector('.biblioteca-na-rede .recado-da-rede') || {}).textContent || ''`);
+  const linhaNaRede = () => js(`(() => { const tr = Array.from(document.querySelectorAll('.tabela-da-rede tbody tr')).find(tr => tr.cells[0].textContent.startsWith(${JSON.stringify(nomeDaBase)})); return tr ? tr.className + ' | ' + tr.innerText.replace(/\\s+/g, ' ') : ''; })()`);
+  arquivoParaAbrir = pastaDaRede;
+  await naRede('Escolher a pasta…');
+  await espera(800);
+  arquivoParaAbrir = DXF;
+  await js(`(() => { const i = Array.from(document.querySelectorAll('.biblioteca-na-rede label')).find(l => l.textContent.includes('Seu nome')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Teste de uso'); i.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  await js(`(() => { const s = document.querySelector('.biblioteca-na-rede .publicar-na-rede select'); const o = Array.from(s.options).find(o => o.textContent.startsWith(${JSON.stringify(nomeDaBase)})); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value); s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  await naRede('Publicar na rede');
+  await espera(800);
+  const publicado = await recadoDaRede();
+  await naRede('Pegar para editar');
+  await espera(800);
+  const travas = fs.readdirSync(path.join(pastaDaRede, 'travas'));
+  const travaDoTeste = travas[0] ? JSON.parse(fs.readFileSync(path.join(pastaDaRede, 'travas', travas[0]), 'utf8')) : {};
+  const linhaComATrava = await linhaNaRede();
+  await foto('42b-biblioteca-na-rede-com-voce.png');
+  await naRede('Devolver à rede');
+  await espera(800);
+  const devolvido = await recadoDaRede();
+  const projetosNaRede = fs.readdirSync(path.join(pastaDaRede, 'projetos'));
+  conferir(
+    'a biblioteca na rede: publicar o projeto, pegar para editar (a trava com o nome) e devolver (a trava sai)',
+    publicado === `“${nomeDaBase}” está na rede.` &&
+      projetosNaRede.length === 1 &&
+      travaDoTeste.quem === 'Teste de uso' &&
+      linhaComATrava.startsWith('travado-por-mim') &&
+      linhaComATrava.includes('Com você') &&
+      devolvido.endsWith('foi devolvido à rede; a trava saiu.') &&
+      fs.readdirSync(path.join(pastaDaRede, 'travas')).length === 0,
+    `${publicado} | ${JSON.stringify(travaDoTeste)} | ${linhaComATrava.slice(0, 160)} | ${devolvido}`,
+  );
+  const idNaRede = projetosNaRede[0] ? projetosNaRede[0].replace(/\.json$/, '') : 'x';
+  fs.writeFileSync(path.join(pastaDaRede, 'travas', `${idNaRede}.trava.json`), JSON.stringify({ quem: 'Maria', desdeIso: new Date().toISOString(), nomeDoProjeto: nomeDaBase }));
+  await naRede('Atualizar');
+  await espera(800);
+  const linhaDeOutra = await linhaNaRede();
+  const botoesDaLinha = await js(`(() => { const tr = Array.from(document.querySelectorAll('.tabela-da-rede tbody tr')).find(tr => tr.cells[0].textContent.startsWith(${JSON.stringify(nomeDaBase)})); return tr ? Array.from(tr.querySelectorAll('button')).map(b => b.textContent.trim()).join(',') : ''; })()`);
+  await foto('42c-biblioteca-na-rede-travada.png');
+  conferir(
+    'o modelo travado por outra pessoa: a linha em âmbar diz quem, e só deixa trazer uma cópia',
+    linhaDeOutra.startsWith('travado-por-outro') && linhaDeOutra.includes('Em edição por Maria desde') && botoesDaLinha === 'Trazer uma cópia',
+    `${linhaDeOutra.slice(0, 160)} | ${botoesDaLinha}`,
+  );
+  fs.rmSync(path.join(pastaDaRede, 'travas', `${idNaRede}.trava.json`), { force: true });
   const naLinhaDaBase = (rotulo) =>
     clicarEm(`Array.from(Array.from(document.querySelectorAll('.lista-da-biblioteca li')).find(li => (li.querySelector('strong') || {}).textContent === ${JSON.stringify(nomeDaBase)}).querySelectorAll('button')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
   await naLinhaDaBase('Aprovar como base');

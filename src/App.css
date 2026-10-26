@@ -5624,3 +5624,53 @@ rect.destaque-do-desenho,
   border: 1px solid var(--cinza-300);
   border-radius: 4px;
 }
+
+/* A biblioteca na rede (ADR 0142). */
+.biblioteca-na-rede {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--cor-borda);
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  background: color-mix(in srgb, #2563eb 5%, transparent);
+}
+.biblioteca-na-rede h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+.tabela-da-rede {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+.tabela-da-rede caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 4px;
+}
+.tabela-da-rede th,
+.tabela-da-rede td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--cor-borda);
+  text-align: left;
+  vertical-align: middle;
+}
+.tabela-da-rede tr.travado-por-outro td {
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+}
+.tabela-da-rede tr.travado-por-mim td {
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+}
+.tabela-da-rede .acoes-da-rede {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tabela-da-rede .codigo-do-projeto {
+  color: var(--cor-texto-secundario);
+  font-size: 0.85em;
+}
+.recado-da-rede {
+  margin: 8px 0 0;
+  font-weight: 600;
+}

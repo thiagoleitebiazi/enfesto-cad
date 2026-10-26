@@ -33,7 +33,7 @@ inventa.
 | Aprovação da peça-piloto (aprovar / pedir alteração), comentários e revisões com histórico | ✅ (ADR 0108; e a aprovação da ficha, ADR 0105) | — |
 | Painéis de andamento e atrasos; linha do tempo do lançamento | ✅ (ADR 0108) | — |
 | Ligação da coleção com o desenho, o molde e o encaixe | ✅ (o modelo liga ao projeto: molde, encaixe, ficha e croqui, ADR 0108) | — |
-| 100% na nuvem, colaboração simultânea entre pessoas | ⬜ | S (exige servidor; o programa é local) |
+| 100% na nuvem, colaboração simultânea entre pessoas | 🟡 (a biblioteca numa pasta da rede, com a trava de quem está editando, ADR 0142) | S (a edição ao mesmo tempo e a nuvem exigem servidor) |
 
 ## 2. Desenho técnico, ficha técnica e pré-custo
 
@@ -222,3 +222,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 |---|---|
 | Mandar o encaixe para a mesa de corte automático | 🟡 o arquivo ISO (G-code): ADR 0140 (não testado numa mesa) |
 | Trocar ordens, estoque e consumo com o ERP | ✅ pela pasta de troca, sem servidor: ADR 0141 |
+| Os modelos da equipe num lugar só, sem duas pessoas mudando o mesmo | ✅ pela biblioteca numa pasta da rede, com a trava de edição: ADR 0142 |

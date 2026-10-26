@@ -804,6 +804,8 @@ export default function App(): React.JSX.Element {
   const [mostrarPlanoDeCorte, setMostrarPlanoDeCorte] = useState(false);
   // A pasta de troca com o ERP (ADR 0141): fora do programa (no navegador), não há.
   const [pastaDoErp] = useState(() => acessoAPasta('erp'));
+  // A biblioteca na rede (ADR 0142).
+  const [pastaDaBiblioteca] = useState(() => acessoAPasta('biblioteca'));
   const [cadastroDeProducao, setCadastroDeProducao] = useState<CadastroCarregado | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
@@ -1252,6 +1254,37 @@ export default function App(): React.JSX.Element {
       if (projeto) mostrarProjeto(projeto);
     },
     [projetos, projetoAtual, pecas, tecido, enfesto, salvarAntesDeTrocar, mostrarProjeto],
+  );
+
+  // A biblioteca na rede (ADR 0142): o projeto como está agora (o aberto, salvo antes se mudou), para publicar ou
+  // devolver; e a cópia trazida da rede, que entra na biblioteca deste computador (e na tela, se for o aberto).
+  const projetoParaEnviarARede = useCallback(
+    (id: string): Projeto | null => {
+      if (id !== projetoAtual.id) return projetos.find((p) => p.id === id) ?? null;
+      if (JSON.stringify(projetoAtual.estadoAtual) === JSON.stringify({ pecas, tecido, enfesto })) return projetoAtual;
+      const salvo = salvarAntesDeTrocar();
+      setProjetoAtual(salvo);
+      setProjetos((lista) => [...lista.filter((p) => p.id !== salvo.id), salvo]);
+      return salvo;
+    },
+    [projetoAtual, projetos, pecas, tecido, enfesto, salvarAntesDeTrocar],
+  );
+
+  const trazerProjetoDaRede = useCallback(
+    (projeto: Projeto): string | null => {
+      if (projeto.id === projetoAtual.id && JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify({ pecas, tecido, enfesto })) {
+        return 'o projeto aberto tem mudanças ainda não salvas: salve (Ctrl+S) e tente de novo.';
+      }
+      setProjetos((lista) => [...lista.filter((p) => p.id !== projeto.id), projeto]);
+      if (projeto.id === projetoAtual.id) {
+        mostrarProjeto(projeto);
+        // Mostrar o projeto fecha a Biblioteca; aqui ela continua aberta, com a lista da rede.
+        setMostrarBiblioteca(true);
+      }
+      void persistirProjeto(projeto).then(carregarListaDeProjetos);
+      return null;
+    },
+    [projetoAtual, pecas, tecido, enfesto, mostrarProjeto, persistirProjeto, carregarListaDeProjetos],
   );
 
   // Variantes (aba Modelo): cópias do projeto aberto, guardadas na Biblioteca.
@@ -4953,6 +4986,9 @@ export default function App(): React.JSX.Element {
           onTirarDasBases={tirarDasBasesDaBiblioteca}
           onNovoModeloDaBase={novoModeloDaBase}
           onPorPecasDaBase={porPecasDaBase}
+          pastaDaRede={pastaDaBiblioteca}
+          projetoParaEnviarARede={projetoParaEnviarARede}
+          onTrazerDaRede={trazerProjetoDaRede}
         />
       )}
       {mostrarHistorico && (

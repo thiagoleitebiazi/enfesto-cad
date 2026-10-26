@@ -9,13 +9,15 @@ import { gravarSemCorromper } from './gravacao';
  * dentro da pasta escolhida.
  */
 
-export type TipoDePasta = 'erp';
+export type TipoDePasta = 'erp' | 'biblioteca';
 
 /** As subpastas de cada tipo: as únicas em que a interface lê e grava. */
 export const SUBPASTAS: Readonly<Record<TipoDePasta, readonly string[]>> = {
   // O ERP deixa as ordens em "entrada"; o programa move cada arquivo lido para "processados" (ou "com-erro", com o
   // relatório dos erros) e deixa em "saida" as ordens, os rolos, os movimentos de estoque e os cortes.
   erp: ['entrada', 'processados', 'com-erro', 'saida'],
+  // A biblioteca na rede (ADR 0142): um arquivo por modelo em "projetos" e a trava de quem está editando em "travas".
+  biblioteca: ['projetos', 'travas'],
 };
 
 export const ehTipoDePasta = (v: unknown): v is TipoDePasta => typeof v === 'string' && Object.prototype.hasOwnProperty.call(SUBPASTAS, v);

@@ -2,6 +2,7 @@ import { textoCsv } from '../core/csv';
 import { numeroComVirgula } from '../core/numeros';
 import { estadoDoRolo, grupoDoRolo, movimentosAtivos, salvarOrdem, type CadastroDeProducao } from './cadastroDeProducao';
 import { importarOrdensCsv, type ContextoDaImportacao } from './importacaoDeOrdens';
+import type { AcessoAPasta, PastaDeArquivos } from './pastaCompartilhada';
 import { ROTULO_DA_SITUACAO } from './execucaoDoCorte';
 import { consumoPorMalha, csvDasExecucoes, csvDoConsumoPorMalha } from './salaDeCorte';
 
@@ -141,20 +142,10 @@ export function arquivosParaOErp(cadastro: CadastroDeProducao, nomeDoProjeto: (p
 }
 
 /** O que a troca precisa da pasta (no programa, a pasta compartilhada do tipo "erp"; nos testes, uma de mentira). */
-export interface PastaDeTroca {
-  readonly listar: (subpasta: string) => Promise<ReadonlyArray<{ readonly nome: string }> | null>;
-  readonly ler: (subpasta: string, nome: string) => Promise<string | null>;
-  readonly gravar: (subpasta: string, nome: string, texto: string) => Promise<boolean>;
-  /** Não substitui: `false` se o destino existe ou se o arquivo já não está lá. */
-  readonly mover: (de: string, nome: string, para: string, novoNome: string) => Promise<boolean>;
-}
+export type PastaDeTroca = Pick<PastaDeArquivos, 'listar' | 'ler' | 'gravar' | 'mover'>;
 
 /** A pasta de troca na interface: além de trocar arquivos, saber onde está, escolher e deixar de usar. */
-export interface AcessoAPastaDeTroca extends PastaDeTroca {
-  readonly onde: () => Promise<string | null>;
-  readonly escolher: () => Promise<string | null>;
-  readonly esquecer: () => Promise<boolean>;
-}
+export type AcessoAPastaDeTroca = PastaDeTroca & Pick<AcessoAPasta, 'onde' | 'escolher' | 'esquecer'>;
 
 export interface ResultadoDaTroca {
   /** O cadastro com as ordens importadas (igual ao de antes, se nenhuma entrou). */

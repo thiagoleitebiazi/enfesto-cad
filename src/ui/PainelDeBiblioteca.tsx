@@ -8,6 +8,8 @@ import {
   type StatusDoProjeto,
 } from '../domain/projeto';
 import { ROTULO_DO_TIPO } from '../domain/enfesto';
+import type { AcessoAPasta } from '../domain/pastaCompartilhada';
+import { BibliotecaNaRede } from './BibliotecaNaRede';
 
 interface PainelDeBibliotecaProps {
   readonly projetos: readonly Projeto[];
@@ -25,6 +27,10 @@ interface PainelDeBibliotecaProps {
   readonly onTirarDasBases?: (id: string) => void;
   readonly onNovoModeloDaBase?: (id: string, nome: string) => string | null;
   readonly onPorPecasDaBase?: (id: string) => void;
+  /** A biblioteca na rede (ADR 0142); sem a pasta (fora do programa), a seção não aparece. */
+  readonly pastaDaRede?: AcessoAPasta | null;
+  readonly projetoParaEnviarARede?: (id: string) => Projeto | null;
+  readonly onTrazerDaRede?: (projeto: Projeto) => string | null;
 }
 
 function formatarData(iso: string): string {
@@ -225,6 +231,15 @@ export function PainelDeBiblioteca(props: PainelDeBibliotecaProps): React.JSX.El
           </ul>
         )}
       </div>
+      {props.pastaDaRede && props.projetoParaEnviarARede && props.onTrazerDaRede && (
+        <BibliotecaNaRede
+          pasta={props.pastaDaRede}
+          projetos={props.projetos}
+          projetoParaEnviar={props.projetoParaEnviarARede}
+          onTrazer={props.onTrazerDaRede}
+          agoraIso={() => new Date().toISOString()}
+        />
+      )}
     </Sobreposicao>
   );
 }
