@@ -416,6 +416,47 @@ async function principal() {
   await espera(1200);
   conferir('abre o planejamento de corte', (await janela()) === 'Planejamento de corte', await janela());
   await foto('10-planejamento.png');
+
+  // 4b. A troca com o ERP por uma pasta (ADR 0141): escolher a pasta (o programa cria as subpastas), o ERP deixa um
+  // CSV de ordens do molde na entrada; "Trocar com o ERP agora" importa a ordem, move o arquivo para "processados" e
+  // grava os cinco arquivos da saída.
+  const pastaDoErp = path.join(SAIDA, 'troca-com-o-erp');
+  fs.rmSync(pastaDoErp, { recursive: true, force: true });
+  fs.mkdirSync(pastaDoErp, { recursive: true });
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === '2. Ordem')`);
+  await espera(400);
+  arquivoParaAbrir = pastaDoErp;
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Escolher a pasta…')`);
+  await espera(800);
+  arquivoParaAbrir = DXF;
+  const subpastasDoErp = fs.readdirSync(pastaDoErp).sort().join(',');
+  const notaDaTroca = await js(`(document.querySelector('[role=dialog] .troca-com-o-erp .nota-do-formulario') || {}).textContent || ''`);
+  const codigoDoMolde = (notaDaTroca.match(/\(([^()]+)_ordens\.csv\)/) || [])[1] || '';
+  const exemploDoCsv = await js(`(document.querySelector('[role=dialog] .exemplo-de-csv') || {}).textContent || ''`);
+  fs.writeFileSync(path.join(pastaDoErp, 'entrada', `${codigoDoMolde}_ordens.csv`), exemploDoCsv.replace('OP-100', 'OP-ERP-1') + '\n');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Trocar com o ERP agora')`);
+  let recadoDaTrocaComOErp = '';
+  for (let i = 0; i < 20 && !recadoDaTrocaComOErp.includes('Saída para o ERP'); i++) {
+    await espera(300);
+    recadoDaTrocaComOErp = await js(`document.querySelector('[role=dialog]').innerText`);
+  }
+  await foto('10b-troca-com-o-erp.png');
+  const naEntrada = fs.readdirSync(path.join(pastaDoErp, 'entrada'));
+  const processados = fs.readdirSync(path.join(pastaDoErp, 'processados'));
+  const naSaida = fs.readdirSync(path.join(pastaDoErp, 'saida')).sort();
+  const ordensNaSaida = naSaida.includes('ordens.csv') ? fs.readFileSync(path.join(pastaDoErp, 'saida', 'ordens.csv'), 'utf8') : '';
+  conferir(
+    'a troca com o ERP: as subpastas criadas, a ordem do arquivo importada, o arquivo em "processados" e os cinco arquivos na saída',
+    subpastasDoErp === 'com-erro,entrada,processados,saida' &&
+      codigoDoMolde !== '' &&
+      recadoDaTrocaComOErp.includes('1 ordem(ns) importada(s) do ERP') &&
+      naEntrada.length === 0 &&
+      processados.length === 1 &&
+      processados[0].endsWith(`_${codigoDoMolde}_ordens.csv`) &&
+      naSaida.join(',') === 'consumo-por-malha.csv,cortes.csv,movimentos-de-estoque.csv,ordens.csv,rolos.csv' &&
+      ordensNaSaida.includes('OP-ERP-1;'),
+    `${subpastasDoErp} | código ${codigoDoMolde} | entrada ${naEntrada.length}, processados ${JSON.stringify(processados)}, saída ${naSaida.join(',')}`,
+  );
   await fecharJanela();
   await espera(300);
   await botao('Enfesto');

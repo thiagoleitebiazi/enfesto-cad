@@ -1,4 +1,4 @@
-import { createContext, useContext, useId, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { DesenhoDoRisco } from './DesenhoDoRisco';
 import { ResumoDoPlanejamento } from './ResumoDoPlanejamento';
@@ -38,6 +38,7 @@ import {
   type TipoDeDefeito,
 } from '../domain/cadastroDeProducao';
 import { ERP_NAO_CONFIGURADO, importarOrdensCsv } from '../domain/importacaoDeOrdens';
+import { trocarComOErp, type AcessoAPastaDeTroca } from '../domain/trocaComOErp';
 import { fatoresDeCompensacao, medidasCompensadas, riscoCompensado, ROTULO_DA_FONTE_DO_ENCOLHIMENTO, type FatoresDeCompensacao, type FonteDoEncolhimento } from '../domain/encolhimento';
 import { EstoqueDoPlano } from './EstoqueDoPlano';
 import { ExecucaoDoPlano } from './ExecucaoDoPlano';
@@ -110,6 +111,10 @@ export interface PainelDePlanejamentoProps {
   readonly onConfirmar: (plano: PlanoDeCorteV2, aplicarAoEnfesto: boolean) => string | null;
   readonly onRemoverRascunho: (id: string) => string | null;
   readonly onGuardarConfiguracao: (configuracao: ConfiguracaoDoPlanejamento) => void;
+  /** A pasta de troca com o ERP (ADR 0141); sem ela (fora do programa), a troca não aparece. */
+  readonly pastaDoErp?: AcessoAPastaDeTroca | null;
+  /** O nome de um projeto da biblioteca, para os cortes que vão ao ERP. */
+  readonly nomeDoProjeto?: (projetoId: string) => string;
   /** Fecha a janela e mostra a peça (para corrigir o que falta nela). */
   readonly onAbrirPeca: (pecaId: string) => void;
   readonly onFechar: () => void;
@@ -332,6 +337,21 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
   const [formRolo, setFormRolo] = useState<FormularioDoRolo>(ROLO_VAZIO);
   const [aceitarDefeitos, setAceitarDefeitos] = useState(false);
   const [errosDoCsv, setErrosDoCsv] = useState<readonly string[]>([]);
+  // A pasta de troca com o ERP (ADR 0141): onde está, se a troca está acontecendo e os arquivos recusados na última.
+  const acessoAoErp = props.pastaDoErp ?? null;
+  const [pastaDoErp, setPastaDoErp] = useState<string | null>(null);
+  const [trocandoComOErp, setTrocandoComOErp] = useState(false);
+  const [recusadosNaTroca, setRecusadosNaTroca] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!acessoAoErp) return;
+    let vivo = true;
+    void acessoAoErp.onde().then((caminho) => {
+      if (vivo) setPastaDoErp(caminho);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [acessoAoErp]);
   // O plano em edição (o rascunho aberto): as reservas dele não contam como de outro plano.
   const [planoEmEdicao, setPlanoEmEdicao] = useState<{ readonly id: string; readonly criadoEmIso: string; readonly copiaDePlanoId?: string } | null>(null);
   const [roloARemover, setRoloARemover] = useState<string | null>(null);
@@ -764,6 +784,69 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     }
   };
 
+  const escolherAPastaDoErp = async (): Promise<void> => {
+    if (!acessoAoErp) return;
+    try {
+      const caminho = await acessoAoErp.escolher();
+      if (!caminho) return;
+      setPastaDoErp(caminho);
+      setMensagem(`Pasta de troca com o ERP: ${caminho} (com as subpastas entrada, processados, com-erro e saida).`);
+    } catch (e) {
+      setMensagem(`Não deu para usar essa pasta: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const esquecerAPastaDoErp = async (): Promise<void> => {
+    if (!acessoAoErp) return;
+    await acessoAoErp.esquecer();
+    setPastaDoErp(null);
+    setRecusadosNaTroca([]);
+    setMensagem('A pasta de troca com o ERP deixou de ser usada (os arquivos dela continuam lá).');
+  };
+
+  /** A troca (ADR 0141): as ordens deste molde que estão na entrada e, depois, a saída com o cadastro de agora. */
+  const trocarComOErpAgora = async (): Promise<void> => {
+    if (!acessoAoErp) return;
+    if (props.cadastroSomenteLeitura) {
+      setMensagem('O cadastro de produção é de uma versão mais nova do programa: esta versão não grava nele.');
+      return;
+    }
+    setTrocandoComOErp(true);
+    setRecusadosNaTroca([]);
+    try {
+      const r = await trocarComOErp(
+        acessoAoErp,
+        cadastro,
+        {
+          tamanhosDoMolde: modelo.tamanhos,
+          projetoId: props.projeto.id,
+          codigoDoMolde: props.projeto.codigo,
+          revisoes: (props.projeto.revisoesDoMolde ?? []).map((x) => x.numero),
+          revisaoAtual: revisaoAtual?.numero ?? null,
+          agoraIso: props.agoraIso(),
+          novoId: () => props.novoId('ordem'),
+        },
+        props.nomeDoProjeto ?? ((id) => id),
+      );
+      const ordens = r.importados.flatMap((x) => x.ordens);
+      const partes = [
+        r.importados.length > 0
+          ? `${ordens.length} ordem(ns) importada(s) do ERP (${r.importados.map((x) => x.nome).join(', ')}): ${ordens.join(', ')}.`
+          : `Nenhum arquivo de ordens do molde ${props.projeto.codigo} na entrada.`,
+        r.recusados.length > 0 ? `${r.recusados.length} arquivo(s) recusado(s), movido(s) para "com-erro" com o relatório.` : '',
+        r.gravados.length > 0 ? `Saída para o ERP gravada: ${r.gravados.join(', ')}.` : '',
+        ...r.falhas,
+      ].filter((p) => p !== '');
+      setRecusadosNaTroca(r.recusados.flatMap((x) => x.erros.map((e) => `${x.nome}: ${e}`)));
+      if (r.importados.length > 0) await mudarCadastro(() => r.cadastro, partes.join(' '));
+      else setMensagem(partes.join(' '));
+    } catch (e) {
+      setMensagem(`A troca com o ERP falhou: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTrocandoComOErp(false);
+    }
+  };
+
   const guardarMalha = (): void => {
     const id = malhaEscolhida === NOVA || malhaEscolhida === DO_PROJETO ? props.novoId('malha') : malhaEscolhida;
     const { malha, erros } = malhaDoFormulario(formMalha, id);
@@ -1106,6 +1189,36 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </details>
               {errosDoCsv.length > 0 && <Faltas titulo="O CSV não foi importado:" itens={errosDoCsv} />}
             </fieldset>
+            {acessoAoErp && (
+              <fieldset className="grupo-de-opcoes-do-formulario troca-com-o-erp">
+                <legend>Troca com o ERP (pasta)</legend>
+                <p className="nota-do-formulario">
+                  {pastaDoErp ? (
+                    <>
+                      Pasta: <strong>{pastaDoErp}</strong>.
+                    </>
+                  ) : (
+                    'Nenhuma pasta escolhida.'
+                  )}{' '}
+                  O ERP deixa as ordens em CSV na subpasta "entrada", com o nome começando pelo código do molde ({props.projeto.codigo || 'o código'}_ordens.csv). A troca importa as deste molde
+                  (tudo ou nada por arquivo) e deixa em "saida" as ordens com a situação do corte, os rolos, os movimentos de estoque, os cortes e o consumo por malha.
+                </p>
+                <p className="acoes-da-fila">
+                  <button type="button" onClick={() => void escolherAPastaDoErp()}>
+                    {pastaDoErp ? 'Trocar de pasta…' : 'Escolher a pasta…'}
+                  </button>
+                  <button type="button" disabled={!pastaDoErp || trocandoComOErp} onClick={() => void trocarComOErpAgora()}>
+                    {trocandoComOErp ? 'Trocando…' : 'Trocar com o ERP agora'}
+                  </button>
+                  {pastaDoErp && (
+                    <button type="button" onClick={() => void esquecerAPastaDoErp()}>
+                      Deixar de usar a pasta
+                    </button>
+                  )}
+                </p>
+                {recusadosNaTroca.length > 0 && <Faltas titulo="Arquivos recusados (nenhuma ordem deles entrou):" itens={recusadosNaTroca} />}
+              </fieldset>
+            )}
             {confirmarTrocaDaOrdem && (
               <p role="alert" className="faltas-do-plano">
                 A ordem {formOrdem.codigo} já está no cadastro: guardar troca o que está lá pelo que está na tela.{' '}

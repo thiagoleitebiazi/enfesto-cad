@@ -213,4 +213,4 @@ export interface FonteDeOrdens {
 }
 
 export const ERP_NAO_CONFIGURADO =
-  'Nenhum ERP está ligado a este programa. Para ligar um, é preciso do responsável pelo ERP: o endereço do serviço, a forma de autenticação e onde a credencial fica guardada (nunca no código), o mapeamento dos campos (código, produto, cor, prazo, quantidades por tamanho) e a liberação de rede. Enquanto isso, importe as ordens por CSV.';
+  'Nenhum ERP está ligado a este programa. Para ligar um, é preciso do responsável pelo ERP: o endereço do serviço, a forma de autenticação e onde a credencial fica guardada (nunca no código), o mapeamento dos campos (código, produto, cor, prazo, quantidades por tamanho) e a liberação de rede. Enquanto isso, as ordens entram por CSV: à mão, ou pela pasta de troca com o ERP (o ERP deixa os arquivos nela).';

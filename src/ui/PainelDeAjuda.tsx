@@ -113,7 +113,7 @@ export function PainelDeAjuda(props: PainelDeAjudaProps): React.JSX.Element {
           <dt>Projetos</dt>
           <dd>Salvos neste computador, na Biblioteca, com histórico de versões</dd>
           <dt>Ordens de produção</dt>
-          <dd>Digitadas, coladas de uma planilha ou importadas de CSV (nenhum ERP ligado)</dd>
+          <dd>Digitadas, coladas de uma planilha, importadas de CSV ou trocadas com o ERP por uma pasta (Planejamento › Ordens; nenhum ERP ligado pela rede)</dd>
           <dt>Usuários</dt>
           <dd>Sem login: quem confirma um plano ou movimenta o estoque é informado (digitado)</dd>
         </dl>

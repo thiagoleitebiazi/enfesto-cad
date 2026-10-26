@@ -34,6 +34,18 @@ import { lerColecoes, VERSAO_DAS_COLECOES } from '../src/domain/colecoes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
 import { esquecerChave, estadoDaIa, gerarImagens, guardarChave, mudarModelo, type CofreDoSistema } from './chaveDaIa';
+import {
+  apagarNaPasta,
+  criarSeNaoExiste,
+  ehTipoDePasta,
+  gravarNaPasta,
+  guardarPastaEscolhida,
+  lerNaPasta,
+  lerPastasEscolhidas,
+  listarNaPasta,
+  moverNaPasta,
+  prepararPasta,
+} from './pastasCompartilhadas';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -877,6 +889,70 @@ const cofreDoSistema: CofreDoSistema = {
   cifrar: (texto) => safeStorage.encryptString(texto),
   decifrar: (cifrado) => safeStorage.decryptString(cifrado),
 };
+
+/**
+ * As pastas compartilhadas (ADR 0141), em <userData>/pastas-compartilhadas.json: a pasta escolhida de cada tipo (a de
+ * troca com o ERP). A interface diz o tipo, a subpasta e o nome do arquivo; o caminho sai daqui, sempre dentro da
+ * pasta escolhida (ver pastasCompartilhadas.ts).
+ */
+function arquivoDasPastas(): string {
+  return path.join(app.getPath('userData'), 'pastas-compartilhadas.json');
+}
+
+async function raizDaPasta(tipo: unknown): Promise<string | null> {
+  if (!ehTipoDePasta(tipo)) return null;
+  return (await lerPastasEscolhidas(arquivoDasPastas()))[tipo] ?? null;
+}
+
+interface PedidoNaPasta {
+  readonly tipo?: unknown;
+  readonly subpasta?: unknown;
+  readonly nome?: unknown;
+  readonly texto?: unknown;
+  readonly para?: unknown;
+  readonly novoNome?: unknown;
+}
+
+ipcMain.handle('pasta-escolher', async (_evento, tipo: unknown) => {
+  if (!ehTipoDePasta(tipo)) return null;
+  const resultado = await dialog.showOpenDialog({ title: 'Escolher a pasta compartilhada', properties: ['openDirectory', 'createDirectory', 'promptToCreate'] });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  const raiz = resultado.filePaths[0]!;
+  await prepararPasta(raiz, tipo);
+  await guardarPastaEscolhida(arquivoDasPastas(), tipo, raiz);
+  registrarDiagnostico(`pasta-escolhida ${tipo}`);
+  return raiz;
+});
+ipcMain.handle('pasta-onde', (_evento, tipo: unknown) => raizDaPasta(tipo));
+ipcMain.handle('pasta-esquecer', async (_evento, tipo: unknown) => {
+  if (!ehTipoDePasta(tipo)) return false;
+  await guardarPastaEscolhida(arquivoDasPastas(), tipo, null);
+  return true;
+});
+ipcMain.handle('pasta-listar', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? listarNaPasta(raiz, p.tipo, p.subpasta) : null;
+});
+ipcMain.handle('pasta-ler', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? lerNaPasta(raiz, p.tipo, p.subpasta, p.nome) : null;
+});
+ipcMain.handle('pasta-gravar', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? gravarNaPasta(raiz, p.tipo, p.subpasta, p.nome, p.texto) : false;
+});
+ipcMain.handle('pasta-mover', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? moverNaPasta(raiz, p.tipo, p.subpasta, p.nome, p.para, p.novoNome) : false;
+});
+ipcMain.handle('pasta-criar-se-nao-existe', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? criarSeNaoExiste(raiz, p.tipo, p.subpasta, p.nome, p.texto) : false;
+});
+ipcMain.handle('pasta-apagar', async (_evento, p: PedidoNaPasta) => {
+  const raiz = await raizDaPasta(p?.tipo);
+  return raiz ? apagarNaPasta(raiz, p.tipo, p.subpasta, p.nome) : false;
+});
 
 ipcMain.handle('ia-estado', () => estadoDaIa(arquivoDaIa(), cofreDoSistema));
 

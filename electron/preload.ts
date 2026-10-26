@@ -3,6 +3,7 @@ import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
 import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import type { EstadoDaIa } from './chaveDaIa';
+import type { ArquivoNaPasta, TipoDePasta } from './pastasCompartilhadas';
 import type { PedidoDeImagem, RespostaDaIa } from '../src/domain/servicoDeIa';
 
 /** A lista de atalhos depois de um pedido, e a mensagem do que o impediu (ou `null`). */
@@ -84,6 +85,34 @@ const api = {
   /** Grava a biblioteca de materiais inteira (o processo principal confere antes). */
   async gravarBibliotecaDeMateriais(biblioteca: unknown): Promise<boolean> {
     return ipcRenderer.invoke('materiais-gravar', biblioteca) as Promise<boolean>;
+  },
+  /** As pastas compartilhadas (ADR 0141): escolher, saber onde está e trocar arquivos nela, só pelo nome. */
+  async escolherPasta(tipo: TipoDePasta): Promise<string | null> {
+    return ipcRenderer.invoke('pasta-escolher', tipo) as Promise<string | null>;
+  },
+  async ondeEstaAPasta(tipo: TipoDePasta): Promise<string | null> {
+    return ipcRenderer.invoke('pasta-onde', tipo) as Promise<string | null>;
+  },
+  async esquecerPasta(tipo: TipoDePasta): Promise<boolean> {
+    return ipcRenderer.invoke('pasta-esquecer', tipo) as Promise<boolean>;
+  },
+  async listarNaPasta(tipo: TipoDePasta, subpasta: string): Promise<ArquivoNaPasta[] | null> {
+    return ipcRenderer.invoke('pasta-listar', { tipo, subpasta }) as Promise<ArquivoNaPasta[] | null>;
+  },
+  async lerNaPasta(tipo: TipoDePasta, subpasta: string, nome: string): Promise<string | null> {
+    return ipcRenderer.invoke('pasta-ler', { tipo, subpasta, nome }) as Promise<string | null>;
+  },
+  async gravarNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, texto: string): Promise<boolean> {
+    return ipcRenderer.invoke('pasta-gravar', { tipo, subpasta, nome, texto }) as Promise<boolean>;
+  },
+  async moverNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, para: string, novoNome?: string): Promise<boolean> {
+    return ipcRenderer.invoke('pasta-mover', { tipo, subpasta, nome, para, novoNome }) as Promise<boolean>;
+  },
+  async criarNaPastaSeNaoExiste(tipo: TipoDePasta, subpasta: string, nome: string, texto: string): Promise<boolean> {
+    return ipcRenderer.invoke('pasta-criar-se-nao-existe', { tipo, subpasta, nome, texto }) as Promise<boolean>;
+  },
+  async apagarNaPasta(tipo: TipoDePasta, subpasta: string, nome: string): Promise<boolean> {
+    return ipcRenderer.invoke('pasta-apagar', { tipo, subpasta, nome }) as Promise<boolean>;
   },
   /** O serviço de IA: se há chave guardada (nunca a chave), o serviço e o modelo. */
   async estadoDaIa(): Promise<EstadoDaIa> {

@@ -363,6 +363,7 @@ import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesInd
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { gerarPlt } from './formats/plt-exportacao';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
+import { acessoAPasta } from './ui/pastasCompartilhadas';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import {
@@ -801,6 +802,8 @@ export default function App(): React.JSX.Element {
   const [mostrarExportacaoPdf, setMostrarExportacaoPdf] = useState(false);
   // O planejamento de corte: a janela e o cadastro de produção (lido ao abrir a janela).
   const [mostrarPlanoDeCorte, setMostrarPlanoDeCorte] = useState(false);
+  // A pasta de troca com o ERP (ADR 0141): fora do programa (no navegador), não há.
+  const [pastaDoErp] = useState(() => acessoAPasta('erp'));
   const [cadastroDeProducao, setCadastroDeProducao] = useState<CadastroCarregado | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   const [mostrarDimensionar, setMostrarDimensionar] = useState(false);
@@ -4964,6 +4967,8 @@ export default function App(): React.JSX.Element {
       )}
       {mostrarPlanoDeCorte && cadastroDeProducao && configuracaoDoPlanejamento && (
         <PainelDePlanejamento
+          pastaDoErp={pastaDoErp}
+          nomeDoProjeto={(id) => nomesDosProjetos.get(id) ?? (id === projetoAtual.id ? `${projetoAtual.nome} (${projetoAtual.codigo})` : 'projeto não encontrado na biblioteca')}
           projeto={projetoAtual}
           pecas={pecas}
           tecidoDoProjeto={tecido}

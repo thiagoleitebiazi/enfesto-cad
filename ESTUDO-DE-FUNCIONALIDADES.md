@@ -139,7 +139,7 @@ inventa.
 
 | Função | Enfesto CAD | Viab. |
 |---|---|---|
-| ERP (ordens, produtos, estoque) | 🟡 (ordens por CSV; o ERP não ligado é dito na tela) | S (precisa do ERP, da credencial e do mapeamento) |
+| ERP (ordens, produtos, estoque) | ✅ pela pasta de troca: as ordens entram, as ordens com a situação do corte, os rolos, os movimentos de estoque, os cortes e o consumo saem (ADR 0141) | S (a ligação direta pela rede: precisa do ERP, da credencial e do mapeamento) |
 | Arquivos de troca (DXF, PDF, Excel, CSV) | ✅ | — |
 
 ## Plano por fases
@@ -221,3 +221,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Da referência | Situação |
 |---|---|
 | Mandar o encaixe para a mesa de corte automático | 🟡 o arquivo ISO (G-code): ADR 0140 (não testado numa mesa) |
+| Trocar ordens, estoque e consumo com o ERP | ✅ pela pasta de troca, sem servidor: ADR 0141 |

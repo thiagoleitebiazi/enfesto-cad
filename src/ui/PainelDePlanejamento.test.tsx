@@ -10,6 +10,7 @@ import { confirmarPlano, type PlanoDeCorteV2 } from '../domain/planejamento';
 import { calcularPlanoDeCorte, CONFIGURACAO_PADRAO_DO_PLANO, escreverM, impressaoDigitalDoMolde, VERSAO_DO_CALCULO, type PlanoDeCorte } from '../domain/planoDeCorte';
 import { criarTecido } from '../domain/tecido';
 import { PainelDePlanejamento, type BuscarRiscos, type PainelDePlanejamentoProps } from './PainelDePlanejamento';
+import type { AcessoAPastaDeTroca } from '../domain/trocaComOErp';
 
 afterEach(() => cleanup());
 
@@ -309,6 +310,74 @@ describe('PainelDePlanejamento — importar ordens (CSV)', () => {
     etapa('2. Ordem');
     expect(screen.getByText(/codigo;produto;cor;prazo;P;M/)).toBeInTheDocument();
     expect(screen.getByText(/Nenhum ERP está ligado/)).toBeInTheDocument();
+  });
+});
+
+describe('PainelDePlanejamento — a troca com o ERP por uma pasta (ADR 0141)', () => {
+  /** Uma pasta na memória, com o arquivo do ERP na entrada. */
+  function pastaNaMemoria(): AcessoAPastaDeTroca & { readonly pastas: Map<string, Map<string, string>> } {
+    const pastas = new Map<string, Map<string, string>>(['entrada', 'processados', 'com-erro', 'saida'].map((s) => [s, new Map()]));
+    pastas.get('entrada')!.set('ENF-1_ordens.csv', 'codigo;P;M\nOP-70;4;6\n');
+    let onde: string | null = null;
+    return {
+      pastas,
+      onde: async () => onde,
+      escolher: async () => (onde = 'C:\\troca'),
+      esquecer: async () => {
+        onde = null;
+        return true;
+      },
+      listar: async (sub) => [...pastas.get(sub)!.keys()].map((nome) => ({ nome })),
+      ler: async (sub, nome) => pastas.get(sub)!.get(nome) ?? null,
+      gravar: async (sub, nome, texto) => {
+        pastas.get(sub)!.set(nome, texto);
+        return true;
+      },
+      mover: async (de, nome, para, novoNome) => {
+        const texto = pastas.get(de)!.get(nome);
+        if (texto === undefined) return false;
+        pastas.get(de)!.delete(nome);
+        pastas.get(para)!.set(novoNome, texto);
+        return true;
+      },
+    };
+  }
+
+  it('sem a pasta (fora do programa), a troca não aparece', () => {
+    abrir();
+    etapa('2. Ordem');
+    expect(screen.queryByText('Troca com o ERP (pasta)')).toBeNull();
+  });
+
+  it('escolhe a pasta, troca: a ordem do molde entra, o arquivo vai para processados e a saída é gravada', async () => {
+    const pasta = pastaNaMemoria();
+    const { onMudarCadastro } = abrir({ pastaDoErp: pasta });
+    etapa('2. Ordem');
+    expect(screen.getByText('Nenhuma pasta escolhida.', { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trocar com o ERP agora' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher a pasta…' }));
+    expect(await screen.findByText('C:\\troca')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar com o ERP agora' }));
+    await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
+    expect(onMudarCadastro.mock.calls[0]![0].ordens[0]).toMatchObject({ codigo: 'OP-70', quantidadesPorTamanho: { P: 4, M: 6 }, codigoDoMolde: 'ENF-1' });
+    expect(await screen.findByText(/1 ordem\(ns\) importada\(s\) do ERP \(ENF-1_ordens.csv\): OP-70\. Saída para o ERP gravada: ordens.csv/)).toBeInTheDocument();
+    expect([...pasta.pastas.get('processados')!.keys()]).toEqual(['2026-10-20-12-00-00_ENF-1_ordens.csv']);
+    expect(pasta.pastas.get('saida')!.get('ordens.csv')).toContain('OP-70');
+    fireEvent.click(screen.getByRole('button', { name: 'Deixar de usar a pasta' }));
+    expect(await screen.findByText(/deixou de ser usada/)).toBeInTheDocument();
+  });
+
+  it('o arquivo com erro: nenhuma ordem entra, o erro aparece e o arquivo vai para com-erro', async () => {
+    const pasta = pastaNaMemoria();
+    pasta.pastas.get('entrada')!.set('ENF-1_ordens.csv', 'codigo;P;XG\nOP-71;1;1\n');
+    const { onMudarCadastro } = abrir({ pastaDoErp: pasta });
+    etapa('2. Ordem');
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher a pasta…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Trocar com o ERP agora' }));
+    expect(await screen.findByText('Arquivos recusados (nenhuma ordem deles entrou):')).toBeInTheDocument();
+    expect(screen.getByText(/ENF-1_ordens.csv: .*XG/)).toBeInTheDocument();
+    expect(onMudarCadastro).not.toHaveBeenCalled();
+    expect([...pasta.pastas.get('com-erro')!.keys()]).toHaveLength(2);
   });
 });
 
