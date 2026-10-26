@@ -24,6 +24,7 @@ import {
   TRACEJADO_DO_ESTILO,
   type DesenhoTecnico,
   type VistaDoDesenho,
+  desenhoNaVariante,
 } from '../domain/desenhoTecnico';
 import type { ImagemDoModelo } from '../domain/imagens';
 import { vistasComDesenho } from './desenho-exportacao';
@@ -273,6 +274,25 @@ export async function gerarPdfDaFichaTecnica(
     vistas.forEach((v, i) => desenharVista(doc, ficha.desenho!, v, imagens, ficha.medidas, MARGEM + i * (larguraDaVista + 20), y0, larguraDaVista));
     doc.y = y0 + (larguraDaVista * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA + 16;
     doc.x = MARGEM;
+    // As variantes de cor (ADR 0136): a primeira vista de cada uma, pequena, com o nome embaixo, em fileiras.
+    const variantes = ficha.desenho.variantes ?? [];
+    if (variantes.length > 0) {
+      secao('Variantes de cor');
+      const larguraPequena = 100;
+      const porFileira = Math.max(1, Math.floor((largura + 14) / (larguraPequena + 14)));
+      const alturaPequena = (larguraPequena * ALTURA_DA_FOLHA) / LARGURA_DA_FOLHA;
+      for (let i = 0; i < variantes.length; i += porFileira) {
+        garantir(alturaPequena + 28);
+        const y1 = doc.y;
+        variantes.slice(i, i + porFileira).forEach((variante, k) => {
+          const x = MARGEM + k * (larguraPequena + 14);
+          desenharVista(doc, desenhoNaVariante(ficha.desenho!, variante), vistas[0]!, imagens, ficha.medidas, x, y1, larguraPequena);
+          doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#1d2433').text(variante.nome, x, y1 + alturaPequena + 4, { width: larguraPequena, align: 'center' });
+        });
+        doc.y = y1 + alturaPequena + 20;
+        doc.x = MARGEM;
+      }
+    }
   }
 
   // O desenho das peças, como estão na mesa, numa caixa de 160 pt de altura.

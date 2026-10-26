@@ -101,6 +101,78 @@ export interface DesenhoTecnico {
   readonly elementos: readonly ElementoDoDesenho[];
   /** O manequim de guia, por baixo (não sai no PDF). */
   readonly manequim: Manequim | null;
+  /** As variantes de cor do modelo, a cartela (ADR 0136). Ausente: só a original. */
+  readonly variantes?: readonly VarianteDeCor[];
+}
+
+/**
+ * Uma variante de cor do modelo (ADR 0136): o nome ("Marinho", "Off-white") e a troca de cada cor de preenchimento do
+ * desenho (a cor original, em #rrggbb minúsculo, pela da variante). A cor sem troca fica como está.
+ */
+export interface VarianteDeCor {
+  readonly id: string;
+  readonly nome: string;
+  readonly trocas: Readonly<Record<string, string>>;
+}
+
+const ehCor = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
+/** As cores de preenchimento do desenho, sem repetir, na ordem dos elementos (em minúsculas): as que a variante troca. */
+export function coresDoDesenho(desenho: DesenhoTecnico): string[] {
+  const cores: string[] = [];
+  for (const e of desenho.elementos) {
+    if (e.tipo !== 'traco' || e.preenchimento === null || !ehCor(e.preenchimento)) continue;
+    const c = e.preenchimento.toLowerCase();
+    if (!cores.includes(c)) cores.push(c);
+  }
+  return cores;
+}
+
+/** O desenho na variante: cada preenchimento pela cor da troca (os traços, os textos e as estampas, como estão). */
+export function desenhoNaVariante(desenho: DesenhoTecnico, variante: VarianteDeCor | null): DesenhoTecnico {
+  if (!variante) return desenho;
+  return {
+    ...desenho,
+    elementos: desenho.elementos.map((e) => {
+      if (e.tipo !== 'traco' || e.preenchimento === null) return e;
+      const troca = variante.trocas[e.preenchimento.toLowerCase()];
+      return troca ? { ...e, preenchimento: troca } : e;
+    }),
+  };
+}
+
+/** A variante nova, sem trocas ainda. Recusa o nome vazio e o nome que já existe. */
+export function adicionarVariante(desenho: DesenhoTecnico, nome: string, id: string): DesenhoTecnico {
+  const limpo = nome.trim();
+  if (limpo === '') throw new Error('Dê um nome à variante de cor ("Marinho", "Off-white").');
+  const variantes = desenho.variantes ?? [];
+  if (variantes.some((v) => v.nome.toLocaleLowerCase('pt-BR') === limpo.toLocaleLowerCase('pt-BR'))) throw new Error(`Já há a variante “${limpo}”.`);
+  return { ...desenho, variantes: [...variantes, { id, nome: limpo, trocas: {} }] };
+}
+
+/** Troca, na variante, a cor original pela nova (a mesma cor tira a troca). */
+export function trocarCorNaVariante(desenho: DesenhoTecnico, varianteId: string, original: string, nova: string): DesenhoTecnico {
+  if (!ehCor(original) || !ehCor(nova)) throw new Error('A cor precisa ser #rrggbb.');
+  const o = original.toLowerCase();
+  const n = nova.toLowerCase();
+  return {
+    ...desenho,
+    variantes: (desenho.variantes ?? []).map((v) => {
+      if (v.id !== varianteId) return v;
+      const trocas: Record<string, string> = { ...v.trocas };
+      if (n === o) delete trocas[o];
+      else trocas[o] = n;
+      return { ...v, trocas };
+    }),
+  };
+}
+
+/** Tira a variante. */
+export function removerVariante(desenho: DesenhoTecnico, varianteId: string): DesenhoTecnico {
+  const variantes = (desenho.variantes ?? []).filter((v) => v.id !== varianteId);
+  const copia: { -readonly [K in keyof DesenhoTecnico]: DesenhoTecnico[K] } = { ...desenho, variantes };
+  if (variantes.length === 0) delete copia.variantes;
+  return copia;
 }
 
 export const DESENHO_VAZIO: DesenhoTecnico = { versaoDoFormato: VERSAO_DO_DESENHO, elementos: [], manequim: 'feminino' };
@@ -621,5 +693,14 @@ export function lerDesenhoTecnico(bruto: unknown): DesenhoTecnico | null {
   if (!ehObjeto(bruto) || !Array.isArray(bruto.elementos)) return null;
   const elementos = bruto.elementos.map(elementoLido).filter((e): e is ElementoDoDesenho => e !== null);
   const manequim = bruto.manequim === 'feminino' || bruto.manequim === 'masculino' ? bruto.manequim : null;
-  return { versaoDoFormato: VERSAO_DO_DESENHO, elementos, manequim };
+  const variantes = Array.isArray(bruto.variantes)
+    ? bruto.variantes
+        .filter((v): v is Record<string, unknown> => ehObjeto(v) && typeof v.id === 'string' && typeof v.nome === 'string' && ehObjeto(v.trocas))
+        .map((v) => ({
+          id: v.id as string,
+          nome: v.nome as string,
+          trocas: Object.fromEntries(Object.entries(v.trocas as Record<string, unknown>).filter(([o, n]) => ehCor(o) && ehCor(n)).map(([o, n]) => [o.toLowerCase(), (n as string).toLowerCase()])),
+        }))
+    : [];
+  return { versaoDoFormato: VERSAO_DO_DESENHO, elementos, manequim, ...(variantes.length > 0 ? { variantes } : {}) };
 }

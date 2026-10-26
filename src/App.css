@@ -5587,3 +5587,40 @@ rect.destaque-do-desenho,
   fill: #b35f00;
   font-weight: 700;
 }
+
+/* As variantes de cor do desenho técnico (ADR 0136): a caixa com a amostra da cor original e a nova. */
+.variantes-de-cor {
+  padding: 8px 10px;
+  border: 1px solid var(--cinza-200);
+  border-left: 4px solid #8e24aa;
+  border-radius: var(--raio-md);
+  background: #faf4fc;
+}
+
+.variantes-de-cor .legenda-inline {
+  margin: 0 0 4px;
+  color: #6a1b9a;
+}
+
+.trocas-de-cor {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.trocas-de-cor li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.amostra-de-cor {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--cinza-300);
+  border-radius: 4px;
+}

@@ -1195,6 +1195,25 @@ async function principal() {
   // A área para o consumo (ADR 0127): com a cota ligada ao busto, os contornos fechados (a camiseta e o bolso) medidos
   // na escala dela, e o tamanho da roupa nessa escala. O busto da ficha é a volta inteira (100 cm no M), e a cota
   // atravessa só a frente: a escala dobra, e o aviso diz que a roupa ficou grande demais.
+  // A variante de cor (ADR 0136): "Marinho", vista na folha; com as áreas pintadas, a primeira cor vira marinho.
+  await noCampo('Nome da variante nova', 'Marinho');
+  await botaoNaJanela('Nova variante');
+  await espera(300);
+  const temCores = await js(`!!document.querySelector('[role=dialog] .trocas-de-cor input[type=color]')`);
+  if (temCores) {
+    await js(`(() => { const c = document.querySelector('[role=dialog] .trocas-de-cor input[type=color]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, '#1a237e'); c.dispatchEvent(new Event('input', { bubbles: true })); c.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    await espera(300);
+  }
+  const varianteVista = await js(`(document.querySelector('[role=dialog] select[aria-label="Variante de cor vista"]') || {}).value || ''`);
+  const marinhoNaFolha = await js(`!!document.querySelector('.folha-do-desenho [fill="#1a237e"]')`);
+  await foto('33b2-variante-marinho.png');
+  conferir(
+    'a variante de cor "Marinho": vista na folha (com as áreas pintadas, a cor trocada)',
+    varianteVista !== '' && (!temCores || marinhoNaFolha),
+    `vista ${varianteVista ? 'Marinho' : 'original'}, ${temCores ? (marinhoNaFolha ? 'marinho na folha' : 'SEM marinho na folha') : 'sem áreas pintadas'}`,
+  );
+  await js(`(() => { const s = document.querySelector('[role=dialog] select[aria-label="Variante de cor vista"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ''); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await espera(200);
   const caixaDaArea = await js(`((document.querySelector('[role=dialog] .area-do-consumo') || {}).innerText || '').replace(/\\s+/g, ' ')`);
   const areaDoDesenho = Number(((caixaDaArea.match(/(\d+,\d{3}) m²/) || [])[1] || '').replace(',', '.'));
   conferir(

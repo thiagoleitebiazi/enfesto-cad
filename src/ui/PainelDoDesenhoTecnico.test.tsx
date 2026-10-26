@@ -342,3 +342,38 @@ describe('a área para o consumo (ADR 0127)', () => {
     expect(screen.getByRole('region', { name: 'Área para o consumo' })).toHaveTextContent('nenhuma cota do desenho está ligada a uma medida com valor no tamanho P — a cota dá a escala.');
   });
 });
+
+describe('as variantes de cor (ADR 0136)', () => {
+  const pintado: TracoDoDesenho = {
+    id: 't1',
+    tipo: 'traco',
+    vista: 'frente',
+    pontos: [
+      { x: 150, y: 100 },
+      { x: 200, y: 100 },
+      { x: 200, y: 300 },
+    ],
+    curvo: false,
+    fechado: true,
+    estilo: 'contorno',
+    cor: '#000000',
+    espessura: 2,
+    preenchimento: '#ffffff',
+    espelhar: false,
+  };
+
+  it('a variante nova aparece na folha; a cor trocada pinta o preenchimento; a original volta', async () => {
+    const { ultimo, onGuardar, folha } = abrir({ desenho: { ...DESENHO_VAZIO, elementos: [pintado] } });
+    fireEvent.change(screen.getByLabelText('Nome da variante nova'), { target: { value: 'Marinho' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Nova variante' }));
+    expect(screen.getByLabelText('Variante de cor vista')).toHaveDisplayValue('Marinho');
+    fireEvent.change(screen.getByLabelText('Cor de Marinho no lugar de #ffffff'), { target: { value: '#1a237e' } });
+    expect(folha.querySelector('[fill="#1a237e"]')).not.toBeNull();
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled(), { timeout: 2000 });
+    expect(ultimo().variantes).toEqual([{ id: expect.any(String), nome: 'Marinho', trocas: { '#ffffff': '#1a237e' } }]);
+    // O desenho guardado continua com a cor original.
+    expect((ultimo().elementos[0] as TracoDoDesenho).preenchimento).toBe('#ffffff');
+    fireEvent.change(screen.getByLabelText('Variante de cor vista'), { target: { value: '' } });
+    expect(folha.querySelector('[fill="#1a237e"]')).toBeNull();
+  });
+});

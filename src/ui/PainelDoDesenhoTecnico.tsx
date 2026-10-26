@@ -16,6 +16,11 @@ import {
   duplicarElemento,
   elementoNoPonto,
   elementosDaVista,
+  adicionarVariante,
+  coresDoDesenho,
+  desenhoNaVariante,
+  removerVariante,
+  trocarCorNaVariante,
   espelharPonto,
   FORMAS,
   LARGURA_DA_FOLHA,
@@ -113,6 +118,8 @@ export function PainelDoDesenhoTecnico(props: {
   readonly onFechar: () => void;
 }): React.JSX.Element {
   const [desenho, setDesenho] = useState(props.desenho);
+  // A variante de cor mostrada na folha; `null`: a original.
+  const [varianteVista, setVarianteVista] = useState<string | null>(null);
   const guardadoRef = useRef(props.desenho);
   const [guardadoEm, setGuardadoEm] = useState<string | null>(null);
   const [passado, setPassado] = useState<readonly DesenhoTecnico[]>([]);
@@ -348,7 +355,10 @@ export function PainelDoDesenhoTecnico(props: {
   const mudarSelecionado = (fazer: (e: ElementoDoDesenho) => ElementoDoDesenho): void => {
     if (selecionado) mudar(mudarElemento(desenho, selecionado, fazer));
   };
-  const naVista = elementosDaVista(desenho, vista);
+  // A variante de cor vista na folha (ADR 0136): o desenho é o mesmo; só os preenchimentos trocam de cor.
+  const variante = (desenho.variantes ?? []).find((v) => v.id === varianteVista) ?? null;
+  const desenhoVisto = desenhoNaVariante(desenho, variante);
+  const naVista = elementosDaVista(desenhoVisto, vista);
 
   return (
     <Sobreposicao titulo="Desenho técnico" onFechar={fechar}>
@@ -380,7 +390,7 @@ export function PainelDoDesenhoTecnico(props: {
             <button type="button" onClick={refazer} disabled={futuro.length === 0 || travado} title="Refazer (Ctrl+Y)">
               Refazer
             </button>
-            <button type="button" onClick={() => props.onExportarSvg(desenho)}>
+            <button type="button" onClick={() => props.onExportarSvg(desenhoVisto)}>
               Exportar SVG
             </button>
           </span>
@@ -591,11 +601,112 @@ export function PainelDoDesenhoTecnico(props: {
                 }}
               />
             )}
+            <VariantesDeCor
+              desenho={desenho}
+              vista={varianteVista}
+              travado={travado}
+              onVer={setVarianteVista}
+              onMudar={(novo) => mudar(novo)}
+              novoId={props.novoId}
+            />
             <AreaParaOConsumo desenho={desenho} medidas={props.medidas} tamanhos={props.tamanhos} />
           </aside>
         </div>
       </div>
     </Sobreposicao>
+  );
+}
+
+/**
+ * As variantes de cor do modelo, a cartela (ADR 0136): ver a original ou uma variante na folha, criar e apagar
+ * variantes, e trocar cada cor de preenchimento do desenho pela da variante.
+ */
+function VariantesDeCor(props: {
+  readonly desenho: DesenhoTecnico;
+  readonly vista: string | null;
+  readonly travado: boolean;
+  readonly onVer: (id: string | null) => void;
+  readonly onMudar: (desenho: DesenhoTecnico) => void;
+  readonly novoId: () => string;
+}): React.JSX.Element {
+  const [nome, setNome] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const variantes = props.desenho.variantes ?? [];
+  const variante = variantes.find((v) => v.id === props.vista) ?? null;
+  const cores = coresDoDesenho(props.desenho);
+  return (
+    <section className="variantes-de-cor" aria-label="Variantes de cor">
+      <p className="legenda-inline">Variantes de cor</p>
+      <label>
+        Ver
+        <select aria-label="Variante de cor vista" value={props.vista ?? ''} onChange={(e) => props.onVer(e.target.value === '' ? null : e.target.value)}>
+          <option value="">Original</option>
+          {variantes.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.nome}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!props.travado && (
+        <span className="linha-de-renomear">
+          <input aria-label="Nome da variante nova" placeholder="Marinho, off-white…" value={nome} onChange={(e) => setNome(e.target.value)} />
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                const id = props.novoId();
+                props.onMudar(adicionarVariante(props.desenho, nome, id));
+                props.onVer(id);
+                setNome('');
+                setErro(null);
+              } catch (e) {
+                setErro(e instanceof Error ? e.message : String(e));
+              }
+            }}
+          >
+            Nova variante
+          </button>
+        </span>
+      )}
+      {erro && (
+        <p className="mensagem-de-erro" role="alert">
+          {erro}
+        </p>
+      )}
+      {variante &&
+        (cores.length === 0 ? (
+          <p className="nota-do-formulario">O desenho não tem preenchimentos: pinte as áreas (o preenchimento do traço fechado) para trocar as cores.</p>
+        ) : (
+          <ul className="trocas-de-cor">
+            {cores.map((c) => (
+              <li key={c}>
+                <span className="amostra-de-cor" style={{ background: c }} title={`A original: ${c}`} />
+                →
+                <input
+                  type="color"
+                  aria-label={`Cor de ${variante.nome} no lugar de ${c}`}
+                  value={variante.trocas[c] ?? c}
+                  disabled={props.travado}
+                  onChange={(e) => props.onMudar(trocarCorNaVariante(props.desenho, variante.id, c, e.target.value))}
+                />
+              </li>
+            ))}
+          </ul>
+        ))}
+      {variante && !props.travado && (
+        <button
+          type="button"
+          className="botao-perigo"
+          onClick={() => {
+            props.onMudar(removerVariante(props.desenho, variante.id));
+            props.onVer(null);
+          }}
+        >
+          Apagar a variante
+        </button>
+      )}
+    </section>
   );
 }
 

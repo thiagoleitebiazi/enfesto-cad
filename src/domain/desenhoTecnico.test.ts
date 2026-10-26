@@ -32,6 +32,13 @@ import {
   tracosDaForma,
   type EstampaDoDesenho,
   type TextoDoDesenho,
+  type DesenhoTecnico,
+  type ElementoDoDesenho,
+  adicionarVariante,
+  coresDoDesenho,
+  desenhoNaVariante,
+  removerVariante,
+  trocarCorNaVariante,
 } from './desenhoTecnico';
 import { definirDesenhoDaFicha, enviarParaAprovacao, lerFichaTecnica, novaFichaTecnica } from './fichaTecnica';
 
@@ -226,5 +233,51 @@ describe('as cotas do desenho (ADR 0117)', () => {
     expect(elementosDaVista(d, 'frente')).toHaveLength(1);
     const lido = lerDesenhoTecnico(JSON.parse(JSON.stringify({ ...d, elementos: [...d.elementos, { id: 'x', tipo: 'cota', vista: 'frente', de: { x: 0 }, ate: { x: 1, y: 1 }, medidaId: null }] })));
     expect(lido?.elementos).toEqual([cota]);
+  });
+});
+
+describe('as variantes de cor (ADR 0136)', () => {
+  const corpo = (id: string, preenchimento: string | null): ElementoDoDesenho => ({
+    id,
+    tipo: 'traco',
+    vista: 'frente',
+    pontos: [{ x: 150, y: 100 }, { x: 200, y: 100 }, { x: 200, y: 300 }],
+    curvo: false,
+    fechado: true,
+    estilo: 'contorno',
+    cor: '#1d2433',
+    espessura: 2,
+    preenchimento,
+    espelhar: true,
+  });
+  const base = (): DesenhoTecnico => ({ ...DESENHO_VAZIO, elementos: [corpo('a', '#FFFFFF'), corpo('b', '#c62828'), corpo('c', '#ffffff'), corpo('d', null)] });
+
+  it('as cores do desenho: os preenchimentos, sem repetir, em minúsculas', () => {
+    expect(coresDoDesenho(base())).toEqual(['#ffffff', '#c62828']);
+  });
+
+  it('a variante troca os preenchimentos; a cor sem troca e os traços ficam', () => {
+    let d = adicionarVariante(base(), ' Marinho ', 'v1');
+    expect(d.variantes).toEqual([{ id: 'v1', nome: 'Marinho', trocas: {} }]);
+    d = trocarCorNaVariante(d, 'v1', '#FFFFFF', '#1A237E');
+    const vista = desenhoNaVariante(d, d.variantes![0]!);
+    expect(vista.elementos.map((e) => (e.tipo === 'traco' ? e.preenchimento : null))).toEqual(['#1a237e', '#c62828', '#1a237e', null]);
+    expect(vista.elementos.every((e) => e.tipo !== 'traco' || e.cor === '#1d2433')).toBe(true);
+    // A mesma cor tira a troca; sem variante, a original.
+    expect(trocarCorNaVariante(d, 'v1', '#ffffff', '#ffffff').variantes![0]!.trocas).toEqual({});
+    expect(desenhoNaVariante(d, null)).toBe(d);
+  });
+
+  it('o nome vazio ou repetido não entra; apagar a última tira a lista', () => {
+    const d = adicionarVariante(base(), 'Marinho', 'v1');
+    expect(() => adicionarVariante(d, 'marinho', 'v2')).toThrow('Já há a variante');
+    expect(() => adicionarVariante(d, '  ', 'v2')).toThrow('Dê um nome');
+    expect('variantes' in removerVariante(d, 'v1')).toBe(false);
+  });
+
+  it('a leitura guarda as variantes (as trocas que não são cores ficam de fora)', () => {
+    const d = trocarCorNaVariante(adicionarVariante(base(), 'Marinho', 'v1'), 'v1', '#ffffff', '#1a237e');
+    const lido = lerDesenhoTecnico(JSON.parse(JSON.stringify({ ...d, variantes: [{ ...d.variantes![0]!, trocas: { ...d.variantes![0]!.trocas, azul: '#000000' } }] })))!;
+    expect(lido.variantes).toEqual([{ id: 'v1', nome: 'Marinho', trocas: { '#ffffff': '#1a237e' } }]);
   });
 });
