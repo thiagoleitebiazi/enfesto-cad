@@ -103,6 +103,8 @@ interface BarraDeFerramentasProps {
   readonly onExportarDxf: () => void;
   /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
   readonly onExportarPlt: () => void;
+  /** O arquivo da mesa de corte automático, em ISO (G-code) — ADR 0140. */
+  readonly onExportarIso: () => void;
   readonly onSalvar: () => void;
   readonly onSalvarComo: () => void;
   readonly onAbrirBiblioteca: () => void;
@@ -564,6 +566,14 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Exportar PLT (plotter): o encaixe em escala 1:1, em HPGL, para riscar no plotter de papel — confira a escala no primeiro risco (não testado num plotter físico)"
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onExportarPlt}
+                />
+                <Ferramenta
+                  tamanho="grande"
+                  rotulo={['Exportar', 'ISO (corte)']}
+                  icone="exportar"
+                  dica="Exportar ISO (mesa de corte): o encaixe em G-code, com a faca, o piqueteador, o furador e a caneta, para a mesa de corte automático — confira o primeiro corte numa folha de papel (não testado numa mesa física)"
+                  falta={props.podeExportarPdf ? null : SEM_PECAS}
+                  onClick={props.onExportarIso}
                 />
               </div>
 

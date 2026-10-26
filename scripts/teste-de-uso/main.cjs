@@ -168,7 +168,7 @@ async function principal() {
   const naAbertura = JSON.parse(
     await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] [aria-label="Importação e exportação"] button')).map(b => b.textContent.replace(/\\s+/g, ' ').trim()))`),
   );
-  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF e Exportar PLT', naAbertura.join('|') === 'Importar DXF|Importar PDF|Exportar DXF|Exportar PDF|Exportar PLT', naAbertura.join(', '));
+  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Exportar DXF|Exportar PDF|Exportar PLT|Exportar ISO (corte)', naAbertura.join(', '));
 
   // 1. Importar o DXF de teste: direto, com o nome do arquivo e o fio na horizontal.
   await aba('Início');
@@ -389,6 +389,25 @@ async function principal() {
   const plt = plts[0] ? fs.readFileSync(path.join(SAIDA, plts[0]), 'latin1') : '';
   const nomesNoPlt = plt.split(';LB').length - 1;
   conferir('o PLT foi gravado: HPGL, com o nome das 3 peças', plt.startsWith('IN;SP1;') && plt.trim().endsWith('PU0,0;SP0;') && nomesNoPlt === 3, `${JSON.stringify(plts)} ${nomesNoPlt} nome(s)`);
+
+  // 3d. Exportar o ISO para a mesa de corte (ADR 0140): o diálogo pede a velocidade e a caneta; o G-code em mm,
+  // absoluto, com um comentário por peça, a caneta antes da faca em cada peça, e o fim do programa.
+  await botao('Exportar ISO (corte)');
+  await espera(500);
+  await js(`(() => { const v = Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.includes('Velocidade de corte')).querySelector('input'); const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; s.call(v, '9000'); v.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] label')).find(l => l.textContent.includes('com a caneta')).querySelector('input')`);
+  await foto('03d-dialogo-do-iso.png');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Salvar o ISO')`);
+  await espera(1500);
+  const isos = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.iso'));
+  const iso = isos[0] ? fs.readFileSync(path.join(SAIDA, isos[0]), 'utf8').split('\n') : [];
+  const pecasNoIso = iso.filter((l) => /^\(.+\)$/.test(l) && !l.startsWith('(ENFESTO') && !l.startsWith('(T1')).length;
+  const trocas = iso.filter((l) => /^T\d$/.test(l));
+  conferir(
+    'o ISO foi gravado: G-code em mm e absoluto, as 3 peças, a caneta (T3) antes da faca (T1), na velocidade pedida',
+    iso[0] === '%' && iso.includes('G21') && iso.includes('G90') && iso.includes('M30') && pecasNoIso === 3 && trocas[0] === 'T3' && trocas.includes('T1') && iso.some((l) => l.endsWith(' F9000')) && (await js(`document.querySelectorAll('[role=dialog]').length`)) === 0,
+    `${JSON.stringify(isos)} ${iso.length} linha(s), ${pecasNoIso} peça(s), ferramentas ${trocas.join(',')}`,
+  );
   await aba('Encaixe');
   await espera(300);
 

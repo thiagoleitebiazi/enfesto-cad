@@ -362,6 +362,7 @@ import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta
 import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { gerarPlt } from './formats/plt-exportacao';
+import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { gerarPdfDeRelatorio, gerarExcelDeRelatorio } from './formats/relatorio-exportacao';
 import { aproveitamentoDaMesa, gerarRelatorioDeProducao } from './domain/relatorio';
 import {
@@ -559,6 +560,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'forro-entretela-vista' }
   | { readonly tipo: 'ponto-de-casamento' }
   | { readonly tipo: 'componente' }
+  | { readonly tipo: 'corte-iso' }
   | { readonly tipo: 'medidas-do-componente'; readonly componente: TipoDeComponente }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
@@ -3222,6 +3224,32 @@ export default function App(): React.JSX.Element {
     }
   }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter]);
 
+  // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
+  const exportarIso = useCallback(
+    async (velocidadeMmMin: number, comCaneta: boolean) => {
+      const api = window.enfestoCad;
+      if (!api) {
+        window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
+        return;
+      }
+      try {
+        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
+        const bytes = new TextEncoder().encode(texto);
+        const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+        if (!caminhoSalvo) return;
+        const r = resumoDoIso(pecas);
+        registrarEventoEPersistir(
+          'exportacao-de-pdf',
+          { pecas, tecido, enfesto },
+          `ISO (mesa de corte) salvo em ${caminhoSalvo}: ${r.pecas} peça(s), ${numeroComVirgula(r.corteM, 1)} m de corte, ${r.piques} pique(s)`,
+        );
+      } catch (e) {
+        window.alert(`Falha ao gerar o ISO: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [pecas, enfesto, tecido, registrarEventoEPersistir],
+  );
+
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
   // Só é montado com o painel aberto, e a hora é a de quando foi aberto (ou de quando as peças mudaram).
   const relatorioAtual = useMemo(
@@ -4770,6 +4798,7 @@ export default function App(): React.JSX.Element {
         podeExportarPdf={pecas.length > 0}
         onExportarDxf={() => void exportarDxf()}
         onExportarPlt={() => void exportarPlt()}
+        onExportarIso={() => setDialogoDeFerramenta({ tipo: 'corte-iso' })}
         onSalvar={salvarProjetoAtual}
         onSalvarComo={salvarComo}
         onAbrirBiblioteca={abrirBiblioteca}
@@ -5379,6 +5408,28 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'corte-iso' && (
+        <DialogoDeCampos
+          titulo="Exportar para a mesa de corte (ISO)"
+          resumo={[
+            ['Peças', String(pecas.length)],
+            ['Largura da mesa', enfesto ? `${numeroComVirgula(enfesto.larguraUtilMm / 10, 1)} cm (do enfesto)` : 'a das peças (sem enfesto)'],
+          ]}
+          campos={[
+            { tipo: 'inteiro', id: 'velocidade', rotulo: 'Velocidade de corte (mm/min)', inicial: String(VELOCIDADE_PADRAO_MM_MIN) },
+            { tipo: 'caixa', id: 'caneta', rotulo: 'Riscar as linhas internas e o fio com a caneta (T3)', inicial: false },
+          ]}
+          nota="O encaixe em G-code (ISO 6983), em mm e coordenadas absolutas: T1 faca (contorno e furos), T2 piqueteador, T3 caneta, T4 furador (marcas). Em cada peça, o de dentro é feito antes do contorno. Não foi testado numa mesa de corte: confira o primeiro corte numa folha de papel."
+          rotuloDoBotao="Salvar o ISO"
+          onAplicar={(valores) => {
+            const velocidade = Number(valores.velocidade);
+            if (!(velocidade >= 100)) return 'A velocidade precisa ser de pelo menos 100 mm/min.';
+            void exportarIso(velocidade, valores.caneta === true);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'corte-iso' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'espiral' && (
         <DialogoDeCampos
           titulo="Espiral"

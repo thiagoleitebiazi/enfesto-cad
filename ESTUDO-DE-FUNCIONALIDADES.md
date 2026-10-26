@@ -115,7 +115,7 @@ inventa.
 | Indicadores: tempo de corte, metros, aproveitamento, por operador | ✅ (ADR 0100) | — |
 | Gestão de retalhos (estoque de retalhos) | ✅ (ADR 0098, 0100) | — |
 | Relatórios para compras e histórico para auditoria | ✅ (CSV, ADR 0100) | — |
-| Ligação com máquina de corte, enfestadeira, mesa | ⬜ | H (sem protocolo nem equipamento) |
+| Ligação com máquina de corte, enfestadeira, mesa | 🟡 (o arquivo ISO/G-code para a mesa de corte, com faca, piqueteador, furador e caneta, ADR 0140) | H (a mesa física: não testado numa; sem ligação direta) |
 | Plotter de papel (risco 1:1) | ✅ (arquivo PLT/HPGL, de uma caneta ou de duas — corte e risco —, ADR 0101 e 0115; PDF 1:1 em folhas; DXF) | H (o plotter físico: não testado num) |
 
 ## 8. IA de criação
@@ -212,3 +212,12 @@ terceiros (já dito acima).
 | Poses do manequim para as imagens de catálogo | ✅ ADR 0138 |
 | Imagem em alta resolução, com luz e sombra; o movimento (o giro em vídeo) | ✅ ADR 0139 |
 | Mudar de uma vez todo o mix da coleção (trocar um material em todos os modelos) | ✅ ADR 0137 |
+
+## Quarta rodada: o que dependia de máquina ou de servidor (2026-10-26)
+
+O usuário pediu para implementar tudo, inclusive o que antes ficou de fora. Para cada item que precisa de equipamento,
+servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho, e a tela diz o que falta.
+
+| Da referência | Situação |
+|---|---|
+| Mandar o encaixe para a mesa de corte automático | 🟡 o arquivo ISO (G-code): ADR 0140 (não testado numa mesa) |

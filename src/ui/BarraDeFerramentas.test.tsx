@@ -79,6 +79,7 @@ function propsBase(): Props {
     podeExportarPdf: true,
     onExportarDxf: vi.fn(),
     onExportarPlt: vi.fn(),
+    onExportarIso: vi.fn(),
     onSalvar: vi.fn(),
     onSalvarComo: vi.fn(),
     onAbrirBiblioteca: vi.fn(),
@@ -198,7 +199,7 @@ describe('BarraDeFerramentas: abas', () => {
 
     expect(Object.keys(gruposDaAba())[0]).toBe('Importação e exportação');
     expect(gruposDaAba()).toEqual({
-      'Importação e exportação': ['Importar DXF', 'Importar PDF', 'Exportar DXF', 'Exportar PDF', 'Exportar PLT'],
+      'Importação e exportação': ['Importar DXF', 'Importar PDF', 'Exportar DXF', 'Exportar PDF', 'Exportar PLT', 'Exportar ISO (corte)'],
       Desenho: ['Cor'],
       Editar: ['Colar', 'Recortar', 'Copiar', 'Excluir'],
       Selecionar: ['Selecionar', 'Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes'],
@@ -611,7 +612,8 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     fireEvent.click(botao('Exportar DXF'));
     fireEvent.click(botao('Exportar PDF'));
     fireEvent.click(botao('Exportar PLT'));
-    for (const acao of [props.onImportarDxf, props.onImportarPdf, props.onExportarDxf, props.onAbrirExportacaoPdf, props.onExportarPlt]) expect(acao).toHaveBeenCalledTimes(1);
+    fireEvent.click(botao('Exportar ISO (corte)'));
+    for (const acao of [props.onImportarDxf, props.onImportarPdf, props.onExportarDxf, props.onAbrirExportacaoPdf, props.onExportarPlt, props.onExportarIso]) expect(acao).toHaveBeenCalledTimes(1);
     cleanup();
 
     renderizar('Início', { podeExportarPdf: false });
