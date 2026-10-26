@@ -1366,6 +1366,26 @@ async function principal() {
   const pngs = fs.readdirSync(SAIDA).filter((f) => f.startsWith('provador-3d-') && f.endsWith('-frente-lado-costas.png'));
   const png = pngs[0] ? fs.readFileSync(path.join(SAIDA, pngs[0])) : null;
   conferir('a imagem das três vistas foi gravada (PNG, 1800 de largura)', !!png && png.length > 20000 && png.subarray(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1800, `${JSON.stringify(pngs)} ${png ? png.length : 0} bytes`);
+  // A resolução alta e o giro em vídeo (ADR 0139): esta vista em 2× (1440 × 1920) e uma volta inteira em WebM.
+  await noCampo('Resolução da imagem', '2');
+  await espera(300);
+  for (const f of fs.readdirSync(SAIDA).filter((n) => n.startsWith('provador-3d-') && !n.includes('frente-lado-costas'))) fs.unlinkSync(path.join(SAIDA, f));
+  await botaoNaJanela('Salvar esta vista (PNG)');
+  await espera(3000);
+  const pngAlta = fs.readdirSync(SAIDA).find((n) => n.startsWith('provador-3d-') && n.endsWith('.png') && !n.includes('frente-lado-costas'));
+  const alta = pngAlta ? fs.readFileSync(path.join(SAIDA, pngAlta)) : null;
+  await botaoNaJanela('Gravar o giro (vídeo WebM)');
+  let webm = null;
+  for (let i = 0; i < 40 && !webm; i++) {
+    await espera(500);
+    const n = fs.readdirSync(SAIDA).find((x) => x.endsWith('-giro.webm'));
+    if (n && !(await js(`!!Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.startsWith('Gravando o giro'))`))) webm = fs.readFileSync(path.join(SAIDA, n));
+  }
+  conferir(
+    'a imagem em alta (1440 × 1920) e o vídeo do giro (WebM) foram gravados',
+    !!alta && alta.readUInt32BE(16) === 1440 && alta.readUInt32BE(20) === 1920 && !!webm && webm.length > 5000 && webm.readUInt32BE(0) === 0x1a45dfa3,
+    `${pngAlta} ${alta ? `${alta.readUInt32BE(16)} × ${alta.readUInt32BE(20)}` : 'sem PNG'} / ${webm ? `${webm.length} bytes de vídeo` : 'sem vídeo'}`,
+  );
   await fecharJanela();
   await espera(1200);
   const montagemGravada = fs

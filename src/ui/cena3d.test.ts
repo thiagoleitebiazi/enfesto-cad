@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraDeFrente, montarCena, projecao, type ItemDaCena, type TecidoParaDesenhar } from './cena3d';
+import { cameraDeFrente, desenharSombraNoChao, guinadasDoGiro, montarCena, projecao, type ItemDaCena, type TecidoParaDesenhar } from './cena3d';
 
 /** Uma esfera de tecido de 30 cm na altura do peito: tem faces em todas as direções, uma delas de frente para o reflexo. */
 function esfera(extras: Partial<TecidoParaDesenhar> = {}): TecidoParaDesenhar {
@@ -88,5 +88,40 @@ describe('o zíper na costura (ADR 0132)', () => {
 
   it('o zíper mais comprido que a costura vai até o fim dela', () => {
     expect(ziper(true, 5000)).toHaveLength(4);
+  });
+});
+
+describe('a sombra no chão e o giro em vídeo (ADR 0139)', () => {
+  it('o giro: uma volta inteira, quadro a quadro, a partir da vista de agora', () => {
+    expect(guinadasDoGiro(0.5, 4)).toEqual([0.5, 0.5 + Math.PI / 2, 0.5 + Math.PI, 0.5 + (3 * Math.PI) / 2]);
+    expect(guinadasDoGiro(0, 0)).toEqual([0]);
+  });
+
+  it('a sombra: uma mancha achatada sob os pés, mais escura no meio', () => {
+    const chamadas: string[] = [];
+    const paradas: number[] = [];
+    let raio = 0;
+    const ctx = {
+      save: () => chamadas.push('save'),
+      restore: () => chamadas.push('restore'),
+      translate: () => {},
+      scale: (_x: number, y: number) => chamadas.push(`scale ${y.toFixed(2)}`),
+      createRadialGradient: (_x0: number, _y0: number, _r0: number, _x1: number, _y1: number, r1: number) => {
+        raio = r1;
+        return { addColorStop: (p: number) => paradas.push(p) };
+      },
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => chamadas.push('fill'),
+      fillStyle: '',
+    } as unknown as CanvasRenderingContext2D;
+    desenharSombraNoChao(ctx, projecao(cameraDeFrente(1700), 800, 600, 1700));
+    expect(raio).toBeGreaterThan(10);
+    expect(paradas).toEqual([0, 0.55, 1]);
+    // Achatada: a altura é uma fração da largura.
+    const escala = Number(chamadas.find((c) => c.startsWith('scale'))!.split(' ')[1]);
+    expect(escala).toBeGreaterThan(0.1);
+    expect(escala).toBeLessThan(1);
+    expect(chamadas).toContain('fill');
   });
 });

@@ -464,3 +464,34 @@ export function pontoDoCorpoNaTela(proj: Projecao, corpo: MalhaParaDesenhar, sx:
   }
   return melhor ? { x: melhor.x, y: melhor.y, z: melhor.zz } : null;
 }
+
+/**
+ * A sombra do manequim no chão (ADR 0139): uma mancha suave sob os pés, achatada pela altura da câmera — o corpo deixa
+ * de flutuar no fundo branco das imagens.
+ */
+export function desenharSombraNoChao(ctx: CanvasRenderingContext2D, proj: Projecao, raioMm = 320): void {
+  const centro = proj.projetar(0, 0, 0);
+  const lado = proj.projetar(raioMm, 0, 0);
+  const frente = proj.projetar(0, 0, raioMm);
+  if (!centro || !lado || !frente) return;
+  const rx = Math.hypot(lado.sx - centro.sx, lado.sy - centro.sy);
+  const ry = Math.max(rx * 0.12, Math.hypot(frente.sx - centro.sx, frente.sy - centro.sy));
+  if (!(rx > 0)) return;
+  ctx.save();
+  ctx.translate(centro.sx, centro.sy);
+  ctx.scale(1, ry / rx);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  g.addColorStop(0, 'rgba(20, 24, 32, 0.32)');
+  g.addColorStop(0.55, 'rgba(20, 24, 32, 0.14)');
+  g.addColorStop(1, 'rgba(20, 24, 32, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, rx, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** As guinadas do giro em vídeo (ADR 0139): uma volta inteira em `quadros` passos, a partir da de agora. */
+export function guinadasDoGiro(inicio: number, quadros: number): number[] {
+  return Array.from({ length: Math.max(1, Math.floor(quadros)) }, (_, k) => inicio + (2 * Math.PI * k) / Math.max(1, Math.floor(quadros)));
+}

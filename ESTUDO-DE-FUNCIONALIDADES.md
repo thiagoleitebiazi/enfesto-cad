@@ -210,5 +210,5 @@ terceiros (já dito acima).
 | Ângulos no encaixe: a inclinação que o fio tolera, para a peça caber melhor | ✅ ADR 0135 |
 | Variações de cor do modelo (a cartela), no desenho e no 3D | ✅ no desenho e na ficha: ADR 0136 (no 3D, não) |
 | Poses do manequim para as imagens de catálogo | ✅ ADR 0138 |
-| Imagem em alta resolução, com luz e sombra; o movimento (o giro em vídeo) | ⬜ |
+| Imagem em alta resolução, com luz e sombra; o movimento (o giro em vídeo) | ✅ ADR 0139 |
 | Mudar de uma vez todo o mix da coleção (trocar um material em todos os modelos) | ✅ ADR 0137 |

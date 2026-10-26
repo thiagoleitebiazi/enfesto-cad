@@ -45,7 +45,22 @@ import {
   type Tecido3D,
 } from '../domain/montagem3d';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
-import { cameraDeFrente, corDaTensao, corRgb, desenharCena, luzDoTom, montarCena, pontoDoCorpoNaTela, projecao, TONS_DA_ESTAMPA, type Camera3D, type EstampaPronta, type TecidoParaDesenhar } from './cena3d';
+import {
+  cameraDeFrente,
+  corDaTensao,
+  corRgb,
+  desenharCena,
+  desenharSombraNoChao,
+  guinadasDoGiro,
+  luzDoTom,
+  montarCena,
+  pontoDoCorpoNaTela,
+  projecao,
+  TONS_DA_ESTAMPA,
+  type Camera3D,
+  type EstampaPronta,
+  type TecidoParaDesenhar,
+} from './cena3d';
 import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
 import { ROTULO_DA_POSE, type PoseDoManequim, type Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
@@ -111,6 +126,9 @@ export function PainelDoProvador3D(props: {
   const [simulando, setSimulando] = useState(false);
   const [estado, setEstado] = useState<EstadoDaSimulacao>({ fase: 'arrumado', tempo: 0 });
   const [mensagem, setMensagem] = useState<string | null>(null);
+  // A resolução das imagens salvas (1, 2 ou 4 vezes 600 × 900) e o giro em vídeo sendo gravado (ADR 0139).
+  const [fatorDaImagem, setFatorDaImagem] = useState(1);
+  const [gravandoGiro, setGravandoGiro] = useState(false);
   // O desenho no corpo (ADR 0134): os pontos clicados no tronco, a folga e o nome do pré-molde.
   const [pontosDoDesenho, setPontosDoDesenho] = useState<readonly Ponto3D[]>([]);
   const [folgaDoDesenho, setFolgaDoDesenho] = useState(4);
@@ -274,6 +292,7 @@ export function PainelDoProvador3D(props: {
           .filter((c) => c.ziperMm)
           .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
+      desenharSombraNoChao(ctx, proj);
       desenharCena(ctx, montarCena(proj, m.malhaDoCorpo, tecido), estampas);
       // O desenho no corpo, por cima: o contorno vermelho, fechado com três pontos ou mais, e os pontos.
       const naTela = pontosDoDesenho.map((p) => proj.projetar(p.x, p.y, p.z)).filter((p): p is NonNullable<typeof p> => p !== null);
@@ -379,11 +398,12 @@ export function PainelDoProvador3D(props: {
     setMontagem((m) => ({ ...m, pecas: { ...m.pecas, [chave]: { ...m.pecas[chave]!, ...mudanca } } }));
 
   const salvarImagem = async (todas: boolean): Promise<void> => {
-    const largura = 600;
-    const altura = 900;
+    // A resolução pedida (ADR 0139): 600 × 900 por vista, vezes o fator.
+    const largura = 600 * fatorDaImagem;
+    const altura = 900 * fatorDaImagem;
     const canvas = document.createElement('canvas');
     canvas.width = todas ? largura * VISTAS.length : largura * 1.2;
-    canvas.height = altura + 60;
+    canvas.height = altura + 60 * fatorDaImagem;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       setMensagem('Não foi possível gerar a imagem neste computador.');
@@ -399,9 +419,9 @@ export function PainelDoProvador3D(props: {
       desenharEm(parte, { ...camera, guinada, ...(todas ? { arfagem: 0.08, distancia: cameraDeFrente(montagem.manequim.medidas.alturaCm * 10).distancia } : {}) }, '#ffffff');
       ctx.drawImage(parte, i * parte.width, 0);
       ctx.fillStyle = '#1f2933';
-      ctx.font = '600 22px system-ui, sans-serif';
+      ctx.font = `600 ${22 * fatorDaImagem}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(todas ? nome : props.nomeDoModelo, i * parte.width + parte.width / 2, altura + 38);
+      ctx.fillText(todas ? nome : props.nomeDoModelo, i * parte.width + parte.width / 2, altura + 38 * fatorDaImagem);
     });
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
     if (!blob) {
@@ -411,6 +431,48 @@ export function PainelDoProvador3D(props: {
     const nome = `provador-3d-${props.nomeDoModelo.replace(/[^A-Za-z0-9._-]+/g, '-')}${todas ? '-frente-lado-costas' : ''}.png`;
     const caminho = await props.onSalvarArquivo(nome, await blob.arrayBuffer());
     if (caminho) setMensagem(`Imagem salva em ${caminho}`);
+  };
+
+  /**
+   * O giro em vídeo (ADR 0139): uma volta inteira do manequim, quadro a quadro, num desenho à parte, gravado pelo
+   * gravador de vídeo do navegador (WebM). A vista da janela não muda.
+   */
+  const gravarGiro = async (): Promise<void> => {
+    if (typeof MediaRecorder === 'undefined') {
+      setMensagem('Este computador não grava vídeo (falta o gravador do navegador).');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 900;
+    const fluxo = (canvas as HTMLCanvasElement & { captureStream?: (fps: number) => MediaStream }).captureStream?.(30);
+    if (!fluxo) {
+      setMensagem('Este computador não grava vídeo do desenho.');
+      return;
+    }
+    const tipo = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? 'video/webm';
+    const gravador = new MediaRecorder(fluxo, { mimeType: tipo });
+    const pedacos: Blob[] = [];
+    gravador.ondataavailable = (e) => {
+      if (e.data.size > 0) pedacos.push(e.data);
+    };
+    const parou = new Promise<void>((r) => {
+      gravador.onstop = () => r();
+    });
+    setGravandoGiro(true);
+    setMensagem('Gravando o giro…');
+    gravador.start();
+    for (const guinada of guinadasDoGiro(camera.guinada, 90)) {
+      desenharEm(canvas, { ...camera, guinada }, '#ffffff');
+      await new Promise((r) => setTimeout(r, 1000 / 30));
+    }
+    gravador.stop();
+    await parou;
+    setGravandoGiro(false);
+    const blob = new Blob(pedacos, { type: 'video/webm' });
+    const nome = `provador-3d-${props.nomeDoModelo.replace(/[^A-Za-z0-9._-]+/g, '-')}-giro.webm`;
+    const caminho = await props.onSalvarArquivo(nome, await blob.arrayBuffer());
+    setMensagem(caminho ? `Vídeo do giro salvo em ${caminho}` : null);
   };
 
   const colocadas = instancias.filter((i) => montagem.pecas[i.chave]?.posicao !== 'fora');
@@ -609,12 +671,23 @@ export function PainelDoProvador3D(props: {
           {aba === 'imagem' && (
             <section aria-label="Imagem" className="secao-do-provador">
               <p className="nota-do-formulario">A imagem do provador para o catálogo e a aprovação (PNG, fundo branco). Simule antes, para a peça já estar caída.</p>
+              <label>
+                Resolução
+                <select aria-label="Resolução da imagem" value={fatorDaImagem} onChange={(e) => setFatorDaImagem(Number(e.target.value))}>
+                  <option value={1}>Normal (600 × 900 por vista)</option>
+                  <option value={2}>Alta (1200 × 1800)</option>
+                  <option value={4}>Muito alta (2400 × 3600)</option>
+                </select>
+              </label>
               <p className="acoes-da-fila">
                 <button type="button" onClick={() => void salvarImagem(false)}>
                   Salvar esta vista (PNG)
                 </button>
                 <button type="button" onClick={() => void salvarImagem(true)}>
                   Salvar frente, lado e costas (PNG)
+                </button>
+                <button type="button" disabled={gravandoGiro} onClick={() => void gravarGiro()}>
+                  {gravandoGiro ? 'Gravando o giro…' : 'Gravar o giro (vídeo WebM)'}
                 </button>
               </p>
             </section>
