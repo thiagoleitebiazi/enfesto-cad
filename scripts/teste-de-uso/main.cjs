@@ -2198,6 +2198,55 @@ async function principal() {
   await fecharJanela();
   await espera(300);
 
+  // 25. O servidor de encaixes (ADR 0147): uma segunda janela no modo servidor (a que o programa abre com
+  // "--servidor-de-encaixes"), com a pasta da fila da rede do passo 5c. A janela principal, que não atende, manda um
+  // encaixe para a rede; o servidor pega, calcula na fila dele (num arquivo à parte) e devolve; o encaixe termina na
+  // janela principal "calculado por" ele.
+  await aba('Encaixe');
+  await espera(300);
+  await botao('Fila de encaixes');
+  await espera(600);
+  await naFilaDaRede('Pausar a fila');
+  await espera(300);
+  await fecharJanela();
+  await espera(300);
+  await porNaFila('grade');
+  await botao('Fila de encaixes');
+  await espera(600);
+  await naFilaDaRede('Mandar para a rede');
+  await espera(800);
+  const pedidosParaOServidor = fs.readdirSync(path.join(pastaDaFila, 'pedidos')).length;
+  const servidor = new BrowserWindow({
+    width: 720,
+    height: 560,
+    show: true,
+    title: 'Enfesto CAD — servidor de encaixes',
+    webPreferences: { preload: path.join(RAIZ, 'dist-electron', 'preload.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  await servidor.loadURL('app://enfesto/index.html?modo=servidor');
+  const noServidor = (codigo) => servidor.webContents.executeJavaScript(codigo);
+  await espera(800);
+  await noServidor(`(() => { const i = Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Nome desta estação')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Servidor de teste'); i.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  let calculadoPeloServidor = '';
+  for (let i = 0; i < 120 && !calculadoPeloServidor; i++) {
+    await espera(500);
+    calculadoPeloServidor = await js(`(Array.from(document.querySelectorAll('.tabela-da-fila tbody tr')).find(tr => tr.innerText.includes('calculado por Servidor de teste na rede')) || {}).innerText || ''`);
+  }
+  const estadoDoServidor = await noServidor(`JSON.stringify({ estado: (document.querySelector('.estado-do-servidor') || {}).textContent || '', calculados: ((Array.from(document.querySelectorAll('dt')).find(d => d.textContent === 'Calculados desde que abriu') || {}).nextElementSibling || {}).textContent || '' })`);
+  fs.writeFileSync(path.join(SAIDA, '53-servidor-de-encaixes.png'), (await servidor.webContents.capturePage()).toPNG());
+  log('      foto: 53-servidor-de-encaixes.png');
+  const filaDoServidor = fs.existsSync(path.join(DADOS, 'fila-do-servidor.json'));
+  conferir(
+    'o servidor de encaixes: a janela do modo servidor atende sempre, pega o encaixe mandado pela principal, calcula na fila dele (num arquivo à parte) e o devolve "calculado por" ele',
+    pedidosParaOServidor === 1 && /Concluído/.test(calculadoPeloServidor) && JSON.parse(estadoDoServidor).estado === 'Atendendo a fila da rede' && JSON.parse(estadoDoServidor).calculados === '1' && filaDoServidor,
+    `pedidos ${pedidosParaOServidor} | ${estadoDoServidor} | fila do servidor ${filaDoServidor} | ${calculadoPeloServidor.replace(/\s+/g, ' ').slice(0, 160)}`,
+  );
+  servidor.destroy();
+  await naFilaDaRede('Retomar a fila');
+  await espera(300);
+  await fecharJanela();
+  await espera(300);
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));

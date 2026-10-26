@@ -29,6 +29,7 @@ import { copiaUnica, criarFilaDeGravacao, gravarComAnterior, gravarProjetoComCop
 import { PASTA_DAS_COPIAS } from '../src/domain/copiaDeSeguranca';
 import { lerCadastroDeProducao, VERSAO_DO_CADASTRO } from '../src/domain/cadastroDeProducao';
 import { lerFilaDeEncaixes, VERSAO_DA_FILA } from '../src/domain/filaDeEncaixes';
+import { OPCAO_DO_SERVIDOR_DE_ENCAIXES } from '../src/domain/filaNaRede';
 import { lerBibliotecaDeMateriais, VERSAO_DA_BIBLIOTECA_DE_MATERIAIS } from '../src/domain/materiais';
 import { lerColecoes, VERSAO_DAS_COLECOES } from '../src/domain/colecoes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
@@ -340,16 +341,19 @@ ipcMain.on('editar-texto', (evento, acao: unknown) => {
   evento.sender[COMANDO_NO_TEXTO[acao]]();
 });
 
+/** O programa aberto como servidor de encaixes (ADR 0147): uma janela pequena, só com a fila da rede. */
+const MODO_SERVIDOR = process.argv.includes(OPCAO_DO_SERVIDOR_DE_ENCAIXES);
+
 function criarJanelaPrincipal(): void {
   const janela = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 700,
+    width: MODO_SERVIDOR ? 720 : 1400,
+    height: MODO_SERVIDOR ? 560 : 900,
+    minWidth: MODO_SERVIDOR ? 520 : 1024,
+    minHeight: MODO_SERVIDOR ? 400 : 700,
     // A janela só aparece depois de desenhada e conferida: quem usa o programa nunca vê uma janela preta à espera.
     show: false,
     backgroundColor: '#e8e9eb',
-    title: 'Enfesto CAD',
+    title: MODO_SERVIDOR ? 'Enfesto CAD — servidor de encaixes' : 'Enfesto CAD',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -418,7 +422,8 @@ function criarJanelaPrincipal(): void {
     aoCairOProcessoDeVideo = null;
     estadoDaAbertura = aoMostrarATela(estadoDaAbertura, modoDaSessao);
     guardarEstado(estadoDaAbertura);
-    janela.maximize();
+    // O servidor de encaixes (ADR 0147) abre na janela pequena dele.
+    if (!MODO_SERVIDOR) janela.maximize();
     janela.show();
     janela.focus();
     registrarDiagnostico(`tela-mostrada modo=${modoDaSessao} conferida=${conferida}`);
@@ -570,7 +575,7 @@ function criarJanelaPrincipal(): void {
     }
   });
 
-  const destino = VITE_DEV_SERVER_URL ?? URL_DA_INTERFACE;
+  const destino = `${VITE_DEV_SERVER_URL ?? URL_DA_INTERFACE}${MODO_SERVIDOR ? '?modo=servidor' : ''}`;
   janela.loadURL(destino).catch((erro: Error) => {
     registrarDiagnostico(`loadURL falhou: ${erro.message}`);
     if (mostradaEm !== null) recuperar(`loadURL falhou: ${erro.message}`);
@@ -777,34 +782,49 @@ ipcMain.handle('cadastro-gravar', async (_evento, bruto: unknown) => {
  * calculando e os resultados. Lida e gravada como o cadastro: a versão anterior fica ao lado para recuperar, e o
  * arquivo ilegível vai para as cópias de segurança na primeira gravação, sem se perder.
  */
-function arquivoDaFila(): string {
-  return path.join(app.getPath('userData'), 'fila-de-encaixes.json');
+// A do servidor de encaixes (ADR 0147) fica em <userData>/fila-do-servidor.json, à parte da de quem desenha.
+function registrarArquivoDeFila(canal: 'fila' | 'fila-do-servidor', idDoArquivo: string): void {
+  const arquivo = (): string => path.join(app.getPath('userData'), `${idDoArquivo}.json`);
+  ipcMain.handle(`${canal}-ler`, async () => {
+    const lido = await lerComRecuperacao(arquivo());
+    if (lido.situacao === 'ausente') return null;
+    if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivo()) };
+    if (lido.situacao === 'recuperado') {
+      registrarDiagnostico(`${canal}-recuperada-da-versao-anterior motivo=${lido.motivo}`);
+      return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
+    }
+    return lido.conteudo;
+  });
+  ipcMain.handle(`${canal}-gravar`, async (_evento, bruto: unknown) => {
+    const lido = lerFilaDeEncaixes(bruto);
+    if (lido.descartados.length > 0) throw new Error(`A fila não foi gravada: ${lido.descartados.join(' ')}`);
+    await mkdir(app.getPath('userData'), { recursive: true });
+    await filaDeGravacao(idDoArquivo, () =>
+      gravarComAnterior(arquivo(), JSON.stringify(lido.fila), {
+        idDoArquivo,
+        versaoNova: VERSAO_DA_FILA,
+        pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
+        agoraIso: new Date().toISOString(),
+      }),
+    );
+    return true;
+  });
 }
+registrarArquivoDeFila('fila', 'fila-de-encaixes');
+registrarArquivoDeFila('fila-do-servidor', 'fila-do-servidor');
 
-ipcMain.handle('fila-ler', async () => {
-  const lido = await lerComRecuperacao(arquivoDaFila());
-  if (lido.situacao === 'ausente') return null;
-  if (lido.situacao === 'ilegivel') return { arquivoIlegivel: path.basename(arquivoDaFila()) };
-  if (lido.situacao === 'recuperado') {
-    registrarDiagnostico(`fila-recuperada-da-versao-anterior motivo=${lido.motivo}`);
-    return { recuperadoDaVersaoAnterior: lido.motivo, conteudo: lido.conteudo };
-  }
-  return lido.conteudo;
-});
-
-ipcMain.handle('fila-gravar', async (_evento, bruto: unknown) => {
-  const lido = lerFilaDeEncaixes(bruto);
-  if (lido.descartados.length > 0) throw new Error(`A fila não foi gravada: ${lido.descartados.join(' ')}`);
-  await mkdir(app.getPath('userData'), { recursive: true });
-  await filaDeGravacao('fila-de-encaixes', () =>
-    gravarComAnterior(arquivoDaFila(), JSON.stringify(lido.fila), {
-      idDoArquivo: 'fila-de-encaixes',
-      versaoNova: VERSAO_DA_FILA,
-      pastaDasCopias: path.join(app.getPath('userData'), PASTA_DAS_COPIAS),
-      agoraIso: new Date().toISOString(),
-    }),
-  );
-  return true;
+/**
+ * O servidor de encaixes ao entrar no Windows (ADR 0147): o programa entra na lista do sistema com a opção do
+ * servidor. Só no Windows (no Mac, a lista não leva a opção): nos outros, `null`.
+ */
+ipcMain.handle('servidor-ao-ligar', () =>
+  process.platform === 'win32' ? app.getLoginItemSettings({ args: [OPCAO_DO_SERVIDOR_DE_ENCAIXES] }).openAtLogin : null,
+);
+ipcMain.handle('servidor-ao-ligar-mudar', (_evento, ligar: unknown) => {
+  if (process.platform !== 'win32' || typeof ligar !== 'boolean') return null;
+  app.setLoginItemSettings({ openAtLogin: ligar, args: [OPCAO_DO_SERVIDOR_DE_ENCAIXES] });
+  registrarDiagnostico(`servidor-ao-ligar ${ligar}`);
+  return app.getLoginItemSettings({ args: [OPCAO_DO_SERVIDOR_DE_ENCAIXES] }).openAtLogin;
 });
 
 /**

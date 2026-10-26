@@ -80,7 +80,7 @@ inventa.
 | Consumo, eficiência e perda antes do corte; relatórios para o financeiro | ✅ (plano, relatório, custo) | — |
 | Prioridade das ordens a calcular | ✅ (na fila de encaixes, ADR 0102) | — |
 | Fila de encaixes em segundo plano: várias, com prioridade, pausar, reordenar, relatório de eficiência | ✅ (nesta estação, com o programa aberto, ADR 0102) | — |
-| Servidor dedicado recebendo de várias estações, 24 h | 🟡 (a fila na rede: as estações mandam por uma pasta, e uma estação que atende calcula e devolve, ADR 0143) | S (a máquina que calcula precisa estar com o programa aberto) |
+| Servidor dedicado recebendo de várias estações, 24 h | ✅ (a fila na rede, ADR 0143; o modo servidor de encaixes: uma máquina só para calcular, que abre ao entrar no Windows, ADR 0147) | S (um serviço que calcula sem ninguém entrar no Windows) |
 | Encaixe de estampa para impressão digital (molde preenchido com a imagem) | ✅ (Encaixe › Impressão › Estampa no encaixe: corrida ou localizada, de pé no fio de cada peça, com sangria; o PDF 1:1, ADR 0113) | H (a impressora: não testado numa) |
 
 ## 5. Digitalização de moldes de papel
@@ -227,3 +227,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Copiar o molde de papel pelo quadro de captura (a mesa digitalizadora) | ✅ pela porta serial ou pelo registro colado: ADR 0144 (não testado numa mesa física) |
 | Combinar os modelos em looks; achar o modelo parecido com uma foto | ✅ os looks da coleção e a busca por imagem: ADR 0145 (a loja virtual continua de fora) |
 | O tecido colidindo consigo mesmo no caimento 3D | ✅ ponto a ponto, fora das costuras: ADR 0146 |
+| Uma máquina só para calcular os encaixes das outras | ✅ o modo servidor de encaixes (--servidor-de-encaixes): ADR 0147 |

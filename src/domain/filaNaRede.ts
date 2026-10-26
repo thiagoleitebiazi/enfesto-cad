@@ -13,6 +13,9 @@ import type { PastaDeArquivos } from './pastaCompartilhada';
  * - quem pediu encontra o resultado ali, e o trabalho termina na fila dele, com o encaixe e o nome de quem calculou.
  */
 
+/** O programa aberto com esta opção é o servidor de encaixes (ADR 0147): só a janela que atende a fila da rede. */
+export const OPCAO_DO_SERVIDOR_DE_ENCAIXES = '--servidor-de-encaixes';
+
 export const PEDIDOS_DA_FILA = 'pedidos';
 export const CALCULANDO_NA_FILA = 'calculando';
 export const PRONTOS_DA_FILA = 'prontos';

@@ -240,7 +240,8 @@ function FilaDaRede({ rede }: { readonly rede: FilaNaRedeNaTela }): React.JSX.El
           'Nenhuma pasta escolhida.'
         )}{' '}
         Uma pasta da rede que as estações usam como servidor de encaixes: “Mandar para a rede” põe um encaixe que espera a vez lá; a estação que atende a fila o
-        calcula, e o resultado volta para a fila de quem mandou.
+        calcula, e o resultado volta para a fila de quem mandou. Para uma máquina só calcular, abra o Enfesto CAD com “--servidor-de-encaixes” no fim do
+        destino do atalho: ela abre só a janela do servidor, que atende sempre (e pode abrir ao entrar no Windows).
       </p>
       <p className="acoes-da-fila">
         <button type="button" onClick={() => void rede.escolher()}>

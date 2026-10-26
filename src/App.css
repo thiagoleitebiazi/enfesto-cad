@@ -5776,3 +5776,45 @@ rect.destaque-do-desenho,
   border-radius: 6px;
   border: 1px solid var(--cor-borda);
 }
+
+/* O servidor de encaixes (ADR 0147): a janela pequena de uma estação só para calcular. */
+.servidor-de-encaixes {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 16px 20px;
+  background: var(--cor-fundo-app);
+  color: var(--cor-texto);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.servidor-de-encaixes header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--marca-800);
+  border-bottom: 3px solid var(--destaque);
+  color: #fff;
+}
+.servidor-de-encaixes h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.estado-do-servidor {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.estado-do-servidor.atendendo {
+  background: #16a34a;
+}
+.estado-do-servidor.parado {
+  background: #b45309;
+}
+.pedidos-do-servidor {
+  margin: 0;
+  padding-left: 18px;
+}

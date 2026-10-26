@@ -86,6 +86,20 @@ const api = {
   async gravarBibliotecaDeMateriais(biblioteca: unknown): Promise<boolean> {
     return ipcRenderer.invoke('materiais-gravar', biblioteca) as Promise<boolean>;
   },
+  /** A fila do servidor de encaixes (ADR 0147), num arquivo à parte da de quem desenha. */
+  async lerFilaDoServidor(): Promise<unknown> {
+    return ipcRenderer.invoke('fila-do-servidor-ler') as Promise<unknown>;
+  },
+  async gravarFilaDoServidor(fila: unknown): Promise<boolean> {
+    return ipcRenderer.invoke('fila-do-servidor-gravar', fila) as Promise<boolean>;
+  },
+  /** Se o servidor de encaixes abre ao entrar no Windows (`null`: este sistema não deixa). */
+  async servidorAoLigar(): Promise<boolean | null> {
+    return ipcRenderer.invoke('servidor-ao-ligar') as Promise<boolean | null>;
+  },
+  async mudarServidorAoLigar(ligar: boolean): Promise<boolean | null> {
+    return ipcRenderer.invoke('servidor-ao-ligar-mudar', ligar) as Promise<boolean | null>;
+  },
   /** As pastas compartilhadas (ADR 0141): escolher, saber onde está e trocar arquivos nela, só pelo nome. */
   async escolherPasta(tipo: TipoDePasta): Promise<string | null> {
     return ipcRenderer.invoke('pasta-escolher', tipo) as Promise<string | null>;

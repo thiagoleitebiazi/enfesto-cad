@@ -30,6 +30,8 @@ export interface FilaNaRedeNaTela {
   readonly quem: string;
   readonly atender: boolean;
   readonly mensagem: string | null;
+  /** Quantos pedidos de outras estações esta calculou e devolveu desde que abriu. */
+  readonly entregues: number;
   readonly mudarQuem: (quem: string) => void;
   readonly mudarAtender: (atender: boolean) => void;
   readonly escolher: () => Promise<void>;
@@ -50,11 +52,20 @@ function atenderGuardado(): boolean {
   }
 }
 
-export function useFilaNaRede(pasta: AcessoAPasta | null, fila: FilaNaTela, intervaloMs = 4000, agora: () => string = agoraPadrao): FilaNaRedeNaTela {
+export function useFilaNaRede(
+  pasta: AcessoAPasta | null,
+  fila: FilaNaTela,
+  intervaloMs = 4000,
+  agora: () => string = agoraPadrao,
+  opcoes: { readonly atenderSempre?: boolean } = {},
+): FilaNaRedeNaTela {
   const [onde, setOnde] = useState<string | null>(null);
   const [quem, setQuem] = useState(lerNomeNaRede);
-  const [atender, setAtender] = useState(atenderGuardado);
+  const [atenderEscolhido, setAtender] = useState(atenderGuardado);
+  // O servidor de encaixes (ADR 0147) atende sempre.
+  const atender = opcoes.atenderSempre === true || atenderEscolhido;
   const [mensagem, setMensagem] = useState<string | null>(null);
+  const [entregues, setEntregues] = useState(0);
   // O passo de tempos em tempos lê o de agora (e não o da hora em que foi criado).
   const filaRef = useRef(fila);
   const quemRef = useRef(quem);
@@ -90,7 +101,11 @@ export function useFilaNaRede(pasta: AcessoAPasta | null, fila: FilaNaTela, inte
       // 2. Os pedidos calculados aqui: o resultado volta para a pasta, e o trabalho sai desta fila.
       for (const t of filaRef.current.fila.trabalhos) {
         const pronto = prontoDoTrabalho(t, quemRef.current.trim() || 'outra estação', agora());
-        if (pronto && (await entregarPronto(pasta, pronto))) filaRef.current.mudar((f) => removerTrabalho(f, t.id));
+        if (pronto && (await entregarPronto(pasta, pronto))) {
+          filaRef.current.mudar((f) => removerTrabalho(f, t.id));
+          setEntregues((n) => n + 1);
+          setMensagem(`Devolvido a ${t.pedidoDaRede?.pedidoPor ?? 'quem pediu'}: “${t.projetoNome}” (${t.situacao === 'concluido' ? 'calculado' : 'não calculado'}).`);
+        }
       }
       // 3. Atendendo: um pedido de cada vez, com esta fila rodando e sem outro pedido da rede nela.
       const f = filaRef.current.fila;
@@ -188,5 +203,5 @@ export function useFilaNaRede(pasta: AcessoAPasta | null, fila: FilaNaTela, inte
     [pasta, fila],
   );
 
-  return { onde, quem, atender, mensagem, mudarQuem, mudarAtender, escolher, esquecer, mandar, trazerDeVolta };
+  return { onde, quem, atender, mensagem, entregues, mudarQuem, mudarAtender, escolher, esquecer, mandar, trazerDeVolta };
 }
