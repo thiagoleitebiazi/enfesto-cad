@@ -376,6 +376,7 @@ import {
 } from './core/geometria';
 import { comPontoDeCasamento, grupoLimpo, nomeDoPontoDeCasamento } from './domain/pontosDeCasamento';
 import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } from './domain/componentes';
+import { recadoDaTroca, trocarMaterialNosModelos } from './domain/trocaDeMaterial';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
 import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
@@ -5112,6 +5113,23 @@ export default function App(): React.JSX.Element {
             bibliotecaDeMateriais.biblioteca,
           )}
           onMudar={mudarBibliotecaDeMateriais}
+          onTrocarNosModelos={(deId, paraId) => {
+            const materiais = bibliotecaDeMateriais.biblioteca.materiais;
+            const de = materiais.find((m) => m.id === deId);
+            const para = materiais.find((m) => m.id === paraId);
+            if (!de || !para) return 'O material saiu da biblioteca.';
+            try {
+              // O projeto aberto entra como está agora; os outros, como estão na Biblioteca.
+              const troca = trocarMaterialNosModelos([...projetos.filter((p) => p.id !== projetoAtual.id), projetoAtual], de, para, new Date().toISOString());
+              for (const p of troca.mudados) void persistirProjeto(p);
+              setProjetos((lista) => lista.map((p) => troca.mudados.find((m) => m.id === p.id) ?? p));
+              const aberto = troca.mudados.find((m) => m.id === projetoAtual.id);
+              if (aberto) setProjetoAtual(aberto);
+              return recadoDaTroca(troca, de, para);
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
           onSalvarTexto={salvarTexto}
           agoraIso={() => new Date().toISOString()}
           novoId={() => `material-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}

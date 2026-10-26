@@ -211,4 +211,4 @@ terceiros (já dito acima).
 | Variações de cor do modelo (a cartela), no desenho e no 3D | ✅ no desenho e na ficha: ADR 0136 (no 3D, não) |
 | Poses do manequim para as imagens de catálogo | ⬜ |
 | Imagem em alta resolução, com luz e sombra; o movimento (o giro em vídeo) | ⬜ |
-| Mudar de uma vez todo o mix da coleção (trocar um material em todos os modelos) | ⬜ |
+| Mudar de uma vez todo o mix da coleção (trocar um material em todos os modelos) | ✅ ADR 0137 |

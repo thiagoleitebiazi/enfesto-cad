@@ -1840,6 +1840,45 @@ async function principal() {
     comInclinacao ? JSON.stringify(comInclinacao.restricaoDeRotacao) : 'sem a manga',
   );
 
+  // 21. Trocar um material em todos os modelos (ADR 0137): o botão de 14 mm entra no lugar do de 12 mm; a ficha (em
+  // rascunho, versão 2) do projeto que o usa fica com o de 14, gravada.
+  await aba('Modelo');
+  await espera(300);
+  await botao('Materiais e aviamentos');
+  await espera(800);
+  await botaoNaJanelaDeMateriais('Novo material');
+  await digitar('Descrição *', 'Botão de pressão 14 mm');
+  await digitar('Código', 'BOT-14');
+  await digitar('Preço por un (R$)', '0,40');
+  await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === 'Guardar')`);
+  await espera(800);
+  await parteDaJanela('Custos dos modelos');
+  await espera(400);
+  await js(`(() => { const s = document.querySelector('[role=dialog] select[aria-label="Material a trocar"]'); const o = Array.from(s.options).find(o => o.textContent.startsWith('BOT-12')); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await espera(200);
+  await js(`(() => { const s = document.querySelector('[role=dialog] select[aria-label="Material que entra"]'); const o = Array.from(s.options).find(o => o.textContent.startsWith('BOT-14')); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await espera(200);
+  const paraNaTroca = await js(`(document.querySelector('[role=dialog] select[aria-label="Material que entra"]').selectedOptions[0] || {}).textContent || ''`);
+  await botaoNaJanela('Trocar nos modelos');
+  await espera(1200);
+  const recadoDaTroca = await js(`((document.querySelector('[role=dialog] .troca-nos-modelos [role=status]') || {}).textContent || '')`);
+  await foto('49-troca-nos-modelos.png');
+  await fecharJanela();
+  await espera(600);
+  const comFicha = fs
+    .readdirSync(path.join(DADOS, 'projetos'))
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => JSON.parse(fs.readFileSync(path.join(DADOS, 'projetos', n), 'utf8')))
+    .filter((p) => p.fichaTecnica && p.fichaTecnica.materiais.some((i) => i.descricao.startsWith('Botão de pressão')));
+  conferir(
+    'trocar o botão de 12 mm pelo de 14 em todos os modelos: a ficha aberta fica com o de 14, gravada',
+    paraNaTroca.startsWith('BOT-14') &&
+      recadoDaTroca.startsWith('“Botão de pressão 12 mm” trocado por “Botão de pressão 14 mm”') &&
+      comFicha.length > 0 &&
+      comFicha.every((p) => p.fichaTecnica.materiais.some((i) => i.descricao === 'Botão de pressão 14 mm') && !p.fichaTecnica.materiais.some((i) => i.descricao === 'Botão de pressão 12 mm')),
+    `${paraNaTroca} / ${recadoDaTroca.slice(0, 160)}`,
+  );
+
   const erros = JSON.parse(await js(`JSON.stringify(window.__errosDoTeste || [])`));
   conferir('sem erro na página', erros.length === 0, JSON.stringify(erros));
   const avisosDoConsole = JSON.parse(await js(`JSON.stringify(window.__avisosDoConsole || [])`));

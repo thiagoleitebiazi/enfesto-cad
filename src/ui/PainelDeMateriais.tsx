@@ -99,6 +99,8 @@ export function PainelDeMateriais(props: {
   readonly custosDosModelos?: readonly CustoDoModelo[];
   /** Os modelos (projetos) que usam o material, pelo nome — para avisar antes de remover (sem isto, pelos custos). */
   readonly modelosQueUsam?: (materialId: string) => readonly string[];
+  /** Troca o material em todos os modelos (ADR 0137); devolve o que dizer. */
+  readonly onTrocarNosModelos?: (deId: string, paraId: string) => string;
   /** Grava a biblioteca mudada; devolve a mensagem do erro, ou `null`. */
   readonly onMudar: (nova: BibliotecaDeMateriais) => Promise<string | null>;
   readonly onSalvarTexto: (sugestaoDeNome: string, conteudo: string) => Promise<string | null>;
@@ -420,6 +422,7 @@ export function PainelDeMateriais(props: {
               O custo de cada modelo com ficha técnica sai com os preços de agora da biblioteca: mudar o preço de um material
               atualiza, de uma vez, o custo de todos os modelos que o usam. A diferença é para o custo da última aprovação.
             </p>
+            {props.onTrocarNosModelos && <TrocaNosModelos materiais={biblioteca.materiais} custos={props.custosDosModelos ?? []} onTrocar={props.onTrocarNosModelos} />}
             {(props.custosDosModelos ?? []).length === 0 ? (
               <p className="nota-do-formulario">Nenhum modelo com ficha técnica ainda (Modelo › Ficha técnica).</p>
             ) : (
@@ -602,5 +605,69 @@ function ImportacaoDaPlanilha(props: {
         </button>
       </p>
     </section>
+  );
+}
+
+/**
+ * Trocar um material em todos os modelos de uma vez (ADR 0137): o material de agora (um dos usados nas fichas) e o
+ * que entra no lugar (da mesma unidade). As fichas abertas mudam; as aprovadas ficam, e o recado diz quais.
+ */
+function TrocaNosModelos(props: {
+  readonly materiais: BibliotecaDeMateriais['materiais'];
+  readonly custos: readonly CustoDoModelo[];
+  readonly onTrocar: (deId: string, paraId: string) => string;
+}): React.JSX.Element {
+  const usados = props.materiais.filter((m) => props.custos.some((c) => c.materiaisIds.includes(m.id)));
+  const [deId, setDeId] = useState(usados[0]?.id ?? '');
+  const de = props.materiais.find((m) => m.id === deId);
+  const candidatos = props.materiais.filter((m) => de && m.id !== de.id && m.unidade === de.unidade);
+  const [paraId, setParaId] = useState('');
+  // O que entra no lugar é sempre escolhido: um clique distraído não troca o botão pela linha.
+  const para = candidatos.find((m) => m.id === paraId);
+  const [recado, setRecado] = useState<string | null>(null);
+  if (usados.length === 0) return <p className="nota-do-formulario">Nenhum material da biblioteca está nas fichas dos modelos: não há o que trocar.</p>;
+  return (
+    <fieldset className="grupo-de-opcoes-do-formulario troca-nos-modelos">
+      <legend>Trocar um material em todos os modelos</legend>
+      <label>
+        O material de agora
+        <select
+          aria-label="Material a trocar"
+          value={deId}
+          onChange={(e) => {
+            setDeId(e.target.value);
+            setParaId('');
+          }}
+        >
+          {usados.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.codigo ? `${m.codigo} — ` : ''}
+              {m.descricao}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Entra no lugar
+        <select aria-label="Material que entra" value={para?.id ?? ''} onChange={(e) => setParaId(e.target.value)} disabled={candidatos.length === 0}>
+          <option value="">Escolha…</option>
+          {candidatos.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.codigo ? `${m.codigo} — ` : ''}
+              {m.descricao}
+            </option>
+          ))}
+        </select>
+      </label>
+      {candidatos.length === 0 && <p className="nota-do-formulario">Nenhum outro material na mesma unidade: cadastre o que vai entrar no lugar.</p>}
+      <button type="button" className="botao-primario" disabled={!de || !para} onClick={() => de && para && setRecado(props.onTrocar(de.id, para.id))}>
+        Trocar nos modelos
+      </button>
+      {recado && (
+        <p className="nota-do-formulario" role="status">
+          {recado}
+        </p>
+      )}
+    </fieldset>
   );
 }

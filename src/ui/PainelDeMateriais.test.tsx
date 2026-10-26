@@ -190,3 +190,39 @@ describe('PainelDeMateriais — importar uma planilha (ADR 0115)', () => {
     expect(screen.getByText('R$ 0,40/un')).toBeInTheDocument();
   });
 });
+
+describe('trocar um material em todos os modelos (ADR 0137)', () => {
+  it('o que entra é escolhido (só os da mesma unidade); a troca diz o resultado', () => {
+    const comOutro = salvarMaterial(
+      salvarMaterial(BOTAO, { id: 'b2', codigo: 'BOT-14', descricao: 'Botão 14 mm', categoria: 'aviamento', unidade: 'un', precoPorUnidade: 0.4, atualizadoEmIso: '2026-10-01T10:00:00.000Z' }, '2026-10-01T10:00:00.000Z'),
+      { id: 'l1', codigo: 'LIN', descricao: 'Linha', categoria: 'aviamento', unidade: 'm', precoPorUnidade: 0.01, atualizadoEmIso: '2026-10-01T10:00:00.000Z' },
+      '2026-10-01T10:00:00.000Z',
+    );
+    const onTrocar = vi.fn(() => 'Trocado em 2 modelo(s).');
+    render(
+      <PainelDeMateriais
+        biblioteca={comOutro}
+        avisos={[]}
+        somenteLeitura={false}
+        malhasDoCadastro={[]}
+        custosDosModelos={[{ materiaisIds: ['b1'] } as unknown as NonNullable<Parameters<typeof PainelDeMateriais>[0]['custosDosModelos']>[number]]}
+        onTrocarNosModelos={onTrocar}
+        onMudar={async () => null}
+        onSalvarTexto={async () => null}
+        agoraIso={() => '2026-10-24T12:00:00.000Z'}
+        novoId={() => 'n'}
+        onFechar={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /^Custos dos modelos/ }));
+    const troca = screen.getByRole('group', { name: 'Trocar um material em todos os modelos' });
+    const entra = within(troca).getByLabelText('Material que entra');
+    // A linha (em metros) não entra no lugar do botão (em unidades).
+    expect(within(entra).getAllByRole('option').map((o) => o.textContent)).toEqual(['Escolha…', 'BOT-14 — Botão 14 mm']);
+    expect(within(troca).getByRole('button', { name: 'Trocar nos modelos' })).toBeDisabled();
+    fireEvent.change(entra, { target: { value: 'b2' } });
+    fireEvent.click(within(troca).getByRole('button', { name: 'Trocar nos modelos' }));
+    expect(onTrocar).toHaveBeenCalledWith('b1', 'b2');
+    expect(within(troca).getByRole('status')).toHaveTextContent('Trocado em 2 modelo(s).');
+  });
+});
