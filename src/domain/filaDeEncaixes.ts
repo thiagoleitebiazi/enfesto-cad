@@ -17,13 +17,14 @@ import { textoCsv } from '../core/csv';
 export const VERSAO_DA_FILA = 1;
 export const MAXIMO_DE_TRABALHOS = 100;
 
-export type SituacaoNaFila = 'aguardando' | 'executando' | 'pausado' | 'concluido' | 'falhou' | 'cancelado';
+export type SituacaoNaFila = 'aguardando' | 'executando' | 'pausado' | 'na-rede' | 'concluido' | 'falhou' | 'cancelado';
 export type PrioridadeNaFila = 'alta' | 'normal' | 'baixa';
 
 export const ROTULO_DA_SITUACAO_NA_FILA: Readonly<Record<SituacaoNaFila, string>> = {
   aguardando: 'Aguardando',
   executando: 'Calculando',
   pausado: 'Pausado',
+  'na-rede': 'Na fila da rede',
   concluido: 'Concluído',
   falhou: 'Falhou',
   cancelado: 'Cancelado',
@@ -65,6 +66,11 @@ export interface TrabalhoDeEncaixe {
   readonly aplicadoEmIso?: string;
   /** Quantas vezes o cálculo recomeçou do início (pausado no meio, ou o programa fechado no meio). */
   readonly recomecos?: number;
+  /** Veio de um pedido da fila da rede (ADR 0143): ao terminar, o resultado volta para a pasta e o trabalho sai daqui. */
+  readonly pedidoDaRede?: { readonly id: string; readonly pedidoPor: string };
+  /** Mandado para a fila da rede: quando foi; e, ao voltar, quem calculou. */
+  readonly enviadoParaARedeEmIso?: string;
+  readonly calculadoPor?: string;
 }
 
 export interface FilaDeEncaixes {
@@ -88,11 +94,12 @@ const pelaVez = (a: TrabalhoDeEncaixe, b: TrabalhoDeEncaixe): number =>
 /** Os trabalhos como a tela mostra: o que está calculando, depois os da fila na vez deles, depois os terminados (o mais recente primeiro). */
 export function trabalhosNaOrdem(fila: FilaDeEncaixes): TrabalhoDeEncaixe[] {
   const executando = fila.trabalhos.filter((t) => t.situacao === 'executando');
+  const naRede = fila.trabalhos.filter((t) => t.situacao === 'na-rede');
   const pendentes = fila.trabalhos.filter(estaPendente).sort(pelaVez);
   const terminados = fila.trabalhos
     .filter(estaTerminado)
     .sort((a, b) => (b.terminadoEmIso ?? b.criadoEmIso).localeCompare(a.terminadoEmIso ?? a.criadoEmIso));
-  return [...executando, ...pendentes, ...terminados];
+  return [...executando, ...naRede, ...pendentes, ...terminados];
 }
 
 /** O próximo a calcular: o primeiro aguardando na vez — nenhum, com a fila pausada ou com um já calculando. */
@@ -116,6 +123,7 @@ export interface DadosDoTrabalho {
   readonly pecas: readonly Molde[];
   readonly enfesto: ConfiguracaoDeEnfesto;
   readonly opcoes: OpcoesDoTrabalho;
+  readonly pedidoDaRede?: { readonly id: string; readonly pedidoPor: string };
 }
 
 /** Põe um trabalho no fim da fila da prioridade dele. Recusa (com o motivo) sem peças ou com a fila cheia. */
@@ -183,9 +191,9 @@ export function reenfileirarTrabalho(fila: FilaDeEncaixes, id: string): FilaDeEn
   return mudar(fila, id, (t) => (estaTerminado(t) ? { ...semCalculo(t), situacao: 'aguardando', ordem } : null));
 }
 
-/** Tira o trabalho da fila (o que está calculando não: pause ou cancele antes). */
+/** Tira o trabalho da fila (o que está calculando não: pause ou cancele antes; o que está na rede, traga de volta antes). */
 export function removerTrabalho(fila: FilaDeEncaixes, id: string): FilaDeEncaixes {
-  const trabalhos = fila.trabalhos.filter((t) => t.id !== id || t.situacao === 'executando');
+  const trabalhos = fila.trabalhos.filter((t) => t.id !== id || t.situacao === 'executando' || t.situacao === 'na-rede');
   return trabalhos.length === fila.trabalhos.length ? fila : { ...fila, trabalhos };
 }
 
@@ -216,6 +224,34 @@ export function podeMover(fila: FilaDeEncaixes, id: string, direcao: -1 | 1): bo
   return moverNaFila(fila, id, direcao) !== fila;
 }
 
+/** Manda para a fila da rede (ADR 0143) um trabalho que ainda espera a vez aqui: outra estação o calcula. */
+export function enviarParaARede(fila: FilaDeEncaixes, id: string, agoraIso: string): FilaDeEncaixes {
+  return mudar(fila, id, (t) => (estaPendente(t) && !t.pedidoDaRede ? { ...t, situacao: 'na-rede', enviadoParaARedeEmIso: agoraIso } : null));
+}
+
+/** Traz de volta para esta fila um trabalho mandado para a rede (ele volta a esperar a vez aqui). */
+export function trazerDaRede(fila: FilaDeEncaixes, id: string): FilaDeEncaixes {
+  return mudar(fila, id, (t) => {
+    if (t.situacao !== 'na-rede') return null;
+    const copia: Partial<Record<keyof TrabalhoDeEncaixe, unknown>> = { ...t, situacao: 'aguardando' };
+    delete copia.enviadoParaARedeEmIso;
+    return copia as TrabalhoDeEncaixe;
+  });
+}
+
+/** O resultado que voltou da rede: o trabalho termina aqui, com o encaixe (ou o erro) e quem calculou. */
+export function receberDaRede(
+  fila: FilaDeEncaixes,
+  id: string,
+  pronto: { readonly calculadoPor: string; readonly terminadoEmIso: string; readonly resultado?: ResultadoDeNesting; readonly erro?: string },
+): FilaDeEncaixes {
+  return mudar(fila, id, (t) => {
+    if (t.situacao !== 'na-rede') return null;
+    const comum = { ...t, calculadoPor: pronto.calculadoPor, terminadoEmIso: pronto.terminadoEmIso };
+    return pronto.resultado ? { ...comum, situacao: 'concluido', resultado: pronto.resultado } : { ...comum, situacao: 'falhou', erro: pronto.erro ?? 'a estação que atendeu não devolveu o encaixe' };
+  });
+}
+
 export function marcarAplicado(fila: FilaDeEncaixes, id: string, agoraIso: string): FilaDeEncaixes {
   return mudar(fila, id, (t) => (t.situacao === 'concluido' ? { ...t, aplicadoEmIso: agoraIso } : null));
 }
@@ -235,14 +271,15 @@ export function recuperarInterrompidos(fila: FilaDeEncaixes): FilaDeEncaixes {
 
 /** Quantos de cada situação (para o resumo na barra de status). */
 export function contagemDaFila(fila: FilaDeEncaixes): Readonly<Record<SituacaoNaFila, number>> {
-  const contagem: Record<SituacaoNaFila, number> = { aguardando: 0, executando: 0, pausado: 0, concluido: 0, falhou: 0, cancelado: 0 };
+  const contagem: Record<SituacaoNaFila, number> = { aguardando: 0, executando: 0, pausado: 0, 'na-rede': 0, concluido: 0, falhou: 0, cancelado: 0 };
   for (const t of fila.trabalhos) contagem[t.situacao]++;
   return contagem;
 }
 
 /** Os concluídos ainda não aplicados (o que espera a pessoa olhar). */
 export function concluidosSemAplicar(fila: FilaDeEncaixes): number {
-  return fila.trabalhos.filter((t) => t.situacao === 'concluido' && t.aplicadoEmIso === undefined).length;
+  // Os pedidos de outra estação não contam: o resultado deles volta para a rede, não é aplicado aqui.
+  return fila.trabalhos.filter((t) => t.situacao === 'concluido' && t.aplicadoEmIso === undefined && !t.pedidoDaRede).length;
 }
 
 // ---- Comparar os resultados

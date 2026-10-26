@@ -9,7 +9,7 @@ import { gravarSemCorromper } from './gravacao';
  * dentro da pasta escolhida.
  */
 
-export type TipoDePasta = 'erp' | 'biblioteca';
+export type TipoDePasta = 'erp' | 'biblioteca' | 'fila';
 
 /** As subpastas de cada tipo: as únicas em que a interface lê e grava. */
 export const SUBPASTAS: Readonly<Record<TipoDePasta, readonly string[]>> = {
@@ -18,6 +18,8 @@ export const SUBPASTAS: Readonly<Record<TipoDePasta, readonly string[]>> = {
   erp: ['entrada', 'processados', 'com-erro', 'saida'],
   // A biblioteca na rede (ADR 0142): um arquivo por modelo em "projetos" e a trava de quem está editando em "travas".
   biblioteca: ['projetos', 'travas'],
+  // A fila de encaixes na rede (ADR 0143): os pedidos, o que uma estação está calculando e os resultados prontos.
+  fila: ['pedidos', 'calculando', 'prontos'],
 };
 
 export const ehTipoDePasta = (v: unknown): v is TipoDePasta => typeof v === 'string' && Object.prototype.hasOwnProperty.call(SUBPASTAS, v);

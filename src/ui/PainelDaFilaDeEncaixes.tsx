@@ -28,6 +28,7 @@ import {
 } from '../domain/filaDeEncaixes';
 import { numeroComVirgula } from '../core/numeros';
 import type { ProgressoNaFila } from './useFilaDeEncaixes';
+import type { FilaNaRedeNaTela } from './useFilaNaRede';
 
 type Parte = 'fila' | 'relatorio';
 
@@ -56,6 +57,8 @@ export function PainelDaFilaDeEncaixes(props: {
   readonly onExportarCsv: () => void;
   readonly agoraIso: () => string;
   readonly onFechar: () => void;
+  /** A fila na rede (ADR 0143); sem a pasta (fora do programa), não aparece. */
+  readonly rede?: FilaNaRedeNaTela | null;
 }): React.JSX.Element {
   const { fila } = props;
   const [parte, setParte] = useState<Parte>('fila');
@@ -79,6 +82,7 @@ export function PainelDaFilaDeEncaixes(props: {
     contagem.executando > 0 ? `${contagem.executando} calculando` : null,
     contagem.aguardando > 0 ? `${contagem.aguardando} aguardando` : null,
     contagem.pausado > 0 ? `${contagem.pausado} pausado(s)` : null,
+    contagem['na-rede'] > 0 ? `${contagem['na-rede']} na fila da rede` : null,
     contagem.concluido > 0 ? `${contagem.concluido} concluído(s)` : null,
     contagem.falhou > 0 ? `${contagem.falhou} com falha` : null,
     contagem.cancelado > 0 ? `${contagem.cancelado} cancelado(s)` : null,
@@ -121,6 +125,7 @@ export function PainelDaFilaDeEncaixes(props: {
           automático › Pôr na fila). Pausar a fila deixa terminar o que está calculando; pausar um encaixe no meio faz ele
           recomeçar do início ao ser retomado — o mesmo se o programa for fechado no meio.
         </p>
+        {props.rede && <FilaDaRede rede={props.rede} />}
         {props.somenteLeitura && <p className="mensagem-de-erro">A fila foi gravada por uma versão mais nova do programa: as mudanças aqui não são gravadas.</p>}
         {props.avisos.length > 0 && (
           <ul className="avisos-da-fila">
@@ -168,6 +173,7 @@ export function PainelDaFilaDeEncaixes(props: {
                     agoraIso={props.agoraIso}
                     onAplicar={() => props.onAplicar(t.id)}
                     onAbrirProjeto={() => props.onAbrirProjeto(t.projetoId)}
+                    rede={props.rede ?? null}
                   />
                 ))}
               </tbody>
@@ -220,6 +226,53 @@ export function PainelDaFilaDeEncaixes(props: {
   );
 }
 
+/** A pasta da fila na rede, o nome desta estação e se ela atende os pedidos das outras (ADR 0143). */
+function FilaDaRede({ rede }: { readonly rede: FilaNaRedeNaTela }): React.JSX.Element {
+  return (
+    <fieldset className="grupo-de-opcoes-do-formulario fila-da-rede">
+      <legend>Fila na rede</legend>
+      <p className="nota-do-formulario">
+        {rede.onde ? (
+          <>
+            Pasta: <strong>{rede.onde}</strong>.
+          </>
+        ) : (
+          'Nenhuma pasta escolhida.'
+        )}{' '}
+        Uma pasta da rede que as estações usam como servidor de encaixes: “Mandar para a rede” põe um encaixe que espera a vez lá; a estação que atende a fila o
+        calcula, e o resultado volta para a fila de quem mandou.
+      </p>
+      <p className="acoes-da-fila">
+        <button type="button" onClick={() => void rede.escolher()}>
+          {rede.onde ? 'Trocar de pasta…' : 'Escolher a pasta…'}
+        </button>
+        {rede.onde && (
+          <button type="button" onClick={() => void rede.esquecer()}>
+            Deixar de usar a pasta
+          </button>
+        )}
+      </p>
+      {rede.onde && (
+        <>
+          <label>
+            Nome desta estação
+            <input type="text" value={rede.quem} maxLength={60} onChange={(e) => rede.mudarQuem(e.target.value)} />
+          </label>
+          <label>
+            <input type="checkbox" checked={rede.atender} onChange={(e) => rede.mudarAtender(e.target.checked)} /> Atender a fila da rede nesta estação (calcula os
+            pedidos das outras, um de cada vez, enquanto o programa está aberto)
+          </label>
+        </>
+      )}
+      {rede.mensagem && (
+        <p role="status" className="recado-da-rede">
+          {rede.mensagem}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 function LinhaDoTrabalho(props: {
   readonly trabalho: TrabalhoDeEncaixe;
   readonly fila: FilaDeEncaixes;
@@ -232,6 +285,7 @@ function LinhaDoTrabalho(props: {
   readonly agoraIso: () => string;
   readonly onAplicar: () => void;
   readonly onAbrirProjeto: () => void;
+  readonly rede: FilaNaRedeNaTela | null;
 }): React.JSX.Element {
   const { trabalho: t, fila } = props;
   const r = t.resultado;
@@ -247,6 +301,8 @@ function LinhaDoTrabalho(props: {
         <small>
           {t.projetoCodigo} · entrou {quando(t.criadoEmIso)}
           {props.aberto ? ' · aberto' : ''}
+          {t.pedidoDaRede ? ` · pedido de ${t.pedidoDaRede.pedidoPor} pela rede` : ''}
+          {t.calculadoPor ? ` · calculado por ${t.calculadoPor} na rede` : ''}
         </small>
       </td>
       <td>
@@ -346,7 +402,7 @@ function LinhaDoTrabalho(props: {
               Cancelar
             </button>
           )}
-          {t.situacao === 'concluido' && r && r.pecasColocadas.length > 0 && (
+          {t.situacao === 'concluido' && r && r.pecasColocadas.length > 0 && !t.pedidoDaRede && (
             <>
               {!props.aberto && props.projetoExiste && (
                 <button type="button" onClick={props.onAbrirProjeto}>
@@ -368,7 +424,17 @@ function LinhaDoTrabalho(props: {
               Pôr de novo na fila
             </button>
           )}
-          {t.situacao !== 'executando' && (
+          {props.rede?.onde && estaPendente(t) && !t.pedidoDaRede && (
+            <button type="button" title="Põe o encaixe na pasta da rede: a estação que atende a fila o calcula, e o resultado volta para cá." onClick={() => void props.rede?.mandar(t.id)}>
+              Mandar para a rede
+            </button>
+          )}
+          {t.situacao === 'na-rede' && props.rede && (
+            <button type="button" onClick={() => void props.rede?.trazerDeVolta(t.id)}>
+              Trazer de volta
+            </button>
+          )}
+          {t.situacao !== 'executando' && t.situacao !== 'na-rede' && (
             <button type="button" onClick={() => props.mudar((f) => removerTrabalho(f, t.id))}>
               Remover
             </button>

@@ -572,6 +572,57 @@ async function principal() {
   await aba('Encaixe');
   await espera(300);
 
+  // 5c. A fila na rede (ADR 0143), com esta estação mandando e atendendo: a fila pausada, um encaixe posto nela vai
+  // para a pasta ("Mandar para a rede"); com "Atender" ligado e a fila retomada, esta estação pega o pedido, calcula
+  // como um encaixe dela, devolve o resultado à pasta, e o encaixe mandado termina "Concluído", calculado por ela.
+  const pastaDaFila = path.join(SAIDA, 'fila-na-rede');
+  fs.rmSync(pastaDaFila, { recursive: true, force: true });
+  fs.mkdirSync(pastaDaFila, { recursive: true });
+  const naFilaDaRede = (rotulo) => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
+  await botao('Fila de encaixes');
+  await espera(600);
+  await naFilaDaRede('Pausar a fila');
+  await espera(300);
+  await fecharJanela();
+  await espera(300);
+  await porNaFila('grade');
+  await botao('Fila de encaixes');
+  await espera(600);
+  arquivoParaAbrir = pastaDaFila;
+  await clicarEm(`Array.from(document.querySelectorAll('.fila-da-rede button')).find(b => b.textContent.trim() === 'Escolher a pasta…')`);
+  await espera(800);
+  arquivoParaAbrir = DXF;
+  await js(`(() => { const i = Array.from(document.querySelectorAll('.fila-da-rede label')).find(l => l.textContent.includes('Nome desta estação')).querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Estação de teste'); i.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  await espera(200);
+  await naFilaDaRede('Mandar para a rede');
+  await espera(800);
+  const pedidosNaPasta = fs.readdirSync(path.join(pastaDaFila, 'pedidos'));
+  const linhaMandadaNaRede = await js(`(Array.from(document.querySelectorAll('.tabela-da-fila tbody tr')).find(tr => tr.innerText.includes('Na fila da rede')) || {}).innerText || ''`);
+  await foto('14b-fila-na-rede-mandado.png');
+  await clicarEm(`Array.from(document.querySelectorAll('.fila-da-rede label')).find(l => l.textContent.includes('Atender a fila da rede')).querySelector('input')`);
+  await naFilaDaRede('Retomar a fila');
+  let linhaCalculada = '';
+  for (let i = 0; i < 120 && !linhaCalculada; i++) {
+    await espera(500);
+    linhaCalculada = await js(`(Array.from(document.querySelectorAll('.tabela-da-fila tbody tr')).find(tr => tr.innerText.includes('calculado por Estação de teste na rede')) || {}).innerText || ''`);
+  }
+  await espera(600);
+  const sobrouNaPasta = ['pedidos', 'calculando', 'prontos'].map((s) => fs.readdirSync(path.join(pastaDaFila, s)).length);
+  const pedidosDaRedeNaFila = JSON.parse(fs.readFileSync(path.join(DADOS, 'fila-de-encaixes.json'), 'utf8')).trabalhos.filter((t) => t.pedidoDaRede).length;
+  await foto('14c-fila-na-rede-calculado.png');
+  conferir(
+    'a fila na rede: o encaixe mandado vai para a pasta, esta estação atende, calcula e devolve, e ele termina "Concluído", calculado por ela',
+    pedidosNaPasta.length === 1 &&
+      linhaMandadaNaRede.includes('Trazer de volta') &&
+      /Concluído/.test(linhaCalculada) &&
+      sobrouNaPasta.join(',') === '0,0,0' &&
+      pedidosDaRedeNaFila === 0,
+    `pedidos ${JSON.stringify(pedidosNaPasta)} | ${linhaMandadaNaRede.replace(/\s+/g, ' ').slice(0, 120)} | ${linhaCalculada.replace(/\s+/g, ' ').slice(0, 160)} | pasta ${sobrouNaPasta.join(',')} | pedidos da rede na fila ${pedidosDaRedeNaFila}`,
+  );
+  await clicarEm(`Array.from(document.querySelectorAll('.fila-da-rede label')).find(l => l.textContent.includes('Atender a fila da rede')).querySelector('input')`);
+  await fecharJanela();
+  await espera(300);
+
   // 6. Os grupos do encaixe (ADR 0103): uma peça no grupo "Entretela", pela janela do Nesting automático; calcular e
   // aplicar: o resultado diz o trecho de cada grupo, e a mesa mostra o nome do grupo e a divisa.
   await botao('Nesting Automático');

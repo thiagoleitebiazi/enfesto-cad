@@ -393,6 +393,7 @@ import { PainelDeNesting, type OpcoesAvancadasDeNesting } from './ui/PainelDeNes
 import { PainelDaFilaDeEncaixes } from './ui/PainelDaFilaDeEncaixes';
 import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
+import { useFilaNaRede } from './ui/useFilaNaRede';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { encaixeComOMoldeDeAgora, type EncaixeComOMoldeDeAgora } from './domain/encaixeAtualizado';
 import { aprovarComoBase, basesAprovadas, modeloDaBase, pecasDaBase, tirarDasBases } from './domain/basesAprovadas';
@@ -788,6 +789,9 @@ export default function App(): React.JSX.Element {
   const [mostrarPainelDeNesting, setMostrarPainelDeNesting] = useState(false);
   // A fila de encaixes (ADR 0102): lida do disco ao abrir e rodando em segundo plano enquanto o programa está aberto.
   const filaDeEncaixes = useFilaDeEncaixes(window.enfestoCad, criarWorkerDoEncaixe);
+  // A fila na rede (ADR 0143): olha a pasta enquanto o programa está aberto.
+  const [pastaDaFila] = useState(() => acessoAPasta('fila'));
+  const filaNaRede = useFilaNaRede(pastaDaFila, filaDeEncaixes);
   const [mostrarFilaDeEncaixes, setMostrarFilaDeEncaixes] = useState(false);
   // As coleções (ADR 0108): lidas ao abrir, para o aviso de prazos da barra de status.
   const colecoes = useColecoes(window.enfestoCad);
@@ -5220,6 +5224,7 @@ export default function App(): React.JSX.Element {
           onExportarCsv={() => void exportarCsvDaFila()}
           agoraIso={() => new Date().toISOString()}
           onFechar={() => setMostrarFilaDeEncaixes(false)}
+          rede={pastaDaFila ? filaNaRede : null}
         />
       )}
       {relatorioAtual && (

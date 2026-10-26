@@ -80,7 +80,7 @@ inventa.
 | Consumo, eficiência e perda antes do corte; relatórios para o financeiro | ✅ (plano, relatório, custo) | — |
 | Prioridade das ordens a calcular | ✅ (na fila de encaixes, ADR 0102) | — |
 | Fila de encaixes em segundo plano: várias, com prioridade, pausar, reordenar, relatório de eficiência | ✅ (nesta estação, com o programa aberto, ADR 0102) | — |
-| Servidor dedicado recebendo de várias estações, 24 h | ⬜ | S (exige servidor na rede) |
+| Servidor dedicado recebendo de várias estações, 24 h | 🟡 (a fila na rede: as estações mandam por uma pasta, e uma estação que atende calcula e devolve, ADR 0143) | S (a máquina que calcula precisa estar com o programa aberto) |
 | Encaixe de estampa para impressão digital (molde preenchido com a imagem) | ✅ (Encaixe › Impressão › Estampa no encaixe: corrida ou localizada, de pé no fio de cada peça, com sangria; o PDF 1:1, ADR 0113) | H (a impressora: não testado numa) |
 
 ## 5. Digitalização de moldes de papel
@@ -223,3 +223,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Mandar o encaixe para a mesa de corte automático | 🟡 o arquivo ISO (G-code): ADR 0140 (não testado numa mesa) |
 | Trocar ordens, estoque e consumo com o ERP | ✅ pela pasta de troca, sem servidor: ADR 0141 |
 | Os modelos da equipe num lugar só, sem duas pessoas mudando o mesmo | ✅ pela biblioteca numa pasta da rede, com a trava de edição: ADR 0142 |
+| Servidor de encaixes recebendo os pedidos de várias estações | ✅ pela fila na rede (uma pasta; a estação que atende calcula): ADR 0143 |

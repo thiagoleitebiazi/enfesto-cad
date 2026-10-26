@@ -13,6 +13,7 @@ import {
   travaVencida,
   type ProjetoNaRede,
 } from '../domain/bibliotecaNaRede';
+import { guardarNomeNaRede, lerNomeNaRede } from './nomeNaRede';
 
 interface BibliotecaNaRedeProps {
   readonly pasta: AcessoAPasta;
@@ -23,16 +24,6 @@ interface BibliotecaNaRedeProps {
   /** Põe a cópia da rede na biblioteca deste computador (e na tela, se for o projeto aberto); devolve o que impediu. */
   readonly onTrazer: (projeto: Projeto) => string | null;
   readonly agoraIso: () => string;
-}
-
-const CHAVE_DO_NOME = 'enfesto-cad:nome-na-rede';
-
-function nomeGuardado(): string {
-  try {
-    return window.localStorage.getItem(CHAVE_DO_NOME) ?? '';
-  } catch {
-    return '';
-  }
 }
 
 function formatarData(iso: string): string {
@@ -46,7 +37,7 @@ function formatarData(iso: string): string {
 export function BibliotecaNaRede(props: BibliotecaNaRedeProps): React.JSX.Element {
   const { pasta } = props;
   const [onde, setOnde] = useState<string | null>(null);
-  const [quem, setQuem] = useState(nomeGuardado);
+  const [quem, setQuem] = useState(lerNomeNaRede);
   const [lista, setLista] = useState<readonly ProjetoNaRede[] | null>(null);
   const [avisos, setAvisos] = useState<readonly string[]>([]);
   const [mensagem, setMensagem] = useState<string | null>(null);
@@ -78,11 +69,7 @@ export function BibliotecaNaRede(props: BibliotecaNaRedeProps): React.JSX.Elemen
 
   const mudarNome = (nome: string): void => {
     setQuem(nome);
-    try {
-      window.localStorage.setItem(CHAVE_DO_NOME, nome);
-    } catch {
-      // Sem o armazenamento do navegador, o nome vale até fechar.
-    }
+    guardarNomeNaRede(nome);
   };
 
   /** Faz uma ação, mostra o resultado e relê a pasta. */

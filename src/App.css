@@ -3361,6 +3361,18 @@ input[type='radio'] {
   font-weight: 600;
 }
 
+/* Na fila da rede (ADR 0143): outra estação calcula. */
+.situacao-da-execucao.situacao-na-rede {
+  border-color: #7c3aed;
+  background: color-mix(in srgb, #7c3aed 14%, transparent);
+  color: #5b21b6;
+  font-weight: 600;
+}
+
+.fila-da-rede {
+  border-left: 4px solid #7c3aed;
+}
+
 .situacao-da-execucao.situacao-concluido {
   border-color: var(--sucesso-borda);
   background: var(--sucesso-fundo);
