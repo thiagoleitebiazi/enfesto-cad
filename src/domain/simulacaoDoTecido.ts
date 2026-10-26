@@ -405,6 +405,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
   const normalDoToque = new Float64Array(3 * n);
   let maior = 0;
   let mexendo = 0;
+  let candidatos: Uint32Array | null = null;
   for (let s = 0; s < subpassos; s++) {
     const costurando = sim.tempo < TEMPO_DA_COSTURA_S;
     const g = costurando ? 0 : GRAVIDADE;
@@ -523,6 +524,13 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         x[3 * i + 1] = py;
         x[3 * i + 2] = pz;
       }
+    }
+    // O tecido sobre o próprio tecido (ADR 0146), depois da costura (durante ela, as peças ainda se juntam): os pares
+    // que podem se encostar são buscados uma vez por quadro (é o que custa) e afastados em cada passo.
+    if (!costurando && !semAutoColisao.has(sim)) {
+      const a = autoColisaoDaSimulacao(sim);
+      candidatos ??= paresCandidatos(x, w, a);
+      separarOTecido(x, w, a, candidatos, tocou, normalDoToque);
     }
     for (let i = 0; i < n; i++) {
       let vx = (x[3 * i]! - anterior[3 * i]!) / dt;
@@ -688,5 +696,195 @@ export function maiorPenetracao(sim: Simulacao): number {
     const d = distanciaAoCorpo(sim.corpo, sim.x[3 * i]!, sim.x[3 * i + 1]!, sim.x[3 * i + 2]!).d;
     pior = Math.max(pior, -d);
   }
+  return pior;
+}
+
+/**
+ * O tecido sobre o próprio tecido (ADR 0146): dois pontos que chegam mais perto que o raio (meio passo da malha, ao
+ * menos o dobro da espessura) são afastados — a barra que dobra sobre si, a peça de trás que encosta na da frente. Não
+ * contam os pares que podem chegar perto:
+ * - os vizinhos no próprio molde (até 2,5 raios de distância no molde);
+ * - em peças diferentes, os pontos a até 3 raios (no molde) de uma costura: a costura junta as peças ali, e as
+ *   pontas (a axila, onde a manga encontra a frente e as costas) se apertam;
+ * - os de camadas diferentes (o bolso costurado sobre a frente).
+ */
+export interface AutoColisao {
+  readonly raio: number;
+  readonly pecaDoPonto: Uint32Array;
+  /** A posição de cada ponto no molde (x, y seguidos). */
+  readonly molde: Float64Array;
+  readonly pertoDaCostura: Uint8Array;
+  readonly camada: Uint8Array;
+}
+
+const autoColisoes = new WeakMap<Simulacao, AutoColisao>();
+const semAutoColisao = new WeakSet<Simulacao>();
+
+/** Desliga (ou religa) o tecido sobre o próprio tecido nesta simulação: o cálculo fica mais rápido, e o tecido pode atravessar a si mesmo. */
+export function ligarAutoColisao(sim: Simulacao, ligada: boolean): void {
+  if (ligada) semAutoColisao.delete(sim);
+  else semAutoColisao.add(sim);
+}
+
+export function autoColisaoDaSimulacao(sim: Simulacao): AutoColisao {
+  const pronta = autoColisoes.get(sim);
+  if (pronta) return pronta;
+  const n = sim.w.length;
+  const pecaDoPonto = new Uint32Array(n);
+  const molde = new Float64Array(2 * n);
+  sim.pecas.forEach((p, k) => {
+    const m = p.malha.pontos.length / 2;
+    for (let i = 0; i < m; i++) {
+      pecaDoPonto[p.inicio + i] = k;
+      molde[2 * (p.inicio + i)] = p.malha.pontos[2 * i]!;
+      molde[2 * (p.inicio + i) + 1] = p.malha.pontos[2 * i + 1]!;
+    }
+  });
+  const naCostura = new Uint8Array(n);
+  for (const lista of [sim.costuraA, sim.costuraB1, sim.costuraB2, sim.aplicacaoA, sim.aplicacaoT]) for (const i of lista) naCostura[i] = 1;
+  let soma = 0;
+  for (const c of sim.comprimentos) soma += c;
+  const media = sim.comprimentos.length > 0 ? soma / sim.comprimentos.length : 20;
+  const raio = Math.max(2 * sim.parametros.espessura, 0.5 * media);
+  // Perto da costura: a até 3 raios, no molde da própria peça, de um ponto costurado.
+  const pertoDaCostura = new Uint8Array(n);
+  const limite = (3 * raio) ** 2;
+  sim.pecas.forEach((p) => {
+    const m = p.malha.pontos.length / 2;
+    const costurados: number[] = [];
+    for (let i = p.inicio; i < p.inicio + m; i++) if (naCostura[i]) costurados.push(i);
+    for (let i = p.inicio; i < p.inicio + m; i++) {
+      for (const c of costurados) {
+        const dx = molde[2 * i]! - molde[2 * c]!;
+        const dy = molde[2 * i + 1]! - molde[2 * c + 1]!;
+        if (dx * dx + dy * dy <= limite) {
+          pertoDaCostura[i] = 1;
+          break;
+        }
+      }
+    }
+  });
+  const a: AutoColisao = { raio, pecaDoPonto, molde, pertoDaCostura, camada: sim.camada };
+  autoColisoes.set(sim, a);
+  return a;
+}
+
+function parConta(a: AutoColisao, i: number, j: number): boolean {
+  if (a.camada[i] !== a.camada[j]) return false;
+  if (a.pecaDoPonto[i] === a.pecaDoPonto[j]) {
+    // A peça costurada nela mesma (as duas beiradas da manga, embaixo do braço): perto da costura, os dois lados se juntam.
+    if (a.pertoDaCostura[i] && a.pertoDaCostura[j]) return false;
+    const dx = a.molde[2 * i]! - a.molde[2 * j]!;
+    const dy = a.molde[2 * i + 1]! - a.molde[2 * j + 1]!;
+    return dx * dx + dy * dy > (2.5 * a.raio) ** 2;
+  }
+  return !a.pertoDaCostura[i] && !a.pertoDaCostura[j];
+}
+
+/** Os pares que contam e estão mais perto que `alcance`, pela grade de células desse tamanho. */
+function paresPerto(
+  x: Float64Array,
+  w: Float64Array,
+  a: AutoColisao,
+  alcance: number,
+  visitar: (i: number, j: number, d: number, dx: number, dy: number, dz: number) => void,
+): void {
+  const n = w.length;
+  const h = alcance;
+  const chave = (ix: number, iy: number, iz: number): number => ((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) | 0;
+  const celulas = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const k = chave(Math.floor(x[3 * i]! / h), Math.floor(x[3 * i + 1]! / h), Math.floor(x[3 * i + 2]! / h));
+    const lista = celulas.get(k);
+    if (lista) lista.push(i);
+    else celulas.set(k, [i]);
+  }
+  const vistas = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    const cx = Math.floor(x[3 * i]! / h);
+    const cy = Math.floor(x[3 * i + 1]! / h);
+    const cz = Math.floor(x[3 * i + 2]! / h);
+    vistas.clear();
+    for (let ox = -1; ox <= 1; ox++)
+      for (let oy = -1; oy <= 1; oy++)
+        for (let oz = -1; oz <= 1; oz++) {
+          const k = chave(cx + ox, cy + oy, cz + oz);
+          // Duas células com a mesma chave: a lista é vista uma vez só.
+          if (vistas.has(k)) continue;
+          vistas.add(k);
+          for (const j of celulas.get(k) ?? []) {
+            if (j <= i) continue;
+            const dx = x[3 * i]! - x[3 * j]!;
+            const dy = x[3 * i + 1]! - x[3 * j + 1]!;
+            const dz = x[3 * i + 2]! - x[3 * j + 2]!;
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= h * h || !parConta(a, i, j)) continue;
+            visitar(i, j, Math.sqrt(d2), dx, dy, dz);
+          }
+        }
+  }
+}
+
+/** Os pares que podem se encostar no próximo quadro: os que contam, a até 1,5 raio (a busca, que custa, é uma por quadro). */
+export function paresCandidatos(x: Float64Array, w: Float64Array, a: AutoColisao): Uint32Array {
+  const pares: number[] = [];
+  paresPerto(x, w, a, 1.5 * a.raio, (i, j) => pares.push(i, j));
+  return Uint32Array.from(pares);
+}
+
+/**
+ * Afasta até o raio os pares (de `paresCandidatos`) que estão mais perto que ele; devolve quantos foram afastados. Com
+ * `tocou` e `normal`, marca a direção do empurrão de cada ponto: como no corpo, ele não vira velocidade para fora (o
+ * tecido não quica em si mesmo).
+ */
+export function separarOTecido(
+  x: Float64Array,
+  w: Float64Array,
+  a: AutoColisao,
+  pares: Uint32Array = paresCandidatos(x, w, a),
+  tocou: Uint8Array | null = null,
+  normal: Float64Array | null = null,
+): number {
+  let afastados = 0;
+  const h = a.raio;
+  for (let k = 0; k < pares.length; k += 2) {
+    const i = pares[k]!;
+    const j = pares[k + 1]!;
+    const dx = x[3 * i]! - x[3 * j]!;
+    const dy = x[3 * i + 1]! - x[3 * j + 1]!;
+    const dz = x[3 * i + 2]! - x[3 * j + 2]!;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const ws = w[i]! + w[j]!;
+    if (d >= h || d < 1e-9 || ws === 0) continue;
+    const c = (h - d) / (d * ws);
+    x[3 * i] = x[3 * i]! + w[i]! * c * dx;
+    x[3 * i + 1] = x[3 * i + 1]! + w[i]! * c * dy;
+    x[3 * i + 2] = x[3 * i + 2]! + w[i]! * c * dz;
+    x[3 * j] = x[3 * j]! - w[j]! * c * dx;
+    x[3 * j + 1] = x[3 * j + 1]! - w[j]! * c * dy;
+    x[3 * j + 2] = x[3 * j + 2]! - w[j]! * c * dz;
+    if (tocou && normal) {
+      for (const [p, s] of [
+        [i, 1],
+        [j, -1],
+      ] as const) {
+        tocou[p] = 1;
+        normal[3 * p] = (s * dx) / d;
+        normal[3 * p + 1] = (s * dy) / d;
+        normal[3 * p + 2] = (s * dz) / d;
+      }
+    }
+    afastados++;
+  }
+  return afastados;
+}
+
+/** Quanto o tecido entra em si mesmo no pior par (mm abaixo do raio; 0: nenhum par mais perto que o raio). */
+export function maiorAutoPenetracao(sim: Simulacao): number {
+  const a = autoColisaoDaSimulacao(sim);
+  let pior = 0;
+  paresPerto(sim.x, sim.w, a, a.raio, (_i, _j, d) => {
+    pior = Math.max(pior, a.raio - d);
+  });
   return pior;
 }

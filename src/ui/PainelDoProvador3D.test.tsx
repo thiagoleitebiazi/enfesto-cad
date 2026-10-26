@@ -159,6 +159,17 @@ describe('PainelDoProvador3D', () => {
     await waitFor(() => expect(ultima().tecido).toMatchObject({ preset: 'personalizado', brilho: 55, transparencia: 70 }), { timeout: 2000 });
   });
 
+  it('o tecido sobre o próprio tecido (ADR 0146): ligado por padrão; desligado, fica guardado na montagem', async () => {
+    const { ultima } = abrir();
+    aba('Tecido');
+    const opcao = screen.getByLabelText(/O tecido não atravessa a si mesmo/);
+    expect(opcao).toBeChecked();
+    fireEvent.click(opcao);
+    await waitFor(() => expect(ultima().autoColisao).toBe(false), { timeout: 2000 });
+    fireEvent.click(screen.getByLabelText(/O tecido não atravessa a si mesmo/));
+    await waitFor(() => expect(ultima().autoColisao).toBe(true), { timeout: 2000 });
+  });
+
   it('o tecido: o pronto e o personalizado', async () => {
     const { ultima, onGuardar } = abrir();
     aba('Tecido');

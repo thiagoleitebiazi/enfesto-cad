@@ -25,7 +25,22 @@ import {
   type Montagem3D,
   type Tecido3D,
 } from './montagem3d';
-import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, elasticidadeNaDirecao, maiorPenetracao, montarSimulacao, tensoes, type Simulacao } from './simulacaoDoTecido';
+import {
+  aberturaDasCosturas,
+  alturasDoTecido,
+  assentou,
+  autoColisaoDaSimulacao,
+  avancar,
+  elasticidadeNaDirecao,
+  ligarAutoColisao,
+  maiorAutoPenetracao,
+  maiorPenetracao,
+  montarSimulacao,
+  separarOTecido,
+  tensoes,
+  type AutoColisao,
+  type Simulacao,
+} from './simulacaoDoTecido';
 import { rotacionarMolde } from './molde';
 
 const FEMININO = corpoDoManequim(MEDIDAS_DO_PUBLICO.feminino);
@@ -600,5 +615,61 @@ describe('a peça sobre outra: o bolso na frente (ADR 0123)', () => {
     const chaveDoBolso = instancias.find((i) => i.nome === 'Bolso')!.chave;
     const lida = lerMontagem3d({ ...MONTAGEM_VAZIA, pecas: { [chaveDoBolso]: { ...configuracoes[chaveDoBolso], sobre: { chave: frente.chave, doAltoMm: 90, doMeioMm: -30, bocaEmCima: false } } } });
     expect(lida.pecas[chaveDoBolso]).toMatchObject({ posicao: 'sobre-outra-peca', sobre: { chave: frente.chave, doAltoMm: 90, doMeioMm: -30, bocaEmCima: false } });
+  });
+});
+
+describe('o tecido sobre o próprio tecido (ADR 0146)', () => {
+  /** Dois pontos (a 2 mm no espaço), com o que se diz de cada um. */
+  function par(o: { pecas?: [number, number]; molde?: [number, number, number, number]; perto?: [number, number]; camada?: [number, number]; w?: [number, number] }) {
+    const x = Float64Array.from([0, 0, 0, 2, 0, 0]);
+    const w = Float64Array.from(o.w ?? [1, 1]);
+    const a: AutoColisao = {
+      raio: 10,
+      pecaDoPonto: Uint32Array.from(o.pecas ?? [0, 0]),
+      molde: Float64Array.from(o.molde ?? [0, 0, 100, 0]),
+      pertoDaCostura: Uint8Array.from(o.perto ?? [0, 0]),
+      camada: Uint8Array.from(o.camada ?? [0, 0]),
+    };
+    const afastados = separarOTecido(x, w, a);
+    return { afastados, distancia: Math.abs(x[3]! - x[0]!), x0: x[0]! };
+  }
+
+  it('a mesma peça, longe no molde e encostada no espaço, é afastada até o raio (cada um a metade; o preso não anda)', () => {
+    expect(par({})).toEqual({ afastados: 1, distancia: 10, x0: -4 });
+    expect(par({ w: [0, 1] })).toEqual({ afastados: 1, distancia: 10, x0: 0 });
+  });
+
+  it('não contam: os vizinhos no molde, as camadas diferentes, perto da costura (peças diferentes: um; a mesma: os dois)', () => {
+    expect(par({ molde: [0, 0, 20, 0] }).afastados).toBe(0);
+    expect(par({ camada: [0, 1] }).afastados).toBe(0);
+    expect(par({ pecas: [0, 1] }).afastados).toBe(1);
+    expect(par({ pecas: [0, 1], perto: [1, 0] }).afastados).toBe(0);
+    expect(par({ perto: [1, 0] }).afastados).toBe(1);
+    expect(par({ perto: [1, 1] }).afastados).toBe(0);
+  });
+
+  it('a saia larga que cai no chão: as duas camadas ficam afastadas (sem a colisão, uma entra na outra) e assentam', () => {
+    function cair(ligada: boolean): Simulacao {
+      const peca = (id: string, nome: string) =>
+        criarMolde({ nome, referencia: '', tamanho: 'M', contorno: [ponto(0, 0), ponto(0, 450), ponto(900, 800), ponto(900, -350)], linhaDeFio: { inicio: ponto(100, 225), fim: ponto(800, 225) } }, id);
+      const instancias = instanciasDasPecas([peca('f', 'Frente da saia'), peca('c', 'Costas da saia')]);
+      const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+      const tecido = TECIDOS_PRONTOS.malha.tecido;
+      const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas: malhasDasInstancias(instancias, configuracoes, 25), costuras: [], tecido });
+      ligarAutoColisao(sim, ligada);
+      for (let t = 0; t < 5 * 60 && !(t > 60 && assentou(sim)); t++) avancar(sim, 1 / 60, 8);
+      return sim;
+    }
+    const com = cair(true);
+    const raio = autoColisaoDaSimulacao(com).raio;
+    expect(raio).toBeGreaterThan(10);
+    expect(maiorAutoPenetracao(com)).toBeLessThan(0.3 * raio);
+    expect(assentou(com)).toBe(true);
+    expect(maiorAutoPenetracao(cair(false))).toBeGreaterThan(0.8 * raio);
+  }, 60000);
+
+  it('a montagem guarda a escolha: só o desligado fica escrito (o ausente é ligado)', () => {
+    expect(lerMontagem3d(JSON.parse(JSON.stringify({ ...MONTAGEM_VAZIA, autoColisao: false }))).autoColisao).toBe(false);
+    expect(lerMontagem3d(JSON.parse(JSON.stringify({ ...MONTAGEM_VAZIA, autoColisao: true }))).autoColisao).toBeUndefined();
   });
 });

@@ -159,6 +159,8 @@ export interface Montagem3D {
   readonly tecido: Tecido3D;
   /** A distância entre os pontos da malha do tecido (mm): menor, mais fino e mais lento. */
   readonly resolucaoMm: number;
+  /** O tecido sobre o próprio tecido (ADR 0146): ausente ou `true`, ligado; `false`, desligado (mais rápido). */
+  readonly autoColisao?: boolean;
 }
 
 export const MONTAGEM_VAZIA: Montagem3D = {
@@ -992,7 +994,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
     ...(typeof t.transparencia === 'number' ? { transparencia: limite(t.transparencia, 0) } : {}),
   };
   const resolucaoMm = [12, 20, 30].includes(bruto.resolucaoMm as number) ? (bruto.resolucaoMm as number) : 20;
-  return { manequim, pecas, costuras, tecido, resolucaoMm };
+  return { manequim, pecas, costuras, tecido, resolucaoMm, ...(bruto.autoColisao === false ? { autoColisao: false } : {}) };
 }
 
 /** A configuração de cada instância: a guardada, ou a sugerida (o bolso, sobre a frente ou as costas que houver). */

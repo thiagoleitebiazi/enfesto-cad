@@ -1398,6 +1398,9 @@ async function principal() {
   await espera(300);
   const reguasDoTecido = await js(`JSON.stringify(['Elasticidade no fio', 'Na trama (atravessado)', 'No viés (45°)'].map(r => (document.querySelector('[role=dialog] input[aria-label=' + JSON.stringify(r) + ']') || {}).value))`);
   conferir('a aba Tecido tem a elasticidade no fio, na trama e no viés (a malha: 70, 80, 75)', reguasDoTecido === '["70","80","75"]', reguasDoTecido);
+  // O tecido sobre o próprio tecido (ADR 0146): a opção na aba Tecido, ligada por padrão (a saia simulada abaixo já usa).
+  const autoColisaoLigada = await js(`(() => { const l = Array.from(document.querySelectorAll('[role=dialog] label')).find(x => x.textContent.includes('O tecido não atravessa a si mesmo')); return l ? String(l.querySelector('input').checked) : 'sem a opção'; })()`);
+  conferir('a aba Tecido tem "O tecido não atravessa a si mesmo", ligado', autoColisaoLigada === 'true', autoColisaoLigada);
   await foto('34b-tecido-fio-trama-vies.png');
   await parteDaJanela('Costuras');
   await botaoNaJanela('Sugerir costuras');

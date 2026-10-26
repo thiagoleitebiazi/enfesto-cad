@@ -100,7 +100,7 @@ inventa.
 |---|---|---|
 | Manequim 3D com medidas ajustáveis (público-alvo, tabela de medidas) | ✅ (Conferência › Provador 3D: público, 10 medidas, o tamanho da ficha, ADR 0111) | — |
 | Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ✅ (as laterais e os ombros sugeridos; as outras clicando nos pontos; montagem aproximada, ADR 0111; o bolso e a aplicação costurados sobre outra peça, ADR 0123) | — |
-| Simulação de caimento pelo peso, densidade e elasticidade; vincos e pontos de tensão | 🟡 (física simplificada: peso, elasticidade no fio, na trama e no viés (ADR 0120), rigidez, atrito; o mapa de tensão; sem o tecido colidir consigo mesmo, vincos só na escala da malha, ADR 0111) | P (o resto da física — não substitui a peça-piloto) |
+| Simulação de caimento pelo peso, densidade e elasticidade; vincos e pontos de tensão | 🟡 (física simplificada: peso, elasticidade no fio, na trama e no viés (ADR 0120), rigidez, atrito; o mapa de tensão; o tecido sobre o próprio tecido, ponto a ponto (ADR 0146); vincos só na escala da malha, ADR 0111) | P (a colisão exata de triângulos e os vincos finos — não substitui a peça-piloto) |
 | Editor das propriedades do tecido | ✅ (seis prontos e o personalizado, ADR 0111) | — |
 | Cores, estampas (inclusive localizada), texturas, aviamentos no 3D | ✅ (a cor por peça; a estampa corrida ou localizada pelas imagens do modelo; os furos como botões; a textura é uma imagem corrida, ADR 0111) | — |
 | Mudança no molde 2D refletida no 3D | ✅ (o provador monta pelas peças de agora; a costura avisa quando o molde mudou, ADR 0111) | — |
@@ -226,3 +226,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Servidor de encaixes recebendo os pedidos de várias estações | ✅ pela fila na rede (uma pasta; a estação que atende calcula): ADR 0143 |
 | Copiar o molde de papel pelo quadro de captura (a mesa digitalizadora) | ✅ pela porta serial ou pelo registro colado: ADR 0144 (não testado numa mesa física) |
 | Combinar os modelos em looks; achar o modelo parecido com uma foto | ✅ os looks da coleção e a busca por imagem: ADR 0145 (a loja virtual continua de fora) |
+| O tecido colidindo consigo mesmo no caimento 3D | ✅ ponto a ponto, fora das costuras: ADR 0146 |

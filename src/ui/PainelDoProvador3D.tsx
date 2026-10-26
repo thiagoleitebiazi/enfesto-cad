@@ -44,7 +44,7 @@ import {
   type PresetDeTecido,
   type Tecido3D,
 } from '../domain/montagem3d';
-import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
+import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, ligarAutoColisao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
 import {
   cameraDeFrente,
   corDaTensao,
@@ -175,6 +175,7 @@ export function PainelDoProvador3D(props: {
     montagem.manequim.medidas,
     montagem.manequim.pose ?? 'padrao',
     montagem.resolucaoMm,
+    montagem.autoColisao !== false,
     // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
     // recomeça a simulação.
     { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined },
@@ -195,6 +196,7 @@ export function PainelDoProvador3D(props: {
     const corpo = corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose);
     const malhas = malhasDasInstancias(instancias, montagem.pecas, montagem.resolucaoMm, costurasValidas);
     const sim = montarSimulacao({ corpo, instancias, configuracoes: montagem.pecas, malhas, costuras: costurasValidas, tecido: montagem.tecido });
+    ligarAutoColisao(sim, montagem.autoColisao !== false);
     const uvs = new Map<string, Float64Array>();
     for (const p of sim.pecas) {
       const inst = instancias.find((i) => i.chave === p.chave)!;
@@ -620,8 +622,10 @@ export function PainelDoProvador3D(props: {
             <ParteTecido
               tecido={montagem.tecido}
               resolucaoMm={montagem.resolucaoMm}
+              autoColisao={montagem.autoColisao !== false}
               onMudar={(tecido) => setMontagem((m) => ({ ...m, tecido }))}
               onResolucao={(resolucaoMm) => setMontagem((m) => ({ ...m, resolucaoMm }))}
+              onAutoColisao={(ligada) => setMontagem((m) => ({ ...m, autoColisao: ligada }))}
             />
           )}
           {aba === 'desenho' && (
@@ -1186,7 +1190,14 @@ function ParteManequim(props: {
 
 // ---- Tecido
 
-function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: number; readonly onMudar: (t: Tecido3D) => void; readonly onResolucao: (r: number) => void }): React.JSX.Element {
+function ParteTecido(props: {
+  readonly tecido: Tecido3D;
+  readonly resolucaoMm: number;
+  readonly autoColisao: boolean;
+  readonly onMudar: (t: Tecido3D) => void;
+  readonly onResolucao: (r: number) => void;
+  readonly onAutoColisao: (ligada: boolean) => void;
+}): React.JSX.Element {
   const t = props.tecido;
   const regua = (
     chave: 'elasticidade' | 'elasticidadeNaTrama' | 'elasticidadeNoVies' | 'rigidez' | 'atrito' | 'brilho' | 'transparencia',
@@ -1247,6 +1258,10 @@ function ParteTecido(props: { readonly tecido: Tecido3D; readonly resolucaoMm: n
             <option value={20}>Normal (20 mm)</option>
             <option value={12}>Fina (12 mm, mais lenta)</option>
           </select>
+        </label>
+        <label className="opcao-em-linha">
+          <input type="checkbox" checked={props.autoColisao} onChange={(e) => props.onAutoColisao(e.target.checked)} />
+          O tecido não atravessa a si mesmo (a barra que dobra, uma peça sobre a outra; um pouco mais lento)
         </label>
       </form>
       <p className="nota-do-formulario">
