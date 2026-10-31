@@ -241,3 +241,14 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Botões do cursor configuráveis; compensação da lâmina no ISO | ✅ ADR 0153 (não testado em equipamento) |
 | A troca com o ERP para todos os moldes da biblioteca | ✅ ADR 0154 |
 | O look vestido no manequim 3D | ✅ ADR 0155 (um tecido só; sem peça por dentro e por fora) |
+
+## Sexta rodada: a apostila de treinamento da referência (2026-10-31)
+
+Fonte: a apostila unificada de treinamento, comparada com o programa. As ferramentas de modelagem dela já estavam cobertas; as do encaixe manual e da plotagem, em parte não.
+
+| Item | Situação |
+|---|---|
+| Importar e exportar o modelo em arquivo | ✅ ADR 0156 |
+| Importar PLT | ✅ ADR 0157 |
+| X inicial e faixas de plotagem | ✅ ADR 0158 (não testado num plotter) |
+| Etiquetas dos feixes | ✅ ADR 0159 |

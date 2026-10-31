@@ -450,7 +450,7 @@ export interface Molde {
  * quando chegou fica no histórico do projeto (a importação registra uma versão).
  */
 export interface OrigemDaImportacao {
-  readonly formato: 'dxf' | 'pdf';
+  readonly formato: 'dxf' | 'pdf' | 'plt';
   readonly arquivo: string;
   readonly importadaEmIso: string;
   /** A unidade do arquivo ("mm", "polegadas"…), ou o fator de escala do PDF. */

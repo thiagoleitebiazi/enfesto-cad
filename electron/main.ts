@@ -597,6 +597,21 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
   return { caminho, conteudo };
 });
 
+// Os outros arquivos de texto que a interface abre: o projeto exportado (ADR 0156) e o PLT (ADR 0157).
+const ARQUIVOS_DE_TEXTO = {
+  projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto CAD', extensions: ['enfesto'] },
+  plt: { title: 'Importar PLT', name: 'PLT (HPGL)', extensions: ['plt', 'hpgl', 'hpg'] },
+} as const;
+
+ipcMain.handle('abrir-arquivo-texto', async (_evento, tipo: unknown) => {
+  if (tipo !== 'projeto' && tipo !== 'plt') return null;
+  const { title, name, extensions } = ARQUIVOS_DE_TEXTO[tipo];
+  const resultado = await dialog.showOpenDialog({ title, filters: [{ name, extensions: [...extensions] }], properties: ['openFile'] });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  const caminho = resultado.filePaths[0]!;
+  return { caminho, conteudo: await readFile(caminho, 'utf-8') };
+});
+
 ipcMain.handle('abrir-arquivo-pdf', async () => {
   const resultado = await dialog.showOpenDialog({
     title: 'Importar PDF',

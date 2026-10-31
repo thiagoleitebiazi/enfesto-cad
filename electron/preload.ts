@@ -24,6 +24,10 @@ const api = {
   async abrirArquivoPdf(): Promise<ArquivoAberto | null> {
     return ipcRenderer.invoke('abrir-arquivo-pdf') as Promise<ArquivoAberto | null>;
   },
+  /** O projeto exportado ou o PLT (ADR 0156, 0157). */
+  async abrirArquivoTexto(tipo: 'projeto' | 'plt'): Promise<ArquivoAberto | null> {
+    return ipcRenderer.invoke('abrir-arquivo-texto', tipo) as Promise<ArquivoAberto | null>;
+  },
   async salvarArquivo(sugestaoDeNome: string, conteudo: ArrayBuffer): Promise<string | null> {
     return ipcRenderer.invoke('salvar-arquivo', { sugestaoDeNome, conteudo }) as Promise<string | null>;
   },

@@ -313,6 +313,22 @@ describe('PainelDePlanejamento — importar ordens (CSV)', () => {
   });
 });
 
+describe('PainelDePlanejamento — as etiquetas dos feixes (ADR 0159)', () => {
+  it('a ordem do formulário vira etiquetas, pelo tamanho do feixe; sem ordem completa, diz o que falta', async () => {
+    const onSalvarTexto = vi.fn(async (nome: string) => `C:\\saida\\${nome}`);
+    abrir({ onSalvarTexto });
+    etapa('2. Ordem');
+    fireEvent.click(screen.getByRole('button', { name: /Salvar a lista \(CSV\)/ }));
+    expect(await screen.findByText(/Complete a ordem antes das etiquetas/)).toBeInTheDocument();
+    escrever('Código da ordem', 'OP-50');
+    escrever('P', '30', secao('Ordem de produção'));
+    escrever('Roupas por feixe', '10');
+    fireEvent.click(screen.getByRole('button', { name: /Salvar as etiquetas \(HTML/ }));
+    expect(await screen.findByText(/3 etiqueta\(s\) de feixe salvas em/)).toBeInTheDocument();
+    expect(onSalvarTexto.mock.calls[0]![0]).toBe('etiquetas-OP-50.html');
+  });
+});
+
 describe('PainelDePlanejamento — a troca com o ERP por uma pasta (ADR 0141)', () => {
   /** Uma pasta na memória, com o arquivo do ERP na entrada. */
   function pastaNaMemoria(): AcessoAPastaDeTroca & { readonly pastas: Map<string, Map<string, string>> } {

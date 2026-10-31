@@ -103,6 +103,13 @@ interface BarraDeFerramentasProps {
   readonly onExportarDxf: () => void;
   /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
   readonly onExportarPlt: () => void;
+  /** O PLT por partes: de onde o papel acabou, ou uma faixa do papel (ADR 0158). */
+  readonly onExportarPltPorPartes?: () => void;
+  /** Importa peças de um PLT (ADR 0157). */
+  readonly onImportarPlt?: () => void;
+  /** O projeto num arquivo (ADR 0156). */
+  readonly onExportarProjeto?: () => void;
+  readonly onImportarProjeto?: () => void;
   /** O arquivo da mesa de corte automático, em ISO (G-code) — ADR 0140. */
   readonly onExportarIso: () => void;
   readonly onSalvar: () => void;
@@ -530,6 +537,18 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 <Icone nome="historico" />
                 <span>Histórico</span>
               </button>
+              {props.onExportarProjeto && (
+                <button onClick={props.onExportarProjeto} title="Salva o projeto inteiro num arquivo, para levar a outro computador ou guardar uma cópia">
+                  <Icone nome="exportar" />
+                  <span>Exportar projeto</span>
+                </button>
+              )}
+              {props.onImportarProjeto && (
+                <button onClick={props.onImportarProjeto} title="Abre um projeto exportado de outro computador (nunca troca o que está na biblioteca)">
+                  <Icone nome="importar" />
+                  <span>Importar projeto</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -545,6 +564,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Importar peças de um PDF (o exportado por este programa traz a peça inteira)"
                   onClick={props.onImportarPdf}
                 />
+                {props.onImportarPlt && <Ferramenta tamanho="grande" rotulo={['Importar', 'PLT']} icone="importar" dica="Importar peças de um arquivo PLT (HPGL): as linhas fechadas viram peças, com os furos, as linhas e os piques; confira o fio" onClick={props.onImportarPlt} />}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Exportar', 'DXF']}
@@ -569,6 +589,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onExportarPlt}
                 />
+                {props.onExportarPltPorPartes && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['PLT por', 'partes']}
+                    icone="exportar"
+                    dica="PLT por partes: retoma o risco de onde o papel acabou (X inicial), ou divide em faixas um risco mais largo que o papel"
+                    falta={props.podeExportarPdf ? null : SEM_PECAS}
+                    onClick={props.onExportarPltPorPartes}
+                  />
+                )}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Exportar', 'ISO (corte)']}

@@ -168,7 +168,7 @@ async function principal() {
   const naAbertura = JSON.parse(
     await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] [aria-label="Importação e exportação"] button')).map(b => b.textContent.replace(/\\s+/g, ' ').trim()))`),
   );
-  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Exportar DXF|Exportar PDF|Exportar PLT|Exportar ISO (corte)', naAbertura.join(', '));
+  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Importar PLT|Exportar DXF|Exportar PDF|Exportar PLT|PLT por partes|Exportar ISO (corte)', naAbertura.join(', '));
 
   // 1. Importar o DXF de teste: direto, com o nome do arquivo e o fio na horizontal.
   await aba('Início');

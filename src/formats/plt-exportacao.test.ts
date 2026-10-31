@@ -88,3 +88,27 @@ describe('gerarPlt — as canetas e os grupos do encaixe (ADR 0115)', () => {
     expect(c).toContain(`LBSem grupo${ETX}`);
   });
 });
+
+describe('o PLT por partes (ADR 0158)', () => {
+  const quadrado = criarMolde(
+    { nome: 'Q', referencia: '', tamanho: '', contorno: [ponto(100, 1000), ponto(200, 1000), ponto(200, 1100), ponto(100, 1100)], linhaDeFio: { inicio: ponto(150, 1010), fim: ponto(150, 1090) } },
+    'q',
+  );
+
+  it('sem as opções, nada muda: não há janela', () => {
+    expect(gerarPlt([quadrado], { larguraDaMesaMm: 1000 })).not.toContain('IW');
+  });
+
+  it('o X inicial desconta o comprimento e recorta o que vem antes', () => {
+    const plt = gerarPlt([quadrado], { larguraDaMesaMm: 1000, xInicialMm: 900 });
+    expect(plt).toContain('IW0,0,8000,40000;');
+    // A peça começa a 1000 mm do risco: 100 mm depois do novo começo.
+    expect(plt).toContain('PU4000,36000;');
+  });
+
+  it('a faixa 2 do papel de 600 mm: a largura desconta 600 e a janela tem a largura do papel', () => {
+    const plt = gerarPlt([quadrado], { larguraDaMesaMm: 1000, larguraDoPapelMm: 600, faixa: 2 });
+    expect(plt).toContain('IW0,0,44000,24000;');
+    expect(plt).toContain('PU40000,12000;');
+  });
+});

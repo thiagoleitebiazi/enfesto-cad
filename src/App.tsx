@@ -361,7 +361,9 @@ import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pe
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
-import { gerarPlt } from './formats/plt-exportacao';
+import { gerarPlt, type OpcoesDoPlt } from './formats/plt-exportacao';
+import { pecasDoPlt } from './formats/plt-importacao';
+import { nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
 import { PainelDaMesaDigitalizadora } from './ui/PainelDaMesaDigitalizadora';
@@ -566,6 +568,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'ponto-de-casamento' }
   | { readonly tipo: 'componente' }
   | { readonly tipo: 'corte-iso' }
+  | { readonly tipo: 'plt-por-partes' }
   | { readonly tipo: 'medidas-do-componente'; readonly componente: TipoDeComponente }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
@@ -3312,15 +3315,15 @@ export default function App(): React.JSX.Element {
   }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
-  const exportarPlt = useCallback(async () => {
+  const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}) => {
     const api = window.enfestoCad;
     if (!api) {
       window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}) }));
-      const caminhoSalvo = await api.salvarArquivo('encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
+      const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
@@ -4161,6 +4164,77 @@ export default function App(): React.JSX.Element {
     });
   }, [enfesto, acrescentarPecasImportadas]);
 
+  // O PLT (ADR 0157): as peças deduzidas das linhas do arquivo entram como as do DXF.
+  const importarPltHandler = useCallback(() => {
+    const api = window.enfestoCad;
+    if (!api) return;
+    void api.abrirArquivoTexto('plt').then((arquivo) => {
+      if (!arquivo) return;
+      const nomeDoArquivo = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
+      const { pecas: lidas, avisos } = pecasDoPlt(arquivo.conteudo);
+      if (lidas.length === 0) {
+        setMensagensImportacao(avisos);
+        return;
+      }
+      try {
+        const moldes = lidas.map((p, i) => {
+          const c = retanguloEnvolvente(p.contorno);
+          return criarMolde(
+            {
+              nome: p.nome ?? `${nomeDoArquivo.replace(/\.[^.]+$/, '')} ${i + 1}`,
+              referencia: '',
+              tamanho: '',
+              contorno: p.contorno,
+              furos: p.furos,
+              linhasInternas: p.linhasInternas,
+              piques: p.piques.map((q) => ({ id: proximoId(), posicao: q.posicao, indiceAresta: q.indiceAresta })),
+              linhaDeFio: p.fio ?? { inicio: ponto((c.minX + c.maxX) / 2, c.minY + 0.15 * (c.maxY - c.minY)), fim: ponto((c.minX + c.maxX) / 2, c.maxY - 0.15 * (c.maxY - c.minY)) },
+            },
+            proximoId(),
+          );
+        });
+        const todos = moldes.flatMap((m) => m.contorno);
+        const margens = margensDaMesa(enfesto ?? { margemLateralMm: 0, margemDeExtremidadeMm: 0 });
+        const delta = ponto(margens.lateralMm - Math.min(...todos.map((p) => p.x)), margens.extremidadeMm - Math.min(...todos.map((p) => p.y)));
+        const origem = { formato: 'plt' as const, arquivo: nomeDoArquivo, importadaEmIso: new Date().toISOString(), unidade: 'mm (40 unidades do plotter por mm)', unidadeAssumida: false };
+        acrescentarPecasImportadas(moldes.map((m) => transladarMolde(m, delta, m.id)), origem, `Importação do PLT “${nomeDoArquivo}”: ${moldes.length} peça(s)`);
+        setMensagensImportacao(null);
+      } catch (erro) {
+        setMensagensImportacao([`Não foi possível importar: ${erro instanceof Error ? erro.message : String(erro)}`]);
+      }
+    });
+  }, [enfesto, acrescentarPecasImportadas]);
+
+  // O projeto num arquivo (ADR 0156): sai como está agora; entra na biblioteca e abre, sem trocar o que há nela.
+  const exportarProjetoHandler = useCallback(async () => {
+    const api = window.enfestoCad;
+    const projeto = projetoParaEnviarARede(projetoAtual.id);
+    if (!api || !projeto) return;
+    const bytes = new TextEncoder().encode(textoDoProjeto(projeto));
+    const caminho = await api.salvarArquivo(nomeDoArquivoDoProjeto(projeto), bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    if (caminho) setMensagensImportacao([`Projeto salvo em ${caminho}.`]);
+  }, [projetoAtual.id, projetoParaEnviarARede]);
+
+  const importarProjetoHandler = useCallback(() => {
+    const api = window.enfestoCad;
+    if (!api) return;
+    void api.abrirArquivoTexto('projeto').then((arquivo) => {
+      if (!arquivo) return;
+      const r = projetoDoArquivo(arquivo.conteudo, projetos, { id: () => `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, codigo: novoCodigoDeProjeto });
+      if ('erro' in r) {
+        setMensagensImportacao([r.erro]);
+        return;
+      }
+      if (JSON.stringify(projetoAtual.estadoAtual) !== JSON.stringify({ pecas, tecido, enfesto })) {
+        const salvo = salvarAntesDeTrocar();
+        setProjetos((lista) => [...lista.filter((p) => p.id !== salvo.id), salvo]);
+      }
+      setProjetos((lista) => [...lista, r.projeto]);
+      mostrarProjeto(r.projeto);
+      void persistirProjeto(r.projeto).then(carregarListaDeProjetos);
+    });
+  }, [projetos, projetoAtual, pecas, tecido, enfesto, novoCodigoDeProjeto, salvarAntesDeTrocar, mostrarProjeto, persistirProjeto, carregarListaDeProjetos]);
+
   const importarPdfHandler = useCallback(() => {
     const api = window.enfestoCad;
     if (!api) {
@@ -4901,6 +4975,10 @@ export default function App(): React.JSX.Element {
         podeExportarPdf={pecas.length > 0}
         onExportarDxf={() => void exportarDxf()}
         onExportarPlt={() => void exportarPlt()}
+        onExportarPltPorPartes={() => setDialogoDeFerramenta({ tipo: 'plt-por-partes' })}
+        onImportarPlt={importarPltHandler}
+        onExportarProjeto={() => void exportarProjetoHandler()}
+        onImportarProjeto={importarProjetoHandler}
         onExportarIso={() => setDialogoDeFerramenta({ tipo: 'corte-iso' })}
         onSalvar={salvarProjetoAtual}
         onSalvarComo={salvarComo}
@@ -5071,6 +5149,7 @@ export default function App(): React.JSX.Element {
       )}
       {mostrarPlanoDeCorte && cadastroDeProducao && configuracaoDoPlanejamento && (
         <PainelDePlanejamento
+          onSalvarTexto={salvarTexto}
           pastaDoErp={pastaDoErp}
           projetosDaBiblioteca={projetos}
           nomeDoProjeto={(id) => nomesDosProjetos.get(id) ?? (id === projetoAtual.id ? `${projetoAtual.nome} (${projetoAtual.codigo})` : 'projeto não encontrado na biblioteca')}
@@ -5537,6 +5616,26 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'plt-por-partes' && (
+        <DialogoDeCampos
+          titulo="PLT por partes"
+          campos={[
+            { tipo: 'medida', id: 'xInicial', rotulo: 'X inicial: onde o papel acabou, no comprimento do risco (mm)', inicial: '', opcional: true },
+            { tipo: 'medida', id: 'papel', rotulo: 'Largura do papel, se o risco for mais largo (mm)', inicial: '', opcional: true },
+            { tipo: 'inteiro', id: 'faixa', rotulo: 'Faixa do papel (1, 2…)', inicial: '1' },
+          ]}
+          nota="O que fica antes do X inicial não sai, e o plotter recomeça do zero. Com a largura do papel, sai só a faixa pedida; imprima a seguinte depois. Confira as emendas no primeiro risco: isto não foi testado num plotter físico."
+          rotuloDoBotao="Salvar o PLT"
+          onAplicar={(valores) => {
+            const faixa = Number(valores.faixa);
+            if (valores.xInicial === undefined && valores.papel === undefined) return 'Diga o X inicial, a largura do papel, ou os dois.';
+            if (!(faixa >= 1)) return 'A faixa começa em 1.';
+            void exportarPlt({ ...(valores.xInicial !== undefined ? { xInicialMm: Number(valores.xInicial) } : {}), ...(valores.papel !== undefined ? { larguraDoPapelMm: Number(valores.papel), faixa } : {}) });
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'plt-por-partes' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'corte-iso' && (
         <DialogoDeCampos
           titulo="Exportar para a mesa de corte (ISO)"

@@ -39,6 +39,7 @@ import {
 } from '../domain/cadastroDeProducao';
 import { ERP_NAO_CONFIGURADO, importarOrdensCsv } from '../domain/importacaoDeOrdens';
 import { trocarComOErp, type AcessoAPastaDeTroca } from '../domain/trocaComOErp';
+import { csvDasEtiquetas, feixesDaOrdem, htmlDasEtiquetas } from '../domain/etiquetasDosFeixes';
 import { fatoresDeCompensacao, medidasCompensadas, riscoCompensado, ROTULO_DA_FONTE_DO_ENCOLHIMENTO, type FatoresDeCompensacao, type FonteDoEncolhimento } from '../domain/encolhimento';
 import { EstoqueDoPlano } from './EstoqueDoPlano';
 import { ExecucaoDoPlano } from './ExecucaoDoPlano';
@@ -115,6 +116,8 @@ export interface PainelDePlanejamentoProps {
   readonly pastaDoErp?: AcessoAPastaDeTroca | null;
   /** De quanto em quanto a troca sozinha acontece (padrão: 5 minutos). */
   readonly intervaloDaTrocaMs?: number;
+  /** Salva um arquivo de texto (as etiquetas dos feixes, ADR 0159); devolve o caminho. */
+  readonly onSalvarTexto?: (sugestaoDeNome: string, conteudo: string) => Promise<string | null>;
   /** Os projetos da biblioteca: a troca com o ERP também importa as ordens dos outros moldes (ADR 0154). */
   readonly projetosDaBiblioteca?: readonly Projeto[];
   /** O nome de um projeto da biblioteca, para os cortes que vão ao ERP. */
@@ -346,6 +349,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
   const [pastaDoErp, setPastaDoErp] = useState<string | null>(null);
   const [trocandoComOErp, setTrocandoComOErp] = useState(false);
   const [trocaAutomatica, setTrocaAutomatica] = useState(false);
+  const [roupasPorFeixe, setRoupasPorFeixe] = useState('20');
   const [recusadosNaTroca, setRecusadosNaTroca] = useState<readonly string[]>([]);
   useEffect(() => {
     if (!acessoAoErp) return;
@@ -855,6 +859,31 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     }
   };
 
+  /** As etiquetas dos feixes da ordem do formulário (ADR 0159): a folha para imprimir ou a lista. */
+  const salvarEtiquetas = async (formato: 'html' | 'csv'): Promise<void> => {
+    const ordem = ordemLida.ordem;
+    if (!ordem || !props.onSalvarTexto) {
+      setMensagem(`Complete a ordem antes das etiquetas: ${ordemLida.erros.join(' ')}`);
+      return;
+    }
+    try {
+      const pecas = [...new Map(props.pecas.map((p) => [p.nome, { nome: p.nome, quantidade: p.quantidade }])).values()];
+      const etiquetas = feixesDaOrdem({
+        ordem: ordem.codigo,
+        ...(ordem.produto ? { produto: ordem.produto } : {}),
+        ...(ordem.cor ? { cor: ordem.cor } : {}),
+        quantidadesPorTamanho: ordem.quantidadesPorTamanho,
+        pecas,
+        roupasPorFeixe: Number(roupasPorFeixe),
+      });
+      const nome = `etiquetas-${ordem.codigo.replace(/[^A-Za-z0-9._-]+/g, '-')}.${formato}`;
+      const caminho = await props.onSalvarTexto(nome, formato === 'html' ? htmlDasEtiquetas(etiquetas, pecas) : csvDasEtiquetas(etiquetas));
+      if (caminho) setMensagem(`${etiquetas.length} etiqueta(s) de feixe salvas em ${caminho}.`);
+    } catch (e) {
+      setMensagem(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   // A troca sozinha (ADR 0151), enquanto a janela está aberta: o relógio chama a troca de agora.
   const trocarRef = useRef(trocarComOErpAgora);
   useEffect(() => {
@@ -1210,6 +1239,23 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
               </details>
               {errosDoCsv.length > 0 && <Faltas titulo="O CSV não foi importado:" itens={errosDoCsv} />}
             </fieldset>
+            {props.onSalvarTexto && (
+              <fieldset className="grupo-de-opcoes-do-formulario">
+                <legend>Etiquetas dos feixes</legend>
+                <label>
+                  Roupas por feixe
+                  <input type="number" min={1} step={1} value={roupasPorFeixe} onChange={(e) => setRoupasPorFeixe(e.target.value)} />
+                </label>
+                <p className="acoes-da-fila">
+                  <button type="button" onClick={() => void salvarEtiquetas('html')}>
+                    Salvar as etiquetas (HTML, para imprimir)
+                  </button>
+                  <button type="button" onClick={() => void salvarEtiquetas('csv')}>
+                    Salvar a lista (CSV)
+                  </button>
+                </p>
+              </fieldset>
+            )}
             {acessoAoErp && (
               <fieldset className="grupo-de-opcoes-do-formulario troca-com-o-erp">
                 <legend>Troca com o ERP (pasta)</legend>

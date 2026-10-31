@@ -19,6 +19,10 @@ import { corteDoPique, mundoParaDxf } from './dxf-exportacao';
  *
  * Não foi testado num plotter físico (não há um aqui): a saída segue a especificação do HPGL (IN, SP, PU, PD, DT,
  * SI, LB), sem comandos próprios de nenhum fabricante. Confira a escala no primeiro risco impresso.
+ *
+ * Por partes (ADR 0158): o "X inicial" retoma o risco de onde o papel acabou (o que vem antes não sai, e o comprimento
+ * recomeça do zero); a largura do papel divide um risco mais largo que ele em faixas, e sai só a pedida. O corte é
+ * feito pelo próprio plotter (IW, a janela de recorte do HPGL).
  */
 
 export const UNIDADES_POR_MM = 40;
@@ -29,6 +33,12 @@ export interface OpcoesDoPlt {
   readonly comprimentoDaMesaMm?: number;
   /** 1 (o padrão): tudo com a caneta 1. 2: a linha de corte com a 1, o resto com a 2. */
   readonly canetas?: 1 | 2;
+  /** Onde o risco recomeça, no comprimento (mm): o papel acabou ali. */
+  readonly xInicialMm?: number;
+  /** A largura do papel (mm), quando o risco não cabe nela: sai a `faixa` pedida. */
+  readonly larguraDoPapelMm?: number;
+  /** A faixa (1, 2…), contada da borda de baixo do papel. */
+  readonly faixa?: number;
 }
 
 const u = (mm: number): number => Math.round(mm * UNIDADES_POR_MM);
@@ -45,8 +55,17 @@ export function textoParaPlotter(texto: string): string {
 export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): string {
   const todos = pecas.flatMap((p) => [...linhaDeCorteDaPeca(p), ...p.contorno]);
   const altura = todos.reduce((maior, p) => Math.max(maior, p.x), opcoes.larguraDaMesaMm ?? 0);
-  const noPapel = (p: Ponto2D): Ponto2D => mundoParaDxf(p, altura);
+  const xInicial = opcoes.xInicialMm ?? 0;
+  const baseDaFaixa = opcoes.larguraDoPapelMm !== undefined ? (Math.max(1, opcoes.faixa ?? 1) - 1) * opcoes.larguraDoPapelMm : 0;
+  const noPapel = (p: Ponto2D): Ponto2D => {
+    const q = mundoParaDxf(p, altura);
+    return ponto(q.x - xInicial, q.y - baseDaFaixa);
+  };
   const comandos: string[] = ['IN', 'SP1', `DT${String.fromCharCode(3)}`];
+  if (xInicial > 0 || opcoes.larguraDoPapelMm !== undefined) {
+    const comprimento = pecas.flatMap((p) => linhaDeCorteDaPeca(p)).reduce((maior, p) => Math.max(maior, p.y), opcoes.comprimentoDaMesaMm ?? 0);
+    comandos.push(`IW0,0,${u(Math.max(1, comprimento - xInicial))},${u(opcoes.larguraDoPapelMm ?? altura)}`);
+  }
 
   /** Uma linha: levanta a caneta até o começo e desce desenhando os pontos (fechada: volta ao começo). */
   const linha = (pontos: readonly Ponto2D[], fechada: boolean): void => {
