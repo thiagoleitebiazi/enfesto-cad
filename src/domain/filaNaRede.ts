@@ -19,6 +19,8 @@ export const OPCAO_DO_SERVIDOR_DE_ENCAIXES = '--servidor-de-encaixes';
 export const PEDIDOS_DA_FILA = 'pedidos';
 export const CALCULANDO_NA_FILA = 'calculando';
 export const PRONTOS_DA_FILA = 'prontos';
+/** Um pedido parado em "calculando" há mais que isto volta para "pedidos": a estação que o levou fechou no meio (ADR 0150). */
+export const HORAS_PARA_O_PEDIDO_VOLTAR = 6;
 
 export interface PedidoDeEncaixe {
   readonly id: string;
@@ -32,6 +34,9 @@ export interface PedidoDeEncaixe {
   readonly pecas: readonly Molde[];
   readonly enfesto: ConfiguracaoDeEnfesto;
   readonly opcoes: OpcoesDoTrabalho;
+  /** Quem levou o pedido para calcular, e quando. */
+  readonly pegoPor?: string;
+  readonly pegoEmIso?: string;
 }
 
 export interface EncaixePronto {
@@ -129,15 +134,31 @@ export async function retirarPedido(pasta: PastaDeArquivos, id: string): Promise
  * Leva o pedido mais antigo para "calculando" e o devolve. O que outra estação levou primeiro é pulado; o arquivo
  * que não é um pedido é apagado de "calculando" (não há o que calcular).
  */
-export async function pegarOProximoPedido(pasta: PastaDeArquivos): Promise<PedidoDeEncaixe | null> {
+export async function pegarOProximoPedido(pasta: PastaDeArquivos, dono?: { readonly quem: string; readonly agoraIso: string }): Promise<PedidoDeEncaixe | null> {
   for (const { nome } of (await pasta.listar(PEDIDOS_DA_FILA)) ?? []) {
     if (!nome.endsWith('.json')) continue;
     if (!(await pasta.mover(PEDIDOS_DA_FILA, nome, CALCULANDO_NA_FILA, nome))) continue;
     const pedido = lerPedido(await pasta.ler(CALCULANDO_NA_FILA, nome));
-    if (pedido && arquivoDoPedido(pedido.id) === nome) return pedido;
+    if (pedido && arquivoDoPedido(pedido.id) === nome) {
+      if (!dono) return pedido;
+      const pego = { ...pedido, pegoPor: dono.quem, pegoEmIso: dono.agoraIso };
+      await pasta.gravar(CALCULANDO_NA_FILA, nome, JSON.stringify(pego));
+      return pego;
+    }
     await pasta.apagar(CALCULANDO_NA_FILA, nome);
   }
   return null;
+}
+
+/** Devolve a "pedidos" os pedidos parados em "calculando" há mais de `horas`; diz quantos voltaram. */
+export async function devolverEsquecidos(pasta: PastaDeArquivos, agoraIso: string, horas = HORAS_PARA_O_PEDIDO_VOLTAR): Promise<number> {
+  let voltaram = 0;
+  for (const { nome } of (await pasta.listar(CALCULANDO_NA_FILA)) ?? []) {
+    const desde = Date.parse(lerPedido(await pasta.ler(CALCULANDO_NA_FILA, nome))?.pegoEmIso ?? '');
+    if (!Number.isFinite(desde) || Date.parse(agoraIso) - desde < horas * 3_600_000) continue;
+    if (await pasta.mover(CALCULANDO_NA_FILA, nome, PEDIDOS_DA_FILA, nome)) voltaram++;
+  }
+  return voltaram;
 }
 
 /** Devolve a "pedidos" um pedido levado que esta estação não conseguiu pôr na fila dela. */

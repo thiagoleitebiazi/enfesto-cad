@@ -24,6 +24,7 @@ import {
 import {
   buscarProntos,
   dadosDoPedido,
+  devolverEsquecidos,
   devolverPedido,
   entregarPronto,
   lerPedido,
@@ -177,5 +178,25 @@ describe('a fila de encaixes com a rede (ADR 0143)', () => {
     await pegarOProximoPedido(pasta);
     expect(await devolverPedido(pasta, 't1')).toBe(true);
     expect([...pasta.pastas.get('pedidos')!.keys()]).toEqual(['t1.json']);
+  });
+});
+
+describe('o pedido esquecido (ADR 0150)', () => {
+  it('quem levou fica escrito; o pedido parado há 6 horas volta, e pode ser levado por outra estação', async () => {
+    const pasta = pastaNaMemoria();
+    await mandarPedido(pasta, pedidoDoTrabalho(comUm().trabalhos[0]!, 'Estação 1', AGORA));
+    const pego = await pegarOProximoPedido(pasta, { quem: 'Estação 2', agoraIso: AGORA });
+    expect(pego).toMatchObject({ pegoPor: 'Estação 2', pegoEmIso: AGORA });
+    expect(lerPedido(pasta.pastas.get('calculando')!.get('t1.json')!)?.pegoPor).toBe('Estação 2');
+    expect(await devolverEsquecidos(pasta, '2026-10-26T15:59:00.000Z')).toBe(0);
+    expect(await devolverEsquecidos(pasta, '2026-10-26T16:00:00.000Z')).toBe(1);
+    expect((await pegarOProximoPedido(pasta, { quem: 'Estação 3', agoraIso: '2026-10-26T16:00:00.000Z' }))?.pegoPor).toBe('Estação 3');
+  });
+
+  it('o pedido sem a hora de quem levou fica onde está', async () => {
+    const pasta = pastaNaMemoria();
+    await mandarPedido(pasta, pedidoDoTrabalho(comUm().trabalhos[0]!, 'Estação 1', AGORA));
+    await pegarOProximoPedido(pasta);
+    expect(await devolverEsquecidos(pasta, '2027-01-01T00:00:00.000Z')).toBe(0);
   });
 });

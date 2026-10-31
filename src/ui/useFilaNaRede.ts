@@ -4,6 +4,7 @@ import {
   arquivoDoPedido,
   buscarProntos,
   dadosDoPedido,
+  devolverEsquecidos,
   devolverPedido,
   entregarPronto,
   mandarPedido,
@@ -110,7 +111,9 @@ export function useFilaNaRede(
       // 3. Atendendo: um pedido de cada vez, com esta fila rodando e sem outro pedido da rede nela.
       const f = filaRef.current.fila;
       if (atenderRef.current && !f.pausada && !f.trabalhos.some((t) => t.pedidoDaRede && !estaTerminado(t))) {
-        const pedido = await pegarOProximoPedido(pasta);
+        // Esta estação está livre: o que ainda consta em "calculando" há horas foi esquecido por quem levou (ADR 0150).
+        await devolverEsquecidos(pasta, agora());
+        const pedido = await pegarOProximoPedido(pasta, { quem: quemRef.current.trim() || 'outra estação', agoraIso: agora() });
         if (pedido) {
           try {
             filaRef.current.mudar((g) => adicionarTrabalho(g, dadosDoPedido(pedido), `rede-${pedido.id}`, agora()));
