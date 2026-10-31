@@ -367,6 +367,19 @@ describe('PainelDePlanejamento — a troca com o ERP por uma pasta (ADR 0141)', 
     expect(await screen.findByText(/deixou de ser usada/)).toBeInTheDocument();
   });
 
+  it('as ordens de outro molde da biblioteca (ADR 0154) entram no projeto dele', async () => {
+    const pasta = pastaNaMemoria();
+    pasta.pastas.get('entrada')!.clear();
+    pasta.pastas.get('entrada')!.set('ENF-2_ordens.csv', 'codigo;P;M\nOP-80;1;1\n');
+    const outro = criarProjeto('Outra', 'p2', 'ENF-2', '2026-10-20T09:00:00.000Z', { pecas: PECAS, tecido: null, enfesto: null });
+    const { onMudarCadastro } = abrir({ pastaDoErp: pasta, projetosDaBiblioteca: [PROJETO, outro] });
+    etapa('2. Ordem');
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher a pasta…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Trocar com o ERP agora' }));
+    await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
+    expect(onMudarCadastro.mock.calls[0]![0].ordens[0]).toMatchObject({ codigo: 'OP-80', projetoId: 'p2', codigoDoMolde: 'ENF-2' });
+  });
+
   it('a troca sozinha (ADR 0151): ligada, o arquivo que chega entra sem clicar', async () => {
     const pasta = pastaNaMemoria();
     const { onMudarCadastro } = abrir({ pastaDoErp: pasta, intervaloDaTrocaMs: 20 });

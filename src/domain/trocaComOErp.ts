@@ -147,6 +147,9 @@ export type PastaDeTroca = Pick<PastaDeArquivos, 'listar' | 'ler' | 'gravar' | '
 /** A pasta de troca na interface: além de trocar arquivos, saber onde está, escolher e deixar de usar. */
 export type AcessoAPastaDeTroca = PastaDeTroca & Pick<AcessoAPasta, 'onde' | 'escolher' | 'esquecer'>;
 
+/** Outro molde da biblioteca, cujas ordens também entram na troca (ADR 0154). */
+export type OutroMolde = Pick<ContextoDaImportacao, 'tamanhosDoMolde' | 'projetoId' | 'codigoDoMolde' | 'revisoes' | 'revisaoAtual'>;
+
 export interface ResultadoDaTroca {
   /** O cadastro com as ordens importadas (igual ao de antes, se nenhuma entrou). */
   readonly cadastro: CadastroDeProducao;
@@ -168,6 +171,7 @@ export async function trocarComOErp(
   cadastro: CadastroDeProducao,
   contexto: Omit<ContextoDaImportacao, 'existentes'>,
   nomeDoProjeto: (projetoId: string) => string,
+  outros: readonly OutroMolde[] = [],
 ): Promise<ResultadoDaTroca> {
   const importados: Array<{ nome: string; ordens: string[] }> = [];
   const recusados: Array<{ nome: string; erros: string[] }> = [];
@@ -175,14 +179,17 @@ export async function trocarComOErp(
   let c = cadastro;
   const lista = await pasta.listar(ENTRADA_DO_ERP);
   if (lista === null) return { cadastro, importados, recusados, gravados: [], falhas: ['A pasta de troca não está acessível.'] };
-  for (const nome of arquivosDoMolde(lista.map((a) => a.nome), contexto.codigoDoMolde)) {
+  // O molde aberto primeiro; dois projetos com o mesmo código: as ordens ficam com o primeiro.
+  const contextos = [contexto, ...outros.map((o) => ({ ...contexto, ...o }))].filter((c1, i, todos) => todos.findIndex((c2) => c2.codigoDoMolde.trim().toLocaleLowerCase('pt-BR') === c1.codigoDoMolde.trim().toLocaleLowerCase('pt-BR')) === i);
+  const paraImportar = contextos.flatMap((ctx) => arquivosDoMolde(lista.map((a) => a.nome), ctx.codigoDoMolde).map((nome) => ({ nome, ctx })));
+  for (const { nome, ctx } of paraImportar) {
     const texto = await pasta.ler(ENTRADA_DO_ERP, nome);
     if (texto === null) {
       falhas.push(`${nome}: não deu para ler (outra estação pode tê-lo levado).`);
       continue;
     }
     const carimbado = nomeCarimbado(nome, contexto.agoraIso);
-    const r = importarOrdensCsv(texto, { ...contexto, existentes: c.ordens });
+    const r = importarOrdensCsv(texto, { ...ctx, existentes: c.ordens });
     if (r.erros.length > 0) {
       if (!(await pasta.mover(ENTRADA_DO_ERP, nome, COM_ERRO_DO_ERP, carimbado))) falhas.push(`${nome}: recusado, mas não deu para movê-lo para "${COM_ERRO_DO_ERP}".`);
       else await pasta.gravar(COM_ERRO_DO_ERP, `${carimbado}.erros.txt`, relatorioDosErros(nome, r.erros, contexto.agoraIso));

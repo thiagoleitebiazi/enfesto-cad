@@ -115,6 +115,8 @@ export interface PainelDePlanejamentoProps {
   readonly pastaDoErp?: AcessoAPastaDeTroca | null;
   /** De quanto em quanto a troca sozinha acontece (padrão: 5 minutos). */
   readonly intervaloDaTrocaMs?: number;
+  /** Os projetos da biblioteca: a troca com o ERP também importa as ordens dos outros moldes (ADR 0154). */
+  readonly projetosDaBiblioteca?: readonly Projeto[];
   /** O nome de um projeto da biblioteca, para os cortes que vão ao ERP. */
   readonly nomeDoProjeto?: (projetoId: string) => string;
   /** Fecha a janela e mostra a peça (para corrigir o que falta nela). */
@@ -830,12 +832,15 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
           novoId: () => props.novoId('ordem'),
         },
         props.nomeDoProjeto ?? ((id) => id),
+        (props.projetosDaBiblioteca ?? [])
+          .filter((p) => p.id !== props.projeto.id && p.status !== 'arquivado' && p.codigo.trim() !== '')
+          .map((p) => ({ tamanhosDoMolde: modeloDoPlano(p.estadoAtual.pecas).tamanhos, projetoId: p.id, codigoDoMolde: p.codigo, revisoes: (p.revisoesDoMolde ?? []).map((x) => x.numero), revisaoAtual: null })),
       );
       const ordens = r.importados.flatMap((x) => x.ordens);
       const partes = [
         r.importados.length > 0
           ? `${ordens.length} ordem(ns) importada(s) do ERP (${r.importados.map((x) => x.nome).join(', ')}): ${ordens.join(', ')}.`
-          : `Nenhum arquivo de ordens do molde ${props.projeto.codigo} na entrada.`,
+          : 'Nenhum arquivo de ordens dos moldes da biblioteca na entrada.',
         r.recusados.length > 0 ? `${r.recusados.length} arquivo(s) recusado(s), movido(s) para "com-erro" com o relatório.` : '',
         r.gravados.length > 0 ? `Saída para o ERP gravada: ${r.gravados.join(', ')}.` : '',
         ...r.falhas,
@@ -1216,8 +1221,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                   ) : (
                     'Nenhuma pasta escolhida.'
                   )}{' '}
-                  O ERP deixa as ordens em CSV na subpasta "entrada", com o nome começando pelo código do molde ({props.projeto.codigo || 'o código'}_ordens.csv). A troca importa as deste molde
-                  (tudo ou nada por arquivo) e deixa em "saida" as ordens com a situação do corte, os rolos, os movimentos de estoque, os cortes e o consumo por malha.
+                  O ERP deixa as ordens em CSV na subpasta "entrada", com o nome começando pelo código do molde ({props.projeto.codigo || 'o código'}_ordens.csv). A troca importa as deste molde e
+                  as dos outros moldes da biblioteca (tudo ou nada por arquivo) e deixa em "saida" as ordens com a situação do corte, os rolos, os movimentos de estoque, os cortes e o consumo por malha.
                 </p>
                 <p className="acoes-da-fila">
                   <button type="button" onClick={() => void escolherAPastaDoErp()}>

@@ -140,3 +140,25 @@ describe('a troca completa com a pasta', () => {
     expect(r).toEqual({ cadastro: CADASTRO_VAZIO, importados: [], recusados: [], gravados: [], falhas: ['A pasta de troca não está acessível.'] });
   });
 });
+
+describe('a troca com vários moldes (ADR 0154)', () => {
+  const OUTRO = { tamanhosDoMolde: ['U'], projetoId: 'proj-2', codigoDoMolde: 'MOL-02', revisoes: [], revisaoAtual: null };
+
+  it('cada arquivo entra no seu molde, com os tamanhos dele; o arquivo de um molde desconhecido fica na entrada', async () => {
+    const { pasta, pastas } = pastaDeMentira({ 'MOL-01_a.csv': 'codigo;P\nOP-1;5\n', 'MOL-02_b.csv': 'codigo;U\nOP-2;7\n', 'MOL-09_c.csv': 'codigo;P\nOP-9;1\n' });
+    const r = await trocarComOErp(pasta, CADASTRO_VAZIO, CONTEXTO, () => 'Projeto', [OUTRO]);
+    expect(r.cadastro.ordens.map((o) => [o.codigo, o.projetoId, o.codigoDoMolde])).toEqual([
+      ['OP-1', 'proj', 'MOL-01'],
+      ['OP-2', 'proj-2', 'MOL-02'],
+    ]);
+    expect([...pastas.get('entrada')!.keys()]).toEqual(['MOL-09_c.csv']);
+  });
+
+  it('dois projetos com o mesmo código: o arquivo entra uma vez só, no primeiro', async () => {
+    const { pasta } = pastaDeMentira({ 'MOL-01_a.csv': 'codigo;P\nOP-1;5\n' });
+    const r = await trocarComOErp(pasta, CADASTRO_VAZIO, CONTEXTO, () => 'Projeto', [{ ...OUTRO, codigoDoMolde: 'mol-01' }]);
+    expect(r.importados).toHaveLength(1);
+    expect(r.recusados).toEqual([]);
+    expect(r.cadastro.ordens[0]!.projetoId).toBe('proj');
+  });
+});
