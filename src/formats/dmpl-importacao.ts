@@ -4,7 +4,7 @@ import { UNIDADES_POR_MM } from './plt-exportacao';
  * DMPL (ADR 0210), a linguagem dos plotters Houston: lido como o ISO, passando para HPGL e seguindo pelo importador do
  * PLT. Não há especificação pública à mão: estes são os comandos que aparecem nos exemplos públicos (";:" abre, "H" vai
  * à origem, "A" e "R" são absoluto e relativo, "EC" dá a unidade, "U" e "D" levantam e descem a caneta, "Pn" escolhe a
- * caneta e "@" encerra). Nunca foi lido um arquivo de plotter de verdade.
+ * caneta e "@" encerra). Conferido com dois arquivos públicos de verdade (ADR 0215), ambos em EC1.
  */
 
 /** A unidade de cada "EC"; sem ele, a dos exemplos. */
@@ -20,7 +20,8 @@ export function hpglDoDmpl(texto: string): string {
   let x = 0;
   let y = 0;
   let metade: number | null = null;
-  for (const t of texto.toUpperCase().match(/;:|EC[0-9A-Z]|P\d+|[A-Z@]|-?\d+(?:\.\d+)?/g) ?? []) {
+  // L, V e BP (o tipo de linha, a velocidade e a pressão) têm um número que não é coordenada.
+  for (const t of texto.toUpperCase().match(/;:|EC[0-9A-Z]|BP\s*\d*|[LV]\s*\d+(?:\.\d+)?|P\d+|[A-Z@]|-?\d+(?:\.\d+)?/g) ?? []) {
     if (t === '@') break;
     if (/^-?\d/.test(t)) {
       if (metade === null) {

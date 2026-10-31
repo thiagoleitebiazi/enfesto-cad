@@ -47,6 +47,11 @@ describe('o arquivo DMPL (ADR 0210)', () => {
     expect(hpglDoDmpl(';:ECN U 100,0')).toContain('PU400,0');
   });
 
+  it('lê como os arquivos de verdade, tudo colado, com o tipo de linha e a velocidade', () => {
+    expect(hpglDoDmpl(';:HL0EC1UP1AU1000,2000DR500,0,0,-500U@')).toBe('IN;SP1;PU0,0;SP1;PU1016,2032;PD1524,2032;PD1524,1524;\n');
+    expect(hpglDoDmpl(' ;:ECN A L0 V5 BP120 U100,0 D200,0 ')).toBe('IN;SP1;PU400,0;PD800,0;\n');
+  });
+
   it('entende o relativo', () => {
     expect(hpglDoDmpl(';:A EC1 U 1000,1000 R D 500,0 0,500')).toContain('PD1524,1016;PD1524,1524');
   });

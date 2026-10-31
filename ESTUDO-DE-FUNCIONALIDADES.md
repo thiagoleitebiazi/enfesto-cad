@@ -351,3 +351,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Ordem de corte: criar arquivos de encaixe, um por risco | ✅ ADR 0212 |
 | Loja virtual | 🟡 ADR 0213: vitrine em uma página, com looks, filtro e tamanho; sem carrinho nem pagamento |
 | Nuvem: projeto compartilhado, várias pessoas, comentários, aprovação | 🟡 ADR 0214: servidor da própria empresa, sem a nuvem da referência |
+| Validação com 34 arquivos ASTM/AAMA públicos e 2 DMPL de verdade; abertura correta das portas LPT e COM | ✅ ADR 0215 |

@@ -61,9 +61,25 @@ function configurarSerial(caminho: string, baud: number): Promise<void> {
   });
 }
 
+const ehDispositivo = (caminho: string): boolean => caminho.startsWith('\\\\.\\');
+
+/** O que dizer de uma falha no envio, em vez do código do sistema. */
+function motivoDaFalha(porta: Extract<PortaDeSaida, { tipo: 'caminho' }>, erro: unknown): Error {
+  const codigo = (erro as NodeJS.ErrnoException).code;
+  const nome = porta.caminho.replace('\\\\.\\', '');
+  if (codigo === 'ENOENT') return new Error(ehDispositivo(porta.caminho) ? `A porta ${nome} não existe neste computador.` : `A impressora compartilhada ${nome} não foi encontrada.`);
+  if (codigo === 'EBUSY' || codigo === 'EPERM' || codigo === 'EACCES') return new Error(`${nome} está ocupada ou sem permissão: feche o programa que a está usando.`);
+  return erro instanceof Error ? erro : new Error(String(erro));
+}
+
 export async function enviarAPorta(porta: PortaDeSaida, texto: string): Promise<void> {
   const dados = Buffer.from(texto, 'latin1');
   if (porta.tipo === 'rede') return enviarPelaRede(porta.host, porta.porta, dados);
   if (porta.baud !== undefined) await configurarSerial(porta.caminho, porta.baud);
-  await writeFile(porta.caminho, dados);
+  try {
+    // A porta do Windows (LPT, COM) só abre como algo que já existe: 'r+' é isso. 'w' pede para criar, e ela recusa.
+    await writeFile(porta.caminho, dados, { flag: ehDispositivo(porta.caminho) ? 'r+' : 'w' });
+  } catch (erro) {
+    throw motivoDaFalha(porta, erro);
+  }
 }

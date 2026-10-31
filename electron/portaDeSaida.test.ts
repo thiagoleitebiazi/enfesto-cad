@@ -2,7 +2,7 @@
 import { createServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { enviarPelaRede, lerPortaDeSaida } from './portaDeSaida';
+import { enviarAPorta, enviarPelaRede, lerPortaDeSaida } from './portaDeSaida';
 
 describe('o destino escrito pelo usuário (ADR 0210)', () => {
   it('a rede local, com a porta 9100 se não disser', () => {
@@ -36,6 +36,25 @@ describe('o destino escrito pelo usuário (ADR 0210)', () => {
     expect(lerPortaDeSaida('/etc/passwd')).toBeNull();
     expect(lerPortaDeSaida('')).toBeNull();
     expect(lerPortaDeSaida(5)).toBeNull();
+  });
+});
+
+describe.runIf(process.platform === 'win32')('as portas do Windows (ADR 0215)', () => {
+  it('um dispositivo do Windows recebe os bytes, aberto como já existente', async () => {
+    // Uma porta de verdade pede um equipamento; o "pipe" é um dispositivo que se comporta igual: só abre se já existir.
+    const caminho = `\\\\.\\pipe\\plotter-de-teste-${process.pid}`;
+    const recebido: Buffer[] = [];
+    const servidor = createServer((s) => s.on('data', (d) => recebido.push(d as Buffer)));
+    await new Promise<void>((r) => servidor.listen(caminho, r));
+    const fechou = new Promise<void>((r) => servidor.once('connection', (s) => s.once('close', () => r())));
+    await enviarAPorta({ tipo: 'caminho', caminho }, 'IN;SP1;');
+    await fechou;
+    servidor.close();
+    expect(Buffer.concat(recebido).toString()).toBe('IN;SP1;');
+  });
+
+  it('a porta que não existe é dita pelo nome', async () => {
+    await expect(enviarAPorta(lerPortaDeSaida('COM99')!, 'IN;')).rejects.toThrow('A porta COM99 não existe neste computador.');
   });
 });
 
