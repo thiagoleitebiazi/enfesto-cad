@@ -83,6 +83,8 @@ export interface OpcoesDoPlt {
   readonly ajusteDeTexto?: AjusteDeTexto;
   /** O traço da linha de costura; ausente, cheia (ADR 0192). */
   readonly estiloDaCostura?: 'tracejada' | 'pontilhada';
+  /** As linhas de referência: a linha e o nome (ADR 0196). */
+  readonly linhas?: readonly { readonly de: Ponto2D; readonly ate: Ponto2D; readonly nome: string }[];
   /** Os pontos de emenda: uma linha na largura toda e a palavra, em cada um (ADR 0188). */
   readonly emendas?: readonly number[];
   /** Os textos desenhados em traços, para o plotter sem letreiro (ADR 0184). */
@@ -216,6 +218,11 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
       const altura = alturaDoTextoDaPeca(caixa.maxX - caixa.minX, caixa.maxY - caixa.minY, opcoes.ajusteDeTexto) / 10;
       rotulo(inicio, nomeDaPeca, altura * 0.7, altura, opcoes.ajusteDeTexto.orientacaoGraus);
     } else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
+  }
+  for (const l of opcoes.linhas ?? []) {
+    caneta(2);
+    linha([l.de, l.ate], false);
+    rotulo(noPapel(ponto(l.de.x + 2, l.de.y + 2)), l.nome, 0.25, 0.35);
   }
   for (const e of opcoes.emendas ?? []) {
     caneta(2);

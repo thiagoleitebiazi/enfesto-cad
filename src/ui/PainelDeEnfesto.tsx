@@ -12,7 +12,7 @@ import {
   margensDaMesa,
   ROTULO_DO_TIPO,
   type ConfiguracaoDeEnfesto,
-  type TipoDeEnfesto, lerPontosDeEmenda } from '../domain/enfesto';
+  type TipoDeEnfesto, lerPontosDeEmenda, lerLinhasDeReferencia, textoDasLinhasDeReferencia } from '../domain/enfesto';
 
 interface PainelDeEnfestoProps {
   readonly configAtual: ConfiguracaoDeEnfesto | null;
@@ -34,6 +34,9 @@ interface CamposDeFormulario {
   zonasBloqueadas: string;
   textosNoRisco: string;
   emendas: string;
+  linhas: string;
+  perdaPercentual: string;
+  perdaCm: string;
   mostraPadronagem: boolean;
   imagemDaPadronagem: string;
   comprimentoDaPadronagemMm: string;
@@ -59,6 +62,9 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     zonasBloqueadas: textoDasZonas(config?.zonasBloqueadas ?? []),
     textosNoRisco: textoDosTextosNoRisco(config?.textosNoRisco ?? []),
     emendas: (config?.emendasMm ?? []).join(' '),
+    linhas: textoDasLinhasDeReferencia(config?.linhasDeReferencia ?? []),
+    perdaPercentual: config?.perdaPercentual !== undefined ? String(config.perdaPercentual) : '',
+    perdaCm: config?.perdaMm !== undefined ? String(config.perdaMm / 10) : '',
     mostraPadronagem: config?.padronagem !== undefined,
     imagemDaPadronagem: config?.padronagem?.imagem ?? '',
     comprimentoDaPadronagemMm: String(config?.padronagem?.comprimentoMm ?? 100),
@@ -70,7 +76,13 @@ function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
   const zonasBloqueadas = lerZonasBloqueadas(c.zonasBloqueadas);
   const textosNoRisco = lerTextosNoRisco(c.textosNoRisco);
   const emendasMm = lerPontosDeEmenda(c.emendas);
+  const linhasDeReferencia = lerLinhasDeReferencia(c.linhas);
+  const perdaPercentual = Number.parseFloat(c.perdaPercentual.replace(',', '.'));
+  const perdaCm = Number.parseFloat(c.perdaCm.replace(',', '.'));
   const base = {
+    ...(linhasDeReferencia.length > 0 ? { linhasDeReferencia } : {}),
+    ...(perdaPercentual > 0 ? { perdaPercentual } : {}),
+    ...(perdaCm > 0 ? { perdaMm: perdaCm * 10 } : {}),
     ...(zonasBloqueadas.length > 0 ? { zonasBloqueadas } : {}),
     ...(textosNoRisco.length > 0 ? { textosNoRisco } : {}),
     ...(emendasMm.length > 0 ? { emendasMm } : {}),
@@ -206,6 +218,18 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
         <label>
           Pontos de emenda: no comprimento, em mm, separados por espaço
           <input type="text" value={campos.emendas} placeholder="1200 2400" onChange={(e) => alterar({ emendas: e.target.value })} />
+        </label>
+        <label>
+          Linhas de referência: uma por linha — nome, distância (mm) e a borda (esquerda, direita, superior, inferior); depois, se quiser, evitar, limite, valor
+          <textarea rows={2} value={campos.linhas} placeholder="Meio 750 superior evitar valor" onChange={(e) => alterar({ linhas: e.target.value })} />
+        </label>
+        <label>
+          Perdas: porcentagem
+          <input type="text" inputMode="decimal" value={campos.perdaPercentual} placeholder="0" onChange={(e) => alterar({ perdaPercentual: e.target.value })} />
+        </label>
+        <label>
+          Perdas: comprimento (cm)
+          <input type="text" inputMode="decimal" value={campos.perdaCm} placeholder="0" onChange={(e) => alterar({ perdaCm: e.target.value })} />
         </label>
         <label className="opcao-em-linha">
           <input type="checkbox" checked={campos.corDoTecido !== ''} onChange={(e) => alterar({ corDoTecido: e.target.checked ? '#cfe2ff' : '' })} />

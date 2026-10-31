@@ -80,6 +80,9 @@ interface BarraDeFerramentasProps {
   readonly onSugerirPosicao: () => void;
   /** "Compactar": diminui o comprimento do encaixe (ADR 0195). */
   readonly onCompactar?: () => void;
+  /** O status do encaixe e os pontos de emenda automáticos (ADR 0197, 0198). */
+  readonly onStatusDoEncaixe?: () => void;
+  readonly onPontosDeEmenda?: () => void;
   readonly podeSugerirPosicao: boolean;
   readonly onNestingAutomatico: () => void;
   /** Encaixe > Fila de encaixes: os encaixes calculados em segundo plano, um de cada vez (ADR 0102). */
@@ -2407,6 +2410,18 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <button onClick={props.onAlinharPecas} title="Alinhar peças: alinha ou distribui as peças selecionadas, no comprimento ou na largura">
                     <Icone nome="sugerir-posicao" />
                     <span>Alinhar peças</span>
+                  </button>
+                )}
+                {props.onStatusDoEncaixe && (
+                  <button onClick={props.onStatusDoEncaixe} title="Status: o consumo, o aproveitamento e o que está na mesa, por tamanho e por molde">
+                    <Icone nome="sugerir-posicao" />
+                    <span>Status</span>
+                  </button>
+                )}
+                {props.onPontosDeEmenda && (
+                  <button onClick={props.onPontosDeEmenda} title="Pontos de emenda: acha onde emendar o tecido, com o transpasse de cada ponto">
+                    <Icone nome="sugerir-posicao" />
+                    <span>Pontos de emenda</span>
                   </button>
                 )}
                 {props.onCompactar && (

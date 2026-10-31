@@ -61,6 +61,21 @@ export interface TextoNoRisco {
   readonly texto: string;
 }
 
+/** A borda de que a distância da linha de referência é contada. */
+export type ReferenciaDaLinha = 'esquerda' | 'direita' | 'superior' | 'inferior';
+
+/** "Editar linhas de referência" (ADR 0196): as linhas-guia do encaixe. */
+export interface LinhaDeReferencia {
+  readonly nome: string;
+  readonly distanciaMm: number;
+  readonly referencia: ReferenciaDaLinha;
+  /** Nenhuma peça atravessa a linha. */
+  readonly evitarSobreposicao?: boolean;
+  /** O encaixe termina nela: a mesa depois dela não é usada. */
+  readonly limiteDeSecao?: boolean;
+  readonly mostrarValor?: boolean;
+}
+
 export interface ConfiguracaoBase {
   readonly larguraUtilMm: number;
   readonly comprimentoMm: number;
@@ -75,6 +90,10 @@ export interface ConfiguracaoBase {
   /** A padronagem do tecido, na área de encaixe, e a cor de preenchimento das peças (ADR 0187). */
   readonly padronagem?: { readonly imagem: string; readonly comprimentoMm: number };
   readonly corDoTecido?: string;
+  readonly linhasDeReferencia?: readonly LinhaDeReferencia[];
+  /** As perdas do tecido: somam ao consumo, não ao encaixe (ADR 0198). */
+  readonly perdaPercentual?: number;
+  readonly perdaMm?: number;
   /** A dobra do tecido embaixo, e não em cima (ADR 0195). */
   readonly dobraInferior?: boolean;
   /** Compactar no fim do encaixe automático (ADR 0195). */
@@ -175,11 +194,66 @@ export function lerPontosDeEmenda(texto: string): number[] {
     .sort((a, b) => a - b);
 }
 
-/** O enfesto para o encaixe: cada emenda é uma faixa estreita da largura toda, que nenhuma peça atravessa. */
+/** As duas pontas da linha de referência na mesa. */
+export function segmentoDaLinha(linha: LinhaDeReferencia, enfesto: Pick<ConfiguracaoBase, 'larguraUtilMm' | 'comprimentoMm'>): readonly [{ readonly x: number; readonly y: number }, { readonly x: number; readonly y: number }] {
+  const { larguraUtilMm: l, comprimentoMm: c } = enfesto;
+  const d = linha.distanciaMm;
+  if (linha.referencia === 'esquerda') return [{ x: 0, y: d }, { x: l, y: d }];
+  if (linha.referencia === 'direita') return [{ x: 0, y: c - d }, { x: l, y: c - d }];
+  if (linha.referencia === 'superior') return [{ x: d, y: 0 }, { x: d, y: c }];
+  return [{ x: l - d, y: 0 }, { x: l - d, y: c }];
+}
+
+/** A área que a linha tira do encaixe: a faixa dela, ou a mesa depois dela, no limite de seção. */
+function zonaDaLinha(linha: LinhaDeReferencia, enfesto: Pick<ConfiguracaoBase, 'larguraUtilMm' | 'comprimentoMm'>): ZonaBloqueada | null {
+  const [de, ate] = segmentoDaLinha(linha, enfesto);
+  const vertical = linha.referencia === 'esquerda' || linha.referencia === 'direita';
+  if (linha.limiteDeSecao) {
+    if (linha.referencia === 'esquerda') return { minX: 0, maxX: enfesto.larguraUtilMm, minY: de.y, maxY: enfesto.comprimentoMm };
+    if (linha.referencia === 'direita') return { minX: 0, maxX: enfesto.larguraUtilMm, minY: 0, maxY: de.y };
+    if (linha.referencia === 'superior') return { minX: de.x, maxX: enfesto.larguraUtilMm, minY: 0, maxY: enfesto.comprimentoMm };
+    return { minX: 0, maxX: de.x, minY: 0, maxY: enfesto.comprimentoMm };
+  }
+  if (!linha.evitarSobreposicao) return null;
+  return vertical ? { minX: 0, maxX: enfesto.larguraUtilMm, minY: de.y - 1, maxY: de.y + 1 } : { minX: de.x - 1, maxX: de.x + 1, minY: de.y, maxY: ate.y };
+}
+
+/** O enfesto para o encaixe: cada emenda e cada linha que evita sobreposição é uma faixa que nenhuma peça atravessa; o limite de seção fecha o resto da mesa. */
 export function enfestoComEmendas(enfesto: ConfiguracaoDeEnfesto): ConfiguracaoDeEnfesto {
-  const emendas = enfesto.emendasMm ?? [];
-  if (emendas.length === 0) return enfesto;
-  return { ...enfesto, zonasBloqueadas: [...(enfesto.zonasBloqueadas ?? []), ...emendas.map((e) => ({ minX: 0, maxX: enfesto.larguraUtilMm, minY: e - 1, maxY: e + 1 }))] };
+  const dasLinhas = (enfesto.linhasDeReferencia ?? []).flatMap((l) => {
+    const z = zonaDaLinha(l, enfesto);
+    return z ? [z] : [];
+  });
+  const dasEmendas = (enfesto.emendasMm ?? []).map((e) => ({ minX: 0, maxX: enfesto.larguraUtilMm, minY: e - 1, maxY: e + 1 }));
+  if (dasLinhas.length + dasEmendas.length === 0) return enfesto;
+  return { ...enfesto, zonasBloqueadas: [...(enfesto.zonasBloqueadas ?? []), ...dasEmendas, ...dasLinhas] };
+}
+
+/** As linhas de referência no campo do formulário: "nome distância referência [evitar] [limite] [valor]". */
+export const textoDasLinhasDeReferencia = (linhas: readonly LinhaDeReferencia[]): string =>
+  linhas.map((l) => [l.nome, l.distanciaMm, l.referencia, l.evitarSobreposicao ? 'evitar' : '', l.limiteDeSecao ? 'limite' : '', l.mostrarValor ? 'valor' : ''].filter((p) => p !== '').join(' ')).join('\n');
+
+/** Lê as linhas do formulário; lança dizendo a linha que não serve. */
+export function lerLinhasDeReferencia(texto: string): LinhaDeReferencia[] {
+  return texto
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .map((l) => {
+      const [nome, distancia, referencia, ...opcoes] = l.split(/\s+/);
+      const distanciaMm = Number((distancia ?? '').replace(',', '.'));
+      if (!nome || !Number.isFinite(distanciaMm) || distanciaMm < 0 || !['esquerda', 'direita', 'superior', 'inferior'].includes(referencia ?? '')) {
+        throw new Error(`Linha de referência "${l}": use nome, distância em mm e a borda (esquerda, direita, superior ou inferior); depois, se quiser, evitar, limite, valor.`);
+      }
+      return {
+        nome,
+        distanciaMm,
+        referencia: referencia as ReferenciaDaLinha,
+        ...(opcoes.includes('evitar') ? { evitarSobreposicao: true } : {}),
+        ...(opcoes.includes('limite') ? { limiteDeSecao: true } : {}),
+        ...(opcoes.includes('valor') ? { mostrarValor: true } : {}),
+      };
+    });
 }
 
 /** Onde o tecido dobra: ao longo do comprimento, no par e no tubular; nas pontas da mesa, no zigue-zague (ADR 0180). */

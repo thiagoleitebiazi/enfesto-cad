@@ -366,6 +366,8 @@ import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjet
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
+import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
+import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
 import { comEspelhamentoPermitido, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
@@ -428,7 +430,7 @@ import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } f
 import { recadoDaTroca, trocarMaterialNosModelos } from './domain/trocaDeMaterial';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
+import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, segmentoDaLinha, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
 import { estadoDaValidacao, TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -627,6 +629,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'cores-dos-tamanhos' }
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
+  | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'pontos-de-emenda' }
   | { readonly tipo: 'auto-ajuste-de-texto' }
   | { readonly tipo: 'calculadora' }
   | { readonly tipo: 'pique-padrao' }
@@ -3587,7 +3591,7 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
+    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { ...(enfesto?.linhasDeReferencia ? { linhas: enfesto.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfesto)[0], ate: segmentoDaLinha(l, enfesto)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
     [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
@@ -5315,6 +5319,14 @@ export default function App(): React.JSX.Element {
         onAbrirTecido={() => setPainelAberto('tecido')}
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
         onSugerirPosicao={sugerirPosicaoParaSelecionada}
+        onStatusDoEncaixe={() => {
+          if (enfesto) setDialogoDeFerramenta({ tipo: 'status-do-encaixe' });
+          else avisar('Configure o enfesto primeiro.');
+        }}
+        onPontosDeEmenda={() => {
+          if (enfesto) setDialogoDeFerramenta({ tipo: 'pontos-de-emenda' });
+          else avisar('Configure o enfesto primeiro.');
+        }}
         onCompactar={() => {
           if (enfesto && pecas.length > 0) aplicarMudanca([...compactarEncaixe(pecas, enfesto)]);
         }}
@@ -6190,6 +6202,56 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'auto-ajuste-de-texto' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (
+        <PainelDeStatusDoEncaixe
+          status={statusDoEncaixe(pecas, enfesto, tecido?.gramaturaGm2)}
+          camadas={enfesto.quantidadeDeCamadas}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'status-do-encaixe' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'pontos-de-emenda' && enfesto && (
+        <DialogoDeCampos
+          titulo="Pontos de emenda"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'modo',
+              rotulo: 'Modo',
+              opcoes: [
+                { valor: 'metodo-1', rotulo: 'Automático, método 1: entre uma distância mínima e uma máxima, onde o transpasse é menor' },
+                { valor: 'ida', rotulo: 'Automático, método 2: de espaço em espaço, do começo para o fim' },
+                { valor: 'volta', rotulo: 'Automático, método 2: de espaço em espaço, do fim para o começo' },
+                { valor: 'apagar', rotulo: 'Apagar os pontos' },
+              ],
+              inicial: 'metodo-1',
+            },
+            { tipo: 'medida', id: 'minima', rotulo: 'Distância mínima (mm)', inicial: '1000' },
+            { tipo: 'medida', id: 'maxima', rotulo: 'Distância máxima (mm)', inicial: '2000' },
+            { tipo: 'medida', id: 'margem', rotulo: 'Margem em volta das peças (mm)', inicial: '0' },
+            { tipo: 'medida', id: 'espaco', rotulo: 'Método 2: espaço entre os pontos (mm)', inicial: '1500' },
+          ]}
+          nota="Os pontos manuais ficam na janela do Enfesto. O transpasse é quanto o tecido novo volta sobre o anterior, para cobrir as peças que atravessam o ponto."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            try {
+              const comprimento = statusDoEncaixe(pecas, enfesto).comprimentoMm;
+              const modo = String(valores['modo']);
+              const pontos =
+                modo === 'apagar'
+                  ? []
+                  : modo === 'metodo-1'
+                    ? emendasAutomaticas(pecas, comprimento, { minimaMm: valores['minima'] as number, maximaMm: valores['maxima'] as number, margemMm: valores['margem'] as number })
+                    : emendasPorEspaco(pecas, comprimento, valores['espaco'] as number, modo === 'volta' ? 'volta' : 'ida');
+              setEnfesto({ ...enfesto, emendasMm: pontos.map((p) => p.posicaoMm) });
+              avisar(pontos.length === 0 ? 'Sem pontos de emenda.' : pontos.map((p) => `${numeroComVirgula(p.posicaoMm / 10, 1)} cm (transpasse de ${numeroComVirgula(p.transpasseMm / 10, 1)} cm)`).join('; '));
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'pontos-de-emenda' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'retangulo-de-organizacao' && (

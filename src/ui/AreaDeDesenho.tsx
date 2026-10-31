@@ -29,7 +29,7 @@ import {
   somar,
   type Ponto2D,
 } from '../core/geometria';
-import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
+import { areaUtilDaMesa, segmentoDaLinha, type ConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { blocosNaMesa, divisasEntreOsBlocos, nomeDoBloco } from '../domain/gruposDoEncaixe';
 import {
   aplicarZoom,
@@ -897,6 +897,24 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
           ctx.restore();
         }
+      }
+      // As linhas de referência (ADR 0196).
+      for (const l of enfesto.linhasDeReferencia ?? []) {
+        const [de, ate] = segmentoDaLinha(l, enfesto);
+        const a = mundoParaTela(ponto(de.x, de.y), transform);
+        const b = mundoParaTela(ponto(ate.x, ate.y), transform);
+        ctx.strokeStyle = l.limiteDeSecao ? COR_PONTO_NAO_GRADUADO : COR_GRUPO_DO_ENCAIXE;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = COR_GRUPO_DO_ENCAIXE;
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(l.mostrarValor ? `${l.nome} (${l.distanciaMm} mm)` : l.nome, a.x + 3, a.y + 12);
       }
       // Os pontos de emenda (ADR 0188).
       for (const e of enfesto.emendasMm ?? []) {

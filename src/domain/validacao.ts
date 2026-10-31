@@ -1,7 +1,7 @@
 import type { Molde } from './molde';
 import { linhaDeCorteDaPeca, rotacaoEhPermitida } from './molde';
 import { arestaDeSimetria } from './anotacoes';
-import { areaUtilDaMesa, contornoDaZona, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto, dobraDoEnfesto } from './enfesto';
+import { areaUtilDaMesa, contornoDaZona, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto, dobraDoEnfesto, espessurasFisicasPorCamada, segmentoDaLinha } from './enfesto';
 import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
@@ -38,7 +38,9 @@ export type TipoDeProblema =
   | 'mais-largo-que-o-tecido'
   | 'sentido-do-tecido'
   | 'grupos-misturados'
-  | 'peca-na-emenda';
+  | 'peca-na-emenda'
+  | 'peca-na-linha'
+  | 'dobrada-fora-da-dobra';
 
 export type SeveridadeDoProblema = 'erro' | 'aviso';
 
@@ -189,6 +191,7 @@ export function interioresSeSobrepoem(a: Contorno, b: Contorno, funduraMm = FUND
 function validarSobreposicaoEEspacamento(
   pecas: readonly Molde[],
   distanciaMinimaMm: number,
+  emCamadasDiferentes = false,
 ): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [];
   const cortes = pecas.map(linhaDeCorteDaPeca);
@@ -198,6 +201,8 @@ function validarSobreposicaoEEspacamento(
       const b = { ...pecas[j]!, contorno: cortes[j]! };
       // As bordas se tocam ou se cruzam. Só é sobreposição se os interiores têm parte em comum: duas peças borda com
       // borda — as duas partes de um corte, por exemplo — estão encostadas, a 0 mm uma da outra, e não sobrepostas.
+      // Duas peças de ½ camada estão em camadas diferentes do tecido dobrado (ADR 0196).
+      if (emCamadasDiferentes && pecas[i]!.meiaCamada && pecas[j]!.meiaCamada) continue;
       const seTocam = contornosSeSobrepoem(a.contorno, b.contorno);
       if (seTocam && interioresSeSobrepoem(a.contorno, b.contorno)) {
         problemas.push({
@@ -235,6 +240,16 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
     const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
     // A peça de simetria no tecido dobrado encosta na dobra, sem a margem de segurança (ADR 0172).
     const naDobra = arestaDeSimetria(peca) !== null ? dobraDoEnfesto(enfesto.tipo) : null;
+    for (const l of enfesto.linhasDeReferencia ?? []) {
+      if (!l.evitarSobreposicao) continue;
+      const [de, ate] = segmentoDaLinha(l, enfesto);
+      const cruza = de.x === ate.x ? bbox.minX < de.x && bbox.maxX > de.x : bbox.minY < de.y && bbox.maxY > de.y;
+      if (cruza) problemas.push({ tipo: 'peca-na-linha', severidade: 'aviso', mensagem: `Peça "${peca.nome}" atravessa a linha de referência "${l.nome}".`, pecasEnvolvidasIds: [peca.id] });
+    }
+    if (naDobra && !peca.foraDaDobra) {
+      const noCanto = naDobra === 'vertical' ? bbox.minY <= folgaMm : enfesto.dobraInferior ? bbox.maxX >= enfesto.larguraUtilMm - folgaMm : bbox.minX <= folgaMm;
+      if (!noCanto) problemas.push({ tipo: 'dobrada-fora-da-dobra', severidade: 'aviso', mensagem: `Peça "${peca.nome}" é dobrada e está longe da dobra do tecido: sai cortada em duas.`, pecasEnvolvidasIds: [peca.id] });
+    }
     for (const e of enfesto.emendasMm ?? []) {
       if (bbox.minY < e && bbox.maxY > e) {
         problemas.push({ tipo: 'peca-na-emenda', severidade: 'aviso', mensagem: `Peça "${peca.nome}" atravessa a emenda em ${e} mm do comprimento.`, pecasEnvolvidasIds: [peca.id] });
@@ -433,7 +448,7 @@ export function validarProjeto(
 ): ProblemaDeValidacao[] {
   const problemas: ProblemaDeValidacao[] = [
     ...validarContornosIndividuais(pecas),
-    ...validarSobreposicaoEEspacamento(pecas, enfesto?.distanciaMinimaEntrePecasMm ?? 0),
+    ...validarSobreposicaoEEspacamento(pecas, enfesto?.distanciaMinimaEntrePecasMm ?? 0, enfesto !== null && espessurasFisicasPorCamada(enfesto.tipo) === 2),
     ...validarRotacoes(pecas),
     ...validarEscala(pecas, tolerancias),
     ...validarLinhasSoltas(pecas, tolerancias.folgaForaDaPecaMm),

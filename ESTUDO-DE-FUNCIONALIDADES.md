@@ -325,3 +325,6 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Tecido por molde; gerar encaixe para um tecido ou todos; grade por tecido | ✅ ADR 0194 |
 | Manter peças encaixadas; usar somente peças encaixadas; espelhamento; dobra superior ou inferior; tolerância até 10° | ✅ ADR 0195 |
 | Compactar | ✅ ADR 0195 |
+| Linhas de referência; verificar dobrados; ½ camada sobreposta | ✅ ADR 0196 |
+| Pontos de emenda automáticos, métodos 1 e 2 | ✅ ADR 0197 |
+| Status do encaixe; perdas; rendimento | ✅ ADR 0198 |
