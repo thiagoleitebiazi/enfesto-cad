@@ -298,3 +298,5 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Converter primitivas em linhas auxiliares | ✅ já existia em duas etapas: "Extrair molde" e depois "Inserir ou remover" das linhas auxiliares |
 | Tabela completa de teclas (F9, F10, F11, Ctrl+R, G, U, W, T, K, P, L, Ctrl+Shift+T) | ✅ ADR 0183 (Ctrl+A, O, D, E seguem como eram no programa) |
 | Mover com referência | ✅ ADR 0183 |
+| Texto como linha; plotar direto; retângulo de organização | ✅ ADR 0184 (direto = pasta vigiada, não a porta da máquina) |
+| Imprimir: proporção, fatores de escala, em cores, prévia | ✅ ADR 0185 |

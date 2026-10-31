@@ -357,6 +357,8 @@ interface AreaDeDesenhoProps {
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
   /** Arrastar uma das peças selecionadas leva todas: um passo só para desfazer. */
   readonly onMoverPecas?: (ids: readonly string[], deslocamento: Ponto2D) => void;
+  /** A guia da largura do papel (mm), para organizar os moldes (ADR 0184). */
+  readonly retanguloDeOrganizacaoMm?: number | null;
   /** O arrasto das peças só num eixo (F9 e F10, ADR 0183). */
   readonly travaDoEixo?: TravaDoEixo | null;
   /** Alt + clique numa peça: confere o tamanho dela (ADR 0180). */
@@ -470,6 +472,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onMoverPecas,
     onConferirTamanho,
     travaDoEixo = null,
+    retanguloDeOrganizacaoMm = null,
     onAlternarNaSelecao,
     onSelecionarVarias,
     onAbrirPropriedades,
@@ -917,6 +920,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         });
         ctx.restore();
       }
+    }
+
+    if (retanguloDeOrganizacaoMm) {
+      const a = mundoParaTela(ponto(0, 0), transform);
+      const b = mundoParaTela(ponto(retanguloDeOrganizacaoMm, enfesto?.comprimentoMm ?? 3000), transform);
+      ctx.save();
+      ctx.strokeStyle = COR_GRUPO_DO_ENCAIXE;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 6]);
+      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      ctx.restore();
     }
 
     // Grade de pontos em múltiplos redondos de mm (o mesmo passo em que o
@@ -1663,6 +1677,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    retanguloDeOrganizacaoMm,
     estiloDaCostura,
     coresDosTamanhos,
     mostrarNaoGraduados,

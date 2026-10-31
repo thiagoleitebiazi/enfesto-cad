@@ -1,3 +1,4 @@
+import { tracosDoTexto } from './fonteDeTracos';
 import type { Ponto2D } from '../core/geometria';
 import { area, ponto, retanguloEnvolvente } from '../core/geometria';
 import type { Molde } from '../domain/molde';
@@ -51,6 +52,8 @@ export interface OpcoesDoPlt {
   readonly larguraDoPapelMm?: number;
   /** A faixa (1, 2…), contada da borda de baixo do papel. */
   readonly faixa?: number;
+  /** Os textos desenhados em traços, para o plotter sem letreiro (ADR 0184). */
+  readonly textoComoLinha?: boolean;
   /** As linhas que identificam o risco, escritas logo depois da última peça (ADR 0162). */
   readonly cabecalho?: readonly string[];
   /** A caneta de cada elemento (ADR 0174): a aba Ferramentas do manual da referência. Quem não está aqui usa a regra de `canetas`. */
@@ -110,6 +113,18 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     comandos.push(`PD${resto.map((p) => `${u(p.x)},${u(p.y)}`).join(',')}`);
   };
 
+  /** Um texto, a partir de um ponto do papel: no letreiro do plotter ou em traços. */
+  const rotulo = (onde: Ponto2D, texto: string, larguraCm: number, alturaCm: number): void => {
+    if (!opcoes.textoComoLinha) {
+      comandos.push(`PU${u(onde.x)},${u(onde.y)}`, `SI${larguraCm},${alturaCm}`, `LB${textoParaPlotter(texto)}${String.fromCharCode(3)}`);
+      return;
+    }
+    for (const traco of tracosDoTexto(texto, alturaCm * 10)) {
+      const [primeiro, ...resto] = traco.map((p) => ({ x: onde.x + p.x, y: onde.y + p.y }));
+      comandos.push(`PU${u(primeiro!.x)},${u(primeiro!.y)}`, `PD${resto.map((p) => `${u(p.x)},${u(p.y)}`).join(',')}`);
+    }
+  };
+
   let canetaAtual = 1;
   /** Troca de caneta, se pediu duas (com uma, tudo fica na 1); a do elemento, se ele tem uma. */
   const caneta = (n: 1 | 2, elemento?: ElementoDoPlotter): void => {
@@ -131,7 +146,7 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     for (const divisa of divisasEntreOsBlocos(blocos)) linha([ponto(0, divisa), ponto(largura, divisa)], false);
     for (const bloco of blocos) {
       const onde = noPapel(ponto(-8, bloco.inicioMm));
-      comandos.push(`PU${u(onde.x)},${u(onde.y)}`, 'SI0.35,0.5', `LB${textoParaPlotter(nomeDoBloco(bloco))}${String.fromCharCode(3)}`);
+      rotulo(onde, nomeDoBloco(bloco), 0.35, 0.5);
     }
   }
   for (const peca of pecas) {
@@ -154,12 +169,12 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     caneta(2, 'textos');
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
-    comandos.push(`PU${u(inicio.x)},${u(inicio.y)}`, 'SI0.35,0.5', `LB${textoParaPlotter(`${peca.nome} ${peca.tamanho}`.trim())}${String.fromCharCode(3)}`);
+    rotulo(inicio, `${peca.nome} ${peca.tamanho}`.trim(), 0.35, 0.5);
   }
   for (const t of opcoes.textos ?? []) {
     caneta(2);
     const onde = noPapel(ponto(t.x, t.y));
-    comandos.push(`PU${u(onde.x)},${u(onde.y)}`, 'SI0.25,0.35', `LB${textoParaPlotter(t.texto)}${String.fromCharCode(3)}`);
+    rotulo(onde, t.texto, 0.25, 0.35);
   }
   if ((opcoes.cabecalho ?? []).length > 0 && pecas.length > 0) {
     caneta(2);
@@ -167,7 +182,7 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     const fim = retanguloEnvolvente(pecas.flatMap((p) => linhaDeCorteDaPeca(p))).maxY;
     opcoes.cabecalho!.forEach((texto, i) => {
       const onde = noPapel(ponto(10 + i * 8, fim + 20));
-      comandos.push(`PU${u(onde.x)},${u(onde.y)}`, 'SI0.25,0.35', `LB${textoParaPlotter(texto)}${String.fromCharCode(3)}`);
+      rotulo(onde, texto, 0.25, 0.35);
     });
   }
   comandos.push('PU0,0', 'SP0');

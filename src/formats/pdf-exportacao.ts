@@ -53,6 +53,8 @@ export interface OpcoesDePagina {
   readonly formato: FormatoDePagina;
   readonly orientacao: OrientacaoDePagina;
   readonly margemMm: number;
+  /** "Em cores" (ADR 0185): ligado, a peça sai com a cor dela; `false`, tudo em preto e branco. Ausente, como sempre saiu. */
+  readonly emCores?: boolean;
 }
 
 const TAMANHOS_DE_PAGINA_MM: Record<FormatoDePagina, { largura: number; altura: number }> = {
@@ -108,14 +110,28 @@ export function areaImprimivelMm(opcoes: OpcoesDePagina): { largura: number; alt
   return { largura: pagina.largura - 2 * opcoes.margemMm, altura: pagina.altura - 2 * opcoes.margemMm };
 }
 
+const FUNDO_DA_PECA = '#f4f5f7';
+
+/** Sem cores: os traços e os textos em preto, o fundo das peças em branco. Vale para tudo o que se desenhar depois. */
+function emPretoEBranco(doc: PDFKit.PDFDocument): void {
+  const preenchimento = doc.fillColor.bind(doc);
+  const traco = doc.strokeColor.bind(doc);
+  doc.fillColor = ((cor: string) => preenchimento(cor === FUNDO_DA_PECA ? '#ffffff' : '#000000')) as typeof doc.fillColor;
+  doc.strokeColor = (() => traco('#000000')) as typeof doc.strokeColor;
+}
+
 function novoDocumento(opcoes: OpcoesDePagina): PDFKit.PDFDocument {
   const pagina = dimensoesDaPaginaMm(opcoes);
-  return new PDFDocument({
+  const doc = new PDFDocument({
     size: [mmParaPontos(pagina.largura), mmParaPontos(pagina.altura)],
     margin: 0,
     compress: false,
   });
+  if (opcoes.emCores === false) emPretoEBranco(doc);
+  return doc;
 }
+
+const fundoDaPeca = (peca: Molde, opcoes: OpcoesDePagina): string => (opcoes.emCores && peca.cor ? peca.cor : FUNDO_DA_PECA);
 
 async function finalizarComoBlob(doc: PDFKit.PDFDocument): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -189,14 +205,14 @@ function escreverCentrado(doc: PDFKit.PDFDocument, texto: string, centro: Ponto2
  * Desenha a peça na página, com `origem` no canto dela. Com `comRegistro`, escreve também o registro da peça —
  * ela inteira, num comentário do PDF, que não aparece na folha: é por ele que a importação a traz de volta como era.
  */
-function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, comRegistro = false): void {
+function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, comRegistro = false, fundo = FUNDO_DA_PECA): void {
   doc.lineWidth(mmParaPontos(0.25));
 
   doc.save();
   tracarContorno(doc, peca.contorno, origem);
   for (const furo of peca.furos) tracarContorno(doc, furo, origem);
-  doc.fillColor('#f4f5f7').fillOpacity(1);
-  doc.fillAndStroke('#f4f5f7', '#000000');
+  doc.fillColor(fundo).fillOpacity(1);
+  doc.fillAndStroke(fundo, '#000000');
   doc.restore();
 
   for (const furo of peca.furos) {
@@ -378,7 +394,7 @@ export async function gerarPdfDeEncaixe(
         const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
         const cai =
           caixa.maxY >= origem.y && caixa.minY <= origem.y + larguraImprimivel && caixa.maxX >= origem.x && caixa.minX <= origem.x + alturaImprimivel;
-        if (cai) desenharPeca(doc, peca, origem);
+        if (cai) desenharPeca(doc, peca, origem, false, fundoDaPeca(peca, opcoes));
       }
 
       // Os grupos do encaixe (ADR 0103): a divisa tracejada atravessando a mesa e o nome no começo de cada trecho.

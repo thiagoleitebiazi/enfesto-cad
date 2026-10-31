@@ -134,6 +134,12 @@ interface BarraDeFerramentasProps {
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly onEstiloDaCostura?: (estilo: EstiloDaCostura) => void;
   readonly onCoresDosTamanhos?: () => void;
+  /** O texto como linha, a pasta do plotter e o retângulo de organização (ADR 0184). */
+  readonly textoComoLinha?: boolean;
+  readonly onAlternarTextoComoLinha?: () => void;
+  readonly onEnviarAoPlotter?: () => void;
+  readonly onEscolherPastaDoPlotter?: () => void;
+  readonly onRetanguloDeOrganizacao?: () => void;
   readonly lembrarOriginal?: boolean;
   readonly onLembrarOriginal?: () => void;
   readonly onOrganizarMoldes?: () => void;
@@ -549,6 +555,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onZoomDeUmElemento
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
+                          { tipo: 'acao' as const, rotulo: 'Retângulo de organização…', titulo: 'A guia da largura do papel, para arrumar os moldes antes de plotar', onEscolher: props.onRetanguloDeOrganizacao ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Pontos não graduados', marcado: props.mostrarNaoGraduados === true, titulo: 'Marca, na peça selecionada, os cantos que não têm regra de graduação', onEscolher: props.onAlternarNaoGraduados ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Cores dos tamanhos…', titulo: 'A cor de cada tamanho na área de trabalho', onEscolher: props.onCoresDosTamanhos ?? (() => undefined) },
                         ]
@@ -610,6 +617,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               ...(props.onFerramentasDoPlotter
                 ? [
                     { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    ...(props.onEnviarAoPlotter
+                      ? [
+                          { tipo: 'opcao' as const, rotulo: 'Texto como linha no plotter', marcado: props.textoComoLinha === true, titulo: 'Os textos saem desenhados em traços, para o plotter que não tem letreiro próprio', onEscolher: props.onAlternarTextoComoLinha ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Enviar ao plotter (pasta)', titulo: 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
+                          { tipo: 'acao' as const, rotulo: 'Escolher a pasta do plotter…', onEscolher: props.onEscolherPastaDoPlotter ?? (() => undefined) },
+                        ]
+                      : []),
                     ...(props.onPiquePadrao ? [{ tipo: 'acao' as const, rotulo: 'Pique padrão…', titulo: 'A largura, a altura e o ângulo com que os piques novos começam', onEscolher: props.onPiquePadrao }] : []),
                     ...(props.onEstiloDaCostura
                       ? (Object.keys(ROTULO_DO_ESTILO_DA_COSTURA) as EstiloDaCostura[]).map((e) => ({ tipo: 'opcao' as const, rotulo: ROTULO_DO_ESTILO_DA_COSTURA[e], marcado: (props.estiloDaCostura ?? 'tracejada') === e, onEscolher: () => props.onEstiloDaCostura?.(e) }))

@@ -358,13 +358,14 @@ import { importarPdf, moldeDaPecaImportada } from './formats/pdf-importacao';
 import { diagnosticarVetorPdf, descreverDiagnosticoVetorial } from './formats/pdf-diagnostico-vetorial';
 import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pecas-vetoriais';
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
-import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
+import { areaImprimivelMm, comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { cabecalhoDoRisco, gerarPlt, ROTULO_DO_ELEMENTO, type ElementoDoPlotter, type OpcoesDoPlt } from './formats/plt-exportacao';
 import { pecasDoPlt } from './formats/plt-importacao';
 import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
+import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
 import { modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
@@ -587,6 +588,13 @@ function ehFerramentaDeTrecho(modo: ModoDeDesenho): modo is FerramentaDeTrecho {
 }
 
 /** Diálogo aberto por uma ferramenta de desenho, com o que ele precisa para aplicar. */
+/** O tamanho do que vai ser impresso: a mesa até a última peça, ou a maior peça, nos moldes individuais. */
+function tamanhoDoDesenho(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto | null): { readonly larguraMm: number; readonly comprimentoMm: number } {
+  if (enfesto) return { larguraMm: enfesto.larguraUtilMm, comprimentoMm: comprimentoDoEncaixeAImprimirMm(pecas, enfesto) };
+  const caixas = pecas.map((p) => retanguloEnvolvente(linhaDeCorteDaPeca(p)));
+  return { larguraMm: Math.max(1, ...caixas.map((c) => c.maxX - c.minX)), comprimentoMm: Math.max(1, ...caixas.map((c) => c.maxY - c.minY)) };
+}
+
 type DialogoDeFerramenta =
   | { readonly tipo: 'numero-de-pontos'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
   | { readonly tipo: 'cadastrar-curva'; readonly inicio: PosicaoNoContorno; readonly fim: PosicaoNoContorno }
@@ -606,6 +614,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'sob-medida' }
   | { readonly tipo: 'cores-dos-tamanhos' }
   | { readonly tipo: 'mover-com-referencia' }
+  | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'pique-padrao' }
   | { readonly tipo: 'tamanho-intermediario' }
   | { readonly tipo: 'exportar-projeto' }
@@ -681,6 +690,14 @@ export default function App(): React.JSX.Element {
   const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
   const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
+  const [retanguloDeOrganizacaoMm, setRetanguloDeOrganizacaoMm] = useState<number | null>(null);
+  const [textoComoLinha, setTextoComoLinha] = useState(() => {
+    try {
+      return window.localStorage.getItem('enfesto-cad:texto-como-linha') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [mostrarNaoGraduados, setMostrarNaoGraduados] = useState(false);
   const [estiloDaCostura, setEstiloDaCostura] = useState<EstiloDaCostura>(() => {
     try {
@@ -3450,14 +3467,17 @@ export default function App(): React.JSX.Element {
           formato: opcoesEscolhidas.formato,
           orientacao: opcoesEscolhidas.orientacao,
           margemMm: opcoesEscolhidas.margemMm,
+          ...(opcoesEscolhidas.emCores !== undefined ? { emCores: opcoesEscolhidas.emCores } : {}),
         };
-        const blob =
-          opcoesEscolhidas.tipo === 'encaixe-completo' && enfesto
-            ? await gerarPdfDeEncaixe(pecas, enfesto, {
-                ...opcoesDePagina,
-                ...(tecido?.nome !== undefined ? { tecidoNome: tecido.nome } : {}),
-              })
-            : await gerarPdfDeMoldesIndividuais(pecas, opcoesDePagina);
+        const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfesto ? enfesto : null;
+        const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(pecas, noEncaixe), areaImprimivelMm(opcoesDePagina));
+        const naEscala = pecasNaEscala(pecas, fatores);
+        const blob = noEncaixe
+          ? await gerarPdfDeEncaixe(naEscala, { ...noEncaixe, larguraUtilMm: noEncaixe.larguraUtilMm * fatores.vertical, comprimentoMm: noEncaixe.comprimentoMm * fatores.horizontal }, {
+              ...opcoesDePagina,
+              ...(tecido?.nome !== undefined ? { tecidoNome: tecido.nome } : {}),
+            })
+          : await gerarPdfDeMoldesIndividuais(naEscala, opcoesDePagina);
         const buffer = await blob.arrayBuffer();
         const sugestaoDeNome =
           opcoesEscolhidas.tipo === 'encaixe-completo' ? 'encaixe.pdf' : 'moldes.pdf';
@@ -3492,6 +3512,11 @@ export default function App(): React.JSX.Element {
   }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
+  const textoDoPlt = useCallback(
+    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
+    [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo],
+  );
+
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}) => {
     const api = window.enfestoCad;
     if (!api) {
@@ -3499,13 +3524,27 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
+      const bytes = new TextEncoder().encode(textoDoPlt(partes));
       const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter, ferramentasDoPlotter, projetoAtual.nome, projetoAtual.codigo]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt]);
+
+  /** "Plotar direto" (ADR 0184): grava o risco na pasta que o programa do plotter vigia. */
+  const enviarAoPlotter = useCallback(async () => {
+    const pasta = acessoAPasta('plotter');
+    if (!pasta) return;
+    try {
+      if (!(await pasta.onde()) && !(await pasta.escolher())) return;
+      const nome = `${projetoAtual.codigo || 'risco'}-${Date.now()}.plt`.replace(/[^\w.-]+/g, '_');
+      await pasta.gravar('para-plotar', nome, textoDoPlt());
+      avisar(`Risco enviado à pasta do plotter: ${nome}.`);
+    } catch (e) {
+      avisar(`Falha ao enviar ao plotter: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [projetoAtual.codigo, textoDoPlt, avisar]);
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
@@ -4403,11 +4442,11 @@ export default function App(): React.JSX.Element {
   const plotarMoldes = useCallback(
     async (opcoes: Parameters<typeof moldesParaPlotar>[1]) => {
       const lista = moldesParaPlotar(pecas, opcoes, proximoId);
-      const plt = gerarPlt(lista, { canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
+      const plt = gerarPlt(lista, { textoComoLinha, canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
       const caminho = await salvarTexto('moldes.plt', plt);
       if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Moldes (PLT) salvos em ${caminho}: ${lista.length} peça(s)`);
     },
-    [pecas, tecido, enfesto, canetasDoPlotter, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
+    [pecas, tecido, enfesto, canetasDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
   );
 
   // O projeto num arquivo (ADR 0156): sai como está agora; entra na biblioteca e abre, sem trocar o que há nela.
@@ -5248,7 +5287,19 @@ export default function App(): React.JSX.Element {
         }}
         lembrarOriginal={lembrarOriginal}
         onLembrarOriginal={() => setLembrarOriginal((v) => !v)}
-        onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, enfesto?.larguraUtilMm ?? 1500))}
+        onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, retanguloDeOrganizacaoMm ?? enfesto?.larguraUtilMm ?? 1500))}
+        textoComoLinha={textoComoLinha}
+        onAlternarTextoComoLinha={() => {
+          setTextoComoLinha(!textoComoLinha);
+          try {
+            window.localStorage.setItem('enfesto-cad:texto-como-linha', textoComoLinha ? '0' : '1');
+          } catch {
+            // Sem o armazenamento do navegador, vale até fechar.
+          }
+        }}
+        onEnviarAoPlotter={() => void enviarAoPlotter()}
+        onEscolherPastaDoPlotter={() => void acessoAPasta('plotter')?.escolher()}
+        onRetanguloDeOrganizacao={() => setDialogoDeFerramenta({ tipo: 'retangulo-de-organizacao' })}
         onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
         onImportarPlt={importarPltHandler}
         onExportarProjeto={() => setDialogoDeFerramenta({ tipo: 'exportar-projeto' })}
@@ -5376,6 +5427,8 @@ export default function App(): React.JSX.Element {
         <PainelDeExportacaoPdf
           podeExportarEncaixeCompleto={enfesto !== null}
           gerando={gerandoPdf}
+          pecas={pecas}
+          desenho={tamanhoDoDesenho(pecas, enfesto)}
           onExportar={(opcoes) => void exportarPdf(opcoes)}
           onFechar={() => setMostrarExportacaoPdf(false)}
         />
@@ -5964,6 +6017,21 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'mover-com-referencia' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'retangulo-de-organizacao' && (
+        <DialogoDeCampos
+          titulo="Retângulo de organização"
+          campos={[{ tipo: 'medida', id: 'papel', rotulo: 'Largura do papel (cm)', inicial: retanguloDeOrganizacaoMm === null ? '' : String((retanguloDeOrganizacaoMm + 10) / 10).replace('.', ','), opcional: true }]}
+          nota="Uma guia tracejada, 1 cm mais estreita que o papel, para pôr os moldes dentro antes de plotar. “Organizar os moldes” passa a usar essa largura. Em branco, tira a guia."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const papel = valores['papel'] as number | undefined;
+            if (papel !== undefined && papel <= 1) return 'O papel precisa ter mais de 1 cm.';
+            setRetanguloDeOrganizacaoMm(papel === undefined ? null : papel * 10 - 10);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'retangulo-de-organizacao' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'cores-dos-tamanhos' && (
@@ -7214,6 +7282,7 @@ export default function App(): React.JSX.Element {
             onMoverPecas={moverPecas}
             onConferirTamanho={conferirTamanho}
             travaDoEixo={travaDoEixo}
+            retanguloDeOrganizacaoMm={retanguloDeOrganizacaoMm}
             onAlternarNaSelecao={alternarPecaNaSelecao}
             onSelecionarVarias={selecionarPecasPeloRetangulo}
             onAbrirPropriedades={abrirPropriedadesDaPeca}
