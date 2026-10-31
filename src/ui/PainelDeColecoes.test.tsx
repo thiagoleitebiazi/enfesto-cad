@@ -20,7 +20,7 @@ function comUmaColecao(): ArquivoDeColecoes {
 }
 
 let n = 0;
-function abrir(inicial: ArquivoDeColecoes, opcoes: { readonly parte?: ParteDaColecao; readonly comProjeto?: boolean } = {}) {
+function abrir(inicial: ArquivoDeColecoes, opcoes: { readonly parte?: ParteDaColecao; readonly comProjeto?: boolean; readonly onVestirLook?: (nome: string, ids: readonly string[]) => string | null } = {}) {
   const onAbrirProjeto = vi.fn();
   const onSalvarTexto = vi.fn(async () => 'C:/x/arquivo.csv');
   let projeto = criarProjeto('Camiseta (projeto)', 'p1', 'ENF-1', AGORA, { pecas: [], tecido: null, enfesto: null });
@@ -45,6 +45,7 @@ function abrir(inicial: ArquivoDeColecoes, opcoes: { readonly parte?: ParteDaCol
         }}
         onAbrirProjeto={onAbrirProjeto}
         onSalvarTexto={onSalvarTexto}
+        {...(opcoes.onVestirLook ? { onVestirLook: opcoes.onVestirLook } : {})}
         onFechar={() => {}}
       />
     );
@@ -278,5 +279,24 @@ describe('PainelDeColecoes — os looks (ADR 0145)', () => {
     expect(html).toContain('<svg');
     fireEvent.click(within(look).getByRole('button', { name: 'Tirar o look' }));
     await waitFor(() => expect(screen.queryByRole('article', { name: 'Look Básico' })).toBeNull());
+  });
+});
+
+describe('PainelDeColecoes — vestir o look (ADR 0155)', () => {
+  it('com dois projetos, chama o provador; o que impede aparece; com um só, o botão fica apagado', async () => {
+    let arquivo = comUmaColecao();
+    let c = arquivo.colecoes[0]!;
+    c = salvarModelo(c, { ...c.modelos.find((m) => m.id === 'm1')!, projetoId: 'p1' });
+    arquivo = salvarColecao(arquivo, { ...c, looks: [{ id: 'l1', nome: 'Básico', modeloIds: ['m1', 'm2'], nota: '' }] });
+    const onVestirLook = vi.fn(() => 'Monte antes no provador 3D: Bermuda.');
+    abrir(arquivo, { parte: 'looks', onVestirLook });
+    expect(screen.getByRole('button', { name: 'Vestir no manequim' })).toBeDisabled();
+    cleanup();
+    c = salvarModelo(c, { ...c.modelos.find((m) => m.id === 'm2')!, projetoId: 'p2' });
+    arquivo = salvarColecao(arquivo, { ...c, looks: [{ id: 'l1', nome: 'Básico', modeloIds: ['m1', 'm2'], nota: '' }] });
+    abrir(arquivo, { parte: 'looks', onVestirLook });
+    fireEvent.click(screen.getByRole('button', { name: 'Vestir no manequim' }));
+    expect(onVestirLook).toHaveBeenCalledWith('Básico', ['p1', 'p2']);
+    expect(await screen.findByText('Monte antes no provador 3D: Bermuda.')).toBeInTheDocument();
   });
 });

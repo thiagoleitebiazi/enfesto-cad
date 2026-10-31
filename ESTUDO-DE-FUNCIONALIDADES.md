@@ -240,3 +240,4 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | As variantes de cor no provador 3D, com a cartela | ✅ ADR 0152 |
 | Botões do cursor configuráveis; compensação da lâmina no ISO | ✅ ADR 0153 (não testado em equipamento) |
 | A troca com o ERP para todos os moldes da biblioteca | ✅ ADR 0154 |
+| O look vestido no manequim 3D | ✅ ADR 0155 (um tecido só; sem peça por dentro e por fora) |

@@ -396,6 +396,7 @@ import { PainelDaFilaDeEncaixes } from './ui/PainelDaFilaDeEncaixes';
 import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
 import { useFilaNaRede } from './ui/useFilaNaRede';
+import { montagemDoLook } from './domain/lookNoManequim';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { encaixeComOMoldeDeAgora, type EncaixeComOMoldeDeAgora } from './domain/encaixeAtualizado';
 import { aprovarComoBase, basesAprovadas, modeloDaBase, pecasDaBase, tirarDasBases } from './domain/basesAprovadas';
@@ -1291,6 +1292,32 @@ export default function App(): React.JSX.Element {
       return null;
     },
     [projetoAtual, pecas, tecido, enfesto, mostrarProjeto, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  // O look vestido no manequim (ADR 0155): o provador com as peças dos modelos juntas; nada volta para os projetos.
+  const [lookNoProvador, setLookNoProvador] = useState<{
+    readonly nome: string;
+    readonly primeiro: Projeto;
+    readonly imagens: ReturnType<typeof imagensDoProjeto>;
+    readonly pecas: readonly Molde[];
+    readonly montagem: Montagem3D;
+  } | null>(null);
+  const vestirLook = useCallback(
+    (nome: string, projetoIds: readonly string[]): string | null => {
+      const lista = projetoIds.flatMap((id) => {
+        const p = id === projetoAtual.id ? projetoAtual : projetos.find((x) => x.id === id);
+        return p ? [p] : [];
+      });
+      try {
+        const look = montagemDoLook(lista.map((p) => ({ nome: p.nome, pecas: p.estadoAtual.pecas, montagem: lerMontagem3d(p.montagem3d) })));
+        setLookNoProvador({ nome, primeiro: lista[0]!, imagens: lista.flatMap((p) => imagensDoProjeto(p)), pecas: look.pecas, montagem: look.montagem });
+        setColecoesAbertas(null);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [projetoAtual, projetos],
   );
 
   // Variantes (aba Modelo): cópias do projeto aberto, guardadas na Biblioteca.
@@ -5137,6 +5164,20 @@ export default function App(): React.JSX.Element {
           onFechar={() => setInspiracaoAberta(null)}
         />
       )}
+      {lookNoProvador && (
+        <PainelDoProvador3D
+          pecas={lookNoProvador.pecas}
+          montagemGuardada={lookNoProvador.montagem}
+          ficha={lerFichaTecnica(lookNoProvador.primeiro.fichaTecnica)}
+          regrasDeCaimento={lerRegrasDeCaimento(lookNoProvador.primeiro.regrasDeCaimento)}
+          imagens={lookNoProvador.imagens}
+          nomeDoModelo={`Look ${lookNoProvador.nome}`}
+          onGuardar={() => {}}
+          onSalvarArquivo={salvarArquivoDoProvador}
+          novoId={() => `costura-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`}
+          onFechar={() => setLookNoProvador(null)}
+        />
+      )}
       {mostrarProvador3D && (
         <PainelDoProvador3D
           pecas={pecas}
@@ -5183,6 +5224,7 @@ export default function App(): React.JSX.Element {
       )}
       {colecoesAbertas && (
         <PainelDeColecoes
+          onVestirLook={vestirLook}
           arquivo={colecoes.arquivo}
           avisos={colecoes.avisos}
           somenteLeitura={colecoes.somenteLeitura}

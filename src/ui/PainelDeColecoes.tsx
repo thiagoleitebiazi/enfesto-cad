@@ -73,6 +73,8 @@ export function PainelDeColecoes(props: {
   readonly onMudar: (novo: ArquivoDeColecoes) => Promise<string | null>;
   readonly onAbrirProjeto: (projetoId: string) => void;
   readonly onSalvarTexto: (sugestaoDeNome: string, conteudo: string) => Promise<string | null>;
+  /** Veste o look no manequim (ADR 0155); devolve o que impediu. */
+  readonly onVestirLook?: (nome: string, projetoIds: readonly string[]) => string | null;
   readonly onFechar: () => void;
 }): React.JSX.Element {
   const { arquivo } = props;
@@ -274,6 +276,7 @@ export function PainelDeColecoes(props: {
                   novoId={props.novoId}
                   onMudar={mudarColecao}
                   onSalvarTexto={(nome, conteudo) => props.onSalvarTexto(nome, conteudo).then((c) => c && setMensagem(`Salvo em ${c}.`))}
+                  {...(props.onVestirLook ? { onVestir: (nome: string, ids: readonly string[]) => setMensagem(props.onVestirLook!(nome, ids)) } : {})}
                 />
               )}
               {parte === 'etapas' && (
@@ -444,6 +447,7 @@ function ParteLooks(props: {
   readonly novoId: () => string;
   readonly onMudar: (fazer: (c: Colecao) => Colecao, sucesso: string | null) => Promise<boolean>;
   readonly onSalvarTexto: (nome: string, conteudo: string) => Promise<unknown>;
+  readonly onVestir?: (nome: string, projetoIds: readonly string[]) => void;
 }): React.JSX.Element {
   const { colecao } = props;
   const looks = looksDaColecao(colecao);
@@ -472,6 +476,7 @@ function ParteLooks(props: {
       {looks.map((l) => {
         const modelos = l.modeloIds.map((id) => colecao.modelos.find((m) => m.id === id)!);
         const comum = coresEmComum(modelos);
+        const projetoIds = [...new Set(modelos.flatMap((m) => (m.projetoId ? [m.projetoId] : [])))];
         return (
           <article key={l.id} className="look-da-colecao" aria-label={`Look ${l.nome}`}>
             <header>
@@ -495,6 +500,11 @@ function ParteLooks(props: {
                 >
                   Salvar a prancha (HTML)
                 </button>
+                {props.onVestir && (
+                  <button type="button" disabled={projetoIds.length < 2} title={projetoIds.length < 2 ? 'Ligue um projeto a ao menos dois modelos do look.' : undefined} onClick={() => props.onVestir!(l.nome, projetoIds)}>
+                    Vestir no manequim
+                  </button>
+                )}
                 <button type="button" disabled={props.travado} onClick={() => void props.onMudar((c) => tirarLook(c, l.id), `Look “${l.nome}” tirado.`)}>
                   Tirar o look
                 </button>
