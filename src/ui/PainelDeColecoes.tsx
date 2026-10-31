@@ -47,7 +47,7 @@ import {
   type PendenciaDePrazo,
 } from '../domain/colecoes';
 import { numeroComVirgula } from '../core/numeros';
-import { coresEmComum, guardarLook, htmlDaPrancha, looksDaColecao, MAXIMO_DE_MODELOS_NO_LOOK, tirarLook } from '../domain/looks';
+import { coresEmComum, guardarLook, htmlDaPrancha, htmlDoCatalogo, looksDaColecao, MAXIMO_DE_MODELOS_NO_LOOK, tirarLook } from '../domain/looks';
 
 export type ParteDaColecao = 'mix' | 'looks' | 'etapas' | 'tarefas' | 'andamento';
 
@@ -472,6 +472,20 @@ function ParteLooks(props: {
         Combinações de 2 a {MAXIMO_DE_MODELOS_NO_LOOK} modelos desta coleção que vão juntos, vistas lado a lado pelos croquis, com as cores que eles têm em comum. A
         prancha de cada look sai em HTML, para mandar a quem aprova.
       </p>
+      <button
+        type="button"
+        title="Catálogo: todos os modelos da coleção numa página HTML"
+        onClick={(e) => {
+          const secao = e.currentTarget.closest('.looks-da-colecao');
+          const html = htmlDoCatalogo(
+            colecao.nome,
+            colecao.modelos.map((m) => ({ nome: m.nome, referencia: m.referencia, categoria: m.categoria, cores: m.cores, tecido: m.tecido, croquiSvg: secao?.querySelector(`[data-modelo="${m.id}"] svg`)?.outerHTML ?? null })),
+          );
+          void props.onSalvarTexto(`catalogo-${colecao.nome.replace(/[^A-Za-z0-9]+/g, '-')}.html`, html);
+        }}
+      >
+        Salvar o catálogo (HTML)
+      </button>
       {looks.length === 0 && <p className="nota-do-formulario">Nenhum look ainda: escolha os modelos abaixo.</p>}
       {looks.map((l) => {
         const modelos = l.modeloIds.map((id) => colecao.modelos.find((m) => m.id === id)!);

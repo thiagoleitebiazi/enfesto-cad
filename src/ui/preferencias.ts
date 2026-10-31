@@ -123,6 +123,44 @@ export function corDaCaneta(numero: number): string {
   return CORES_DAS_CANETAS[Math.min(8, Math.max(1, Math.round(numero))) - 1]!;
 }
 
+// ---- As cores da área de trabalho (ADR 0203).
+
+export interface CoresDaArea {
+  readonly mesa: string;
+  readonly margem: string;
+  readonly contorno: string;
+  readonly selecao: string;
+}
+
+export const CORES_DA_AREA_PADRAO: CoresDaArea = { mesa: '#ffffff', margem: '#eef0f3', contorno: '#2b2f36', selecao: '#1565c0' };
+
+export type EsquemaDaArea = 'padrao' | 'user1' | 'user2' | 'user3';
+
+export interface EsquemasDaArea {
+  readonly esquema: EsquemaDaArea;
+  readonly user1: CoresDaArea;
+  readonly user2: CoresDaArea;
+  readonly user3: CoresDaArea;
+}
+
+const CHAVE_DAS_CORES_DA_AREA = `${PREFIXO}cores-da-area`;
+
+export function coresDaAreaGuardadas(a: Pick<Armazenamento, 'getItem'>): EsquemasDaArea {
+  const padrao: EsquemasDaArea = { esquema: 'padrao', user1: CORES_DA_AREA_PADRAO, user2: CORES_DA_AREA_PADRAO, user3: CORES_DA_AREA_PADRAO };
+  try {
+    return { ...padrao, ...(JSON.parse(a.getItem(CHAVE_DAS_CORES_DA_AREA) ?? '{}') as Partial<EsquemasDaArea>) };
+  } catch {
+    return padrao;
+  }
+}
+
+export function guardarCoresDaArea(a: Pick<Armazenamento, 'setItem'>, esquemas: EsquemasDaArea): void {
+  a.setItem(CHAVE_DAS_CORES_DA_AREA, JSON.stringify(esquemas));
+}
+
+/** As cores do esquema escolhido; no padrão, nenhuma: vale o que o desenho já usa. */
+export const corDaAreaNoEsquema = (e: EsquemasDaArea): CoresDaArea | null => (e.esquema === 'padrao' ? null : e[e.esquema]);
+
 // ---- O auto ajuste de texto no plotter (ADR 0192).
 
 const CHAVE_DO_AJUSTE = `${PREFIXO}ajuste-de-texto`;

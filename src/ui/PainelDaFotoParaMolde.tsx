@@ -11,6 +11,7 @@ import {
   limiarDeOtsu,
   medidasDoContorno,
   reconhecerMolde,
+  reconhecerTodosOsMoldes,
   retificar,
   tonsDeCinza,
   type ImagemDePixels,
@@ -53,6 +54,8 @@ export function PainelDaFotoParaMolde(props: {
   readonly onTrazerFoto: () => void;
   /** Cria a peça com o molde reconhecido (em mm, nas coordenadas da foto corrigida); devolve o erro, ou `null`. */
   readonly onCriarPeca: (dados: { readonly nome: string; readonly tamanho: string; readonly quantidade: number; readonly molde: MoldeReconhecido }) => string | null;
+  /** Cria uma peça para cada molde reconhecido na foto, de uma vez (ADR 0203). */
+  readonly onCriarVarias?: (moldes: readonly MoldeReconhecido[], tamanho: string, quantidade: number) => string | null;
   readonly lerPixels: (dados: string) => Promise<ImagemDePixels>;
   readonly paraDataUrl: (imagem: ImagemDePixels) => string;
   readonly onFechar: () => void;
@@ -511,6 +514,24 @@ export function PainelDaFotoParaMolde(props: {
                     >
                       Criar a peça
                     </button>
+                    {props.onCriarVarias && plana && (
+                      <button
+                        type="button"
+                        title="Captura em lote: acha todos os moldes da foto e cria uma peça para cada um"
+                        onClick={() => {
+                          const todos = reconhecerTodosOsMoldes(plana.pixels, { mmPorPx: plana.mmPorPx, limiar, moldeEscuro, toleranciaMm, procurarFuros, procurarPiques, sugerirFio, procurarLinhas });
+                          if (todos.length === 0) {
+                            setErro('Nenhum molde inteiro na foto.');
+                            return;
+                          }
+                          const problema = props.onCriarVarias?.(todos.map((m) => escalarReconhecido(m, fator)), tamanho.trim(), Math.max(1, Math.round(Number(quantidade)) || 1));
+                          if (problema) setErro(problema);
+                          else props.onFechar();
+                        }}
+                      >
+                        Criar todos da foto
+                      </button>
+                    )}
                   </>
                 )}
               </>

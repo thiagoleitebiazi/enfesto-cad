@@ -171,6 +171,83 @@ export function retalhosEmEstoque(cadastro: CadastroDeProducao): RetalhoEmEstoqu
     .sort((a, b) => (b.saldoMm ?? -1) - (a.saldoMm ?? -1));
 }
 
+export interface LinhaDoRastreio {
+  readonly rolo: string;
+  readonly lote: string;
+  readonly malha: string;
+  readonly movimento: string;
+  readonly comprimentoMm: number;
+  readonly dataIso: string;
+  readonly responsavel: string;
+  readonly ordem: string;
+  readonly projeto: string;
+}
+
+/**
+ * A rastreabilidade do material (ADR 0203): cada movimento do estoque com o rolo, o lote, a ordem, o projeto e quem
+ * fez, do mais novo ao mais velho. A busca acha por rolo, lote, malha, ordem ou projeto.
+ */
+export function rastreioDosMateriais(cadastro: CadastroDeProducao, nomeDoProjeto: (projetoId: string) => string, busca = ''): LinhaDoRastreio[] {
+  const termo = busca.trim().toLocaleLowerCase('pt-BR');
+  return cadastro.movimentos
+    .map((m) => {
+      const rolo = cadastro.rolos.find((r) => r.id === m.roloId);
+      return {
+        rolo: rolo?.identificacao ?? '(rolo fora do cadastro)',
+        lote: rolo?.lote ?? '',
+        malha: cadastro.malhas.find((x) => x.id === rolo?.malhaId)?.descricao ?? '',
+        movimento: m.tipo as string,
+        comprimentoMm: m.comprimentoMm,
+        dataIso: m.dataIso,
+        responsavel: m.responsavel,
+        ordem: cadastro.execucoes.find((e) => e.planoId === m.planoId)?.ordem ?? '',
+        projeto: nomeDoProjeto(m.projetoId),
+      };
+    })
+    .filter((l) => termo === '' || [l.rolo, l.lote, l.malha, l.ordem, l.projeto].some((t) => t.toLocaleLowerCase('pt-BR').includes(termo)))
+    .sort((a, b) => b.dataIso.localeCompare(a.dataIso));
+}
+
+export function csvDoRastreio(linhas: readonly LinhaDoRastreio[]): string {
+  const cabecalho = ['Data', 'Rolo', 'Lote', 'Malha', 'Movimento', 'Comprimento (m)', 'Ordem', 'Projeto', 'Responsável'];
+  return textoCsv([cabecalho, ...linhas.map((l) => [l.dataIso, l.rolo, l.lote, l.malha, l.movimento, metros(l.comprimentoMm), l.ordem, l.projeto, l.responsavel])]);
+}
+
+export interface PrevisaoDaMalha {
+  readonly malha: string;
+  /** O que os cortes liberados e em andamento ainda pedem. */
+  readonly necessarioMm: number;
+  /** O que há nos rolos dela. */
+  readonly saldoMm: number;
+  readonly faltaMm: number;
+  /** A falta em peso, quando a malha tem rendimento. */
+  readonly faltaG: number | null;
+}
+
+/** A previsão de compra (ADR 0203): por malha, o que os cortes pendentes pedem e o que falta no estoque. */
+export function previsaoDeCompra(cadastro: CadastroDeProducao): PrevisaoDaMalha[] {
+  const grupos = new Map<string, number>();
+  for (const e of cadastro.execucoes) {
+    if (e.situacao !== 'liberada' && e.situacao !== 'em-corte') continue;
+    const nome = malhaDaExecucao(cadastro, e);
+    grupos.set(nome, (grupos.get(nome) ?? 0) + e.consumoPlanejadoMm);
+  }
+  return [...grupos]
+    .map(([nome, necessarioMm]) => {
+      const malha = cadastro.malhas.find((m) => m.descricao === nome);
+      const saldoMm = cadastro.rolos.filter((r) => r.malhaId === malha?.id && !r.indisponivel).reduce((s, r) => s + (estadoDoRolo(cadastro, r).saldoFisicoMm ?? 0), 0);
+      const faltaMm = Math.max(0, necessarioMm - saldoMm);
+      const rendimento = rendimentoDaMalha(malha);
+      return { malha: nome, necessarioMm, saldoMm, faltaMm, faltaG: rendimento ? faltaMm / rendimento : null };
+    })
+    .sort((a, b) => b.faltaMm - a.faltaMm);
+}
+
+export function csvDaPrevisao(previsao: readonly PrevisaoDaMalha[]): string {
+  const cabecalho = ['Malha', 'Necessário (m)', 'Saldo (m)', 'Falta (m)', 'Falta (kg)'];
+  return textoCsv([cabecalho, ...previsao.map((p) => [p.malha, metros(p.necessarioMm), metros(p.saldoMm), metros(p.faltaMm), p.faltaG === null ? '' : numeroComVirgula(p.faltaG / 1000, 2)])]);
+}
+
 export interface ConsumoDaMalha {
   readonly malha: string;
   readonly cortes: number;

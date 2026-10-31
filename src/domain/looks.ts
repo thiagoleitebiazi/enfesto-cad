@@ -69,6 +69,29 @@ export function lerLooks(bruto: unknown): LookDaColecao[] {
 const escapar = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** A prancha do look para mandar a quem aprova: uma página com o croqui de cada modelo (o SVG da tela), o nome e as cores. */
+/** O catálogo da coleção (ADR 0203): uma página com todos os modelos, para mandar a quem compra ou aprova. */
+export function htmlDoCatalogo(
+  colecao: string,
+  modelos: ReadonlyArray<{ readonly nome: string; readonly referencia: string; readonly categoria: string; readonly cores: readonly string[]; readonly tecido: string; readonly croquiSvg: string | null }>,
+): string {
+  const cartoes = modelos
+    .map(
+      (m) =>
+        `<figure>${m.croquiSvg ?? '<div class="sem">sem croqui</div>'}<figcaption><strong>${escapar(m.nome)}</strong><br>${escapar(m.referencia)}${m.categoria ? ` · ${escapar(m.categoria)}` : ''}${m.tecido ? `<br>${escapar(m.tecido)}` : ''}${m.cores.length > 0 ? `<br>${m.cores.map(escapar).join(', ')}` : ''}</figcaption></figure>`,
+    )
+    .join('\n');
+  return `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Catálogo — ${escapar(colecao)}</title>
+<style>body{font-family:system-ui,sans-serif;margin:24px;color:#1f2937}h1{margin:0 0 16px}.modelos{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}figure{margin:0;border:1px solid #d1d5db;border-radius:8px;padding:12px;break-inside:avoid}figure svg{width:100%;height:auto}.sem{height:160px;display:flex;align-items:center;justify-content:center;color:#9ca3af}figcaption{margin-top:8px;font-size:14px}</style>
+</head><body>
+<h1>${escapar(colecao)}</h1>
+<div class="modelos">
+${cartoes}
+</div>
+</body></html>
+`;
+}
+
 export function htmlDaPrancha(
   colecao: string,
   look: LookDaColecao,

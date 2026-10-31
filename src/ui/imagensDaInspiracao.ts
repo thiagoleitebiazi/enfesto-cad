@@ -1,3 +1,4 @@
+import { recorteParaProporcao } from '../domain/inspiracao';
 import { coresDaImagem, LADO_MAXIMO_DA_INSPIRACAO } from '../domain/inspiracao';
 
 /** Uma imagem pronta para o painel de inspiração: reduzida, em JPEG, com as cores principais. */
@@ -73,6 +74,22 @@ export async function pngDoSvg(svg: string, largura: number): Promise<string> {
 }
 
 /** Os bytes de um base64 (para salvar o PNG). */
+/** A imagem recortada no centro, na proporção a:b, como PNG. */
+export async function recortarPng(dados: string, a: number, b: number): Promise<ArrayBuffer> {
+  const imagem = new Image();
+  await new Promise<void>((resolver, rejeitar) => {
+    imagem.onload = () => resolver();
+    imagem.onerror = () => rejeitar(new Error('A imagem não abriu.'));
+    imagem.src = dados;
+  });
+  const r = recorteParaProporcao(imagem.naturalWidth, imagem.naturalHeight, a, b);
+  const tela = document.createElement('canvas');
+  tela.width = r.largura;
+  tela.height = r.altura;
+  tela.getContext('2d')?.drawImage(imagem, r.x, r.y, r.largura, r.altura, 0, 0, r.largura, r.altura);
+  return bytesDoBase64(tela.toDataURL('image/png').split(',')[1] ?? '');
+}
+
 export function bytesDoBase64(b64: string): ArrayBuffer {
   const binario = atob(b64);
   const bytes = new Uint8Array(binario.length);

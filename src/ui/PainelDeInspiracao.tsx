@@ -6,6 +6,7 @@ import {
   mudarItemDeInspiracao,
   nomeDaCor,
   pedidoParaIa,
+  type ModeloVirtual,
   removerItemDeInspiracao,
   ROTULO_DA_CATEGORIA_DA_INSPIRACAO,
   TIPOS_DE_GERACAO,
@@ -15,6 +16,13 @@ import {
   type PainelDeInspiracao as Painel,
   type TipoDeGeracao,
 } from '../domain/inspiracao';
+import { recortarPng } from './imagensDaInspiracao';
+
+const PROPORCOES_DA_LOJA = [
+  [1, 1],
+  [3, 4],
+  [9, 16],
+] as const;
 import { MODELO_PADRAO, MODELOS_DE_IMAGEM, problemasDoPedido, type FormatoDaImagem, type PedidoDeImagem, type ReferenciaParaIa, type RespostaDaIa } from '../domain/servicoDeIa';
 import type { ImagemParaInspiracao } from './imagensDaInspiracao';
 
@@ -302,6 +310,7 @@ function ParteIa(props: {
   const [pedido, setPedido] = useState(() => pedidoParaIa('peca', painel, { ...props.contexto, referencias: 0 }));
   const [gerando, setGerando] = useState(false);
   const [geradas, setGeradas] = useState<ImagemGerada[]>([]);
+  const [modeloVirtual, setModeloVirtual] = useState<ModeloVirtual>({});
   const usarDesenho = referencias.has('desenho');
   const quantasReferencias = referencias.size;
 
@@ -545,6 +554,33 @@ function ParteIa(props: {
         <small>{!configurado ? 'Configure o serviço primeiro.' : precisaDeReferencia ? 'Escolha a imagem de referência.' : 'Cada pedido é cobrado na sua conta do serviço.'}</small>
       </p>
 
+      {tipo === 'foto' && (
+        <fieldset className="grupo-de-opcoes-do-formulario">
+          <legend>Modelo virtual</legend>
+          {(
+            [
+              ['corpo', 'Corpo', 'magro, plus size'],
+              ['idade', 'Idade', '30 anos'],
+              ['cabelo', 'Cabelo', 'curto, cacheado'],
+              ['pose', 'Pose', 'de frente, de lado'],
+            ] as const
+          ).map(([campo, rotulo, exemplo]) => (
+            <label key={campo}>
+              {rotulo}
+              <input
+                type="text"
+                placeholder={exemplo}
+                value={modeloVirtual[campo] ?? ''}
+                onChange={(e) => {
+                  const novo = { ...modeloVirtual, [campo]: e.target.value };
+                  setModeloVirtual(novo);
+                  setPedido(pedidoParaIa(tipo, painel, { ...props.contexto, referencias: quantasReferencias, modeloVirtual: novo }));
+                }}
+              />
+            </label>
+          ))}
+        </fieldset>
+      )}
       {geradas.length > 0 && (
         <div className="grade-da-inspiracao resultados-da-ia" aria-label="Imagens geradas">
           {geradas.map((g, k) => (
@@ -578,6 +614,20 @@ function ParteIa(props: {
                 >
                   Salvar PNG
                 </button>
+                {PROPORCOES_DA_LOJA.map(([a, b]) => (
+                  <button
+                    key={`${a}:${b}`}
+                    type="button"
+                    title="Salva um recorte central nesta proporção, para a loja ou as redes"
+                    onClick={async () => {
+                      const buffer = await recortarPng(`data:image/png;base64,${g.base64}`, a, b);
+                      const caminho = await props.onSalvarArquivo(`rascunho-da-ia-${k + 1}-${a}x${b}.png`, buffer);
+                      if (caminho) setAviso(`Imagem salva em ${caminho}`);
+                    }}
+                  >
+                    {a}:{b}
+                  </button>
+                ))}
               </figcaption>
             </figure>
           ))}

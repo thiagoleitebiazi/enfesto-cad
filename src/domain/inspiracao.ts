@@ -211,6 +211,26 @@ export interface ContextoDoPedido {
   readonly tecido?: string;
   /** Quantas imagens vão como referência. */
   readonly referencias: number;
+  /** Como é o modelo virtual da foto comercial (ADR 0203). */
+  readonly modeloVirtual?: ModeloVirtual;
+}
+
+export interface ModeloVirtual {
+  readonly corpo?: string;
+  readonly idade?: string;
+  readonly cabelo?: string;
+  readonly pose?: string;
+}
+
+/** O recorte central da imagem na proporção da loja: 1:1, 3:4, 9:16. */
+export function recorteParaProporcao(largura: number, altura: number, a: number, b: number): { readonly x: number; readonly y: number; readonly largura: number; readonly altura: number } {
+  const alvo = a / b;
+  if (largura / altura > alvo) {
+    const l = Math.round(altura * alvo);
+    return { x: Math.round((largura - l) / 2), y: 0, largura: l, altura };
+  }
+  const h = Math.round(largura / alvo);
+  return { x: 0, y: Math.round((altura - h) / 2), largura, altura: h };
 }
 
 /** O pedido em texto para o serviço de imagem (a pessoa pode mudar antes de mandar). */
@@ -232,6 +252,11 @@ export function pedidoParaIa(tipo: TipoDeGeracao, painel: PainelDeInspiracao, co
     case 'foto':
       partes.push(`Fotografia comercial de catálogo: a peça "${modelo}" vestida por um modelo virtual em pé, corpo inteiro, em estúdio de fundo neutro, luz suave, caimento realista do tecido.`);
       break;
+  }
+  if (tipo === 'foto' && contexto.modeloVirtual) {
+    const { corpo, idade, cabelo, pose } = contexto.modeloVirtual;
+    const detalhes = [corpo ? `corpo ${corpo}` : null, idade ?? null, cabelo ? `cabelo ${cabelo}` : null, pose ? `pose ${pose}` : null].filter((d) => d !== null);
+    if (detalhes.length > 0) partes.push(`Modelo virtual: ${detalhes.join(', ')}.`);
   }
   if (contexto.descricao?.trim()) partes.push(`Descrição: ${contexto.descricao.trim()}`);
   if (painel.conceito.trim()) partes.push(`Conceito: ${painel.conceito.trim()}`);

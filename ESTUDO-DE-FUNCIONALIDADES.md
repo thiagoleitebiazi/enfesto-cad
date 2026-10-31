@@ -333,3 +333,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Informações do arquivo; unir; SVG no lugar do metafile; XML; importar ISO; colar vários; colar incrementar grade; plotar com fatores, espelho e limites; imprimir ajustado | ✅ ADR 0201 |
 | Fundir pique; margem por peça; usar distância; sentido por tamanho e por pacote; quantidade por tamanho; tamanho do texto; propriedades de encaixe; SNAP | ✅ ADR 0202 |
 | Envolvente de grupo; margem por lado; retangular; Substituir tamanho no encaixe | ⬜ não feito: ver ADR 0202 |
+| Captura em lote; rastreabilidade; previsão de compra; catálogo; modelo virtual; recorte para a loja; miniatura; esquemas de cores próprios | ✅ ADR 0203 |

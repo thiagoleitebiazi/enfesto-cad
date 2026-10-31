@@ -14,7 +14,7 @@ import {
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos, pontosNaoGraduados } from '../domain/graduacao';
-import { corDoTamanho, TRACOS_DA_COSTURA, type EstiloDaCostura } from './preferencias';
+import { corDoTamanho, TRACOS_DA_COSTURA, type CoresDaArea, type EstiloDaCostura } from './preferencias';
 import { codigoDoPacote, corDoPacote, pacoteDaPeca, pacotesDoEncaixe, rotuloDaPeca, VISAO_PADRAO, type CodigoDosPacotes, type VisaoDasPecas } from './visaoDasPecas';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { desenharLinhasInternas } from './desenhoDasLinhasInternas';
@@ -393,6 +393,8 @@ interface AreaDeDesenhoProps {
   /** O traço da costura, e as cores dos tamanhos na área de trabalho (ADR 0182). */
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly coresDosTamanhos?: Readonly<Record<string, string>>;
+  /** As cores do esquema próprio (ADR 0203). */
+  readonly coresDaArea?: CoresDaArea | null;
   /** O que aparece nas peças, e os destaques (ADR 0199). */
   readonly visao?: VisaoDasPecas;
   readonly destacarPacotes?: boolean;
@@ -505,6 +507,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     mostrarNaoGraduados = false,
     corDoContorno = null,
     visao = VISAO_PADRAO,
+    coresDaArea = null,
     destacarPacotes = false,
     codigoDosPacotes = 'alfanumerico',
     destacarRelacionamento = false,
@@ -883,7 +886,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       // aparece como uma faixa mais escura em volta, não uma linha invisível.
       const cantoExterno = mundoParaTela(ponto(0, 0), transform);
       const cantoExternoOposto = mundoParaTela(ponto(enfesto.larguraUtilMm, enfesto.comprimentoMm), transform);
-      ctx.fillStyle = COR_MARGEM_MESA;
+      ctx.fillStyle = coresDaArea?.margem ?? COR_MARGEM_MESA;
       ctx.fillRect(
         cantoExterno.x,
         cantoExterno.y,
@@ -894,7 +897,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const util = areaUtilDaMesa(enfesto);
       const cantoUtil = mundoParaTela(ponto(util.minX, util.minY), transform);
       const cantoUtilOposto = mundoParaTela(ponto(util.maxX, util.maxY), transform);
-      ctx.fillStyle = COR_MESA;
+      ctx.fillStyle = coresDaArea?.mesa ?? COR_MESA;
       ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
       if (imagemDaPadronagem && enfesto.padronagem) {
         const padrao = ctx.createPattern(imagemDaPadronagem, 'repeat');
@@ -1076,7 +1079,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
-      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? COR_CONTORNO_SELECIONADO : (corDoContorno ?? COR_CONTORNO);
+      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? (coresDaArea?.selecao ?? COR_CONTORNO_SELECIONADO) : (corDoContorno ?? coresDaArea?.contorno ?? COR_CONTORNO);
       ctx.lineWidth = estaSelecionada || temErro ? 2.5 : 1.5;
       if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
@@ -1768,6 +1771,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    coresDaArea,
     visao,
     destacarPacotes,
     codigoDosPacotes,

@@ -4,6 +4,10 @@ import { ExecucaoDoCorteNaTela } from './ExecucaoDoPlano';
 import { salvarRolo, type CadastroDeProducao, type SituacaoDaExecucao } from '../domain/cadastroDeProducao';
 import { comparativoDaExecucao, planoDaExecucao, ROTULO_DA_SITUACAO } from '../domain/execucaoDoCorte';
 import {
+  csvDaPrevisao,
+  csvDoRastreio,
+  previsaoDeCompra,
+  rastreioDosMateriais,
   consumoPorMalha,
   csvDasExecucoes,
   csvDoConsumoPorMalha,
@@ -13,6 +17,8 @@ import {
   retalhosEmEstoque,
   sugestoesDeCorrecao,
 } from '../domain/salaDeCorte';
+
+const MAXIMO_DE_LINHAS_DO_RASTREIO = 200;
 import { escreverM } from '../domain/planoDeCorte';
 import { numeroComVirgula } from '../core/numeros';
 
@@ -44,6 +50,9 @@ export function PainelDaSalaDeCorte(props: {
   readonly onSalvarTexto: (sugestaoDeNome: string, conteudo: string) => Promise<string | null>;
   readonly onFechar: () => void;
 }): React.JSX.Element {
+  const [buscaDoRastreio, setBuscaDoRastreio] = useState('');
+  const previsao = previsaoDeCompra(props.cadastro);
+  const rastreio = rastreioDosMateriais(props.cadastro, props.nomeDoProjeto, buscaDoRastreio);
   const { cadastro } = props;
   const [parte, setParte] = useState<Parte>('ordens');
   const [filtro, setFiltro] = useState<Filtro>('abertas');
@@ -346,6 +355,68 @@ export function PainelDaSalaDeCorte(props: {
 
         {parte === 'relatorios' && (
           <section aria-label="Relatórios">
+            <table className="tabela-de-relatorio">
+              <caption>Previsão de compra: o que os cortes pendentes pedem</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Malha</th>
+                  <th scope="col" className="coluna-numerica">Necessário</th>
+                  <th scope="col" className="coluna-numerica">Saldo</th>
+                  <th scope="col" className="coluna-numerica">Falta</th>
+                  <th scope="col" className="coluna-numerica">Falta (kg)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previsao.map((p) => (
+                  <tr key={p.malha}>
+                    <td>{p.malha}</td>
+                    <td className="coluna-numerica">{numeroComVirgula(p.necessarioMm / 1000, 2)} m</td>
+                    <td className="coluna-numerica">{numeroComVirgula(p.saldoMm / 1000, 2)} m</td>
+                    <td className="coluna-numerica">{numeroComVirgula(p.faltaMm / 1000, 2)} m</td>
+                    <td className="coluna-numerica">{p.faltaG === null ? '—' : numeroComVirgula(p.faltaG / 1000, 2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button type="button" disabled={previsao.length === 0} onClick={() => void props.onSalvarTexto('previsao-de-compra.csv', csvDaPrevisao(previsao))}>
+              Exportar a previsão (CSV)
+            </button>
+            <label>
+              Rastreabilidade: rolo, lote, malha, ordem ou projeto
+              <input type="text" value={buscaDoRastreio} onChange={(e) => setBuscaDoRastreio(e.target.value)} />
+            </label>
+            <table className="tabela-de-relatorio">
+              <caption>Rastreabilidade do material</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Data</th>
+                  <th scope="col">Rolo</th>
+                  <th scope="col">Lote</th>
+                  <th scope="col">Movimento</th>
+                  <th scope="col" className="coluna-numerica">Comprimento</th>
+                  <th scope="col">Ordem</th>
+                  <th scope="col">Projeto</th>
+                  <th scope="col">Responsável</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rastreio.slice(0, MAXIMO_DE_LINHAS_DO_RASTREIO).map((l, i) => (
+                  <tr key={`${l.dataIso}-${i}`}>
+                    <td>{l.dataIso.slice(0, 10)}</td>
+                    <td>{l.rolo}</td>
+                    <td>{l.lote}</td>
+                    <td>{l.movimento}</td>
+                    <td className="coluna-numerica">{numeroComVirgula(l.comprimentoMm / 1000, 2)} m</td>
+                    <td>{l.ordem}</td>
+                    <td>{l.projeto}</td>
+                    <td>{l.responsavel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button type="button" disabled={rastreio.length === 0} onClick={() => void props.onSalvarTexto('rastreabilidade.csv', csvDoRastreio(rastreio))}>
+              Exportar a rastreabilidade (CSV)
+            </button>
             <label>
               Período do consumo por malha
               <select value={periodo} onChange={(e) => setPeriodo(e.target.value as Periodo)}>

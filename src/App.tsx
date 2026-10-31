@@ -396,7 +396,7 @@ import {
 import { comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
-import { ajusteDeTextoGuardado, corDaCaneta, guardarAjusteDeTexto } from './ui/preferencias';
+import { ajusteDeTextoGuardado, corDaAreaNoEsquema, corDaCaneta, CORES_DA_AREA_PADRAO, coresDaAreaGuardadas, guardarAjusteDeTexto, guardarCoresDaArea, type EsquemaDaArea, type EsquemasDaArea } from './ui/preferencias';
 import type { RelacaoDoCasamento } from './domain/molde';
 import { comTamanhoManterDiferenca } from './domain/tamanhoIntermediario';
 import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
@@ -632,6 +632,31 @@ function ehFerramentaDeTrecho(modo: ModoDeDesenho): modo is FerramentaDeTrecho {
 }
 
 /** Diálogo aberto por uma ferramenta de desenho, com o que ele precisa para aplicar. */
+/** A peça de um molde da foto, depois das que já estão na mesa. */
+function moldeDaFoto(d: { readonly nome: string; readonly tamanho: string; readonly quantidade: number; readonly molde: MoldeReconhecido }, pecas: readonly Molde[]): Molde {
+    const ocupado = pecas.flatMap((p) => linhaDeCorteDaPeca(p));
+    const caixaDasPecas = ocupado.length > 0 ? retanguloEnvolvente(ocupado) : null;
+    const r = paraODesenho(d.molde, caixaDasPecas ? ponto(caixaDasPecas.minX, caixaDasPecas.maxY + 50) : ponto(20, 20));
+    const c = retanguloEnvolvente(r.contorno);
+    // Sem o fio achado nem marcado, ele fica deitado (na horizontal da tela), no meio da peça.
+    const fio = r.fio ?? { inicio: ponto((c.minX + c.maxX) / 2, c.minY + 0.15 * (c.maxY - c.minY)), fim: ponto((c.minX + c.maxX) / 2, c.maxY - 0.15 * (c.maxY - c.minY)) };
+    const molde = criarMolde(
+      {
+        nome: d.nome,
+        referencia: '',
+        tamanho: d.tamanho,
+        quantidade: d.quantidade,
+        contorno: r.contorno,
+        furos: r.furos,
+        piques: r.piques.map((p) => ({ id: proximoId(), posicao: p.posicao, indiceAresta: p.indiceAresta })),
+        linhaDeFio: fio,
+        linhasInternas: r.linhasInternas,
+      },
+      proximoId(),
+    );
+  return molde;
+}
+
 /** "Usar" (ADR 0200): a peça entra no encaixe, ou fica de fora. */
 function comUso(peca: Molde, usar: boolean): Molde {
   if (!usar) return { ...peca, naoUsar: true };
@@ -667,6 +692,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'cores-da-area' }
   | { readonly tipo: 'propriedades-de-encaixe' }
   | { readonly tipo: 'exportar-dados' }
   | { readonly tipo: 'informacoes-do-arquivo' }
@@ -816,6 +842,13 @@ export default function App(): React.JSX.Element {
       return conjuntosGuardados(window.localStorage);
     } catch {
       return [];
+    }
+  });
+  const [esquemasDaArea, setEsquemasDaArea] = useState<EsquemasDaArea>(() => {
+    try {
+      return coresDaAreaGuardadas(window.localStorage);
+    } catch {
+      return coresDaAreaGuardadas({ getItem: () => null });
     }
   });
   const [camposDaBarra, setCamposDaBarra] = useState<readonly CampoDaBarra[]>(() => {
@@ -2343,31 +2376,12 @@ export default function App(): React.JSX.Element {
   const criarPecaDaFoto = useCallback(
     (d: { readonly nome: string; readonly tamanho: string; readonly quantidade: number; readonly molde: MoldeReconhecido }): string | null => {
       try {
-        const ocupado = pecas.flatMap((p) => linhaDeCorteDaPeca(p));
-        const caixaDasPecas = ocupado.length > 0 ? retanguloEnvolvente(ocupado) : null;
-        const r = paraODesenho(d.molde, caixaDasPecas ? ponto(caixaDasPecas.minX, caixaDasPecas.maxY + 50) : ponto(20, 20));
-        const c = retanguloEnvolvente(r.contorno);
-        // Sem o fio achado nem marcado, ele fica deitado (na horizontal da tela), no meio da peça.
-        const fio = r.fio ?? { inicio: ponto((c.minX + c.maxX) / 2, c.minY + 0.15 * (c.maxY - c.minY)), fim: ponto((c.minX + c.maxX) / 2, c.maxY - 0.15 * (c.maxY - c.minY)) };
-        const molde = criarMolde(
-          {
-            nome: d.nome,
-            referencia: '',
-            tamanho: d.tamanho,
-            quantidade: d.quantidade,
-            contorno: r.contorno,
-            furos: r.furos,
-            piques: r.piques.map((p) => ({ id: proximoId(), posicao: p.posicao, indiceAresta: p.indiceAresta })),
-            linhaDeFio: fio,
-            linhasInternas: r.linhasInternas,
-          },
-          proximoId(),
-        );
+        const molde = moldeDaFoto(d, pecas);
         const novasPecas = [...pecas, molde];
         aplicarMudanca(novasPecas);
         setSelecionadoId(molde.id);
         // A janela fica aberta: a mesma foto pode ter outros moldes (cada um uma peça).
-        registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Molde da foto: “${molde.nome}”, ${r.furos.length} furo(s), ${r.piques.length} pique(s), ${r.linhasInternas.length} linha(s) interna(s)`);
+        registrarEventoEPersistir('mudanca-de-moldes', { pecas: novasPecas, tecido, enfesto }, `Molde da foto: “${molde.nome}”, ${molde.furos.length} furo(s), ${molde.piques.length} pique(s), ${molde.linhasInternas.length} linha(s) interna(s)`);
         mudarVistaPara(enquadrarRetanguloDoMundo(retanguloEnvolvente(molde.contorno), tamanhoDaTela));
         return null;
       } catch (e) {
@@ -5481,6 +5495,7 @@ export default function App(): React.JSX.Element {
         onBarraDeStatus={() => setDialogoDeFerramenta({ tipo: 'barra-de-status' })}
         onOpcoesDoEncaixe={() => setDialogoDeFerramenta({ tipo: 'opcoes-do-encaixe' })}
         onPropriedadesDeEncaixe={() => setDialogoDeFerramenta({ tipo: 'propriedades-de-encaixe' })}
+        onCoresDaArea={() => setDialogoDeFerramenta({ tipo: 'cores-da-area' })}
         onPosicionar={(destino, alvo) => {
           if (!enfesto) {
             avisar('Configure o enfesto primeiro.');
@@ -5904,6 +5919,18 @@ export default function App(): React.JSX.Element {
           imagens={imagens}
           onTrazerFoto={() => arquivoDeImagemRef.current?.click()}
           onCriarPeca={criarPecaDaFoto}
+          onCriarVarias={(moldes, tamanho, quantidade) => {
+            try {
+              let novas: readonly Molde[] = pecas;
+              moldes.forEach((molde, i) => {
+                novas = [...novas, moldeDaFoto({ nome: `Molde da foto ${i + 1}`, tamanho, quantidade, molde }, novas)];
+              });
+              aplicarMudanca([...novas]);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
           lerPixels={pixelsDaImagem}
           paraDataUrl={dataUrlDosPixels}
           onFechar={() => setMostrarMoldeDaFoto(false)}
@@ -6613,6 +6640,44 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'propriedades-de-encaixe' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'cores-da-area' && (
+        <DialogoDeCampos
+          titulo="Cores da área de trabalho"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'esquema',
+              rotulo: 'Esquema',
+              opcoes: [
+                { valor: 'padrao', rotulo: 'Padrão' },
+                { valor: 'user1', rotulo: 'Meu esquema 1' },
+                { valor: 'user2', rotulo: 'Meu esquema 2' },
+                { valor: 'user3', rotulo: 'Meu esquema 3' },
+              ],
+              inicial: esquemasDaArea.esquema === 'padrao' ? 'user1' : esquemasDaArea.esquema,
+            },
+            { tipo: 'cor', id: 'mesa', rotulo: 'Mesa', inicial: (corDaAreaNoEsquema(esquemasDaArea) ?? CORES_DA_AREA_PADRAO).mesa },
+            { tipo: 'cor', id: 'margem', rotulo: 'Margem da mesa', inicial: (corDaAreaNoEsquema(esquemasDaArea) ?? CORES_DA_AREA_PADRAO).margem },
+            { tipo: 'cor', id: 'contorno', rotulo: 'Contorno das peças', inicial: (corDaAreaNoEsquema(esquemasDaArea) ?? CORES_DA_AREA_PADRAO).contorno },
+            { tipo: 'cor', id: 'selecao', rotulo: 'Peça selecionada', inicial: (corDaAreaNoEsquema(esquemasDaArea) ?? CORES_DA_AREA_PADRAO).selecao },
+          ]}
+          nota="As cores valem no esquema escolhido e ficam lembradas neste computador. No Padrão, ficam as de sempre."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const esquema = String(valores['esquema']) as EsquemaDaArea;
+            const cores = { mesa: String(valores['mesa']), margem: String(valores['margem']), contorno: String(valores['contorno']), selecao: String(valores['selecao']) };
+            const novos: EsquemasDaArea = esquema === 'padrao' ? { ...esquemasDaArea, esquema } : { ...esquemasDaArea, esquema, [esquema]: cores };
+            setEsquemasDaArea(novos);
+            try {
+              guardarCoresDaArea(window.localStorage, novos);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'cores-da-area' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (
@@ -7981,6 +8046,7 @@ export default function App(): React.JSX.Element {
             mostrarNaoGraduados={mostrarNaoGraduados}
             corDoContorno={coresPelasFerramentas ? corDaCaneta(ferramentasDoPlotter.corte ?? 1) : null}
             visao={visao}
+            coresDaArea={corDaAreaNoEsquema(esquemasDaArea)}
             destacarPacotes={destacarPacotes}
             codigoDosPacotes={opcoesDoEncaixe.codigoDosPacotes}
             destacarRelacionamento={destacarRelacionamento}

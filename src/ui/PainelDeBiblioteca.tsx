@@ -1,3 +1,4 @@
+import { MiniaturaDoProjeto } from './MiniaturaDoProjeto';
 import { useMemo, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import {
@@ -165,6 +166,7 @@ export function PainelDeBiblioteca(props: PainelDeBibliotecaProps): React.JSX.El
                   linhaDoFormulario(p, formulario)
                 ) : (
                   <>
+                    <MiniaturaDoProjeto pecas={p.estadoAtual.pecas} />
                     <div className="info-do-projeto">
                       <strong>{p.nome}</strong> <span className="referencia">({p.codigo})</span>
                       {p.base && <span className="selo selo-sucesso selo-de-base">Base aprovada</span>}

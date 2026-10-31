@@ -656,6 +656,50 @@ export interface MoldeReconhecido {
   readonly avisos: string[];
 }
 
+/** Abaixo disto (mm²), a região é sujeira, e não um molde. */
+const AREA_MINIMA_DO_MOLDE_MM2 = 900;
+
+/**
+ * A captura em lote (ADR 0203): um ponto de dentro de cada molde da foto, sem precisar clicar em cada um. A região que
+ * encosta na borda é o fundo, ou um molde cortado pela foto, e fica de fora.
+ */
+export function sementesDosMoldes(imagem: ImagemDePixels, opcoes: Pick<OpcoesDoReconhecimento, 'mmPorPx' | 'limiar' | 'moldeEscuro'>): Ponto2D[] {
+  const { largura, altura } = imagem;
+  const mascara = mascaraDoMolde(tonsDeCinza(imagem), opcoes.limiar, opcoes.moldeEscuro);
+  const visto = new Uint8Array(mascara.length);
+  const minimo = AREA_MINIMA_DO_MOLDE_MM2 / (opcoes.mmPorPx * opcoes.mmPorPx);
+  const sementes: Ponto2D[] = [];
+  for (let inicio = 0; inicio < mascara.length; inicio++) {
+    if (mascara[inicio] !== 1 || visto[inicio] === 1) continue;
+    let area = 0;
+    let naBorda = false;
+    const pilha = [inicio];
+    visto[inicio] = 1;
+    while (pilha.length > 0) {
+      const i = pilha.pop()!;
+      area++;
+      const x = i % largura;
+      const y = (i - x) / largura;
+      if (x === 0 || y === 0 || x === largura - 1 || y === altura - 1) naBorda = true;
+      for (const v of [x > 0 ? i - 1 : -1, x < largura - 1 ? i + 1 : -1, y > 0 ? i - largura : -1, y < altura - 1 ? i + largura : -1]) {
+        if (v >= 0 && mascara[v] === 1 && visto[v] === 0) {
+          visto[v] = 1;
+          pilha.push(v);
+        }
+      }
+    }
+    if (area >= minimo && !naBorda) sementes.push({ x: inicio % largura, y: Math.floor(inicio / largura) });
+  }
+  return sementes;
+}
+
+export function reconhecerTodosOsMoldes(imagem: ImagemDePixels, opcoes: OpcoesDoReconhecimento): MoldeReconhecido[] {
+  return sementesDosMoldes(imagem, opcoes).flatMap((s) => {
+    const r = reconhecerMolde(imagem, s, opcoes);
+    return 'erro' in r ? [] : [r];
+  });
+}
+
 /** O molde reconhecido a partir do clique dentro dele (no pixel `semente`). */
 export function reconhecerMolde(imagem: ImagemDePixels, semente: Ponto2D, opcoes: OpcoesDoReconhecimento): MoldeReconhecido | { readonly erro: string } {
   const { largura, altura } = imagem;
