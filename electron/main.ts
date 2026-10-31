@@ -603,10 +603,11 @@ const ARQUIVOS_DE_TEXTO = {
   plt: { title: 'Importar PLT', name: 'PLT (HPGL)', extensions: ['plt', 'hpgl', 'hpg'] },
   perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto CAD', extensions: ['json'] },
   iso: { title: 'Importar arquivo de corte ISO', name: 'ISO (G-code)', extensions: ['iso', 'nc', 'cnc', 'tap', 'txt'] },
+  rul: { title: 'Arquivo de regras de graduação', name: 'Regras (RUL)', extensions: ['rul', 'txt'] },
 } as const;
 
 ipcMain.handle('abrir-arquivo-texto', async (_evento, tipo: unknown) => {
-  if (tipo !== 'projeto' && tipo !== 'plt' && tipo !== 'perfil' && tipo !== 'iso') return null;
+  if (tipo !== 'projeto' && tipo !== 'plt' && tipo !== 'perfil' && tipo !== 'iso' && tipo !== 'rul') return null;
   const { title, name, extensions } = ARQUIVOS_DE_TEXTO[tipo];
   const resultado = await dialog.showOpenDialog({ title, filters: [{ name, extensions: [...extensions] }], properties: ['openFile'] });
   if (resultado.canceled || resultado.filePaths.length === 0) return null;

@@ -267,7 +267,7 @@ Fontes: o manual digital da referência, lido por inteiro; a página pública so
 
 | Item | Situação |
 |---|---|
-| Exportar ASTM D6673 | ✅ ADR 0166 (sem o .RUL; não testado em outro sistema) |
+| Exportar ASTM D6673 | ✅ ADR 0166 e 0207 (com o .RUL; não testado em outro sistema) |
 | Plotar os moldes: tamanhos separados, desdobrar, girar, selecionados, reorganizar; organizar todos os moldes | ✅ ADR 0167 |
 | Tamanho intermediário | ✅ ADR 0168 |
 | Senha do modelo | ✅ ADR 0169 (no arquivo exportado) |
@@ -338,3 +338,10 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Réguas e barra de status; ordem crescente dos tamanhos | ✅ ADR 0205 |
 | Substituir tamanho no encaixe | ✅ ADR 0206 |
 | .aoc; DMPL; blocos na vertical; envolvente de grupo; TrueType; níveis Mutoh; cascata; teclado virtual | ⬜ não feito: motivo de cada um no ADR 0205 |
+
+## Décima rodada: o que tinha ficado de fora (2026-10-31)
+
+| Item | Situação |
+| --- | --- |
+| Importar de outros sistemas | ✅ ADR 0207, pelo ASTM/AAMA que todos exportam; o arquivo fechado em si continua impossível |
+| Arquivo de regras .RUL, importar e exportar | ✅ ADR 0207 |

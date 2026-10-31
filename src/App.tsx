@@ -370,6 +370,9 @@ import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala, type FatoresDaImpressao
 import { metodoSugerido } from './domain/metodoDeEnfesto';
 import { gerarSvgDoEncaixe, gerarXmlDoEncaixe } from './formats/dados-exportacao';
 import { hpglDoIso } from './formats/iso-importacao';
+import { ehArquivoAstm, lerAstm, moldesDoAstm } from './formats/astm-importacao';
+import { gerarDxfAstmComRegras } from './formats/dxf-astm';
+import { gerarRul, lerRul } from './formats/rul';
 import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
 import { perimetro } from './core/geometria';
 import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
@@ -4556,6 +4559,32 @@ export default function App(): React.JSX.Element {
   );
 
   // A importação é direta (ADR 0091): o nome vem do arquivo e o fio fica na horizontal; nada é perguntado.
+  /** O DXF ASTM/AAMA de outro sistema (ADR 0207): os tamanhos vêm nos blocos, ou num .RUL pedido à pessoa. */
+  const importarAstm = useCallback(
+    async (conteudo: string, nomeDoArquivo: string) => {
+      try {
+        const leitura = lerAstm(conteudo);
+        let r = moldesDoAstm(leitura, proximoId);
+        if (r.pedeRegras) {
+          const regras = await window.enfestoCad?.abrirArquivoTexto('rul');
+          if (regras) r = moldesDoAstm(leitura, proximoId, lerRul(regras.conteudo));
+        }
+        if (r.moldes.length === 0) {
+          setMensagensImportacao([...r.avisos]);
+          return;
+        }
+        const origem = { formato: 'dxf' as const, arquivo: nomeDoArquivo, importadaEmIso: new Date().toISOString(), unidade: leitura.mmPorUnidade === 1 ? 'mm' : 'pol', unidadeAssumida: !leitura.unidadeDeclarada };
+        const emFila = organizarPecas(r.moldes, enfesto?.larguraUtilMm ?? 1500);
+        const margens = margensDaMesa(enfesto ?? { margemLateralMm: 0, margemDeExtremidadeMm: 0 });
+        acrescentarPecasImportadas(emFila.map((m) => transladarMolde(m, ponto(margens.lateralMm, margens.extremidadeMm), m.id)), origem, `Importação do ASTM “${nomeDoArquivo}”: ${r.moldes.length} peça(s)`);
+        setMensagensImportacao(r.avisos.length > 0 ? [...r.avisos] : null);
+      } catch (erro) {
+        setMensagensImportacao([`Não foi possível importar: ${erro instanceof Error ? erro.message : String(erro)}`]);
+      }
+    },
+    [enfesto, acrescentarPecasImportadas],
+  );
+
   const importarDxfHandler = useCallback(() => {
     const api = window.enfestoCad;
     if (!api) {
@@ -4565,6 +4594,10 @@ export default function App(): React.JSX.Element {
     void api.abrirArquivoDxf().then((arquivo) => {
       if (!arquivo) return;
       arquivoImportadoRef.current = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
+      if (ehArquivoAstm(arquivo.conteudo)) {
+        void importarAstm(arquivo.conteudo, arquivoImportadoRef.current);
+        return;
+      }
       const nomeBase = arquivoImportadoRef.current.replace(/\.dxf$/i, '');
       const resultado = importarDxf(arquivo.conteudo, nomeBase);
       const avisos = [...resultado.avisos];
@@ -4597,7 +4630,7 @@ export default function App(): React.JSX.Element {
         setMensagensImportacao([`Não foi possível importar: ${motivo}`, ...avisos]);
       }
     });
-  }, [enfesto, acrescentarPecasImportadas]);
+  }, [enfesto, acrescentarPecasImportadas, importarAstm]);
 
   // O PLT (ADR 0157): as peças deduzidas das linhas do arquivo entram como as do DXF.
   const importarTracos = useCallback((tipo: 'plt' | 'iso') => {
@@ -6494,12 +6527,23 @@ export default function App(): React.JSX.Element {
               opcoes: [
                 { valor: 'svg', rotulo: 'SVG: imagem vetorial, para programas de desenho' },
                 { valor: 'xml', rotulo: 'XML: arquivo de dados, com cada peça e o lugar dela' },
+                { valor: 'rul', rotulo: 'ASTM com regras: o tamanho base em DXF e a tabela de graduação (.RUL)' },
               ],
               inicial: 'svg',
             },
           ]}
           rotuloDoBotao="Exportar"
           onAplicar={(valores) => {
+            if (valores['formato'] === 'rul') {
+              try {
+                const r = gerarRul(pecas, projetoAtual.codigo || projetoAtual.nome, new Date());
+                void salvarTexto(`${projetoAtual.codigo || 'modelo'}.dxf`, gerarDxfAstmComRegras(pecas, projetoAtual.nome, r.idDoPonto)).then(() => salvarTexto(`${projetoAtual.codigo || 'modelo'}.rul`, r.rul));
+                if (r.deFora.length > 0) avisar(`Ficaram sem regras, porque têm outros tamanhos: ${r.deFora.join(', ')}.`);
+                return null;
+              } catch (e) {
+                return e instanceof Error ? e.message : String(e);
+              }
+            }
             const xml = valores['formato'] === 'xml';
             const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, enfesto }) : gerarSvgDoEncaixe(pecas, enfesto);
             void salvarTexto(xml ? 'encaixe.xml' : 'encaixe.svg', conteudo);

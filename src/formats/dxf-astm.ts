@@ -37,7 +37,7 @@ const texto = (camada: number, p: Ponto2D, t: string): string => linha(0, 'TEXT'
 
 const semQuebra = (t: string): string => t.replace(/[\r\n]+/g, ' ').trim();
 
-function blocoDaPeca(peca: Molde, nome: string, estilo: string): string {
+function blocoDaPeca(peca: Molde, nome: string, estilo: string, regras?: ReadonlyMap<number, string>): string {
   const corte: Contorno = linhaDeCorteDaPeca(peca);
   const caixa = retanguloEnvolvente(corte);
   const noBloco = (p: Ponto2D): Ponto2D => {
@@ -56,6 +56,8 @@ function blocoDaPeca(peca: Molde, nome: string, estilo: string): string {
     linha(3, nome) +
     atributos.map((t, i) => texto(1, ponto(0, -8 * (i + 1)), t)).join('') +
     polilinha(1, corte.map(noBloco), true) +
+    // A regra fica em cima do ponto: "# n", na camada dos pontos, e a linha de referência dá os eixos dela (ADR 0207).
+    (regras ? [...regras].map(([i, id]) => pontoDxf(2, noBloco(peca.contorno[i]!)) + texto(2, noBloco(peca.contorno[i]!), `# ${id}`)).join('') + segmento(5, ponto(0, 0), ponto(100, 0)) : '') +
     corte.map((p, i) => pontoDxf(cantos.has(i) ? 2 : 3, noBloco(p))).join('') +
     (corte !== peca.contorno ? polilinha(14, peca.contorno.map(noBloco), true) : '') +
     peca.furos.map((f) => polilinha(11, f.map(noBloco), true)).join('') +
@@ -76,9 +78,19 @@ function blocoDaPeca(peca: Molde, nome: string, estilo: string): string {
   );
 }
 
+/** Só o tamanho base de cada peça, com os números das regras: o par do arquivo .RUL (ADR 0207). */
+export function gerarDxfAstmComRegras(pecas: readonly Molde[], estilo: string, idDoPonto: ReadonlyMap<string, ReadonlyMap<number, string>>): string {
+  return montarArquivo(pecas, estilo, (p, nome) => blocoDaPeca(p, nome, estilo, idDoPonto.get(p.id)));
+}
+
 export function gerarDxfAstm(pecas: readonly Molde[], estilo: string, novoId: () => string): string {
-  const todas = expandirTamanhos(pecas, novoId);
+  const baseDoEstilo = pecas.find((p) => p.graduacao);
+  return montarArquivo(expandirTamanhos(pecas, novoId), estilo, (p, nome) => blocoDaPeca(p, nome, estilo), baseDoEstilo);
+}
+
+function montarArquivo(todas: readonly Molde[], estilo: string, bloco: (p: Molde, nome: string) => string, graduada: Molde | undefined = todas.find((p) => p.graduacao)): string {
   const nomes = todas.map((p, i) => `${i + 1}_${semQuebra(`${p.nome}_${p.tamanho}`).replace(/[^A-Za-z0-9_-]+/g, '_')}`.slice(0, 31));
+  const textosDoEstilo = [`Style Name: ${semQuebra(estilo)}`, 'Units: METRIC', ...(graduada ? [`Sample Size: ${graduada.graduacao!.tamanhos[graduada.graduacao!.base]!}`] : [])];
   // As peças ficam uma depois da outra no desenho, para quem abrir o arquivo num programa de CAD comum.
   let x = 0;
   const insercoes = todas.map((p, i) => {
@@ -97,11 +109,12 @@ export function gerarDxfAstm(pecas: readonly Molde[], estilo: string, novoId: ()
     linha(0, 'ENDSEC') +
     linha(0, 'SECTION') +
     linha(2, 'BLOCKS') +
-    todas.map((p, i) => blocoDaPeca(p, nomes[i]!, estilo)).join('') +
+    todas.map((p, i) => bloco(p, nomes[i]!)).join('') +
     linha(0, 'ENDSEC') +
     linha(0, 'SECTION') +
     linha(2, 'ENTITIES') +
     insercoes.join('') +
+    textosDoEstilo.map((t, i) => texto(1, ponto(0, -8 * (i + 1)), t)).join('') +
     linha(0, 'ENDSEC') +
     linha(0, 'EOF')
   );
