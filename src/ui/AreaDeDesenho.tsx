@@ -394,6 +394,8 @@ interface AreaDeDesenhoProps {
   /** O traço da costura, e as cores dos tamanhos na área de trabalho (ADR 0182). */
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly coresDosTamanhos?: Readonly<Record<string, string>>;
+  /** Esconde as réguas (ADR 0205). */
+  readonly ocultarReguas?: boolean;
   /** As cores do esquema próprio (ADR 0203). */
   readonly coresDaArea?: CoresDaArea | null;
   /** O que aparece nas peças, e os destaques (ADR 0199). */
@@ -510,6 +512,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     corDoContorno = null,
     visao = VISAO_PADRAO,
     coresDaArea = null,
+    ocultarReguas = false,
     destacarPacotes = false,
     codigoDosPacotes = 'alfanumerico',
     coresDosPacotes = SEM_CORES_DE_PACOTE,
@@ -2250,8 +2253,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       >
         {unidadeDaRegua}
       </button>
-      <canvas ref={reguaHorizontalRef} className="regua-horizontal" />
-      <canvas ref={reguaVerticalRef} className="regua-vertical" />
+      <canvas ref={reguaHorizontalRef} className="regua-horizontal" style={ocultarReguas ? { visibility: 'hidden' } : undefined} />
+      <canvas ref={reguaVerticalRef} className="regua-vertical" style={ocultarReguas ? { visibility: 'hidden' } : undefined} />
       <div ref={containerRef} className="area-de-desenho-container">
         <canvas
           ref={canvasRef}

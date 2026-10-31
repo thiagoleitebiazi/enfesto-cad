@@ -28,6 +28,8 @@ interface BarraDeStatusProps {
     readonly rendimentoConsumoM: number | null;
     readonly rendimentoPesoKg: number | null;
   } | null;
+  /** Escondida pelo menu Visão (ADR 0205). */
+  readonly oculta?: boolean;
   /** As casas decimais das medidas; ausente, as de sempre (ADR 0199). */
   readonly precisao?: number | null;
   /** Unidade escolhida no canto das réguas: as medidas da barra seguem a mesma. */
@@ -48,7 +50,8 @@ function medidaComCasas(mm: number, unidade: UnidadeDeRegua, casas: number | nul
   return unidade === 'cm' ? `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'cm'), casas ?? 2)} cm` : `${numeroComVirgula(mm, casas ?? 1)} mm`;
 }
 
-export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
+export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element | null {
+  if (props.oculta) return null;
   const medida = (mm: number, unidade: UnidadeDeRegua): string => medidaComCasas(mm, unidade, props.precisao);
   const r = props.resumo;
   const textoDoCampo = (c: CampoDaBarra): string | null => {

@@ -13,6 +13,7 @@ import {
   opcoesDoEncaixeGuardadas,
   pacoteDaPeca,
   pacotesDoEncaixe,
+  pecasEmOrdemDeTamanho,
   rotuloDaPeca,
   VISAO_PADRAO,
   visaoGuardada,
@@ -115,5 +116,12 @@ describe('pôr na mesa e tirar dela', () => {
   it('conta a que não coube', () => {
     const grande: Molde = { ...peca('g', 'M', 0, 3300), contorno: [ponto(0, 3300), ponto(5000, 3300), ponto(5000, 3400), ponto(0, 3400)] };
     expect(trazerParaAMesa([grande], ['g'], enfesto).semLugar).toBe(1);
+  });
+});
+
+describe('a ordem crescente dos tamanhos (ADR 0205)', () => {
+  it('as letras na ordem da grade, depois os números, e o resto no fim', () => {
+    const r = pecasEmOrdemDeTamanho([peca('a', 'XX'), peca('b', '42'), peca('c', 'G'), peca('d', 'P'), peca('e', '38')]);
+    expect(r.map((p) => p.tamanho)).toEqual(['P', 'G', '38', '42', 'XX']);
   });
 });

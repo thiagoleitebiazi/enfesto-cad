@@ -101,7 +101,23 @@ export interface OpcoesDoEncaixe {
   readonly verificarAoPlotar: boolean;
   readonly codigoDosPacotes: CodigoDosPacotes;
   readonly coresDosPacotes?: readonly string[];
+  /** A lista de peças em ordem crescente dos tamanhos. */
+  readonly ordemCrescente?: boolean;
+  readonly ocultarReguas?: boolean;
+  readonly ocultarBarraDeStatus?: boolean;
 }
+
+const ORDEM_DOS_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'EG', 'EGG'];
+
+/** Onde o tamanho cai na ordem: as letras da grade, depois os números; o resto, no fim. */
+export function posicaoDoTamanho(tamanho: string): number {
+  const i = ORDEM_DOS_TAMANHOS.indexOf(tamanho.trim().toUpperCase());
+  if (i >= 0) return i;
+  const n = Number(tamanho);
+  return tamanho.trim() !== '' && Number.isFinite(n) ? ORDEM_DOS_TAMANHOS.length + n : Number.MAX_SAFE_INTEGER;
+}
+
+export const pecasEmOrdemDeTamanho = (pecas: readonly Molde[]): Molde[] => [...pecas].sort((a, b) => posicaoDoTamanho(a.tamanho) - posicaoDoTamanho(b.tamanho));
 
 export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, encostarAoSoltar: false, verificarAoPlotar: true, codigoDosPacotes: 'alfanumerico' };
 

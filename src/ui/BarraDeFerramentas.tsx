@@ -143,6 +143,11 @@ interface BarraDeFerramentasProps {
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly onEstiloDaCostura?: (estilo: EstiloDaCostura) => void;
   readonly onCoresDosTamanhos?: () => void;
+  /** Mostrar ou esconder as réguas e a barra de status (ADR 0205). */
+  readonly mostrarReguas?: boolean;
+  readonly onAlternarReguas?: () => void;
+  readonly mostrarBarraDeStatus?: boolean;
+  readonly onAlternarBarraDeStatus?: () => void;
   /** "Moldes no encaixe", os destaques, a barra de status e as opções do encaixe (ADR 0199). */
   readonly onMoldesNoEncaixe?: () => void;
   readonly destacarPacotes?: boolean;
@@ -604,6 +609,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onZoomDeUmElemento
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
+                          { tipo: 'opcao' as const, rotulo: 'Réguas', marcado: props.mostrarReguas !== false, onEscolher: props.onAlternarReguas ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Barra de status', marcado: props.mostrarBarraDeStatus !== false, onEscolher: props.onAlternarBarraDeStatus ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Moldes no encaixe…', titulo: 'O que aparece em cada peça na tela; não muda o que sai impresso', onEscolher: props.onMoldesNoEncaixe ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar pacotes', marcado: props.destacarPacotes === true, titulo: 'Cada pacote do encaixe numa cor, com o código dele', onEscolher: props.onAlternarDestacarPacotes ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar relacionamento de piques', marcado: props.destacarRelacionamento === true, titulo: 'Marca os pontos de casamento das peças', onEscolher: props.onAlternarDestacarRelacionamento ?? (() => undefined) },

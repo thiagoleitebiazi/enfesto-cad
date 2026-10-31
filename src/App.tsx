@@ -386,6 +386,7 @@ import {
   guardarVisao,
   opcoesDoEncaixeGuardadas,
   OPCOES_PADRAO_DO_ENCAIXE,
+  pecasEmOrdemDeTamanho,
   ROTULO_DO_ATRIBUTO,
   ROTULO_DO_CAMPO_DA_BARRA,
   VISAO_PADRAO,
@@ -854,6 +855,14 @@ export default function App(): React.JSX.Element {
       return coresDaAreaGuardadas({ getItem: () => null });
     }
   });
+  const mudarOpcoesDoEncaixe = (novas: OpcoesDoEncaixe): void => {
+    setOpcoesDoEncaixe(novas);
+    try {
+      guardarOpcoesDoEncaixe(window.localStorage, novas);
+    } catch {
+      // Sem o armazenamento do navegador, vale até fechar.
+    }
+  };
   const [camposDaBarra, setCamposDaBarra] = useState<readonly CampoDaBarra[]>(() => {
     try {
       return camposDaBarraGuardados(window.localStorage);
@@ -5493,6 +5502,10 @@ export default function App(): React.JSX.Element {
         mostrarNaoGraduados={mostrarNaoGraduados}
         onAlternarNaoGraduados={() => setMostrarNaoGraduados((v) => !v)}
         onMoldesNoEncaixe={() => setDialogoDeFerramenta({ tipo: 'moldes-no-encaixe' })}
+        mostrarReguas={!opcoesDoEncaixe.ocultarReguas}
+        onAlternarReguas={() => mudarOpcoesDoEncaixe({ ...opcoesDoEncaixe, ocultarReguas: !opcoesDoEncaixe.ocultarReguas })}
+        mostrarBarraDeStatus={!opcoesDoEncaixe.ocultarBarraDeStatus}
+        onAlternarBarraDeStatus={() => mudarOpcoesDoEncaixe({ ...opcoesDoEncaixe, ocultarBarraDeStatus: !opcoesDoEncaixe.ocultarBarraDeStatus })}
         destacarPacotes={destacarPacotes}
         onAlternarDestacarPacotes={() => setDestacarPacotes((v) => !v)}
         destacarRelacionamento={destacarRelacionamento}
@@ -6439,6 +6452,7 @@ export default function App(): React.JSX.Element {
             { tipo: 'caixa', id: 'clicar', rotulo: 'Encaixa molde ao clicar: o clique na lista põe na mesa a peça que está fora dela', inicial: opcoesDoEncaixe.encaixaAoClicar },
             { tipo: 'caixa', id: 'encostar', rotulo: 'Encostar ao soltar: a peça arrastada segue até a vizinha', inicial: opcoesDoEncaixe.encostarAoSoltar },
             { tipo: 'caixa', id: 'verificar', rotulo: 'Verificar sobreposição ao plotar', inicial: opcoesDoEncaixe.verificarAoPlotar },
+            { tipo: 'caixa', id: 'ordem', rotulo: 'Lista de peças em ordem crescente dos tamanhos', inicial: opcoesDoEncaixe.ordemCrescente === true },
             ...Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => ({ tipo: 'cor' as const, id: `pacote${i}`, rotulo: `Cor do pacote ${i + 1}`, inicial: corDoPacote(i, opcoesDoEncaixe.coresDosPacotes) })),
             {
               tipo: 'escolha',
@@ -6457,13 +6471,8 @@ export default function App(): React.JSX.Element {
             const precisao = valores['precisao'] as number | undefined;
             if (!(angulo > 0 && angulo < 360)) return 'O ângulo de giro vai de 0 a 360 graus.';
             if (precisao !== undefined && (precisao < 0 || precisao > 4)) return 'A precisão vai de 0 a 4 casas.';
-            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico', coresDosPacotes: Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => String(valores[`pacote${i}`])) };
-            setOpcoesDoEncaixe(novas);
-            try {
-              guardarOpcoesDoEncaixe(window.localStorage, novas);
-            } catch {
-              // Sem o armazenamento do navegador, vale até fechar.
-            }
+            const novas: OpcoesDoEncaixe = { ...opcoesDoEncaixe, ordemCrescente: valores['ordem'] === true, anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico', coresDosPacotes: Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => String(valores[`pacote${i}`])) };
+            mudarOpcoesDoEncaixe(novas);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'opcoes-do-encaixe' ? null : d))}
@@ -7985,7 +7994,7 @@ export default function App(): React.JSX.Element {
       <div className={mostrarListaDePecas ? 'corpo-principal' : 'corpo-principal sem-lista-de-pecas'}>
         {mostrarListaDePecas && (
           <PainelDePecas
-            pecas={pecas}
+            pecas={opcoesDoEncaixe.ordemCrescente ? pecasEmOrdemDeTamanho(pecas) : pecas}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
             onSelecionar={(id) => {
@@ -8059,6 +8068,7 @@ export default function App(): React.JSX.Element {
             mostrarNaoGraduados={mostrarNaoGraduados}
             corDoContorno={coresPelasFerramentas ? corDaCaneta(ferramentasDoPlotter.corte ?? 1) : null}
             visao={visao}
+            ocultarReguas={opcoesDoEncaixe.ocultarReguas === true}
             coresDaArea={corDaAreaNoEsquema(esquemasDaArea)}
             destacarPacotes={destacarPacotes}
             codigoDosPacotes={opcoesDoEncaixe.codigoDosPacotes}
@@ -8190,6 +8200,7 @@ export default function App(): React.JSX.Element {
         </div>
       )}
       <BarraDeStatus
+        oculta={opcoesDoEncaixe.ocultarBarraDeStatus === true}
         cursorMundo={cursorMundo}
         transform={transform}
         totalDePecas={pecas.length}

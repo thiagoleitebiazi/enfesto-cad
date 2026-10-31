@@ -335,3 +335,5 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Envolvente de grupo; margem por lado; retangular; Substituir tamanho no encaixe | ⬜ não feito: ver ADR 0202 |
 | Captura em lote; rastreabilidade; previsão de compra; catálogo; modelo virtual; recorte para a loja; miniatura; esquemas de cores próprios | ✅ ADR 0203 |
 | Cores dos pacotes; manual e novidades; sugestão do método de enfesto | ✅ ADR 0204 |
+| Réguas e barra de status; ordem crescente dos tamanhos | ✅ ADR 0205 |
+| .aoc; DMPL; Substituir; blocos na vertical; envolvente de grupo; TrueType; níveis Mutoh; cascata; teclado virtual | ⬜ não feito: motivo de cada um no ADR 0205 |
