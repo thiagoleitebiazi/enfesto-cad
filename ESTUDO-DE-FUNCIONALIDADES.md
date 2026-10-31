@@ -311,7 +311,7 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Inverter costura; manter diferença | ✅ ADR 0190 |
 | Relacionamento piques | 🟡 ADR 0191 (sem os modos simétricos: o manual só lista os nomes) |
 | Auto ajuste de texto; estilos de linha no plotter; calculadora; cor, estilo e peso da linha | ✅ ADR 0192 |
-| Mostrar conforme definição das ferramentas | ⬜ não feito: só cosmético |
+| Mostrar conforme definição das ferramentas; ponto de pique | ✅ ADR 0193 (só o contorno; ponto de cor fixa) |
 | Níveis de impressão | ⬜ não feito: é do plotter Mutoh; as canetas por elemento (ADR 0174) cobrem a escolha da caneta |
 | Itens institucionais (licença, clube, dados do autor, teclado virtual, sobre, janela em cascata) | não se aplicam |
 | Importar e exportar Lectra, Gerber, Investrônica, MDL, VET, IBA, ALF, metafile | não feito: formatos fechados |

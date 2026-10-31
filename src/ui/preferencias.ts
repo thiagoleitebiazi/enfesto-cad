@@ -114,6 +114,15 @@ export function guardarCoresDosTamanhos(a: Pick<Armazenamento, 'setItem'>, cores
   a.setItem(CHAVE_DAS_CORES, JSON.stringify(cores));
 }
 
+// ---- As cores pelas ferramentas (ADR 0193).
+
+const CORES_DAS_CANETAS = ['#212529', '#c92a2a', '#2b8a3e', '#1971c2', '#e67700', '#9c36b5', '#0b7285', '#c2255c'] as const;
+
+/** A cor com que a caneta aparece na tela: da 1 à 8. */
+export function corDaCaneta(numero: number): string {
+  return CORES_DAS_CANETAS[Math.min(8, Math.max(1, Math.round(numero))) - 1]!;
+}
+
 // ---- O auto ajuste de texto no plotter (ADR 0192).
 
 const CHAVE_DO_AJUSTE = `${PREFIXO}ajuste-de-texto`;

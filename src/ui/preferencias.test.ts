@@ -1,3 +1,4 @@
+import { corDaCaneta } from './preferencias';
 import { PIQUE_PADRAO } from '../domain/piques';
 import { corDoTamanho, coresDosTamanhosGuardadas, estiloDaCosturaGuardado, guardarCoresDosTamanhos, guardarEstiloDaCostura, guardarPiquePadrao, piquePadraoGuardado, TRACOS_DA_COSTURA } from './preferencias';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -94,5 +95,13 @@ describe('o pique padrão, o estilo da costura e as cores dos tamanhos (ADR 0182
     expect(coresDosTamanhosGuardadas(a)).toEqual({ P: '#112233' });
     a.setItem('enfesto-cad:cores-dos-tamanhos', JSON.stringify({ P: '#112233', G: 'url(x)' }));
     expect(coresDosTamanhosGuardadas(a)).toEqual({ P: '#112233' });
+  });
+});
+
+describe('as cores pelas ferramentas (ADR 0193)', () => {
+  it('cada caneta tem a sua cor, e o número fora da faixa fica na ponta', () => {
+    expect(corDaCaneta(1)).not.toBe(corDaCaneta(2));
+    expect(corDaCaneta(0)).toBe(corDaCaneta(1));
+    expect(corDaCaneta(9)).toBe(corDaCaneta(8));
   });
 });

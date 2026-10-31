@@ -134,6 +134,11 @@ interface BarraDeFerramentasProps {
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly onEstiloDaCostura?: (estilo: EstiloDaCostura) => void;
   readonly onCoresDosTamanhos?: () => void;
+  /** As cores pelas ferramentas e os pontos de pique (ADR 0193). */
+  readonly coresPelasFerramentas?: boolean;
+  readonly onAlternarCoresPelasFerramentas?: () => void;
+  readonly mostrarPontosDePique?: boolean;
+  readonly onAlternarPontosDePique?: () => void;
   /** O texto como linha, a pasta do plotter e o retângulo de organização (ADR 0184). */
   readonly textoComoLinha?: boolean;
   readonly onAlternarTextoComoLinha?: () => void;
@@ -568,6 +573,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onZoomDeUmElemento
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
+                          { tipo: 'opcao' as const, rotulo: 'Cores pelas ferramentas', marcado: props.coresPelasFerramentas === true, titulo: 'O contorno das peças na cor da caneta do corte (Opções › Ferramentas do plotter)', onEscolher: props.onAlternarCoresPelasFerramentas ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Pontos de pique', marcado: props.mostrarPontosDePique === true, titulo: 'Marca o ponto de cada pique no contorno', onEscolher: props.onAlternarPontosDePique ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Retângulo de organização…', titulo: 'A guia da largura do papel, para arrumar os moldes antes de plotar', onEscolher: props.onRetanguloDeOrganizacao ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Pontos não graduados', marcado: props.mostrarNaoGraduados === true, titulo: 'Marca, na peça selecionada, os cantos que não têm regra de graduação', onEscolher: props.onAlternarNaoGraduados ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Cores dos tamanhos…', titulo: 'A cor de cada tamanho na área de trabalho', onEscolher: props.onCoresDosTamanhos ?? (() => undefined) },

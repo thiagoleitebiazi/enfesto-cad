@@ -208,6 +208,7 @@ export type ModoDeDesenho =
 export type FerramentaDeVista = 'mao' | 'zoom-janela' | 'zoom-elemento';
 
 const COR_PONTO_NAO_GRADUADO = '#c92a2a';
+const COR_PONTO_DE_PIQUE = '#2b8a3e';
 const SEM_CORES_ESCOLHIDAS: Readonly<Record<string, string>> = {};
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
@@ -391,6 +392,9 @@ interface AreaDeDesenhoProps {
   /** O traço da costura, e as cores dos tamanhos na área de trabalho (ADR 0182). */
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly coresDosTamanhos?: Readonly<Record<string, string>>;
+  /** A cor do contorno pela caneta do corte, e os pontos de pique à vista (ADR 0193). */
+  readonly corDoContorno?: string | null;
+  readonly mostrarPontosDePique?: boolean;
   /** Marca os pontos sem graduação na peça selecionada (ADR 0181). */
   readonly mostrarNaoGraduados?: boolean;
   /** Chamado antes de a vista mudar por mão, roda ou zoom por janela — para "Vista anterior". */
@@ -493,6 +497,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     estiloDaCostura = 'tracejada',
     coresDosTamanhos = SEM_CORES_ESCOLHIDAS,
     mostrarNaoGraduados = false,
+    corDoContorno = null,
+    mostrarPontosDePique = false,
     onGuardarVista,
     mostrarGrade,
     imaAtivo,
@@ -1040,7 +1046,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
-      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
+      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? COR_CONTORNO_SELECIONADO : (corDoContorno ?? COR_CONTORNO);
       ctx.lineWidth = estaSelecionada || temErro ? 2.5 : 1.5;
       if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
@@ -1067,6 +1073,14 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.strokeStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
         ctx.lineWidth = 1;
         ctx.stroke();
+      }
+
+      if (mostrarPontosDePique) {
+        ctx.fillStyle = COR_PONTO_DE_PIQUE;
+        for (const pique of peca.piques) {
+          const t = mundoParaTela(pique.posicao, transform);
+          ctx.fillRect(t.x - 3, t.y - 3, 6, 6);
+        }
       }
 
       if (mostrarNaoGraduados && estaSelecionada) {
@@ -1716,6 +1730,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    corDoContorno,
+    mostrarPontosDePique,
     imagemDaPadronagem,
     retanguloDeOrganizacaoMm,
     estiloDaCostura,

@@ -368,7 +368,7 @@ import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } f
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
-import { ajusteDeTextoGuardado, guardarAjusteDeTexto } from './ui/preferencias';
+import { ajusteDeTextoGuardado, corDaCaneta, guardarAjusteDeTexto } from './ui/preferencias';
 import type { RelacaoDoCasamento } from './domain/molde';
 import { comTamanhoManterDiferenca } from './domain/tamanhoIntermediario';
 import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
@@ -741,6 +741,8 @@ export default function App(): React.JSX.Element {
     }
   });
   const [mostrarNaoGraduados, setMostrarNaoGraduados] = useState(false);
+  const [coresPelasFerramentas, setCoresPelasFerramentas] = useState(false);
+  const [mostrarPontosDePique, setMostrarPontosDePique] = useState(false);
   const [estiloDaCostura, setEstiloDaCostura] = useState<EstiloDaCostura>(() => {
     try {
       return estiloDaCosturaGuardado(window.localStorage);
@@ -5322,6 +5324,10 @@ export default function App(): React.JSX.Element {
         onZoomDeUmElemento={() => alternarFerramentaDeVista('zoom-elemento')}
         mostrarNaoGraduados={mostrarNaoGraduados}
         onAlternarNaoGraduados={() => setMostrarNaoGraduados((v) => !v)}
+        coresPelasFerramentas={coresPelasFerramentas}
+        onAlternarCoresPelasFerramentas={() => setCoresPelasFerramentas((v) => !v)}
+        mostrarPontosDePique={mostrarPontosDePique}
+        onAlternarPontosDePique={() => setMostrarPontosDePique((v) => !v)}
         onCoresDosTamanhos={() => {
           if (pecas.some((p) => p.graduacao)) setDialogoDeFerramenta({ tipo: 'cores-dos-tamanhos' });
           else avisar('Nenhuma peça tem tamanhos: gradue-a antes.');
@@ -7465,6 +7471,8 @@ export default function App(): React.JSX.Element {
             estiloDaCostura={estiloDaCostura}
             coresDosTamanhos={coresDosTamanhos}
             mostrarNaoGraduados={mostrarNaoGraduados}
+            corDoContorno={coresPelasFerramentas ? corDaCaneta(ferramentasDoPlotter.corte ?? 1) : null}
+            mostrarPontosDePique={mostrarPontosDePique}
             onGuardarVista={guardarVista}
             mostrarGrade={mostrarGrade}
             imaAtivo={imaAtivo}
