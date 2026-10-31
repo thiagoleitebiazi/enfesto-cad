@@ -35,6 +35,17 @@ import { graduacaoComOsPontosMovidos, transformarGraduacao, type Graduacao } fro
  * direcional/com pelo inverte o desenho/sentido do pelo fisicamente, exatamente
  * o mesmo tipo de erro que a rotação proibida evita.
  */
+/**
+ * Por onde a faca da mesa de corte entra e sai da peça (os pontos CAM do manual da referência, ADR 0173). Completo: a
+ * peça é cortada de uma vez, saindo e voltando ao ponto de entrada. Semi-corte: em duas etapas, da entrada até a saída,
+ * pelos dois lados, em sentidos opostos. Os pontos são os do contorno (o número da tela menos 1).
+ */
+export interface CorteNaMesa {
+  readonly tipo: 'completo' | 'semi-corte';
+  readonly entrada: number;
+  readonly saida?: number;
+}
+
 export interface RestricaoDeRotacao {
   readonly permite180: boolean;
   readonly permite90e270: boolean;
@@ -435,6 +446,8 @@ export interface Molde {
    * dela, metade sai espelhada. A quantidade tem de ser par. Ausente, todas as cópias saem iguais.
    */
   readonly emPar?: true;
+  /** Os pontos CAM (ADR 0173); `null` ou ausente: a faca entra onde a linha de corte começa. */
+  readonly corteNaMesa?: CorteNaMesa | null;
   /**
    * O grupo do encaixe (por exemplo, "Entretela"): as peças do mesmo grupo saem juntas no encaixe, num trecho só do
    * comprimento, que pode ser cortado à parte (ADR 0103; ver `gruposDoEncaixe.ts`). Ausente: sem grupo.

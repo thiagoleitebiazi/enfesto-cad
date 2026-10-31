@@ -192,6 +192,22 @@ describe('BarraDeFerramentas: abas', () => {
     window.localStorage.removeItem('enfesto-cad:favoritos');
   });
 
+  it('a tecla do favorito (ADR 0175): dada no campo, funciona de qualquer aba; a do programa é recusada; Delete tira', () => {
+    window.localStorage.setItem('enfesto-cad:favoritos', JSON.stringify([{ aba: 'inicio', rotulo: 'Exportar DXF' }]));
+    const props = renderizar('Favoritos');
+    const campo = screen.getByLabelText('Tecla de Exportar DXF');
+    fireEvent.keyDown(campo, { key: 's', ctrlKey: true });
+    expect(within(painel()).getByRole('alert')).toHaveTextContent('Ctrl+S já está em uso pelo programa');
+    fireEvent.keyDown(campo, { key: 'k', ctrlKey: true, shiftKey: true });
+    expect(campo).toHaveValue('Ctrl+Shift+K');
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true, shiftKey: true });
+    expect(props.onExportarDxf).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('tab', { name: 'Favoritos' }));
+    fireEvent.keyDown(screen.getByLabelText('Tecla de Exportar DXF'), { key: 'Delete' });
+    expect(screen.getByLabelText('Tecla de Exportar DXF')).toHaveValue('');
+    window.localStorage.removeItem('enfesto-cad:favoritos');
+  });
+
   it('mostra as abas na ordem de um CAD de moldes, com a de Encaixe no fim, e abre em Início', () => {
     render(<BarraDeFerramentas {...propsBase()} />);
 

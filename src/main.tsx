@@ -2,7 +2,15 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ServidorDeEncaixes } from './ui/ServidorDeEncaixes';
+import { aplicarEsquema, esquemaGuardado } from './ui/preferencias';
 import './App.css';
+
+// O esquema de cores escolhido (ADR 0177), antes do primeiro desenho.
+try {
+  aplicarEsquema(esquemaGuardado(window.localStorage), null, document.documentElement);
+} catch {
+  // Sem o armazenamento do navegador, fica o padrão.
+}
 
 const elemento = document.getElementById('root');
 if (!elemento) {

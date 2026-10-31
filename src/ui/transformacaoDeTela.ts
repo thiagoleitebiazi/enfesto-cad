@@ -116,11 +116,23 @@ export function passoDaGradeEmMm(escalaPxPorMm: number, minimoPx = 12): number {
 }
 
 /** Unidade de exibição da régua — o valor interno continua sempre em mm; isto só afeta o que é desenhado/lido. */
-export type UnidadeDeRegua = 'cm' | 'mm';
+export type UnidadeDeRegua = 'cm' | 'mm' | 'pol';
 
-/** Converte um valor em mm para a unidade de exibição da régua (cm = mm/10, mm = identidade). */
+/** Converte um valor em mm para a unidade de exibição da régua (cm = mm/10, mm = identidade, pol = mm/25,4). */
 export function valorDaReguaEmUnidade(mm: number, unidade: UnidadeDeRegua): number {
-  return unidade === 'cm' ? mm / 10 : mm;
+  return unidade === 'cm' ? mm / 10 : unidade === 'pol' ? mm / 25.4 : mm;
+}
+
+/** O número da marca da régua: nas polegadas, as frações de 0,1, 0,25 e 0,5 aparecem. */
+export function rotuloDaRegua(mm: number, unidade: UnidadeDeRegua): string {
+  const v = valorDaReguaEmUnidade(mm, unidade);
+  return unidade === 'pol' ? String(Math.round(v * 100) / 100) : String(Math.round(v));
+}
+
+/** O passo da régua em polegadas: 1/10, 1/4, 1/2, 1, 2, 5, 10, 20… cujo espaçamento em tela fique perto de `alvoPx`. */
+export function passoDeReguaEmPolegadas(escalaPxPorMm: number, alvoPx: number = 60): number {
+  const passos = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  return passos.reduce((melhor, p) => (Math.abs(p * 25.4 * escalaPxPorMm - alvoPx) < Math.abs(melhor * 25.4 * escalaPxPorMm - alvoPx) ? p : melhor)) * 25.4;
 }
 
 /** Escolhe um espaçamento "redondo" em mm (1, 2, 5, 10, 20, 50, ...) cujo espaçamento em tela fique perto de `alvoPx`. */

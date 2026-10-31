@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
 import { criarMolde, type Molde } from '../domain/molde';
-import { gerarIso, resumoDoIso, rumoContinuo } from './iso-exportacao';
+import { gerarIso, resumoDoIso, rumoContinuo, trechosDoCorte } from './iso-exportacao';
 
 function peca(id: string, y0: number, extras: Partial<Parameters<typeof criarMolde>[0]> = {}): Molde {
   return criarMolde(
@@ -97,5 +97,41 @@ describe('a faca tangencial (ADR 0148)', () => {
     expect(antes.startsWith('G1 X100.00')).toBe(true);
     const estrito = comandos(gerarIso([curva], { larguraDaMesaMm: 1000, facaTangencial: true, anguloDeLevantarGraus: 3 }));
     expect(estrito[estrito.indexOf('G1 X200.00 Y990.00 C-5.71') - 1]).toBe('G1 Z0.00');
+  });
+});
+
+describe('os pontos CAM e o furador (ADR 0173)', () => {
+  const ponta = (c: readonly string[]) => c.filter((l) => l.startsWith('G0 X')).at(-2);
+
+  it('sem pontos, a volta inteira; completo, a volta a partir da entrada', () => {
+    const p = peca('a', 0);
+    expect(trechosDoCorte(p, p.contorno)).toEqual([{ pontos: p.contorno, fechado: true }]);
+    const t = trechosDoCorte({ ...p, corteNaMesa: { tipo: 'completo', entrada: 2 } }, p.contorno);
+    expect(t).toEqual([{ pontos: [p.contorno[2], p.contorno[3], p.contorno[0], p.contorno[1]], fechado: true }]);
+    expect(ponta(comandos(gerarIso([{ ...p, corteNaMesa: { tipo: 'completo', entrada: 2 } }], { larguraDaMesaMm: 1000 })))).toBe('G0 X200.00 Y900.00');
+  });
+
+  it('semi-corte: dois trechos, da entrada à saída, um por cada lado', () => {
+    const p = peca('a', 0);
+    const t = trechosDoCorte({ ...p, corteNaMesa: { tipo: 'semi-corte', entrada: 0, saida: 2 } }, p.contorno);
+    expect(t).toEqual([
+      { pontos: [p.contorno[0], p.contorno[1], p.contorno[2]], fechado: false },
+      { pontos: [p.contorno[0], p.contorno[3], p.contorno[2]], fechado: false },
+    ]);
+  });
+
+  it('sem a saída, ou com a saída igual à entrada, corta de uma vez; ponto que não existe é ignorado', () => {
+    const p = peca('a', 0);
+    expect(trechosDoCorte({ ...p, corteNaMesa: { tipo: 'semi-corte', entrada: 1 } }, p.contorno)).toHaveLength(1);
+    expect(trechosDoCorte({ ...p, corteNaMesa: { tipo: 'semi-corte', entrada: 1, saida: 1 } }, p.contorno)[0]!.fechado).toBe(true);
+    expect(trechosDoCorte({ ...p, corteNaMesa: { tipo: 'completo', entrada: 99 } }, p.contorno)).toEqual([{ pontos: p.contorno, fechado: true }]);
+  });
+
+  it('com o furador, a marca sai por M43 e M44, sem mexer no eixo Z', () => {
+    const p = peca('a', 0, { marcas: [{ id: 'm', posicao: ponto(50, 100) }] });
+    const c = comandos(gerarIso([p], { larguraDaMesaMm: 1000, furadorM43: true }));
+    const i = c.indexOf('M43');
+    expect(c.slice(i - 1, i + 2)).toEqual(['G0 X100.00 Y950.00', 'M43', 'M44']);
+    expect(comandos(gerarIso([p], { larguraDaMesaMm: 1000 }))).not.toContain('M43');
   });
 });

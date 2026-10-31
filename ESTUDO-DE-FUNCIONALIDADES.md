@@ -259,7 +259,6 @@ Fonte: a apostila unificada de treinamento, comparada com o programa. As ferrame
 | Travar horizontal / vertical | ✅ com Shift no arrasto: ADR 0164 |
 | Texto no risco | ✅ ADR 0165 (na mesa e no PLT) |
 | Cortar o molde e sobreposição permitida | ✅ já cobertos: Cortar (Construção) e a tolerância da validação (ADR 0082) |
-| Molde dobrado só na dobra (F11) | ⬜ a fazer |
 | Paleta do usuário | ✅ ADR 0171 |
 
 ## Sétima rodada: o manual inteiro, menu por menu (2026-10-31)
@@ -274,6 +273,12 @@ Fontes: o manual digital da referência, lido por inteiro; a página pública so
 | Senha do modelo | ✅ ADR 0169 (no arquivo exportado) |
 | Molde a molde; lembrar molde original | ✅ ADR 0170 |
 | Paleta do usuário | ✅ ADR 0171 |
-| Molde dobrado só na dobra | ⬜ a fazer |
 | Importar de outros sistemas (arquivos proprietários do manual) | ⬜ formatos fechados, sem especificação pública |
-| Perfil, teclas de atalho, esquema de cores, unidade de medida geral, pontos CAM, semi-corte | ⬜ a fazer |
+| Molde dobrado na dobra do tecido | ✅ ADR 0172 |
+| Pontos CAM (completo e semi-corte); furador M43 e M44 | ✅ ADR 0173 (não testado numa mesa) |
+| Ferramentas do plotter por elemento | ✅ ADR 0174 |
+| Teclas de atalho | ✅ ADR 0175 (nas ferramentas dos Favoritos) |
+| Perfil: salvar, carregar, restaurar | ✅ ADR 0176 |
+| Esquemas de cores | ✅ ADR 0177 (quatro prontos; não configuráveis) |
+| Unidade de medida | 🟡 polegadas na régua e nas coordenadas: ADR 0178 |
+| Sob medida | ✅ ADR 0179 |

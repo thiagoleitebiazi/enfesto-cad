@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
 import { ajustarCompactacao } from './compactacaoDaFita';
 import type { FerramentaDeMolde } from './ferramentasDeMolde';
@@ -20,6 +20,7 @@ export type FerramentaDeAnotacao =
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
+import { combinacaoDaTecla, ROTULO_DO_ESQUEMA, TECLAS_DO_PROGRAMA, type EsquemaDeCores } from './preferencias';
 
 interface BarraDeFerramentasProps {
   readonly modo: ModoDeDesenho;
@@ -104,6 +105,15 @@ interface BarraDeFerramentasProps {
   readonly onExportarDxf: () => void;
   /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
   readonly onExportarPlt: () => void;
+  /** As preferências (ADR 0174, 0176, 0177). */
+  readonly onFerramentasDoPlotter?: () => void;
+  readonly esquemaDeCores?: EsquemaDeCores;
+  readonly onEsquemaDeCores?: (esquema: EsquemaDeCores) => void;
+  readonly onSalvarPerfil?: () => void;
+  readonly onCarregarPerfil?: () => void;
+  readonly onRestaurarPadroes?: () => void;
+  /** O tamanho sob medida (ADR 0179). */
+  readonly onSobMedida?: () => void;
   /** O DXF no padrão ASTM (ADR 0166). */
   readonly onExportarAstm?: () => void;
   /** Plotar os moldes, e não o encaixe (ADR 0167). */
@@ -263,6 +273,8 @@ interface FerramentaProps {
 interface Favorito {
   readonly aba: Aba;
   readonly rotulo: string;
+  /** A tecla de atalho que a pessoa deu a ele (ADR 0175). */
+  readonly tecla?: string;
 }
 
 const CHAVE_DOS_FAVORITOS = 'enfesto-cad:favoritos';
@@ -355,6 +367,31 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       // Sem o armazenamento do navegador, valem até fechar.
     }
   };
+  const [avisoDaTecla, setAvisoDaTecla] = useState<string | null>(null);
+  /** Dá ao favorito a tecla apertada; Delete ou Backspace tiram. A combinação em uso é recusada, dizendo com quem ela está. */
+  const definirTecla = (f: Favorito, e: React.KeyboardEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sem = (x: Favorito): Favorito => {
+      const copia = { ...x };
+      delete (copia as { tecla?: string }).tecla;
+      return copia;
+    };
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      mudarFavoritos(favoritos.map((x) => (x === f ? sem(x) : x)));
+      setAvisoDaTecla(null);
+      return;
+    }
+    const tecla = combinacaoDaTecla(e);
+    if (!tecla) return;
+    const outro = favoritos.find((x) => x.tecla === tecla && x !== f);
+    if (TECLAS_DO_PROGRAMA.has(tecla) || outro) {
+      setAvisoDaTecla(`${tecla} já está em uso${outro ? ` por ${outro.rotulo}` : ' pelo programa'}.`);
+      return;
+    }
+    mudarFavoritos(favoritos.map((x) => (x === f ? { ...x, tecla } : x)));
+    setAvisoDaTecla(null);
+  };
   /** Vai à aba da ferramenta e clica nela: o favorito faz o que o botão original faz, inclusive ficar sem ação se ele estiver apagado. */
   const usarFavorito = (f: Favorito): void => {
     flushSync(() => setAbaAtiva(f.aba));
@@ -362,9 +399,29 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       .find((b) => rotuloDoBotao(b) === f.rotulo)
       ?.click();
   };
+  useEffect(() => {
+    usarFavoritoRef.current = usarFavorito;
+    favoritosRef.current = favoritos;
+  });
   // O que falta para usar uma ferramenta de graduação: uma peça selecionada, com tamanhos definidos.
   const faltaParaGraduar = !props.temSelecaoUnica ? SEM_PECA : props.temGraduacao ? null : SEM_TAMANHOS;
   const conteudoRef = useRef<HTMLDivElement | null>(null);
+  // A tecla de um favorito funciona de qualquer aba, fora dos campos de texto (ADR 0175).
+  const usarFavoritoRef = useRef<(f: Favorito) => void>(() => {});
+  const favoritosRef = useRef<readonly Favorito[]>([]);
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent): void => {
+      const alvo = e.target as HTMLElement | null;
+      if (alvo && ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName)) return;
+      const tecla = combinacaoDaTecla(e);
+      const f = tecla ? favoritosRef.current.find((x) => x.tecla === tecla) : undefined;
+      if (!f) return;
+      e.preventDefault();
+      usarFavoritoRef.current(f);
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, []);
 
   // Mede antes da pintura: ao trocar de aba (outros botões) e sempre que a
   // largura da fita muda. Os atributos de compactação ficam só no DOM — o
@@ -507,6 +564,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 marcado: props.unidadeDaRegua === 'mm',
                 onEscolher: () => props.onDefinirUnidadeDaRegua('mm'),
               },
+              {
+                tipo: 'opcao',
+                rotulo: 'Régua em polegadas',
+                marcado: props.unidadeDaRegua === 'pol',
+                onEscolher: () => props.onDefinirUnidadeDaRegua('pol'),
+              },
               { tipo: 'separador' },
               {
                 tipo: 'opcao',
@@ -522,6 +585,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 titulo: 'Exportar PLT: a linha de corte com a caneta 1; a costura, as linhas internas, o fio, os piques e os textos com a 2',
                 onEscolher: () => props.onDefinirCanetasDoPlotter(2),
               },
+              ...(props.onFerramentasDoPlotter
+                ? [
+                    { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    { tipo: 'separador' as const },
+                    ...(Object.keys(ROTULO_DO_ESQUEMA) as EsquemaDeCores[]).map((e) => ({ tipo: 'opcao' as const, rotulo: ROTULO_DO_ESQUEMA[e], marcado: props.esquemaDeCores === e, onEscolher: () => props.onEsquemaDeCores?.(e) })),
+                    { tipo: 'separador' as const },
+                    { tipo: 'acao' as const, rotulo: 'Salvar perfil…', titulo: 'Grava num arquivo as preferências deste computador: favoritos, teclas, cores, canetas', onEscolher: props.onSalvarPerfil ?? (() => {}) },
+                    { tipo: 'acao' as const, rotulo: 'Carregar perfil…', titulo: 'Traz as preferências de um arquivo; valem ao abrir o programa de novo', onEscolher: props.onCarregarPerfil ?? (() => {}) },
+                    { tipo: 'acao' as const, rotulo: 'Restaurar padrões', titulo: 'Tira as preferências deste computador; valem ao abrir o programa de novo', onEscolher: props.onRestaurarPadroes ?? (() => {}) },
+                  ]
+                : []),
             ]}
           />
           <MenuSuspenso
@@ -585,11 +659,23 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             <div className="grupo-de-ferramentas" role="group" aria-label="Favoritos">
               {favoritos.length === 0 && <span className="nota-do-formulario">Clique com o botão direito numa ferramenta de qualquer aba para pô-la aqui. Aqui, o botão direito tira.</span>}
               {favoritos.map((f) => (
-                <button key={`${f.aba}:${f.rotulo}`} title={`Ferramenta da outra aba: ${f.rotulo}`} onClick={() => usarFavorito(f)}>
-                  <Icone nome="biblioteca" />
-                  <span>{f.rotulo}</span>
-                </button>
+                <span key={`${f.aba}:${f.rotulo}`} className="favorito">
+                  <button title={`Ferramenta da outra aba: ${f.rotulo}`} onClick={() => usarFavorito(f)}>
+                    <Icone nome="biblioteca" />
+                    <span>{f.rotulo}</span>
+                  </button>
+                  <input
+                    type="text"
+                    readOnly
+                    aria-label={`Tecla de ${f.rotulo}`}
+                    title="Clique aqui e aperte a combinação (com Ctrl, Alt ou uma tecla F). Delete tira."
+                    placeholder="tecla"
+                    value={f.tecla ?? ''}
+                    onKeyDown={(e) => definirTecla(f, e)}
+                  />
+                </span>
               ))}
+              {avisoDaTecla && <span role="alert">{avisoDaTecla}</span>}
             </div>
           )}
           {abaAtiva === 'arquivo' && (
@@ -2159,6 +2245,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Loja">
+                {props.onSobMedida && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Sob', 'medida']}
+                    icone="exportar"
+                    dica="Sob medida: as medidas da peça pronta dizem onde ela cai na grade, e as peças ganham um tamanho nessa posição"
+                    onClick={props.onSobMedida}
+                  />
+                )}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Recomendar', 'tamanho']}

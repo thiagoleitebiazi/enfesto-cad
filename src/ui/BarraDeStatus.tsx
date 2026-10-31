@@ -30,6 +30,7 @@ interface BarraDeStatusProps {
 
 /** Medida em mm escrita na unidade das réguas, com vírgula; em cm, duas casas dão a mesma precisão de 0,1 mm. */
 function medida(mm: number, unidade: UnidadeDeRegua): string {
+  if (unidade === 'pol') return `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'pol'), 3)} pol`;
   return unidade === 'cm' ? `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'cm'), 2)} cm` : `${numeroComVirgula(mm, 1)} mm`;
 }
 

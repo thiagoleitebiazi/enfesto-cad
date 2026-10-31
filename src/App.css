@@ -5822,3 +5822,51 @@ rect.destaque-do-desenho,
 .botoes-da-mesa input {
   width: 4em;
 }
+
+/* Os esquemas de cores (ADR 0177): trocam a escala de cinza inteira; a mesa do desenho continua clara. */
+:root[data-esquema='escuro'] {
+  --cinza-0: #1b1f26;
+  --cinza-50: #20252d;
+  --cinza-100: #262b34;
+  --cinza-150: #2c323c;
+  --cinza-200: #343b46;
+  --cinza-300: #434b57;
+  --cinza-400: #5a6470;
+  --cinza-500: #7f8894;
+  --cinza-600: #a9b0ba;
+  --cinza-700: #c8cdd5;
+  --cinza-800: #e6e9ed;
+  --cinza-900: #f6f7f9;
+  --cor-fundo-app: #14171c;
+}
+:root[data-esquema='alto-contraste'] {
+  --cinza-300: #6b7280;
+  --cinza-400: #4b5563;
+  --cinza-500: #374151;
+  --cinza-600: #1f2937;
+  --cinza-700: #111827;
+  --cinza-800: #000000;
+  --cinza-900: #000000;
+  --cor-fundo-app: #ffffff;
+}
+:root[data-esquema='areia'] {
+  --cinza-0: #fffdf8;
+  --cinza-50: #faf6ec;
+  --cinza-100: #f4eee0;
+  --cinza-150: #eee6d5;
+  --cinza-200: #e6dcc8;
+  --cinza-300: #d3c7b0;
+  --cor-fundo-app: #e4dccb;
+}
+
+.favorito {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+.favorito input {
+  width: 7em;
+  font-size: 11px;
+  text-align: center;
+}

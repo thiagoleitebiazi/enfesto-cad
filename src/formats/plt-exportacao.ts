@@ -27,6 +27,18 @@ import { corteDoPique, mundoParaDxf } from './dxf-exportacao';
 
 export const UNIDADES_POR_MM = 40;
 
+export type ElementoDoPlotter = 'corte' | 'costura' | 'furos' | 'internas' | 'fio' | 'piques' | 'textos';
+
+export const ROTULO_DO_ELEMENTO: Readonly<Record<ElementoDoPlotter, string>> = {
+  corte: 'Linha de corte',
+  costura: 'Linha de costura',
+  furos: 'Furos',
+  internas: 'Linhas internas',
+  fio: 'Fio',
+  piques: 'Piques',
+  textos: 'Nomes e textos',
+};
+
 export interface OpcoesDoPlt {
   /** A mesa (largura útil e comprimento): com ela, o contorno da mesa sai no risco e o y é contado da borda. */
   readonly larguraDaMesaMm?: number;
@@ -41,6 +53,8 @@ export interface OpcoesDoPlt {
   readonly faixa?: number;
   /** As linhas que identificam o risco, escritas logo depois da última peça (ADR 0162). */
   readonly cabecalho?: readonly string[];
+  /** A caneta de cada elemento (ADR 0174): a aba Ferramentas do manual da referência. Quem não está aqui usa a regra de `canetas`. */
+  readonly ferramentas?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
   /** Os textos livres, no lugar deles na mesa (ADR 0165). */
   readonly textos?: readonly { readonly x: number; readonly y: number; readonly texto: string }[];
 }
@@ -95,9 +109,9 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   };
 
   let canetaAtual = 1;
-  /** Troca de caneta, se pediu duas (com uma, tudo fica na 1). */
-  const caneta = (n: 1 | 2): void => {
-    const pedida = opcoes.canetas === 2 ? n : 1;
+  /** Troca de caneta, se pediu duas (com uma, tudo fica na 1); a do elemento, se ele tem uma. */
+  const caneta = (n: 1 | 2, elemento?: ElementoDoPlotter): void => {
+    const pedida = (elemento && opcoes.ferramentas?.[elemento]) || (opcoes.canetas === 2 ? n : 1);
     if (pedida === canetaAtual) return;
     comandos.push(`SP${pedida}`);
     canetaAtual = pedida;
@@ -120,17 +134,22 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   }
   for (const peca of pecas) {
     const corte = linhaDeCorteDaPeca(peca);
-    caneta(1);
+    caneta(1, 'corte');
     linha(corte, true);
-    caneta(2);
+    caneta(2, 'costura');
     if (corte !== peca.contorno) linha(peca.contorno, true);
+    caneta(2, 'furos');
     for (const furo of peca.furos) linha(furo, true);
+    caneta(2, 'internas');
     for (const interna of linhasDoMolde(peca)) linha(interna, false);
+    caneta(2, 'fio');
     linha([peca.linhaDeFio.inicio, peca.linhaDeFio.fim], false);
+    caneta(2, 'piques');
     for (const pique of peca.piques) linha(corteDoPique(peca, corte, pique), false);
     const simetria = arestaDeSimetria(peca);
     if (simetria !== null) linha([peca.contorno[simetria]!, peca.contorno[(simetria + 1) % peca.contorno.length]!], false);
     // O nome, a partir do canto de baixo da caixa da peça (no papel), em letras de 5 mm.
+    caneta(2, 'textos');
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
     comandos.push(`PU${u(inicio.x)},${u(inicio.y)}`, 'SI0.35,0.5', `LB${textoParaPlotter(`${peca.nome} ${peca.tamanho}`.trim())}${String.fromCharCode(3)}`);

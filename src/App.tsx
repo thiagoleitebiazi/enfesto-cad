@@ -361,12 +361,14 @@ import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pe
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
-import { cabecalhoDoRisco, gerarPlt, type OpcoesDoPlt } from './formats/plt-exportacao';
+import { cabecalhoDoRisco, gerarPlt, ROTULO_DO_ELEMENTO, type ElementoDoPlotter, type OpcoesDoPlt } from './formats/plt-exportacao';
 import { pecasDoPlt } from './formats/plt-importacao';
 import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas } from './domain/plotarMoldes';
 import { comTamanhoIntermediario } from './domain/tamanhoIntermediario';
+import { comTamanhoSobMedida, posicaoDasMedidas } from './domain/sobMedida';
+import { aplicarEsquema, aplicarPerfil, esquemaGuardado, perfilAtual, restaurarPadroes, type EsquemaDeCores } from './ui/preferencias';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
 import { PainelDaMesaDigitalizadora } from './ui/PainelDaMesaDigitalizadora';
@@ -575,6 +577,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'plt-por-partes' }
   | { readonly tipo: 'alinhar-pecas' }
   | { readonly tipo: 'plotar-moldes' }
+  | { readonly tipo: 'ferramentas-do-plotter' }
+  | { readonly tipo: 'sob-medida' }
   | { readonly tipo: 'tamanho-intermediario' }
   | { readonly tipo: 'exportar-projeto' }
   | { readonly tipo: 'senha-do-projeto'; readonly conteudo: string }
@@ -651,6 +655,22 @@ export default function App(): React.JSX.Element {
   const [imaAtivo, setImaAtivo] = useState(false);
   const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
   // As canetas do plotter: do computador (é do plotter que está ligado nele), não do projeto.
+  // As preferências (ADR 0174, 0177).
+  const [ferramentasDoPlotter, setFerramentasDoPlotter] = useState<Partial<Record<ElementoDoPlotter, number>>>(() => {
+    try {
+      const lidas: unknown = JSON.parse(window.localStorage.getItem('enfesto-cad:ferramentas-do-plotter') ?? '{}');
+      return typeof lidas === 'object' && lidas !== null ? (lidas as Partial<Record<ElementoDoPlotter, number>>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [esquemaDeCores, setEsquemaDeCores] = useState<EsquemaDeCores>(() => {
+    try {
+      return esquemaGuardado(window.localStorage);
+    } catch {
+      return 'padrao';
+    }
+  });
   const [canetasDoPlotter, setCanetasDoPlotter] = useState<1 | 2>(() => {
     try {
       return window.localStorage.getItem(CHAVE_DAS_CANETAS_DO_PLOTTER) === '2' ? 2 : 1;
@@ -3344,24 +3364,24 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
       const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter, projetoAtual.nome, projetoAtual.codigo]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter, ferramentasDoPlotter, projetoAtual.nome, projetoAtual.codigo]);
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
-    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean, compensacaoDaLaminaMm: number) => {
+    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean, compensacaoDaLaminaMm: number, furadorM43: boolean) => {
       const api = window.enfestoCad;
       if (!api) {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
         return;
       }
       try {
-        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
+        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
@@ -4227,6 +4247,18 @@ export default function App(): React.JSX.Element {
     });
   }, [enfesto, acrescentarPecasImportadas]);
 
+  const carregarPerfil = useCallback(() => {
+    void window.enfestoCad?.abrirArquivoTexto('perfil').then((arquivo) => {
+      if (!arquivo) return;
+      try {
+        const n = aplicarPerfil(window.localStorage, arquivo.conteudo);
+        setMensagensImportacao([`Perfil carregado (${n} preferência(s)): vale ao abrir o programa de novo.`]);
+      } catch (e) {
+        setMensagensImportacao([e instanceof Error ? e.message : String(e)]);
+      }
+    });
+  }, []);
+
   // Os dois arquivos que saem pelo mesmo caminho do texto.
   const exportarAstm = useCallback(async () => {
     const caminho = await salvarTexto('moldes-astm.dxf', gerarDxfAstm(pecas, projetoAtual.nome, proximoId));
@@ -5024,6 +5056,20 @@ export default function App(): React.JSX.Element {
         onExportarPlt={() => void exportarPlt()}
         onExportarPltPorPartes={() => setDialogoDeFerramenta({ tipo: 'plt-por-partes' })}
         onExportarAstm={() => void exportarAstm()}
+        onFerramentasDoPlotter={() => setDialogoDeFerramenta({ tipo: 'ferramentas-do-plotter' })}
+        esquemaDeCores={esquemaDeCores}
+        onEsquemaDeCores={(esquema) => {
+          setEsquemaDeCores(esquema);
+          aplicarEsquema(esquema, window.localStorage, document.documentElement);
+        }}
+        onSalvarPerfil={() => void salvarTexto('perfil-enfesto-cad.json', perfilAtual(window.localStorage))}
+        onCarregarPerfil={carregarPerfil}
+        onRestaurarPadroes={() => {
+          if (!window.confirm('Tirar as preferências deste computador (favoritos, teclas, cores, canetas)? Os projetos não mudam.')) return;
+          restaurarPadroes(window.localStorage);
+          setMensagensImportacao(['Preferências tiradas: valem ao abrir o programa de novo.']);
+        }}
+        onSobMedida={() => setDialogoDeFerramenta({ tipo: 'sob-medida' })}
         onPlotarMoldes={() => setDialogoDeFerramenta({ tipo: 'plotar-moldes' })}
         onTamanhoIntermediario={() => setDialogoDeFerramenta({ tipo: 'tamanho-intermediario' })}
         onMoldeVizinho={verMoldeVizinho}
@@ -5696,6 +5742,62 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'senha-do-projeto' ? null : d))}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'ferramentas-do-plotter' && (
+        <DialogoDeCampos
+          titulo="Ferramentas do plotter"
+          campos={(Object.keys(ROTULO_DO_ELEMENTO) as ElementoDoPlotter[]).map((e) => ({ tipo: 'inteiro' as const, id: e, rotulo: `${ROTULO_DO_ELEMENTO[e]}: caneta (1 a 8)`, inicial: String(ferramentasDoPlotter[e] ?? ''), opcional: true }))}
+          nota="A caneta de cada elemento no PLT. Em branco: segue a opção de uma ou duas canetas."
+          rotuloDoBotao="Guardar"
+          onAplicar={(valores) => {
+            const novas: Partial<Record<ElementoDoPlotter, number>> = {};
+            for (const e of Object.keys(ROTULO_DO_ELEMENTO) as ElementoDoPlotter[]) {
+              if (valores[e] === undefined) continue;
+              const n = Number(valores[e]);
+              if (!(n >= 1 && n <= 8)) return 'As canetas vão de 1 a 8.';
+              novas[e] = n;
+            }
+            setFerramentasDoPlotter(novas);
+            try {
+              window.localStorage.setItem('enfesto-cad:ferramentas-do-plotter', JSON.stringify(novas));
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'ferramentas-do-plotter' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'sob-medida' &&
+        (() => {
+          const ficha = lerFichaTecnica(projetoAtual.fichaTecnica);
+          const medidas = ficha?.medidas ?? [];
+          return (
+            <DialogoDeCampos
+              titulo="Sob medida"
+              campos={[
+                { tipo: 'texto', id: 'nome', rotulo: 'Nome do tamanho (a cliente, a ordem)', inicial: '' },
+                ...medidas.map((m) => ({ tipo: 'medida' as const, id: `m-${m.id}`, rotulo: `${m.nome} da peça pronta (cm)`, inicial: '', opcional: true })),
+              ]}
+              nota="As medidas da peça pronta, com a folga, dizem onde ela cai na grade da ficha técnica. As peças ganham um tamanho nessa posição, por inteiro: não é um ajuste medida por medida. Confira na peça-piloto."
+              rotuloDoBotao="Criar o tamanho"
+              onAplicar={(valores) => {
+                try {
+                  if (!ficha || medidas.length === 0) return 'A ficha técnica não tem a tabela de medidas.';
+                  const informadas = Object.fromEntries(medidas.flatMap((m) => (valores[`m-${m.id}`] === undefined ? [] : [[m.id, Number(valores[`m-${m.id}`])]])));
+                  const { posicao, porMedida } = posicaoDasMedidas(medidas, ficha.tamanhos, informadas);
+                  const novas = pecas.map((p) => (p.graduacao?.tamanhos.length === ficha.tamanhos.length ? comTamanhoSobMedida(p, String(valores.nome), posicao) : p));
+                  if (novas.every((p, i) => p === pecas[i])) return 'Nenhuma peça tem a mesma grade da ficha técnica.';
+                  aplicarMudanca(novas);
+                  setMensagensImportacao([`Tamanho “${String(valores.nome).trim()}” criado na posição ${numeroComVirgula(posicao + 1, 2)} da grade (${porMedida.map((m) => `${m.nome}: ${numeroComVirgula(m.posicao + 1, 2)}`).join(', ')}).`]);
+                  return null;
+                } catch (e) {
+                  return e instanceof Error ? e.message : String(e);
+                }
+              }}
+              onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'sob-medida' ? null : d))}
+            />
+          );
+        })()}
       {dialogoDeFerramenta?.tipo === 'plotar-moldes' && (
         <DialogoDeCampos
           titulo="Plotar moldes"
@@ -5797,6 +5899,7 @@ export default function App(): React.JSX.Element {
             { tipo: 'inteiro', id: 'velocidade', rotulo: 'Velocidade de corte (mm/min)', inicial: String(VELOCIDADE_PADRAO_MM_MIN) },
             { tipo: 'caixa', id: 'caneta', rotulo: 'Riscar as linhas internas e o fio com a caneta (T3)', inicial: false },
             { tipo: 'caixa', id: 'tangencial', rotulo: 'Faca tangencial: o eixo C acompanha o corte (sobe para girar nas viradas acima de 30°)', inicial: false },
+            { tipo: 'caixa', id: 'furador', rotulo: 'Furador pelos comandos M43 e M44, e não pelo eixo Z', inicial: false },
             { tipo: 'medida', id: 'lamina', rotulo: 'Faca tangencial: distância da ponta ao eixo (mm, opcional)', inicial: '', opcional: true },
           ]}
           nota="O encaixe em G-code (ISO 6983), em mm e coordenadas absolutas: T1 faca (contorno e furos), T2 piqueteador, T3 caneta, T4 furador (marcas). Em cada peça, o de dentro é feito antes do contorno. Não foi testado numa mesa de corte: confira o primeiro corte numa folha de papel."
@@ -5804,7 +5907,7 @@ export default function App(): React.JSX.Element {
           onAplicar={(valores) => {
             const velocidade = Number(valores.velocidade);
             if (!(velocidade >= 100)) return 'A velocidade precisa ser de pelo menos 100 mm/min.';
-            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true, Number(valores.lamina ?? 0));
+            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true, Number(valores.lamina ?? 0), valores.furador === true);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'corte-iso' ? null : d))}
@@ -6884,7 +6987,7 @@ export default function App(): React.JSX.Element {
             mostrarGrade={mostrarGrade}
             imaAtivo={imaAtivo}
             unidadeDaRegua={unidadeDaRegua}
-            onAlternarUnidadeDaRegua={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : 'cm'))}
+            onAlternarUnidadeDaRegua={() => setUnidadeDaRegua((u) => (u === 'cm' ? 'mm' : u === 'mm' ? 'pol' : 'cm'))}
             onTamanhoChange={aoMudarTamanhoDaTela}
             medicoes={medicoesResolvidas}
             inicioDoTrecho={inicioDoTrecho}

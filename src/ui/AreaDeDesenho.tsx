@@ -1,3 +1,4 @@
+import { passoDeReguaEmPolegadas, rotuloDaRegua } from './transformacaoDeTela';
 import type { Contorno } from '../core/geometria';
 import { eixoTravado } from '../domain/posicionamento';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -37,7 +38,6 @@ import {
   passoDaGradeEmMm,
   passoDeReguaEmMm,
   subdivisoesDaRegua,
-  valorDaReguaEmUnidade,
   type TransformacaoDeTela,
   type UnidadeDeRegua,
 } from './transformacaoDeTela';
@@ -1663,7 +1663,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     // mundo.y mapeia para tela.x (troca de eixos de transformacaoDeTela.ts) —
     // por isso a régua horizontal varre mundo.y, lendo/escrevendo o campo
     // .y de telaParaMundo/mundoParaTela, não o .x.
-    const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
+    const passoMm = unidadeDaRegua === 'pol' ? passoDeReguaEmPolegadas(transform.escalaPxPorMm) : passoDeReguaEmMm(transform.escalaPxPorMm);
     const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).y;
     const mmFinal = telaParaMundo({ x: tamanho.largura, y: 0 }, transform).y;
     // Traço maior numerado em cada passo, médio na metade e pequenos nas
@@ -1681,7 +1681,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.moveTo(x, ESPESSURA_REGUA_PX);
       ctx.lineTo(x, ESPESSURA_REGUA_PX - altura);
       ctx.stroke();
-      if (ehMarca) ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), x + 2, 10);
+      if (ehMarca) ctx.fillText(rotuloDaRegua(mm, unidadeDaRegua), x + 2, 10);
     }
   }, [transform, tamanho, unidadeDaRegua]);
 
@@ -1703,7 +1703,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     // mundo.x mapeia para tela.y (troca de eixos de transformacaoDeTela.ts) —
     // por isso a régua vertical varre mundo.x, lendo/escrevendo o campo .x
     // de telaParaMundo/mundoParaTela, não o .y.
-    const passoMm = passoDeReguaEmMm(transform.escalaPxPorMm);
+    const passoMm = unidadeDaRegua === 'pol' ? passoDeReguaEmPolegadas(transform.escalaPxPorMm) : passoDeReguaEmMm(transform.escalaPxPorMm);
     const mmInicial = telaParaMundo({ x: 0, y: 0 }, transform).x;
     const mmFinal = telaParaMundo({ x: 0, y: tamanho.altura }, transform).x;
     const divisoes = subdivisoesDaRegua(passoMm, transform.escalaPxPorMm);
@@ -1723,7 +1723,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.save();
         ctx.translate(10, y - 2);
         ctx.rotate(-Math.PI / 2);
-        ctx.fillText(String(Math.round(valorDaReguaEmUnidade(mm, unidadeDaRegua))), 0, 0);
+        ctx.fillText(rotuloDaRegua(mm, unidadeDaRegua), 0, 0);
         ctx.restore();
       }
     }

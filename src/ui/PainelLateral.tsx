@@ -94,6 +94,8 @@ export interface PatchDeMolde {
   readonly emPar?: boolean;
   /** O grupo do encaixe (ADR 0103); só espaços tira o grupo. */
   readonly grupoDoEncaixe?: string;
+  /** Os pontos CAM (ADR 0173); `null` volta ao normal. */
+  readonly corteNaMesa?: Exclude<Molde['corteNaMesa'], undefined>;
 }
 
 interface PainelDePropriedadesProps {
@@ -223,6 +225,55 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             />
             Permitir espelhamento
           </label>
+          <label className="opcao-em-linha">
+            Corte na mesa
+            <select
+              aria-label="Corte na mesa"
+              title="Os pontos CAM: por onde a faca da mesa de corte entra e sai da peça, no arquivo ISO"
+              value={peca.corteNaMesa?.tipo ?? ''}
+              onChange={(e) => props.onAlterar({ corteNaMesa: e.target.value === '' ? null : { entrada: peca.corteNaMesa?.entrada ?? 0, ...(peca.corteNaMesa?.saida !== undefined ? { saida: peca.corteNaMesa.saida } : {}), tipo: e.target.value as 'completo' | 'semi-corte' } })}
+            >
+              <option value="">Normal</option>
+              <option value="completo">Completo (de uma vez)</option>
+              <option value="semi-corte">Semi-corte (em duas etapas)</option>
+            </select>
+          </label>
+          {peca.corteNaMesa && (
+            <>
+              <label className="opcao-em-linha">
+                Ponto de entrada
+                <input
+                  type="number"
+                  min={1}
+                  max={peca.contorno.length}
+                  aria-label="Ponto de entrada da faca"
+                  className="campo-curto"
+                  value={peca.corteNaMesa.entrada + 1}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value)) - 1;
+                    if (v >= 0 && v < peca.contorno.length) props.onAlterar({ corteNaMesa: { ...peca.corteNaMesa!, entrada: v } });
+                  }}
+                />
+              </label>
+              {peca.corteNaMesa.tipo === 'semi-corte' && (
+                <label className="opcao-em-linha">
+                  Ponto de saída
+                  <input
+                    type="number"
+                    min={1}
+                    max={peca.contorno.length}
+                    aria-label="Ponto de saída da faca"
+                    className="campo-curto"
+                    value={(peca.corteNaMesa.saida ?? peca.corteNaMesa.entrada) + 1}
+                    onChange={(e) => {
+                      const v = Math.round(Number(e.target.value)) - 1;
+                      if (v >= 0 && v < peca.contorno.length) props.onAlterar({ corteNaMesa: { ...peca.corteNaMesa!, saida: v } });
+                    }}
+                  />
+                </label>
+              )}
+            </>
+          )}
           <label className="opcao-em-linha">
             Inclinação no encaixe (°, até {INCLINACAO_MAXIMA_GRAUS})
             <input

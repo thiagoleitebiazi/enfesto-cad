@@ -41,6 +41,8 @@ export interface OpcoesDoIso {
   readonly anguloDeLevantarGraus?: number;
   /** A distância da ponta da lâmina ao eixo que gira (mm): o eixo anda adiantada dela no rumo do corte (ADR 0153). */
   readonly compensacaoDaLaminaMm?: number;
+  /** Os furos das marcas pelos comandos M43 (desce) e M44 (sobe) do furador, e não pelo eixo Z (ADR 0173). */
+  readonly furadorM43?: boolean;
 }
 
 export const VELOCIDADE_PADRAO_MM_MIN = 12000;
@@ -58,6 +60,33 @@ export function rumoContinuo(atual: number, novo: number): number {
 }
 
 const rumo = (a: Ponto2D, b: Ponto2D): number => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+
+/**
+ * Os trechos do contorno que a faca corta, pelos pontos CAM da peça (ADR 0173): sem eles, a volta inteira; completo, a
+ * volta a partir da entrada; semi-corte, de entrada a saída pelos dois lados, cada um num sentido.
+ */
+export function trechosDoCorte(peca: Molde, corte: readonly Ponto2D[]): ReadonlyArray<{ readonly pontos: readonly Ponto2D[]; readonly fechado: boolean }> {
+  const cam = peca.corteNaMesa;
+  const n = corte.length;
+  if (!cam || !peca.contorno[cam.entrada]) return [{ pontos: corte, fechado: true }];
+  const maisPerto = (p: Ponto2D): number => corte.reduce((m, q, i) => (Math.hypot(q.x - p.x, q.y - p.y) < Math.hypot(corte[m]!.x - p.x, corte[m]!.y - p.y) ? i : m), 0);
+  const entrada = maisPerto(peca.contorno[cam.entrada]!);
+  if (cam.tipo === 'completo' || cam.saida === undefined || !peca.contorno[cam.saida]) return [{ pontos: [...corte.slice(entrada), ...corte.slice(0, entrada)], fechado: true }];
+  const saida = maisPerto(peca.contorno[cam.saida]!);
+  if (saida === entrada) return [{ pontos: [...corte.slice(entrada), ...corte.slice(0, entrada)], fechado: true }];
+  const andar = (passo: 1 | -1): Ponto2D[] => {
+    const pontos = [corte[entrada]!];
+    for (let i = entrada; i !== saida; ) {
+      i = (i + passo + n) % n;
+      pontos.push(corte[i]!);
+    }
+    return pontos;
+  };
+  return [
+    { pontos: andar(1), fechado: false },
+    { pontos: andar(-1), fechado: false },
+  ];
+}
 
 export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): string {
   const todos = pecas.flatMap((p) => [...linhaDeCorteDaPeca(p), ...p.contorno]);
@@ -110,7 +139,8 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
   /** Um golpe num ponto (o furador): anda até ele, desce e sobe. */
   const golpe = (p: Ponto2D): void => {
     const q = naMesa(p);
-    linhas.push(`G0 X${n(q.x)} Y${n(q.y)}`, 'G1 Z0.00', `G0 Z${n(ALTURA_DE_ANDAR)}`);
+    if (opcoes.furadorM43) linhas.push(`G0 X${n(q.x)} Y${n(q.y)}`, 'M43', 'M44');
+    else linhas.push(`G0 X${n(q.x)} Y${n(q.y)}`, 'G1 Z0.00', `G0 Z${n(ALTURA_DE_ANDAR)}`);
   };
   // Pelo comprimento do encaixe (o y do mundo), de onde a peça começa.
   const naOrdem = [...pecas].sort((a, b) => retanguloEnvolvente(linhaDeCorteDaPeca(a)).minY - retanguloEnvolvente(linhaDeCorteDaPeca(b)).minY);
@@ -132,7 +162,7 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
     }
     usar(1);
     for (const furo of peca.furos) passada(furo, true, true);
-    passada(corte, true, true);
+    for (const t of trechosDoCorte(peca, corte)) passada(t.pontos, t.fechado, true);
   }
   linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, 'G0 X0.00 Y0.00', 'M30', '%');
   return linhas.join('\n') + '\n';

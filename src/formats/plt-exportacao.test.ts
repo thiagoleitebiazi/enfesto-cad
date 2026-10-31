@@ -140,3 +140,16 @@ describe('os textos no risco (ADR 0165)', () => {
     expect(gerarPlt([peca], { larguraDaMesaMm: 1000, textos: [{ x: 300, y: 1200, texto: 'Emenda aqui é' }] })).toContain('PU48000,28000;SI0.25,0.35;LBEmenda aqui e');
   });
 });
+
+describe('as ferramentas do plotter (ADR 0174)', () => {
+  const peca = criarMolde({ nome: 'Q', referencia: '', tamanho: '', contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(0, 100)], linhaDeFio: { inicio: ponto(50, 10), fim: ponto(50, 90) } }, 'q');
+
+  it('cada elemento na caneta dele; quem não está na lista segue a regra de sempre', () => {
+    const plt = gerarPlt([peca], { ferramentas: { corte: 3, fio: 5 } });
+    expect(plt).toContain('SP3;PU');
+    expect(plt).toContain('SP5;PU');
+    // Sem as ferramentas, uma caneta só, como antes.
+    expect(gerarPlt([peca])).not.toContain('SP3');
+    expect(gerarPlt([peca]).match(/SP[2-9]/)).toBeNull();
+  });
+});

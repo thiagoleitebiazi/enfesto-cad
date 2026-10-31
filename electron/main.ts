@@ -601,10 +601,11 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
 const ARQUIVOS_DE_TEXTO = {
   projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto CAD', extensions: ['enfesto'] },
   plt: { title: 'Importar PLT', name: 'PLT (HPGL)', extensions: ['plt', 'hpgl', 'hpg'] },
+  perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto CAD', extensions: ['json'] },
 } as const;
 
 ipcMain.handle('abrir-arquivo-texto', async (_evento, tipo: unknown) => {
-  if (tipo !== 'projeto' && tipo !== 'plt') return null;
+  if (tipo !== 'projeto' && tipo !== 'plt' && tipo !== 'perfil') return null;
   const { title, name, extensions } = ARQUIVOS_DE_TEXTO[tipo];
   const resultado = await dialog.showOpenDialog({ title, filters: [{ name, extensions: [...extensions] }], properties: ['openFile'] });
   if (resultado.canceled || resultado.filePaths.length === 0) return null;

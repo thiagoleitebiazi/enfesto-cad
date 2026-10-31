@@ -1,3 +1,4 @@
+import { juntarDobra, prepararDobra } from './domain/pecasNaDobra';
 import { executarEmFatias, executarNestingPorPontosDeCanto, passosDoNesting, type MetodoDoNesting } from './domain/nesting';
 import type { Molde } from './domain/molde';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -33,12 +34,13 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar' && mensagem.metodo === 'pontos-de-canto') {
     // De uma vez só (é rápido): o cancelar deste método é a janela fechar o Worker.
     try {
-      const resultado = executarNestingPorPontosDeCanto(mensagem.pecas, mensagem.enfesto, {
+      const dobra = prepararDobra(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+      const resultado = executarNestingPorPontosDeCanto(dobra.resto, dobra.enfesto, {
         ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
         ...(mensagem.tecidoDeSentidoUnico ? { tecidoDeSentidoUnico: true } : {}),
         aoProgredir: (colocadas, total) => self.postMessage({ tipo: 'progresso', colocadas, total }),
       });
-      self.postMessage({ tipo: 'concluido', resultado });
+      self.postMessage({ tipo: 'concluido', resultado: juntarDobra(resultado, dobra, mensagem.enfesto) });
     } catch (erro) {
       self.postMessage({ tipo: 'erro', mensagem: erro instanceof Error ? erro.message : String(erro) });
     }
@@ -48,7 +50,8 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar') {
     cancelado = false;
     // Em fatias, com uma pausa entre elas: é na pausa que a mensagem "cancelar" chega e muda `cancelado`.
-    const passos = passosDoNesting(mensagem.pecas, mensagem.enfesto, {
+    const dobra = prepararDobra(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+    const passos = passosDoNesting(dobra.resto, dobra.enfesto, {
       ...(mensagem.passoMm !== undefined ? { passoMm: mensagem.passoMm } : {}),
       ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
       ...(mensagem.aproveitamentoDesejadoPercentual !== undefined
@@ -61,7 +64,7 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
       },
     });
     void executarEmFatias(passos, () => new Promise((r) => setTimeout(r, 0))).then(
-      (resultado) => self.postMessage({ tipo: 'concluido', resultado }),
+      (resultado) => self.postMessage({ tipo: 'concluido', resultado: juntarDobra(resultado, dobra, mensagem.enfesto) }),
       // Um erro no cálculo vai para a janela, que antes ficava em "Calculando..." para sempre.
       (erro: unknown) => self.postMessage({ tipo: 'erro', mensagem: erro instanceof Error ? erro.message : String(erro) }),
     );
