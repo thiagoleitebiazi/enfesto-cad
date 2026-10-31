@@ -40,6 +40,33 @@ export const ROTULO_DO_ELEMENTO: Readonly<Record<ElementoDoPlotter, string>> = {
   textos: 'Nomes e textos',
 };
 
+/** "Auto ajuste de texto" do manual da referência: os limites do texto e do fio, e a orientação manual. */
+export interface AjusteDeTexto {
+  readonly minimoMm: number;
+  readonly maximoMm: number;
+  readonly orientacaoGraus: 0 | 90 | 180 | 270;
+  readonly fioMinimoMm: number;
+  readonly fioMaximoMm: number;
+}
+
+export const AJUSTE_DE_TEXTO_PADRAO: AjusteDeTexto = { minimoMm: 3, maximoMm: 10, orientacaoGraus: 0, fioMinimoMm: 30, fioMaximoMm: 200 };
+
+/** A altura do nome: um centésimo do lado menor da peça vezes... a conta simples de 1/100 ficaria miúda: 1% do lado menor por 1 cm de papel. */
+export function alturaDoTextoDaPeca(largura: number, comprimento: number, a: AjusteDeTexto): number {
+  return Math.min(a.maximoMm, Math.max(a.minimoMm, Math.min(largura, comprimento) / 100));
+}
+
+/** O fio entre o mínimo e o máximo, com o mesmo meio e a mesma direção. */
+export function fioAjustado(fio: { readonly inicio: Ponto2D; readonly fim: Ponto2D }, a: AjusteDeTexto): { readonly inicio: Ponto2D; readonly fim: Ponto2D } {
+  const tamanho = Math.hypot(fio.fim.x - fio.inicio.x, fio.fim.y - fio.inicio.y);
+  const novo = Math.min(a.fioMaximoMm, Math.max(a.fioMinimoMm, tamanho));
+  if (novo === tamanho || tamanho === 0) return fio;
+  const meio = { x: (fio.inicio.x + fio.fim.x) / 2, y: (fio.inicio.y + fio.fim.y) / 2 };
+  const f = novo / tamanho / 2;
+  const v = { x: (fio.fim.x - fio.inicio.x) * f, y: (fio.fim.y - fio.inicio.y) * f };
+  return { inicio: { x: meio.x - v.x, y: meio.y - v.y }, fim: { x: meio.x + v.x, y: meio.y + v.y } };
+}
+
 export interface OpcoesDoPlt {
   /** A mesa (largura útil e comprimento): com ela, o contorno da mesa sai no risco e o y é contado da borda. */
   readonly larguraDaMesaMm?: number;
@@ -52,6 +79,10 @@ export interface OpcoesDoPlt {
   readonly larguraDoPapelMm?: number;
   /** A faixa (1, 2…), contada da borda de baixo do papel. */
   readonly faixa?: number;
+  /** O tamanho do nome e do fio ajustados à peça, e a orientação do texto (ADR 0192). */
+  readonly ajusteDeTexto?: AjusteDeTexto;
+  /** O traço da linha de costura; ausente, cheia (ADR 0192). */
+  readonly estiloDaCostura?: 'tracejada' | 'pontilhada';
   /** Os pontos de emenda: uma linha na largura toda e a palavra, em cada um (ADR 0188). */
   readonly emendas?: readonly number[];
   /** Os textos desenhados em traços, para o plotter sem letreiro (ADR 0184). */
@@ -116,13 +147,17 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   };
 
   /** Um texto, a partir de um ponto do papel: no letreiro do plotter ou em traços. */
-  const rotulo = (onde: Ponto2D, texto: string, larguraCm: number, alturaCm: number): void => {
+  const rotulo = (onde: Ponto2D, texto: string, larguraCm: number, alturaCm: number, giroGraus = 0): void => {
+    const c = Math.round(Math.cos((giroGraus * Math.PI) / 180));
+    const s = Math.round(Math.sin((giroGraus * Math.PI) / 180));
     if (!opcoes.textoComoLinha) {
+      if (giroGraus !== 0) comandos.push(`DI${c},${s}`);
       comandos.push(`PU${u(onde.x)},${u(onde.y)}`, `SI${larguraCm},${alturaCm}`, `LB${textoParaPlotter(texto)}${String.fromCharCode(3)}`);
+      if (giroGraus !== 0) comandos.push('DI1,0');
       return;
     }
     for (const traco of tracosDoTexto(texto, alturaCm * 10)) {
-      const [primeiro, ...resto] = traco.map((p) => ({ x: onde.x + p.x, y: onde.y + p.y }));
+      const [primeiro, ...resto] = traco.map((p) => ({ x: onde.x + p.x * c - p.y * s, y: onde.y + p.x * s + p.y * c }));
       comandos.push(`PU${u(primeiro!.x)},${u(primeiro!.y)}`, `PD${resto.map((p) => `${u(p.x)},${u(p.y)}`).join(',')}`);
     }
   };
@@ -156,13 +191,18 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     caneta(1, 'corte');
     linha(corte, true);
     caneta(2, 'costura');
-    if (corte !== peca.contorno) linha(peca.contorno, true);
+    if (corte !== peca.contorno) {
+      if (opcoes.estiloDaCostura) comandos.push(opcoes.estiloDaCostura === 'tracejada' ? 'LT2,1' : 'LT1,1');
+      linha(peca.contorno, true);
+      if (opcoes.estiloDaCostura) comandos.push('LT');
+    }
     caneta(2, 'furos');
     for (const furo of peca.furos) linha(furo, true);
     caneta(2, 'internas');
     for (const interna of linhasDoMolde(peca)) linha(interna, false);
     caneta(2, 'fio');
-    linha([peca.linhaDeFio.inicio, peca.linhaDeFio.fim], false);
+    const fio = opcoes.ajusteDeTexto ? fioAjustado(peca.linhaDeFio, opcoes.ajusteDeTexto) : peca.linhaDeFio;
+    linha([fio.inicio, fio.fim], false);
     caneta(2, 'piques');
     for (const pique of peca.piques) linha(corteDoPique(peca, corte, pique), false);
     const simetria = arestaDeSimetria(peca);
@@ -171,7 +211,11 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     caneta(2, 'textos');
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
-    rotulo(inicio, `${peca.nome} ${peca.tamanho}`.trim(), 0.35, 0.5);
+    const nomeDaPeca = `${peca.nome} ${peca.tamanho}`.trim();
+    if (opcoes.ajusteDeTexto) {
+      const altura = alturaDoTextoDaPeca(caixa.maxX - caixa.minX, caixa.maxY - caixa.minY, opcoes.ajusteDeTexto) / 10;
+      rotulo(inicio, nomeDaPeca, altura * 0.7, altura, opcoes.ajusteDeTexto.orientacaoGraus);
+    } else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
   }
   for (const e of opcoes.emendas ?? []) {
     caneta(2);

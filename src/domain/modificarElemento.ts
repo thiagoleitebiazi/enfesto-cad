@@ -1,6 +1,6 @@
 import { distancia, type Contorno, type Ponto2D } from '../core/geometria';
 import { cantosDoContorno } from './graduacao';
-import { modificarPontosDoMolde, type Molde } from './molde';
+import { converterCosturaEmContorno, modificarPontosDoMolde, type Molde } from './molde';
 
 /**
  * Os modos do "Modificar" (ADR 0181). O manual da referência diz só que o Discreto "move o ponto junto aos pontos
@@ -41,6 +41,13 @@ export function pesosDoModificar(contorno: Contorno, indices: readonly number[],
     }
   }
   return pesos;
+}
+
+/** "Inverter costura" (ADR 0190): a linha de corte vira o contorno, e a costura fica por dentro, como uma linha do molde. */
+export function comCosturaInvertida(molde: Molde): Molde {
+  if (molde.margemDeCosturaMm <= 0) return molde;
+  const convertida = converterCosturaEmContorno(molde);
+  return { ...convertida, linhasInternas: [...convertida.linhasInternas, [...molde.contorno, molde.contorno[0]!]] };
 }
 
 export function modificarComModo(molde: Molde, indices: readonly number[], delta: Ponto2D, modo: ModoDeModificar, alcanceMm = ALCANCE_DO_DISCRETO_MM): Molde {

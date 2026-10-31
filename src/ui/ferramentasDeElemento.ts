@@ -1,3 +1,4 @@
+import { fioNaDirecao } from '../domain/molde';
 import { area, distancia, pontoDentroDoContorno, pontoMaisProximoNoContorno, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
 import {
   ancoraDoElemento,
@@ -6,6 +7,8 @@ import {
   criarRetaPorAngulo,
   dividirLinha,
   elementoPerto,
+  OPCOES_PADRAO_DE_EXTRAIR,
+  type OpcoesDeExtrair,
   moverPontoDaLinha,
   pontoDeLinhaPerto,
   moverElemento,
@@ -50,6 +53,7 @@ export type FerramentaDeElemento =
   | 'mover-ponto-de-construcao'
   | 'manipulacao-rapida'
   | 'dividir-linha'
+  | 'fio-por-selecao'
   | 'transformar-em-elementos'
   | 'copiar-elemento';
 
@@ -69,6 +73,7 @@ const MODOS_DE_ELEMENTO: ReadonlySet<string> = new Set([
   'mover-ponto-de-construcao',
   'manipulacao-rapida',
   'dividir-linha',
+  'fio-por-selecao',
   'transformar-em-elementos',
   'copiar-elemento',
 ]);
@@ -86,6 +91,7 @@ export interface OpcoesDeElemento {
   readonly porDistancia: { readonly distanciaMm: number };
   /** "Copiar ou trocar elemento": copiar deixa o original; trocar tira-o da peça de origem. */
   readonly copiar: { readonly modo: 'copiar' | 'trocar' };
+  readonly extrair: OpcoesDeExtrair;
 }
 
 export const OPCOES_INICIAIS_DE_ELEMENTO: OpcoesDeElemento = {
@@ -95,6 +101,7 @@ export const OPCOES_INICIAIS_DE_ELEMENTO: OpcoesDeElemento = {
   noPerimetro: { distanciaMm: 50 },
   porDistancia: { distanciaMm: 50 },
   copiar: { modo: 'copiar' },
+  extrair: OPCOES_PADRAO_DE_EXTRAIR,
 };
 
 const SEM_LINHA = 'Clique perto da ponta de uma linha interna da peça selecionada.';
@@ -220,6 +227,19 @@ export function dialogoDoElemento(ferramenta: FerramentaDeElemento, opcoes: Opco
         nota: 'Depois de confirmar, clique no ponto de partida e, em seguida, noutro ponto, que dá a direção: a marca fica a essa distância do primeiro, na direção do segundo.',
         rotuloDoBotao: INDICAR,
       };
+    case 'extrair-molde':
+      return {
+        titulo: 'Extrair molde',
+        campos: [
+          { tipo: 'caixa', id: 'graduacao', rotulo: 'Detectar graduações: leva as regras dos cantos que ficam', inicial: opcoes.extrair.detectarGraduacao },
+          { tipo: 'caixa', id: 'piques', rotulo: 'Detectar piques', inicial: opcoes.extrair.detectarPiques },
+          { tipo: 'caixa', id: 'linhas', rotulo: 'Detectar linhas auxiliares', inicial: opcoes.extrair.detectarLinhas },
+          { tipo: 'caixa', id: 'quebrar', rotulo: 'Quebrar linhas auxiliares: das que cruzam a borda, fica a parte de dentro', inicial: opcoes.extrair.quebrarLinhas },
+          { tipo: 'caixa', id: 'compor', rotulo: 'Compor contornos: só o contorno, sem o interior', inicial: opcoes.extrair.comporContornos },
+        ],
+        nota: 'Depois de confirmar, clique dentro da região delimitada pelas linhas internas.',
+        rotuloDoBotao: INDICAR,
+      };
     case 'copiar-elemento':
       return {
         titulo: 'Copiar ou trocar elemento',
@@ -265,6 +285,8 @@ export function lerDialogoDoElemento(ferramenta: FerramentaDeElemento, opcoes: O
       return { ...opcoes, porDistancia: { distanciaMm: positivo('distancia', 'A distância') } };
     case 'copiar-elemento':
       return { ...opcoes, copiar: { modo: valores.modo === 'trocar' ? 'trocar' : 'copiar' } };
+    case 'extrair-molde':
+      return { ...opcoes, extrair: { detectarGraduacao: valores.graduacao === true, detectarPiques: valores.piques === true, detectarLinhas: valores.linhas === true, quebrarLinhas: valores.quebrar === true, comporContornos: valores.compor === true } };
     default:
       return opcoes;
   }
@@ -392,6 +414,11 @@ export function cliqueDeElemento(
         if (pontoDaLinha) return com(moverPontoDaLinha(peca, pontoDaLinha.linha, pontoDaLinha.ponto, delta), `Ponto da linha movido em “${peca.nome}”.`);
         return com(moverElemento(peca, escolhido, delta), `${escolhido.tipo === 'marca' ? 'Ponto movido' : 'Linha movida'} em “${peca.nome}”.`);
       }
+      case 'fio-por-selecao': {
+        const s = segmentoPerto(peca, clique.livre, raioMm);
+        if (!s) return recusar('Clique numa aresta ou numa linha interna da peça selecionada.');
+        return com(fioNaDirecao(peca, { x: s.ate.x - s.de.x, y: s.ate.y - s.de.y }), `O fio de “${peca.nome}” foi para a direção do elemento clicado.`);
+      }
       case 'dividir-linha': {
         const perto = linhaInternaPerto(peca, clique.livre, raioMm);
         if (!perto) return recusar('Clique sobre uma linha interna da peça selecionada, onde ela deve ser dividida.');
@@ -427,7 +454,7 @@ export function cliqueDeElemento(
         return recusar('Clique sobre uma linha interna ou um ponto (marca) de outra peça.');
       }
       case 'extrair-molde': {
-        const extraida = extrairMolde(peca, clique.livre, novoId, nomeDaParteNova(peca.nome, pecas));
+        const extraida = extrairMolde(peca, clique.livre, novoId, nomeDaParteNova(peca.nome, pecas), opcoes.extrair);
         // A peça nova vai para depois das que já estão na mesa, para não ficar em cima da de origem.
         const fimDasPecas = Math.max(...pecas.map((p) => retanguloEnvolvente(p.contorno).maxY));
         const caixa = retanguloEnvolvente(extraida.contorno);
@@ -538,6 +565,8 @@ export function instrucaoDoElemento(modo: ModoDeElemento, opcoes: OpcoesDeElemen
       return (temPrimeiro
         ? 'Manipulação rápida: clique onde o elemento deve ficar (ele anda o que o mouse andou), ou tecle Delete para apagá-lo.'
         : 'Manipulação rápida: clique em cima de uma linha interna ou de um ponto (marca) da peça selecionada.') + ESC;
+    case 'fio-por-selecao':
+      return 'Fio por seleção: clique numa aresta ou numa linha interna: o fio toma a direção dela.' + ESC;
     case 'dividir-linha':
       return 'Dividir elementos: clique sobre uma linha interna, no lugar em que ela deve virar duas.' + ESC;
     case 'transformar-em-elementos':

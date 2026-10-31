@@ -1,4 +1,5 @@
-import type { FormatoDePique } from '../domain/molde';
+import type { EstiloDeLinha, FormatoDePique } from '../domain/molde';
+import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from '../formats/plt-exportacao';
 import { PIQUE_PADRAO } from '../domain/piques';
 /**
  * As preferências deste computador (ADR 0175 a 0177): as teclas de atalho, o perfil (salvar, carregar, restaurar) e o
@@ -73,7 +74,7 @@ export function guardarPiquePadrao(a: Pick<Armazenamento, 'setItem'>, pique: Pic
   a.setItem(CHAVE_DO_PIQUE, JSON.stringify({ larguraMm: pique.larguraMm, alturaMm: pique.alturaMm, anguloGraus: pique.anguloGraus }));
 }
 
-export type EstiloDaCostura = 'tracejada' | 'pontilhada' | 'continua';
+export type EstiloDaCostura = EstiloDeLinha;
 
 export const ROTULO_DO_ESTILO_DA_COSTURA: Readonly<Record<EstiloDaCostura, string>> = { tracejada: 'Costura tracejada', pontilhada: 'Costura pontilhada', continua: 'Costura contínua' };
 
@@ -111,6 +112,24 @@ export function coresDosTamanhosGuardadas(a: Pick<Armazenamento, 'getItem'>): Re
 
 export function guardarCoresDosTamanhos(a: Pick<Armazenamento, 'setItem'>, cores: Readonly<Record<string, string>>): void {
   a.setItem(CHAVE_DAS_CORES, JSON.stringify(cores));
+}
+
+// ---- O auto ajuste de texto no plotter (ADR 0192).
+
+const CHAVE_DO_AJUSTE = `${PREFIXO}ajuste-de-texto`;
+
+/** O ajuste lembrado, ou `null`: sem ele, o texto sai como sempre. */
+export function ajusteDeTextoGuardado(a: Pick<Armazenamento, 'getItem'>): AjusteDeTexto | null {
+  try {
+    const v = JSON.parse(a.getItem(CHAVE_DO_AJUSTE) ?? 'null') as Partial<AjusteDeTexto> | null;
+    return v ? { ...AJUSTE_DE_TEXTO_PADRAO, ...v } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function guardarAjusteDeTexto(a: Pick<Armazenamento, 'setItem'>, ajuste: AjusteDeTexto | null): void {
+  a.setItem(CHAVE_DO_AJUSTE, JSON.stringify(ajuste));
 }
 
 // ---- As unidades de área e de peso (ADR 0189).

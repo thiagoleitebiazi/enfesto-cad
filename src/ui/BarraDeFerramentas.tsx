@@ -140,6 +140,14 @@ interface BarraDeFerramentasProps {
   readonly onEnviarAoPlotter?: () => void;
   readonly onEscolherPastaDoPlotter?: () => void;
   readonly onRetanguloDeOrganizacao?: () => void;
+  /** O fio por seleção e inverter a costura (ADR 0190). */
+  readonly onFioPorSelecao?: () => void;
+  readonly onInverterCostura?: () => void;
+  /** O auto ajuste de texto, o estilo da costura no plotter e a calculadora (ADR 0192). */
+  readonly onAutoAjusteDeTexto?: () => void;
+  readonly estiloDaCosturaNoPlotter?: boolean;
+  readonly onAlternarEstiloDaCosturaNoPlotter?: () => void;
+  readonly onCalculadora?: () => void;
   /** As unidades de área e de peso (ADR 0189). */
   readonly unidadeDeArea?: UnidadeDeArea;
   readonly onUnidadeDeArea?: (unidade: UnidadeDeArea) => void;
@@ -622,6 +630,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               ...(props.onFerramentasDoPlotter
                 ? [
                     { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    ...(props.onAutoAjusteDeTexto
+                      ? [
+                          { tipo: 'acao' as const, rotulo: 'Auto ajuste de texto…', titulo: 'O tamanho do nome e do fio de acordo com a peça, e a orientação do texto no plotter', onEscolher: props.onAutoAjusteDeTexto },
+                          { tipo: 'opcao' as const, rotulo: 'Estilo da costura no plotter', marcado: props.estiloDaCosturaNoPlotter === true, titulo: 'A linha de costura sai no plotter com o estilo escolhido aqui, e não cheia', onEscolher: props.onAlternarEstiloDaCosturaNoPlotter ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Calculadora…', onEscolher: props.onCalculadora ?? (() => undefined) },
+                        ]
+                      : []),
                     ...(props.onUnidadeDeArea ? (Object.keys(ROTULO_DA_UNIDADE_DE_AREA) as UnidadeDeArea[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Área em ${ROTULO_DA_UNIDADE_DE_AREA[u]}`, marcado: (props.unidadeDeArea ?? 'cm2') === u, onEscolher: () => props.onUnidadeDeArea?.(u) })) : []),
                     ...(props.onUnidadeDePeso ? (Object.keys(ROTULO_DA_UNIDADE_DE_PESO) as UnidadeDePeso[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Peso em ${ROTULO_DA_UNIDADE_DE_PESO[u]}`, marcado: (props.unidadeDePeso ?? 'kg') === u, onEscolher: () => props.onUnidadeDePeso?.(u) })) : []),
                     ...(props.onEnviarAoPlotter
@@ -1280,6 +1295,17 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={props.temSelecaoUnica ? null : SEM_PECA}
                     onClick={props.onEntrarModoSentidoDoFio}
                   />
+                  {props.onFioPorSelecao && (
+                    <Ferramenta
+                      tamanho="pequeno"
+                      rotulo="Fio por seleção"
+                      icone="sentido-do-fio"
+                      pressionado={props.modo === 'fio-por-selecao'}
+                      dica="Fio por seleção: clique numa aresta ou numa linha interna, e o fio toma a direção dela. A peça não gira"
+                      falta={props.temSelecaoUnica ? null : SEM_PECA}
+                      onClick={props.onFioPorSelecao}
+                    />
+                  )}
                   {props.onExtrairTodasAsRegioes && (
                     <Ferramenta
                       tamanho="pequeno"
@@ -1394,6 +1420,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     falta={!props.temSelecao ? SEM_PECA : props.podeRemoverCostura ? null : 'a seleção não tem costura para converter'}
                     onClick={props.onConverterEmContorno}
                   />
+                  {props.onInverterCostura && (
+                    <Ferramenta
+                      tamanho="pequeno"
+                      rotulo="Inverter costura"
+                      icone="converter-contorno"
+                      dica="Inverter costura: a linha de corte vira o contorno, e a costura fica por dentro, como uma linha do molde"
+                      falta={!props.temSelecao ? SEM_PECA : props.podeRemoverCostura ? null : 'a seleção não tem costura'}
+                      onClick={props.onInverterCostura}
+                    />
+                  )}
                   <Ferramenta
                     tamanho="pequeno"
                     rotulo="Converter em costura"

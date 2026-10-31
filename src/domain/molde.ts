@@ -77,6 +77,9 @@ export const RESTRICAO_PADRAO: RestricaoDeRotacao = {
   permiteEspelhamento: false,
 };
 
+/** O traço de uma linha na tela e no plotter. */
+export type EstiloDeLinha = 'tracejada' | 'pontilhada' | 'continua';
+
 /** Seta do sentido do fio: de `inicio` para `fim`, em mm no espaço do molde. */
 export interface LinhaDeFio {
   readonly inicio: Ponto2D;
@@ -184,10 +187,15 @@ function textoComAngulo(texto: TextoDaPeca, f: (graus: number) => number): Texto
 }
 
 /** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). Com formato, é um pique interno. */
+/** "Relacionamento de piques" (ADR 0191): em que sentido o ponto de casamento casa; ausente, nos dois. */
+export type RelacaoDoCasamento = 'horizontal' | 'vertical' | 'centralizado';
+
 export interface Marca {
   readonly id: string;
   readonly posicao: Ponto2D;
   readonly rotulo?: string;
+  /** Só nos pontos de casamento. */
+  readonly relacaoDoCasamento?: RelacaoDoCasamento;
   /** O desenho e as medidas do pique interno, centrado na posição (aba Marcações). */
   readonly formato?: FormatoDePique;
   /**
@@ -429,6 +437,8 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** A cor, o estilo e o peso das linhas internas no desenho (ADR 0192). */
+  readonly linhaDoDesenho?: { readonly cor?: string; readonly estilo?: EstiloDeLinha; readonly peso?: number };
   /** "½ camada" (ADR 0180): no tecido dobrado, a peça é cortada numa camada só. */
   readonly meiaCamada?: true;
   /** A peça de simetria que não vai na dobra do tecido (F11, ADR 0183): segue com as outras no encaixe. */
@@ -1273,6 +1283,23 @@ const COMPRIMENTO_MINIMO_DO_FIO_MM = 1e-6;
  * `fim`. Só a linha muda: a peça não gira, e as rotações permitidas
  * (`restricaoDeRotacao`) continuam contadas a partir da posição atual dela.
  */
+/** O fio com o mesmo meio e o mesmo comprimento, na direção dada (ADR 0190). */
+export function fioNaDirecao(molde: Molde, direcao: Ponto2D): Molde {
+  const tamanho = Math.hypot(direcao.x, direcao.y);
+  if (tamanho < 1e-9) throw new Error('O elemento indicado não dá uma direção.');
+  const { inicio, fim } = molde.linhaDeFio;
+  const meio = { x: (inicio.x + fim.x) / 2, y: (inicio.y + fim.y) / 2 };
+  const metade = Math.hypot(fim.x - inicio.x, fim.y - inicio.y) / 2;
+  const u = { x: direcao.x / tamanho, y: direcao.y / tamanho };
+  return redefinirLinhaDeFio(molde, { x: meio.x - u.x * metade, y: meio.y - u.y * metade }, { x: meio.x + u.x * metade, y: meio.y + u.y * metade });
+}
+
+/** "Usar ângulo": 0 aponta para a direita da tela e 90 para cima, como nas outras ferramentas. */
+export function fioNoAngulo(molde: Molde, anguloGraus: number): Molde {
+  const a = (anguloGraus * Math.PI) / 180;
+  return fioNaDirecao(molde, { x: -Math.sin(a), y: Math.cos(a) });
+}
+
 export function redefinirLinhaDeFio(molde: Molde, inicio: Ponto2D, fim: Ponto2D): Molde {
   if (![inicio.x, inicio.y, fim.x, fim.y].every(Number.isFinite)) {
     throw new Error('Linha de fio inválida.');

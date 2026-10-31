@@ -190,6 +190,7 @@ export type ModoDeDesenho =
   | 'mover-ponto-de-construcao'
   | 'manipulacao-rapida'
   | 'dividir-linha'
+  | 'fio-por-selecao'
   | 'transformar-em-elementos'
   | 'copiar-elemento'
   | 'inserir-texto'

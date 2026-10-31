@@ -254,6 +254,7 @@ describe('elementos da aba Manipulação', () => {
 
 describe('diálogos, prévia e instruções', () => {
   const COM_DIALOGO: readonly FerramentaDeElemento[] = [
+    'extrair-molde',
     'reta-por-angulo',
     'estender-reta',
     'ponto-por-coordenada',
@@ -262,7 +263,7 @@ describe('diálogos, prévia e instruções', () => {
     'copiar-elemento',
   ];
 
-  it('seis ferramentas perguntam antes; as outras ligam direto', () => {
+  it('sete ferramentas perguntam antes; as outras ligam direto', () => {
     for (const ferramenta of COM_DIALOGO) {
       const dialogo = dialogoDoElemento(ferramenta, O)!;
       expect(dialogo.titulo.length).toBeGreaterThan(5);

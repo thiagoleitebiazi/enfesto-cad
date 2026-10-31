@@ -1,5 +1,5 @@
 import { pontoDentroDoContorno, type Ponto2D } from '../core/geometria';
-import type { Molde } from './molde';
+import type { Marca, Molde, RelacaoDoCasamento } from './molde';
 import { grupoDaMarcaDeCasamento, ROTULO_DO_PONTO_DE_CASAMENTO } from './risco';
 
 /**
@@ -27,13 +27,19 @@ export function nomeDoPontoDeCasamento(grupo: string): string {
  * Põe o ponto de casamento do grupo na peça, onde foi clicado (dentro dela). Se a peça já tinha o ponto desse grupo,
  * ele anda para o lugar novo (\`movido\`). Recusa o ponto fora da peça.
  */
-export function comPontoDeCasamento(molde: Molde, grupo: string, posicao: Ponto2D, novoId: string): { readonly molde: Molde; readonly movido: boolean } {
+function comRelacao(m: Marca, relacao: RelacaoDoCasamento | undefined): Marca {
+  const { relacaoDoCasamento, ...resto } = m;
+  if (relacao) return { ...resto, relacaoDoCasamento: relacao };
+  return relacaoDoCasamento ? resto : m;
+}
+
+export function comPontoDeCasamento(molde: Molde, grupo: string, posicao: Ponto2D, novoId: string, relacao?: RelacaoDoCasamento): { readonly molde: Molde; readonly movido: boolean } {
   if (!pontoDentroDoContorno(posicao, molde.contorno)) throw new Error('Clique dentro da peça, no ponto em que passa a linha do desenho (a listra).');
   const g = grupoLimpo(grupo);
   if (/[:\-–—]/.test(g)) throw new Error('O nome do grupo não pode ter dois-pontos nem traço (eles separam o nome no rótulo).');
   const existente = molde.marcas.find((m) => grupoDaMarcaDeCasamento(m.rotulo) === g);
-  if (existente) return { molde: { ...molde, marcas: molde.marcas.map((m) => (m === existente ? { ...m, posicao } : m)) }, movido: true };
-  return { molde: { ...molde, marcas: [...molde.marcas, { id: novoId, posicao, rotulo: rotuloDoPontoDeCasamento(g) }] }, movido: false };
+  if (existente) return { molde: { ...molde, marcas: molde.marcas.map((m) => (m === existente ? comRelacao({ ...m, posicao }, relacao) : m)) }, movido: true };
+  return { molde: { ...molde, marcas: [...molde.marcas, comRelacao({ id: novoId, posicao, rotulo: rotuloDoPontoDeCasamento(g) }, relacao)] }, movido: false };
 }
 
 /** Os grupos de casamento que a peça tem ('' é o principal), na ordem das marcas. */

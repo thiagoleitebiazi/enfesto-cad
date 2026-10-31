@@ -366,7 +366,12 @@ import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjet
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
-import { modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
+import { calcularConta } from './ui/medidas';
+import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
+import { ajusteDeTextoGuardado, guardarAjusteDeTexto } from './ui/preferencias';
+import type { RelacaoDoCasamento } from './domain/molde';
+import { comTamanhoManterDiferenca } from './domain/tamanhoIntermediario';
+import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
@@ -620,6 +625,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'cores-dos-tamanhos' }
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
+  | { readonly tipo: 'auto-ajuste-de-texto' }
+  | { readonly tipo: 'calculadora' }
   | { readonly tipo: 'pique-padrao' }
   | { readonly tipo: 'tamanho-intermediario' }
   | { readonly tipo: 'exportar-projeto' }
@@ -697,6 +704,21 @@ export default function App(): React.JSX.Element {
   const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
   const [retanguloDeOrganizacaoMm, setRetanguloDeOrganizacaoMm] = useState<number | null>(null);
   const [gradeDoModelo, setGradeDoModelo] = useState<Readonly<Record<string, number>> | null>(null);
+  const [relacaoDoPontoDeCasamento, setRelacaoDoPontoDeCasamento] = useState<RelacaoDoCasamento | ''>('');
+  const [ajusteDeTexto, setAjusteDeTexto] = useState<AjusteDeTexto | null>(() => {
+    try {
+      return ajusteDeTextoGuardado(window.localStorage);
+    } catch {
+      return null;
+    }
+  });
+  const [estiloDaCosturaNoPlotter, setEstiloDaCosturaNoPlotter] = useState(() => {
+    try {
+      return window.localStorage.getItem('enfesto-cad:costura-no-plotter') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [unidadeDeArea, setUnidadeDeArea] = useState<UnidadeDeArea>(() => {
     try {
       return unidadeDeAreaGuardada(window.localStorage);
@@ -2741,6 +2763,12 @@ export default function App(): React.JSX.Element {
     [regrasDoUsuario, regraEscolhida],
   );
 
+  /** "Inverter costura" (ADR 0190). */
+  const inverterCostura = useCallback(() => {
+    const ids = new Set(alvosDeCostura.filter((p) => p.margemDeCosturaMm > 0).map((p) => p.id));
+    if (ids.size > 0) aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? comCosturaInvertida(p) : p)));
+  }, [pecas, alvosDeCostura, aplicarMudanca]);
+
   const converterEmContorno = useCallback(() => {
     const comCostura = alvosDeCostura.filter((p) => p.margemDeCosturaMm > 0);
     if (comCostura.length === 0) return;
@@ -3535,8 +3563,8 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
-    [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo],
+    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
+    [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}) => {
@@ -3748,7 +3776,7 @@ export default function App(): React.JSX.Element {
           return;
         }
         try {
-          const resultado = comPontoDeCasamento(alvo, grupoDoPontoDeCasamento, mundo, proximoId());
+          const resultado = comPontoDeCasamento(alvo, grupoDoPontoDeCasamento, mundo, proximoId(), relacaoDoPontoDeCasamento === '' ? undefined : relacaoDoPontoDeCasamento);
           aplicarMudanca(pecas.map((p) => (p.id === alvo.id ? resultado.molde : p)));
           const nome = nomeDoPontoDeCasamento(grupoDoPontoDeCasamento);
           setRecadoDaFerramenta(`${nome.charAt(0).toUpperCase()}${nome.slice(1)} ${resultado.movido ? 'mudou de lugar' : 'foi posto'} em “${alvo.nome}”`);
@@ -4306,6 +4334,7 @@ export default function App(): React.JSX.Element {
     [
       modo,
       grupoDoPontoDeCasamento,
+      relacaoDoPontoDeCasamento,
       pecaSelecionada,
       opcoesDeMarcacao,
       piquesCadastrados,
@@ -5386,6 +5415,19 @@ export default function App(): React.JSX.Element {
         onEntrarModoCotaAngulo={() => entrarModoDeCota('cota-angulo')}
         onEntrarModoCotaPerimetro={() => entrarModoDeCota('cota-perimetro')}
         onConverterEmContorno={converterEmContorno}
+        onInverterCostura={inverterCostura}
+        onFioPorSelecao={() => usarFerramentaDeElemento('fio-por-selecao')}
+        onAutoAjusteDeTexto={() => setDialogoDeFerramenta({ tipo: 'auto-ajuste-de-texto' })}
+        estiloDaCosturaNoPlotter={estiloDaCosturaNoPlotter}
+        onAlternarEstiloDaCosturaNoPlotter={() => {
+          setEstiloDaCosturaNoPlotter(!estiloDaCosturaNoPlotter);
+          try {
+            window.localStorage.setItem('enfesto-cad:costura-no-plotter', estiloDaCosturaNoPlotter ? '0' : '1');
+          } catch {
+            // Sem o armazenamento do navegador, vale até fechar.
+          }
+        }}
+        onCalculadora={() => setDialogoDeFerramenta({ tipo: 'calculadora' })}
         onAbrirVariantes={abrirVariantes}
         onAbrirMateriais={abrirMateriais}
         onAbrirFichaTecnica={abrirFichaTecnica}
@@ -6062,6 +6104,60 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'mover-com-referencia' ? null : d))}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'calculadora' && (
+        <DialogoDeCampos
+          titulo="Calculadora"
+          campos={[{ tipo: 'texto', id: 'conta', rotulo: 'Conta (por exemplo 12,5 * 3 + 40 / 2)', inicial: '' }]}
+          rotuloDoBotao="Calcular"
+          onAplicar={(valores) => {
+            const resultado = calcularConta(String(valores.conta));
+            if (resultado === null) return 'Não deu para entender a conta.';
+            avisar(`${String(valores.conta)} = ${numeroComVirgula(resultado, 4)}`);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'calculadora' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'auto-ajuste-de-texto' && (
+        <DialogoDeCampos
+          titulo="Auto ajuste de texto"
+          campos={[
+            { tipo: 'caixa', id: 'ligado', rotulo: 'Ajustar o nome e o fio de acordo com a peça', inicial: ajusteDeTexto !== null },
+            { tipo: 'medida', id: 'minimo', rotulo: 'Texto: altura mínima (mm)', inicial: String(ajusteDeTexto?.minimoMm ?? AJUSTE_DE_TEXTO_PADRAO.minimoMm) },
+            { tipo: 'medida', id: 'maximo', rotulo: 'Texto: altura máxima (mm)', inicial: String(ajusteDeTexto?.maximoMm ?? AJUSTE_DE_TEXTO_PADRAO.maximoMm) },
+            { tipo: 'medida', id: 'fioMinimo', rotulo: 'Fio: comprimento mínimo (mm)', inicial: String(ajusteDeTexto?.fioMinimoMm ?? AJUSTE_DE_TEXTO_PADRAO.fioMinimoMm) },
+            { tipo: 'medida', id: 'fioMaximo', rotulo: 'Fio: comprimento máximo (mm)', inicial: String(ajusteDeTexto?.fioMaximoMm ?? AJUSTE_DE_TEXTO_PADRAO.fioMaximoMm) },
+            {
+              tipo: 'escolha',
+              id: 'orientacao',
+              rotulo: 'Orientação manual',
+              opcoes: ['0', '90', '180', '270'].map((g) => ({ valor: g, rotulo: `${g}°` })),
+              inicial: String(ajusteDeTexto?.orientacaoGraus ?? 0),
+            },
+          ]}
+          nota="Vale no plotter. Fica lembrado neste computador."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const novo = {
+              minimoMm: valores['minimo'] as number,
+              maximoMm: valores['maximo'] as number,
+              fioMinimoMm: valores['fioMinimo'] as number,
+              fioMaximoMm: valores['fioMaximo'] as number,
+              orientacaoGraus: Number(valores['orientacao']) as AjusteDeTexto['orientacaoGraus'],
+            };
+            if (!(novo.minimoMm > 0) || novo.maximoMm < novo.minimoMm || !(novo.fioMinimoMm > 0) || novo.fioMaximoMm < novo.fioMinimoMm) return 'Os mínimos precisam ser maiores que zero, e os máximos, não menores que eles.';
+            const ajuste = valores['ligado'] === true ? novo : null;
+            setAjusteDeTexto(ajuste);
+            try {
+              guardarAjusteDeTexto(window.localStorage, ajuste);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'auto-ajuste-de-texto' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'retangulo-de-organizacao' && (
         <DialogoDeCampos
           titulo="Retângulo de organização"
@@ -6181,12 +6277,19 @@ export default function App(): React.JSX.Element {
           titulo="Tamanho intermediário"
           campos={[
             { tipo: 'texto', id: 'nome', rotulo: 'Nome do tamanho novo', inicial: '' },
+            { tipo: 'caixa', id: 'manter', rotulo: 'Manter diferença: entra depois do último, com a distância média da grade', inicial: false },
             { tipo: 'texto', id: 'depois', rotulo: 'Depois de qual tamanho', inicial: pecaSelecionada?.graduacao?.tamanhos[0] ?? '' },
           ]}
           nota="Entra em todas as peças que têm esse tamanho e um seguinte, com as regras no meio do caminho entre os dois."
           rotuloDoBotao="Criar"
           onAplicar={(valores) => {
             try {
+              if (valores.manter === true) {
+                const comOTamanho = pecas.map((p) => ((p.graduacao?.tamanhos.length ?? 0) >= 2 ? comTamanhoManterDiferenca(p, String(valores.nome)) : p));
+                if (comOTamanho.every((p, i) => p === pecas[i])) return 'Nenhuma peça tem ao menos dois tamanhos.';
+                aplicarMudanca(comOTamanho);
+                return null;
+              }
               const depois = String(valores.depois);
               const comEle = pecas.map((p) => (p.graduacao && p.graduacao.tamanhos.indexOf(depois) >= 0 && p.graduacao.tamanhos.indexOf(depois) < p.graduacao.tamanhos.length - 1 ? comTamanhoIntermediario(p, String(valores.nome), depois) : p));
               if (comEle.every((p, i) => p === pecas[i])) return `Nenhuma peça tem um tamanho depois de “${depois}”.`;
@@ -6399,6 +6502,18 @@ export default function App(): React.JSX.Element {
               inicial: grupoDoPontoDeCasamento,
               opcional: true,
             },
+            {
+              tipo: 'escolha',
+              id: 'relacao',
+              rotulo: 'Relacionamento',
+              opcoes: [
+                { valor: '', rotulo: 'Nos dois sentidos' },
+                { valor: 'horizontal', rotulo: 'Só na horizontal' },
+                { valor: 'vertical', rotulo: 'Só na vertical' },
+                { valor: 'centralizado', rotulo: 'Centralizado: no meio do desenho' },
+              ],
+              inicial: relacaoDoPontoDeCasamento,
+            },
           ]}
           nota="O risco de um tecido listrado ou xadrez põe cada peça onde o ponto dela cai numa linha do desenho. O ponto principal (em branco) cai na linha de referência do tecido; o de um grupo (manga, bolso) cai na mesma listra que o do mesmo grupo nas outras peças — na cava da frente e na cabeça da manga, a listra da cava passa pela manga. Depois de continuar, clique nas peças."
           rotuloDoBotao="Continuar"
@@ -6406,6 +6521,7 @@ export default function App(): React.JSX.Element {
             const grupo = grupoLimpo(String(valores.grupo ?? ''));
             if (/[:\-–—]/.test(grupo)) return 'O nome do grupo não pode ter dois-pontos nem traço (eles separam o nome no rótulo).';
             setGrupoDoPontoDeCasamento(grupo);
+            setRelacaoDoPontoDeCasamento(String(valores.relacao ?? '') as RelacaoDoCasamento | '');
             entrarModoDeConstrucao('ponto-de-casamento');
             return null;
           }}

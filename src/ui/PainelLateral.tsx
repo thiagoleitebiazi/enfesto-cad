@@ -1,5 +1,6 @@
-import type { Molde, RestricaoDeRotacao } from '../domain/molde';
-import { dimensoesDoMolde, INCLINACAO_MAXIMA_GRAUS, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
+import type { EstiloDeLinha, Molde, RestricaoDeRotacao } from '../domain/molde';
+import { dimensoesDoMolde, fioNoAngulo, INCLINACAO_MAXIMA_GRAUS, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
+import { fioNoCentro } from '../domain/corteEUniao';
 import { retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
 
@@ -98,6 +99,9 @@ export interface PatchDeMolde {
   readonly corteNaMesa?: Exclude<Molde['corteNaMesa'], undefined>;
   /** A peça em ½ camada (ADR 0180). */
   readonly meiaCamada?: boolean;
+  /** O fio (ADR 0190) e as linhas do desenho (ADR 0192). */
+  readonly linhaDeFio?: Molde['linhaDeFio'];
+  readonly linhaDoDesenho?: Exclude<Molde['linhaDoDesenho'], undefined>;
 }
 
 interface PainelDePropriedadesProps {
@@ -338,6 +342,56 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
           <label className="opcao-em-linha" title="No tecido dobrado, a peça é cortada numa camada só (F7)">
             <input type="checkbox" checked={peca.meiaCamada === true} onChange={(e) => props.onAlterar({ meiaCamada: e.target.checked })} />
             ½ camada
+          </label>
+        </fieldset>
+
+        <fieldset className="grupo-de-rotacao">
+          <legend>Fio e linhas do desenho</legend>
+          <label className="opcao-em-linha">
+            Ângulo do fio (°)
+            <input
+              type="number"
+              step={1}
+              aria-label="Ângulo do fio"
+              title="0 aponta para a direita e 90 para cima. A peça não gira"
+              className="campo-curto"
+              value={Math.round((Math.atan2(peca.linhaDeFio.inicio.x - peca.linhaDeFio.fim.x, peca.linhaDeFio.fim.y - peca.linhaDeFio.inicio.y) * 1800) / Math.PI) / 10}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (e.target.value.trim() !== '' && Number.isFinite(v)) props.onAlterar({ linhaDeFio: fioNoAngulo(peca, v).linhaDeFio });
+              }}
+            />
+          </label>
+          <button type="button" onClick={() => props.onAlterar({ linhaDeFio: fioNoCentro(peca.linhaDeFio, peca.contorno) })}>
+            Fio no centro
+          </button>
+          <label className="opcao-em-linha">
+            <input type="color" aria-label="Cor das linhas" value={peca.linhaDoDesenho?.cor ?? '#1f2933'} onChange={(e) => props.onAlterar({ linhaDoDesenho: { ...peca.linhaDoDesenho, cor: e.target.value } })} />
+            Cor das linhas
+          </label>
+          <label className="opcao-em-linha">
+            Estilo das linhas
+            <select aria-label="Estilo das linhas" value={peca.linhaDoDesenho?.estilo ?? 'continua'} onChange={(e) => props.onAlterar({ linhaDoDesenho: { ...peca.linhaDoDesenho, estilo: e.target.value as EstiloDeLinha } })}>
+              <option value="continua">Contínua</option>
+              <option value="tracejada">Tracejada</option>
+              <option value="pontilhada">Pontilhada</option>
+            </select>
+          </label>
+          <label className="opcao-em-linha">
+            Peso das linhas
+            <input
+              type="number"
+              min={0.5}
+              max={6}
+              step={0.5}
+              aria-label="Peso das linhas"
+              className="campo-curto"
+              value={peca.linhaDoDesenho?.peso ?? 1}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (v > 0) props.onAlterar({ linhaDoDesenho: { ...peca.linhaDoDesenho, peso: Math.min(6, v) } });
+              }}
+            />
           </label>
         </fieldset>
 

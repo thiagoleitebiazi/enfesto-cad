@@ -1,3 +1,4 @@
+import { TRACOS_DA_COSTURA } from './preferencias';
 import { elementosDaPeca } from '../domain/linhasAuxiliares';
 import type { Molde } from '../domain/molde';
 import { mundoParaTela, type TransformacaoDeTela } from './transformacaoDeTela';
@@ -17,6 +18,7 @@ export type PincelDeLinhas = Pick<CanvasRenderingContext2D, 'beginPath' | 'moveT
  */
 export function desenharLinhasInternas(ctx: PincelDeLinhas, peca: Molde, transform: TransformacaoDeTela, corDoMolde: string): void {
   const deConstrucao = new Set(peca.elementos ? elementosDaPeca(peca) : []);
+  const propria = peca.linhaDoDesenho;
   peca.linhasInternas.forEach((linha, numero) => {
     ctx.beginPath();
     linha.forEach((p, i) => {
@@ -25,9 +27,10 @@ export function desenharLinhasInternas(ctx: PincelDeLinhas, peca: Molde, transfo
       else ctx.lineTo(tela.x, tela.y);
     });
     const elemento = deConstrucao.has(numero);
-    ctx.strokeStyle = elemento ? COR_ELEMENTO_DE_CONSTRUCAO : corDoMolde;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = elemento ? COR_ELEMENTO_DE_CONSTRUCAO : (propria?.cor ?? corDoMolde);
+    ctx.lineWidth = elemento ? 1 : (propria?.peso ?? 1);
     if (elemento) ctx.setLineDash([...PONTILHADO_DO_ELEMENTO]);
+    else if (propria?.estilo) ctx.setLineDash([...TRACOS_DA_COSTURA[propria.estilo]]);
     ctx.stroke();
     ctx.setLineDash([]);
   });

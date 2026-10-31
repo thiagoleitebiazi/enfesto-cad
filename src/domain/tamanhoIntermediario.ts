@@ -37,6 +37,36 @@ export function comTamanhoIntermediario(molde: Molde, nome: string, depoisDe: st
   };
 }
 
+/** "Manter diferença" (ADR 0190): o tamanho novo entra depois do último, com a distância média da regra da grade. */
+export function comTamanhoManterDiferenca(molde: Molde, nome: string): Molde {
+  const g = molde.graduacao;
+  const limpo = nome.trim();
+  if (!g || g.tamanhos.length < 2) throw new Error('A peça precisa de ao menos dois tamanhos.');
+  if (limpo === '') throw new Error('Dê um nome ao tamanho novo.');
+  if (indiceDoTamanho(g.tamanhos, limpo) >= 0) throw new Error(`Já há o tamanho “${limpo}”.`);
+  const tamanhos = [...g.tamanhos, limpo];
+  const novo = definirTamanhosDoMolde(molde, tamanhos, g.tamanhos[g.base]!);
+  const k = tamanhos.length - 1;
+  const comADiferenca = (lista: readonly Ponto2D[]): Ponto2D[] => {
+    const [primeiro, ultimo] = [lista[0]!, lista[k - 1]!];
+    const v = { x: ultimo.x + (ultimo.x - primeiro.x) / (k - 1), y: ultimo.y + (ultimo.y - primeiro.y) / (k - 1) };
+    return lista.map((d, t) => (t === k ? v : d));
+  };
+  return {
+    ...novo,
+    graduacao: { ...novo.graduacao!, pontos: novo.graduacao!.pontos.map((p) => ({ ...p, deslocamentos: comADiferenca(p.deslocamentos) })) },
+    piques: novo.piques.map((q) => {
+      const p = q.graduacao?.perimetros;
+      if (!p || p.length !== tamanhos.length) return q;
+      return { ...q, graduacao: { ...q.graduacao!, perimetros: p.map((v, t) => (t === k ? p[k - 1]! + (p[k - 1]! - p[0]!) / (k - 1) : v)) } };
+    }),
+    marcas: novo.marcas.map((m) => {
+      const d = m.alinhamento?.deslocamentos;
+      return d && d.length === tamanhos.length ? { ...m, alinhamento: { deslocamentos: comADiferenca(d) } } : m;
+    }),
+  };
+}
+
 /** O contorno da peça no tamanho de nome `nome`. */
 export function contornoNoTamanho(molde: Molde, nome: string): Ponto2D[] {
   return contornoDoTamanho(molde.graduacao!, molde.contorno, indiceDoTamanho(molde.graduacao!.tamanhos, nome));

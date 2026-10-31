@@ -3,6 +3,7 @@ import {
   andarNoContorno,
   area,
   distancia,
+  ondeOSegmentoCruza,
   pontoDentroDoContorno,
   pontoMaisProximoNoContorno,
   pontoMaisProximoNoSegmento,
@@ -333,13 +334,57 @@ function pedacosQueAtravessam(linha: Contorno, regiao: Contorno): Ponto2D[][] {
   });
 }
 
+/** As opções de "Criar molde por intersecção" do manual da referência (ADR 0190). */
+export interface OpcoesDeExtrair {
+  readonly detectarGraduacao: boolean;
+  readonly detectarPiques: boolean;
+  readonly detectarLinhas: boolean;
+  /** Só o contorno da região, sem o interior. */
+  readonly comporContornos: boolean;
+  /** Das linhas que cruzam a borda, fica a parte de dentro. */
+  readonly quebrarLinhas: boolean;
+}
+
+export const OPCOES_PADRAO_DE_EXTRAIR: OpcoesDeExtrair = { detectarGraduacao: false, detectarPiques: true, detectarLinhas: true, comporContornos: false, quebrarLinhas: false };
+
+/** As partes da linha que ficam dentro da região, cortadas na borda dela. */
+export function partesDentro(linha: readonly Ponto2D[], regiao: Contorno): Ponto2D[][] {
+  const partes: Ponto2D[][] = [];
+  let atual: Ponto2D[] = [];
+  const fechar = (): void => {
+    if (atual.length >= 2) partes.push(atual);
+    atual = [];
+  };
+  linha.forEach((a, i) => {
+    const b = linha[i + 1];
+    if (!b) return;
+    const cortes = regiao.flatMap((p, k) => {
+      const t = ondeOSegmentoCruza(a, b, p, regiao[(k + 1) % regiao.length]!);
+      return t === null ? [] : [t];
+    });
+    const alturas = [...new Set([0, ...cortes, 1])].sort((x, y) => x - y);
+    const em = (t: number): Ponto2D => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    alturas.slice(0, -1).forEach((t, k) => {
+      const fim = alturas[k + 1]!;
+      if (!pontoDentroDoContorno(em((t + fim) / 2), regiao)) {
+        fechar();
+        return;
+      }
+      if (atual.length === 0) atual.push(em(t));
+      atual.push(em(fim));
+    });
+  });
+  fechar();
+  return partes;
+}
+
 /**
  * "Extrair molde": uma peça nova com a forma da região em que está o ponto
  * `dentro` (ver `regiaoDaPeca`). Leva os furos, as linhas internas e as marcas
  * que estão inteiros dentro dela e os piques das bordas que herdou; a peça de
  * origem não muda.
  */
-export function extrairMolde(molde: Molde, dentro: Ponto2D, novoId: () => string, nome: string): Molde {
+export function extrairMolde(molde: Molde, dentro: Ponto2D, novoId: () => string, nome: string, opcoes: OpcoesDeExtrair = OPCOES_PADRAO_DE_EXTRAIR): Molde {
   const regiao = regiaoDaPeca(molde, dentro);
   if (!regiao) {
     throw new Error(
@@ -347,15 +392,18 @@ export function extrairMolde(molde: Molde, dentro: Ponto2D, novoId: () => string
     );
   }
   const naRegiao = (p: Ponto2D): boolean => pontoDentroDoContorno(p, regiao);
+  const linhas = opcoes.quebrarLinhas ? molde.linhasInternas.flatMap((linha) => partesDentro(linha, regiao)) : molde.linhasInternas.filter((linha) => linha.every(naRegiao));
+  const graduacao = opcoes.detectarGraduacao && molde.graduacao ? { ...molde.graduacao, pontos: molde.graduacao.pontos.filter((p) => regiao.some((q) => distancia(p.posicao, q) < 1e-6)) } : null;
   return {
     ...semGraduacao(molde),
+    ...(graduacao ? { graduacao } : {}),
     id: novoId(),
     nome,
     contorno: regiao,
-    furos: molde.furos.filter((furo) => furo.every(naRegiao)),
-    linhasInternas: molde.linhasInternas.filter((linha) => linha.every(naRegiao)),
+    furos: opcoes.comporContornos ? [] : molde.furos.filter((furo) => furo.every(naRegiao)),
+    linhasInternas: opcoes.comporContornos || !opcoes.detectarLinhas ? [] : linhas,
     marcas: molde.marcas.filter((m) => naRegiao(m.posicao)).map((m) => ({ ...m, id: novoId() })),
-    piques: piquesQueFicamNoContorno(molde.piques, regiao).map((p) => ({ ...p, id: novoId() })),
+    piques: opcoes.detectarPiques ? piquesQueFicamNoContorno(molde.piques, regiao).map((p) => ({ ...p, id: novoId() })) : [],
     linhaDeFio: fioDaParte(molde.linhaDeFio, regiao),
     cotas: [],
   };

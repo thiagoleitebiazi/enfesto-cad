@@ -306,3 +306,12 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Pontos de emenda | ✅ ADR 0188 (a explicação vem da prática, a referência não diz) |
 | Unidades de área e de peso | ✅ ADR 0189 (na tela; as exportações seguem em kg e m²) |
 | Giro faixa; par; espelhar; peça pronta; dobra; margens; listras | ✅ já existiam |
+| Criar molde por intersecção: detectar graduações, piques, linhas; compor contornos; quebrar linhas | ✅ ADR 0190 |
+| Definir sentido do fio: posicionar, usar ângulo, por seleção | ✅ ADR 0190 |
+| Inverter costura; manter diferença | ✅ ADR 0190 |
+| Relacionamento piques | 🟡 ADR 0191 (sem os modos simétricos: o manual só lista os nomes) |
+| Auto ajuste de texto; estilos de linha no plotter; calculadora; cor, estilo e peso da linha | ✅ ADR 0192 |
+| Mostrar conforme definição das ferramentas | ⬜ não feito: só cosmético |
+| Níveis de impressão | ⬜ não feito: é do plotter Mutoh; as canetas por elemento (ADR 0174) cobrem a escolha da caneta |
+| Itens institucionais (licença, clube, dados do autor, teclado virtual, sobre, janela em cascata) | não se aplicam |
+| Importar e exportar Lectra, Gerber, Investrônica, MDL, VET, IBA, ALF, metafile | não feito: formatos fechados |

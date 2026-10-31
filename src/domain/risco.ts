@@ -1,6 +1,6 @@
 import { contornoDaZona, type ZonaBloqueada } from './enfesto';
 import { area, distancia, retanguloEnvolvente, simplificarContorno, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
-import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, type Molde } from './molde';
+import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, type Molde, type RelacaoDoCasamento } from './molde';
 import type { ModeloDoPlano } from './modeloDoPlano';
 import { caixaDe, encostar, FOLGA_DO_ENCOSTO_MM, lugarLivre, type Caixa, type LimitesDeArea } from './posicionamento';
 import { blocosDasPostas, grupoDaPeca, indiceDoGrupo, ordemDosGrupos, type BlocoDoGrupo } from './gruposDoEncaixe';
@@ -186,6 +186,8 @@ interface Orientacao {
   readonly ref: Ponto2D | null;
   /** Os pontos dos grupos de casamento ("casamento: manga"), com a peça no canto, pelo nome do grupo. */
   readonly refs: ReadonlyMap<string, Ponto2D>;
+  /** Em que sentido o ponto casa (ADR 0191); ausente, nos dois. */
+  readonly relacao?: RelacaoDoCasamento;
 }
 
 /**
@@ -215,16 +217,18 @@ function normalizada(molde: Molde, anguloGraus: number, espelhada: boolean): Ori
 }
 
 /** O ponto principal de casamento e os dos grupos, levados por `d`. */
-function marcasDeCasamento(molde: Molde, d: Ponto2D): { readonly ref: Ponto2D | null; readonly refs: ReadonlyMap<string, Ponto2D> } {
+function marcasDeCasamento(molde: Molde, d: Ponto2D): { readonly ref: Ponto2D | null; readonly refs: ReadonlyMap<string, Ponto2D>; readonly relacao?: RelacaoDoCasamento } {
   let ref: Ponto2D | null = null;
   const refs = new Map<string, Ponto2D>();
+  let relacao: RelacaoDoCasamento | undefined;
   for (const m of molde.marcas) {
     const grupo = grupoDaMarcaDeCasamento(m.rotulo);
+    if (grupo !== null) relacao ??= m.relacaoDoCasamento;
     const ponto = { x: m.posicao.x + d.x, y: m.posicao.y + d.y };
     if (grupo === '' && !ref) ref = ponto;
     else if (grupo && !refs.has(grupo)) refs.set(grupo, ponto);
   }
-  return { ref, refs };
+  return { ref, refs, ...(relacao ? { relacao } : {}) };
 }
 
 /**
@@ -338,15 +342,19 @@ function porNaOrdem(
         const alvo = casar ? alvoDoCasamento(o, casar, fasesDosGrupos) : null;
         if (casar && alvo) {
           // Com casamento: só as posições em que o ponto da peça cai na fase; sem encostar (andaria para fora dela).
-          let x = naFase(p.x, alvo.ref.x, casar.rapportLarguraMm, alvo.fase.x);
-          if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, alvo.ref.x, casar.rapportLarguraMm, alvo.fase.x);
+          const rapportX = o.relacao === 'horizontal' ? undefined : casar.rapportLarguraMm;
+          const rapportY = o.relacao === 'vertical' ? undefined : casar.rapportComprimentoMm;
+          const faseX = alvo.fase.x + (o.relacao === 'centralizado' ? (rapportX ?? 0) / 2 : 0);
+          const faseY = alvo.fase.y + (o.relacao === 'centralizado' ? (rapportY ?? 0) / 2 : 0);
+          let x = naFase(p.x, alvo.ref.x, rapportX, faseX);
+          if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, alvo.ref.x, rapportX, faseX);
           if (x + largura > opcoes.larguraMm + 1e-9) continue;
-          const y0 = naFase(p.y, alvo.ref.y, casar.rapportComprimentoMm, alvo.fase.y);
+          const y0 = naFase(p.y, alvo.ref.y, rapportY, faseY);
           for (let k = 0; k < 4 && !delta; k++) {
-            const y = y0 + k * (casar.rapportComprimentoMm ?? 0);
+            const y = y0 + k * (rapportY ?? 0);
             if (y + comprimento > opcoes.comprimentoMaximoMm + 1e-9) break;
             if (lugarLivre(transladarContorno(o.corte, { x, y }), cortes, caixas, d, FOLGA_DO_ENCOSTO_MM)) delta = { x, y };
-            if (!casar.rapportComprimentoMm) break;
+            if (!rapportY) break;
           }
           if (!delta) continue;
         } else {
