@@ -109,6 +109,8 @@ export interface PainelDePlanejamentoProps {
   readonly onMudarCadastro: (novo: CadastroDeProducao) => Promise<string | null>;
   readonly onRegistrarRevisao: (dados: { readonly responsavel: string; readonly descricao: string; readonly impressaoDigital: string }) => string | null;
   readonly onGuardarRascunho: (plano: PlanoDeCorteV2) => string | null;
+  /** Um projeto por risco do plano, na biblioteca (ADR 0212). Devolve o que dizer. */
+  readonly onCriarArquivosDeEncaixe?: (plano: PlanoDeCorteV2) => Promise<string>;
   readonly onConfirmar: (plano: PlanoDeCorteV2, aplicarAoEnfesto: boolean) => string | null;
   readonly onRemoverRascunho: (id: string) => string | null;
   readonly onGuardarConfiguracao: (configuracao: ConfiguracaoDoPlanejamento) => void;
@@ -687,6 +689,16 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       // A estimativa vai guardada com o plano, como saiu agora: o plano confirmado não é recalculado depois.
       custoDoTecido: estimarCustoDoTecido({ entrada: entrada.entrada, resultado: final.resultado, riscos: base.riscos, roupas }),
     };
+  };
+
+  const criarArquivosDeEncaixe = async (): Promise<void> => {
+    const plano = montarPlano();
+    if (typeof plano === 'string') {
+      setMensagem(plano);
+      return;
+    }
+    const texto = await props.onCriarArquivosDeEncaixe?.(plano);
+    if (texto) setMensagem(texto);
   };
 
   const guardarRascunho = (): void => {
@@ -1957,6 +1969,13 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     <button type="button" disabled={!final?.ok} onClick={guardarRascunho}>
                       Salvar rascunho
                     </button>{' '}
+                    {props.onCriarArquivosDeEncaixe && (
+                      <>
+                        <button type="button" disabled={!final?.ok} title="Um projeto por risco na biblioteca, com a mesa, as camadas e as peças no lugar" onClick={() => void criarArquivosDeEncaixe()}>
+                          Criar arquivos de encaixe
+                        </button>{' '}
+                      </>
+                    )}
                     <button type="button" className="botao-primario" disabled={!final?.ok} onClick={() => setConfirmando(true)}>
                       Confirmar o plano
                     </button>

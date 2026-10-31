@@ -348,3 +348,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Envolvente contorno e retangular, de peça ou de grupo; margem por ponto; grupo rígido; blocos por tamanho, separação completa, horizontal e vertical; manter orientação dos pacotes | ✅ ADR 0208 |
 | Tecido ativo: um encaixe e uma largura por tecido, nas telas e nas saídas | ✅ ADR 0209 |
 | Porta de saída na rede, compartilhada, LPT e COM; gerenciador de impressão; DMPL | ✅ ADR 0210, sem plotter de verdade; o DMPL sem a especificação |
+| Ordem de corte: criar arquivos de encaixe, um por risco | ✅ ADR 0212 |

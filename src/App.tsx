@@ -374,6 +374,8 @@ import { hpglDoIso } from './formats/iso-importacao';
 import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
 import { PainelDaFilaDeImpressao } from './ui/PainelDaFilaDeImpressao';
 import { TecladoVirtual } from './ui/TecladoVirtual';
+import { estadosDosRiscos } from './domain/encaixeDoRisco';
+import { modeloDoPlano } from './domain/modeloDoPlano';
 import type { FonteDoPlotter } from './formats/fonteTrueType';
 import { ehArquivoAstm, lerAstm, moldesDoAstm } from './formats/astm-importacao';
 import { gerarDxfAstmComRegras } from './formats/dxf-astm';
@@ -2690,6 +2692,19 @@ export default function App(): React.JSX.Element {
    * Confirma o plano: ele fica no projeto como foi calculado (sem tirar os anteriores), o histórico registra, e, se
    * pedido, o enfesto do projeto passa a ser o do plano.
    */
+  const criarArquivosDeEncaixe = useCallback(
+    async (plano: PlanoDeCorteV2): Promise<string> => {
+      const agora = new Date().toISOString();
+      const estados = estadosDosRiscos(plano, modeloDoPlano(pecas), { pecas, tecido, enfesto }, enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM, proximoId);
+      const novos = estados.map((estado, i) => criarProjeto(`${projetoAtual.nome} - risco ${i + 1}`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, novoCodigoDeProjeto(), agora, estado));
+      setProjetos((lista) => [...lista, ...novos]);
+      await Promise.all(novos.map(persistirProjeto));
+      carregarListaDeProjetos();
+      return `${novos.length} ${novos.length === 1 ? 'arquivo de encaixe criado' : 'arquivos de encaixe criados'} na biblioteca: ${novos.map((p) => p.nome).join(', ')}.`;
+    },
+    [pecas, tecido, enfesto, projetoAtual.nome, novoCodigoDeProjeto, persistirProjeto, carregarListaDeProjetos],
+  );
+
   const confirmarPlanoDeCorte = useCallback(
     (plano: PlanoDeCorteV2, aplicarAoEnfesto: boolean): string | null => {
       const agora = new Date().toISOString();
@@ -5968,6 +5983,7 @@ export default function App(): React.JSX.Element {
           onRegistrarRevisao={registrarRevisao}
           onGuardarRascunho={guardarRascunhoDoPlano}
           onConfirmar={confirmarPlanoDeCorte}
+          onCriarArquivosDeEncaixe={criarArquivosDeEncaixe}
           onRemoverRascunho={removerRascunhoDoPlano}
           onGuardarConfiguracao={guardarConfiguracaoNoComputador}
           onAbrirPeca={abrirPecaDoPlanejamento}
