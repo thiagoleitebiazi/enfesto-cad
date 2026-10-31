@@ -72,6 +72,11 @@ export interface ConfiguracaoBase {
   readonly zonasBloqueadas?: readonly ZonaBloqueada[];
   /** Os textos livres no risco (ADR 0165). */
   readonly textosNoRisco?: readonly TextoNoRisco[];
+  /** A padronagem do tecido, na área de encaixe, e a cor de preenchimento das peças (ADR 0187). */
+  readonly padronagem?: { readonly imagem: string; readonly comprimentoMm: number };
+  readonly corDoTecido?: string;
+  /** Os pontos de emenda do tecido, no comprimento (mm; ADR 0188). */
+  readonly emendasMm?: readonly number[];
 }
 
 export interface ConfiguracaoPar extends ConfiguracaoBase {
@@ -154,6 +159,23 @@ export function criarConfiguracaoDeEnfesto(config: ConfiguracaoDeEnfesto): Confi
  */
 export function espessurasFisicasPorCamada(tipo: TipoDeEnfesto): 1 | 2 {
   return tipo === 'par' || tipo === 'tubular' ? 2 : 1;
+}
+
+/** Os pontos de emenda escritos num campo: números separados por espaço, em ordem. */
+export function lerPontosDeEmenda(texto: string): number[] {
+  return texto
+    .split(/[\s;]+/)
+    .filter((s) => s !== '')
+    .map((s) => Number(s.replace(',', '.')))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+}
+
+/** O enfesto para o encaixe: cada emenda é uma faixa estreita da largura toda, que nenhuma peça atravessa. */
+export function enfestoComEmendas(enfesto: ConfiguracaoDeEnfesto): ConfiguracaoDeEnfesto {
+  const emendas = enfesto.emendasMm ?? [];
+  if (emendas.length === 0) return enfesto;
+  return { ...enfesto, zonasBloqueadas: [...(enfesto.zonasBloqueadas ?? []), ...emendas.map((e) => ({ minX: 0, maxX: enfesto.larguraUtilMm, minY: e - 1, maxY: e + 1 }))] };
 }
 
 /** Onde o tecido dobra: ao longo do comprimento, no par e no tubular; nas pontas da mesa, no zigue-zague (ADR 0180). */

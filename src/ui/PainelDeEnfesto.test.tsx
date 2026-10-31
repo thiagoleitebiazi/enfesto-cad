@@ -41,3 +41,34 @@ describe('PainelDeEnfesto — a margem de segurança da mesa (4 mm)', () => {
     expect(onSalvar).toHaveBeenCalledWith(expect.objectContaining({ margemLateralMm: 4, margemDeExtremidadeMm: 4 }));
   });
 });
+
+describe('a padronagem, a cor do tecido e as emendas (ADR 0187 e 0188)', () => {
+  it('as emendas e a cor entram na configuração, e voltam ao abrir de novo', () => {
+    const onSalvar = vi.fn();
+    render(<PainelDeEnfesto configAtual={enfesto(4, 4)} onSalvar={onSalvar} onFechar={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/Pontos de emenda/), { target: { value: '2400 1200' } });
+    fireEvent.click(screen.getByLabelText('Cor do tecido nas peças'));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar enfesto' }));
+    expect(onSalvar.mock.calls[0]![0]).toMatchObject({ emendasMm: [1200, 2400], corDoTecido: '#cfe2ff' });
+    cleanup();
+    render(<PainelDeEnfesto configAtual={onSalvar.mock.calls[0]![0]} onSalvar={vi.fn()} onFechar={vi.fn()} />);
+    expect(screen.getByLabelText(/Pontos de emenda/)).toHaveValue('1200 2400');
+  });
+
+  it('sem imagem, a padronagem ligada não entra; o campo do padrão só aparece com ela', () => {
+    const onSalvar = vi.fn();
+    render(<PainelDeEnfesto configAtual={enfesto(4, 4)} onSalvar={onSalvar} onFechar={vi.fn()} />);
+    expect(screen.queryByLabelText(/Comprimento do padrão/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Mostra padronagem'));
+    expect(screen.getByLabelText(/Comprimento do padrão/)).toHaveValue(100);
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar enfesto' }));
+    expect(onSalvar.mock.calls[0]![0].padronagem).toBeUndefined();
+  });
+
+  it('recusa o que não é imagem', () => {
+    render(<PainelDeEnfesto configAtual={enfesto(4, 4)} onSalvar={vi.fn()} onFechar={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('Mostra padronagem'));
+    fireEvent.change(screen.getByLabelText(/Padrão \(imagem/), { target: { files: [new File(['x'], 'a.txt', { type: 'text/plain' })] } });
+    expect(screen.getByRole('alert')).toHaveTextContent(/imagem/);
+  });
+});

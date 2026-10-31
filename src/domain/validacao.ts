@@ -37,7 +37,8 @@ export type TipoDeProblema =
   | 'linha-que-sai'
   | 'mais-largo-que-o-tecido'
   | 'sentido-do-tecido'
-  | 'grupos-misturados';
+  | 'grupos-misturados'
+  | 'peca-na-emenda';
 
 export type SeveridadeDoProblema = 'erro' | 'aviso';
 
@@ -234,6 +235,11 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
     const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
     // A peça de simetria no tecido dobrado encosta na dobra, sem a margem de segurança (ADR 0172).
     const naDobra = arestaDeSimetria(peca) !== null ? dobraDoEnfesto(enfesto.tipo) : null;
+    for (const e of enfesto.emendasMm ?? []) {
+      if (bbox.minY < e && bbox.maxY > e) {
+        problemas.push({ tipo: 'peca-na-emenda', severidade: 'aviso', mensagem: `Peça "${peca.nome}" atravessa a emenda em ${e} mm do comprimento.`, pecasEnvolvidasIds: [peca.id] });
+      }
+    }
     if (bbox.minX < (naDobra === 'horizontal' ? 0 : minX) - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < (naDobra === 'vertical' ? 0 : minY) - folgaMm || bbox.maxY > maxY + folgaMm) {
       problemas.push({
         tipo: 'fora-dos-limites',

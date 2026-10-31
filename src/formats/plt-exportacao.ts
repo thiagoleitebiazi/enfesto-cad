@@ -52,6 +52,8 @@ export interface OpcoesDoPlt {
   readonly larguraDoPapelMm?: number;
   /** A faixa (1, 2…), contada da borda de baixo do papel. */
   readonly faixa?: number;
+  /** Os pontos de emenda: uma linha na largura toda e a palavra, em cada um (ADR 0188). */
+  readonly emendas?: readonly number[];
   /** Os textos desenhados em traços, para o plotter sem letreiro (ADR 0184). */
   readonly textoComoLinha?: boolean;
   /** As linhas que identificam o risco, escritas logo depois da última peça (ADR 0162). */
@@ -170,6 +172,11 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
     rotulo(inicio, `${peca.nome} ${peca.tamanho}`.trim(), 0.35, 0.5);
+  }
+  for (const e of opcoes.emendas ?? []) {
+    caneta(2);
+    linha([ponto(0, e), ponto(opcoes.larguraDaMesaMm ?? altura, e)], false);
+    rotulo(noPapel(ponto(-8, e)), 'EMENDA', 0.25, 0.35);
   }
   for (const t of opcoes.textos ?? []) {
     caneta(2);

@@ -113,6 +113,38 @@ export function guardarCoresDosTamanhos(a: Pick<Armazenamento, 'setItem'>, cores
   a.setItem(CHAVE_DAS_CORES, JSON.stringify(cores));
 }
 
+// ---- As unidades de área e de peso (ADR 0189).
+
+export type UnidadeDeArea = 'cm2' | 'm2' | 'pol2';
+export type UnidadeDePeso = 'kg' | 'g' | 'lb';
+
+export const ROTULO_DA_UNIDADE_DE_AREA: Readonly<Record<UnidadeDeArea, string>> = { cm2: 'cm²', m2: 'm²', pol2: 'pol²' };
+export const ROTULO_DA_UNIDADE_DE_PESO: Readonly<Record<UnidadeDePeso, string>> = { kg: 'kg', g: 'g', lb: 'lb' };
+
+const MM2_DA_UNIDADE: Readonly<Record<UnidadeDeArea, number>> = { cm2: 100, m2: 1_000_000, pol2: 645.16 };
+const UNIDADES_POR_KG: Readonly<Record<UnidadeDePeso, number>> = { kg: 1, g: 1000, lb: 1 / 0.45359237 };
+
+export const areaNaUnidade = (mm2: number, unidade: UnidadeDeArea): number => mm2 / MM2_DA_UNIDADE[unidade];
+export const pesoNaUnidade = (kg: number, unidade: UnidadeDePeso): number => kg * UNIDADES_POR_KG[unidade];
+
+const CHAVE_DA_AREA = `${PREFIXO}unidade-de-area`;
+const CHAVE_DO_PESO = `${PREFIXO}unidade-de-peso`;
+
+export function unidadeDeAreaGuardada(a: Pick<Armazenamento, 'getItem'>): UnidadeDeArea {
+  const v = a.getItem(CHAVE_DA_AREA);
+  return v !== null && v in ROTULO_DA_UNIDADE_DE_AREA ? (v as UnidadeDeArea) : 'cm2';
+}
+
+export function unidadeDePesoGuardada(a: Pick<Armazenamento, 'getItem'>): UnidadeDePeso {
+  const v = a.getItem(CHAVE_DO_PESO);
+  return v !== null && v in ROTULO_DA_UNIDADE_DE_PESO ? (v as UnidadeDePeso) : 'kg';
+}
+
+export function guardarUnidades(a: Pick<Armazenamento, 'setItem'>, unidades: { readonly area?: UnidadeDeArea; readonly peso?: UnidadeDePeso }): void {
+  if (unidades.area) a.setItem(CHAVE_DA_AREA, unidades.area);
+  if (unidades.peso) a.setItem(CHAVE_DO_PESO, unidades.peso);
+}
+
 // ---- O esquema de cores (ADR 0177).
 
 export type EsquemaDeCores = 'padrao' | 'escuro' | 'alto-contraste' | 'areia';

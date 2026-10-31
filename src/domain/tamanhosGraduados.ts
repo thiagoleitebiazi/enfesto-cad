@@ -231,6 +231,18 @@ export function moldeDoTamanho(molde: Molde, tamanho: number, novoId: string): M
  * graduada vira uma peça comum por tamanho (a do base continua sendo ela, com
  * o mesmo id), na ordem dos tamanhos; as outras ficam como estão.
  */
+/** "Grade de corte" (ADR 0186): cada tamanho entra quantas vezes a grade diz; zero tira, e o que não está nela entra uma vez. */
+export function expandirComGrade(pecas: readonly Molde[], novoId: () => string, grade: Readonly<Record<string, number>>): Molde[] {
+  return pecas.flatMap((peca) => {
+    const tamanhos = peca.graduacao?.tamanhos;
+    if (!tamanhos) return [peca];
+    return expandirTamanhos([peca], novoId).flatMap((m, t) => {
+      const vezes = grade[tamanhos[t]!] ?? 1;
+      return vezes > 0 ? [{ ...m, quantidade: m.quantidade * vezes }] : [];
+    });
+  });
+}
+
 export function expandirTamanhos(pecas: readonly Molde[], novoId: () => string): Molde[] {
   return pecas.flatMap((peca) => {
     const graduacao = peca.graduacao;

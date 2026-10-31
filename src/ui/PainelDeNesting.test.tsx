@@ -301,3 +301,24 @@ describe('PainelDeNesting: os grupos do encaixe (ADR 0103)', () => {
     ]);
   });
 });
+
+describe('a grade de corte (ADR 0186)', () => {
+  it('entrega a grade quando não é uma de cada; uma de cada, não entrega', () => {
+    const graduada = definirTamanhosDoMolde(
+      criarMolde(
+        { nome: 'a', referencia: '', tamanho: 'M', quantidade: 1, contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 200), ponto(0, 200)], margemDeCosturaMm: 0, linhaDeFio: { inicio: ponto(50, 20), fim: ponto(50, 180) }, restricaoDeRotacao: { permite180: false, permite90e270: false } },
+        'a',
+      ),
+      ['P', 'M'],
+      'M',
+    );
+    const onCalcular = vi.fn();
+    render(<PainelDeNesting pecas={[graduada]} distanciaEntreMoldesMm={3} executando={false} progresso={null} resultado={null} onCalcular={onCalcular} onCancelar={() => {}} onAplicar={() => {}} onFechar={() => {}} />);
+    const calcular = screen.getByRole('button', { name: /Calcular/ });
+    fireEvent.click(calcular);
+    expect(onCalcular.mock.calls[0]![0].gradeDeCorte).toBeUndefined();
+    fireEvent.change(screen.getByLabelText('Grade de corte do tamanho M'), { target: { value: '2' } });
+    fireEvent.click(calcular);
+    expect(onCalcular.mock.calls[1]![0].gradeDeCorte).toEqual({ P: 1, M: 2 });
+  });
+});

@@ -136,7 +136,7 @@ import { regraDaTabela } from './ui/tabelaDaRegra';
 import { aplicarDialogoDoPique, dialogoDoPique, type GraduacaoDePiqueCopiada } from './ui/graduacaoDePiques';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
-import { expandirTamanhos } from './domain/tamanhosGraduados';
+import { expandirComGrade, expandirTamanhos } from './domain/tamanhosGraduados';
 import {
   arredondarCanto,
   cotaDeRaioEm,
@@ -392,8 +392,13 @@ import {
   guardarCoresDosTamanhos,
   guardarEstiloDaCostura,
   guardarPiquePadrao,
+  guardarUnidades,
   piquePadraoGuardado,
+  unidadeDeAreaGuardada,
+  unidadeDePesoGuardada,
   type EstiloDaCostura,
+  type UnidadeDeArea,
+  type UnidadeDePeso,
 } from './ui/preferencias';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
@@ -691,6 +696,21 @@ export default function App(): React.JSX.Element {
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
   const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
   const [retanguloDeOrganizacaoMm, setRetanguloDeOrganizacaoMm] = useState<number | null>(null);
+  const [gradeDoModelo, setGradeDoModelo] = useState<Readonly<Record<string, number>> | null>(null);
+  const [unidadeDeArea, setUnidadeDeArea] = useState<UnidadeDeArea>(() => {
+    try {
+      return unidadeDeAreaGuardada(window.localStorage);
+    } catch {
+      return 'cm2';
+    }
+  });
+  const [unidadeDePeso, setUnidadeDePeso] = useState<UnidadeDePeso>(() => {
+    try {
+      return unidadeDePesoGuardada(window.localStorage);
+    } catch {
+      return 'kg';
+    }
+  });
   const [textoComoLinha, setTextoComoLinha] = useState(() => {
     try {
       return window.localStorage.getItem('enfesto-cad:texto-como-linha') === '1';
@@ -3224,7 +3244,7 @@ export default function App(): React.JSX.Element {
       let paraEncaixar: readonly Molde[] = pecas;
       if (opcoesAvancadas.todosOsTamanhos) {
         try {
-          paraEncaixar = expandirTamanhos(pecas, proximoId);
+          paraEncaixar = opcoesAvancadas.gradeDeCorte ? expandirComGrade(pecas, proximoId, opcoesAvancadas.gradeDeCorte) : expandirTamanhos(pecas, proximoId);
         } catch (e) {
           window.alert(e instanceof Error ? e.message : String(e));
           return null;
@@ -3241,6 +3261,7 @@ export default function App(): React.JSX.Element {
     (opcoesAvancadas: OpcoesAvancadasDeNesting) => {
       const preparado = prepararEncaixe(opcoesAvancadas);
       if (!preparado) return;
+      setGradeDoModelo(opcoesAvancadas.gradeDeCorte ?? null);
       const { paraEncaixar, enfestoDoEncaixe } = preparado;
       setResultadoNesting(null);
       setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
@@ -3357,6 +3378,7 @@ export default function App(): React.JSX.Element {
                 ...(meta !== undefined ? { aproveitamentoDesejadoPercentual: meta } : {}),
                 ...(sentidoUnicoDoTecido(tecido) ? { tecidoDeSentidoUnico: true } : {}),
                 ...(opcoesAvancadas.todosOsTamanhos ? { todosOsTamanhos: true } : {}),
+                ...(opcoesAvancadas.gradeDeCorte ? { gradeDeCorte: opcoesAvancadas.gradeDeCorte } : {}),
                 ...(opcoesAvancadas.abrirSimetrias ? { abrirSimetrias: true } : {}),
               },
             },
@@ -3400,7 +3422,7 @@ export default function App(): React.JSX.Element {
         try {
           // As de agora preparadas como as do encaixe: com os tamanhos e as simetrias abertas, se ele pediu.
           let preparadas: readonly Molde[] = pecas;
-          if (trabalho.opcoes.todosOsTamanhos) preparadas = expandirTamanhos(preparadas, proximoId);
+          if (trabalho.opcoes.todosOsTamanhos) preparadas = trabalho.opcoes.gradeDeCorte ? expandirComGrade(preparadas, proximoId, trabalho.opcoes.gradeDeCorte) : expandirTamanhos(preparadas, proximoId);
           if (trabalho.opcoes.abrirSimetrias) preparadas = abrirSimetrias(preparadas, proximoId);
           ligado = encaixeComOMoldeDeAgora(resultado.pecasColocadas, trabalho.pecas, preparadas);
         } catch (e) {
@@ -3513,7 +3535,7 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
+    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { textoComoLinha, ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
     [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo],
   );
 
@@ -5288,6 +5310,24 @@ export default function App(): React.JSX.Element {
         lembrarOriginal={lembrarOriginal}
         onLembrarOriginal={() => setLembrarOriginal((v) => !v)}
         onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, retanguloDeOrganizacaoMm ?? enfesto?.larguraUtilMm ?? 1500))}
+        unidadeDeArea={unidadeDeArea}
+        onUnidadeDeArea={(area) => {
+          setUnidadeDeArea(area);
+          try {
+            guardarUnidades(window.localStorage, { area });
+          } catch {
+            // Sem o armazenamento do navegador, vale até fechar.
+          }
+        }}
+        unidadeDePeso={unidadeDePeso}
+        onUnidadeDePeso={(peso) => {
+          setUnidadeDePeso(peso);
+          try {
+            guardarUnidades(window.localStorage, { peso });
+          } catch {
+            // Sem o armazenamento do navegador, vale até fechar.
+          }
+        }}
         textoComoLinha={textoComoLinha}
         onAlternarTextoComoLinha={() => {
           setTextoComoLinha(!textoComoLinha);
@@ -5411,6 +5451,7 @@ export default function App(): React.JSX.Element {
         <PainelDeNesting
           pecas={pecas}
           distanciaEntreMoldesMm={enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM}
+          gradeInicial={gradeDoModelo}
           sentidoDoTecido={sentidoUnicoDoTecido(tecido) ? { nome: tecido?.nome ?? '', sentido: sentidoUnicoDoTecido(tecido)! } : null}
           executando={nestingExecutando}
           progresso={progressoNesting}
@@ -5720,6 +5761,7 @@ export default function App(): React.JSX.Element {
         <PainelDeRelatorio
           relatorio={relatorioAtual}
           gerando={gerandoRelatorio}
+          unidadeDePeso={unidadeDePeso}
           onExportarPdf={() => void exportarRelatorio('pdf')}
           onExportarExcel={() => void exportarRelatorio('xlsx')}
           onFechar={() => setMostrarRelatorio(false)}
@@ -5773,6 +5815,7 @@ export default function App(): React.JSX.Element {
       {mostrarInformacoesDosMoldes && (
         <PainelDeInformacoesDosMoldes
           pecas={pecas}
+          unidadeDeArea={unidadeDeArea}
           selecionadoId={selecionadoId}
           onSelecionar={selecionarUnico}
           onFechar={() => setMostrarInformacoesDosMoldes(false)}

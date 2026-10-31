@@ -12,8 +12,7 @@ import {
   margensDaMesa,
   ROTULO_DO_TIPO,
   type ConfiguracaoDeEnfesto,
-  type TipoDeEnfesto,
-} from '../domain/enfesto';
+  type TipoDeEnfesto, lerPontosDeEmenda } from '../domain/enfesto';
 
 interface PainelDeEnfestoProps {
   readonly configAtual: ConfiguracaoDeEnfesto | null;
@@ -34,7 +33,14 @@ interface CamposDeFormulario {
   sentidoDeAlimentacao: 'unico' | 'alternado';
   zonasBloqueadas: string;
   textosNoRisco: string;
+  emendas: string;
+  mostraPadronagem: boolean;
+  imagemDaPadronagem: string;
+  comprimentoDaPadronagemMm: string;
+  corDoTecido: string;
 }
+
+const TAMANHO_MAXIMO_DO_PADRAO = 2_000_000;
 
 function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulario {
   // As margens que valem: o projeto de antes, gravado com margem zero, já mostra a de segurança.
@@ -52,15 +58,24 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
     zonasBloqueadas: textoDasZonas(config?.zonasBloqueadas ?? []),
     textosNoRisco: textoDosTextosNoRisco(config?.textosNoRisco ?? []),
+    emendas: (config?.emendasMm ?? []).join(' '),
+    mostraPadronagem: config?.padronagem !== undefined,
+    imagemDaPadronagem: config?.padronagem?.imagem ?? '',
+    comprimentoDaPadronagemMm: String(config?.padronagem?.comprimentoMm ?? 100),
+    corDoTecido: config?.corDoTecido ?? '',
   };
 }
 
 function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
   const zonasBloqueadas = lerZonasBloqueadas(c.zonasBloqueadas);
   const textosNoRisco = lerTextosNoRisco(c.textosNoRisco);
+  const emendasMm = lerPontosDeEmenda(c.emendas);
   const base = {
     ...(zonasBloqueadas.length > 0 ? { zonasBloqueadas } : {}),
     ...(textosNoRisco.length > 0 ? { textosNoRisco } : {}),
+    ...(emendasMm.length > 0 ? { emendasMm } : {}),
+    ...(c.mostraPadronagem && c.imagemDaPadronagem !== '' ? { padronagem: { imagem: c.imagemDaPadronagem, comprimentoMm: Math.max(1, Number.parseFloat(c.comprimentoDaPadronagemMm) || 100) } } : {}),
+    ...(c.corDoTecido !== '' ? { corDoTecido: c.corDoTecido } : {}),
     larguraUtilMm: Number.parseFloat(c.larguraUtilMm),
     comprimentoMm: Number.parseFloat(c.comprimentoMm),
     quantidadeDeCamadas: Number.parseInt(c.quantidadeDeCamadas, 10),
@@ -85,6 +100,7 @@ function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
 export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element {
   const [campos, setCampos] = useState<CamposDeFormulario>(() => camposIniciais(props.configAtual));
   const [erro, setErro] = useState<string | null>(null);
+  const [erroDoPadrao, setErroDoPadrao] = useState<string | null>(null);
   const [preview, setPreview] = useState<ConfiguracaoDeEnfesto | null>(null);
 
   function atualizarPreview(proximosCampos: CamposDeFormulario): void {
@@ -93,6 +109,21 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
     } catch {
       setPreview(null);
     }
+  }
+
+  /** A imagem do padrão entra no projeto: por isso o limite. */
+  function lerPadrao(arquivo: File | undefined): void {
+    if (!arquivo) return;
+    if (!arquivo.type.startsWith('image/') || arquivo.size > TAMANHO_MAXIMO_DO_PADRAO) {
+      setErroDoPadrao('Escolha uma imagem de até 2 MB.');
+      return;
+    }
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      setErroDoPadrao(null);
+      alterar({ imagemDaPadronagem: String(leitor.result) });
+    };
+    leitor.readAsDataURL(arquivo);
   }
 
   function alterar(patch: Partial<CamposDeFormulario>): void {
@@ -172,6 +203,36 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
           Textos no risco: um por linha — comprimento, largura (mm) e o texto
           <textarea rows={2} value={campos.textosNoRisco} placeholder="1200 300 Emenda aqui" onChange={(e) => alterar({ textosNoRisco: e.target.value })} />
         </label>
+        <label>
+          Pontos de emenda: no comprimento, em mm, separados por espaço
+          <input type="text" value={campos.emendas} placeholder="1200 2400" onChange={(e) => alterar({ emendas: e.target.value })} />
+        </label>
+        <label className="opcao-em-linha">
+          <input type="checkbox" checked={campos.corDoTecido !== ''} onChange={(e) => alterar({ corDoTecido: e.target.checked ? '#cfe2ff' : '' })} />
+          Cor do tecido nas peças
+          {campos.corDoTecido !== '' && <input type="color" aria-label="Cor do tecido" value={campos.corDoTecido} onChange={(e) => alterar({ corDoTecido: e.target.value })} />}
+        </label>
+        <label className="opcao-em-linha">
+          <input type="checkbox" checked={campos.mostraPadronagem} onChange={(e) => alterar({ mostraPadronagem: e.target.checked })} />
+          Mostra padronagem
+        </label>
+        {campos.mostraPadronagem && (
+          <>
+            <label>
+              Padrão (imagem da estampa, até 2 MB)
+              <input type="file" accept="image/*" onChange={(e) => lerPadrao(e.target.files?.[0])} />
+            </label>
+            <label>
+              Comprimento do padrão (mm)
+              <input type="number" min={1} value={campos.comprimentoDaPadronagemMm} onChange={(e) => alterar({ comprimentoDaPadronagemMm: e.target.value })} />
+            </label>
+            {erroDoPadrao && (
+              <p className="mensagem-de-erro" role="alert">
+                {erroDoPadrao}
+              </p>
+            )}
+          </>
+        )}
         <label>
           Margem lateral (mm, a partir de {MARGEM_DE_SEGURANCA_DA_MESA_MM})
           <input

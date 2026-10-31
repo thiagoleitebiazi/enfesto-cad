@@ -12,6 +12,8 @@ export interface OpcoesAvancadasDeNesting {
   readonly aproveitamentoDesejadoPercentual?: number;
   /** Cada tamanho das peças graduadas entra no encaixe como uma peça própria (só vem quando há peças graduadas). */
   readonly todosOsTamanhos?: boolean;
+  /** Quantas vezes cada tamanho entra (ADR 0186): só vem quando não é uma de cada. */
+  readonly gradeDeCorte?: Readonly<Record<string, number>>;
   /** As peças com linha de simetria entram no encaixe abertas, inteiras (só vem quando há peças assim). */
   readonly abrirSimetrias?: boolean;
   /** A distância entre os moldes (mm), de linha de corte a linha de corte: passa a ser a do enfesto. */
@@ -26,6 +28,8 @@ interface PainelDeNestingProps {
   readonly distanciaEntreMoldesMm: number;
   /** O tecido de sentido único (pelo, estampa direcional): o encaixe não vira as peças. */
   readonly sentidoDoTecido?: { readonly nome: string; readonly sentido: string } | null;
+  /** A grade de corte do modelo, a última usada (ADR 0186). */
+  readonly gradeInicial?: Readonly<Record<string, number>> | null;
   readonly executando: boolean;
   readonly progresso: { readonly colocadas: number; readonly total: number } | null;
   readonly resultado: ResultadoDeNesting | null;
@@ -49,6 +53,8 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
     distanciaEntreMoldes.trim() === '' || distanciaLida === null || distanciaLida < 0 ? 'A distância entre os moldes precisa ser um número de 0 mm para cima.' : null;
   const temGraduadas = props.pecas.some((p) => p.graduacao !== undefined);
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
+  const tamanhosDaGrade = [...new Set(props.pecas.flatMap((p) => p.graduacao?.tamanhos ?? []))];
+  const [grade, setGrade] = useState<Readonly<Record<string, string>>>(() => Object.fromEntries(tamanhosDaGrade.map((t) => [t, String(props.gradeInicial?.[t] ?? 1)])));
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
   const [metodo, setMetodo] = useState<MetodoDoNesting>('grade');
@@ -64,12 +70,14 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
     if (erroDaDistancia !== null || distanciaLida === null) return null;
     const minutos = Number(limiteDeTempoMinutos);
     const aproveitamento = Number(aproveitamentoDesejadoPercentual);
+    const gradeLida = Object.fromEntries(tamanhosDaGrade.map((t) => [t, Math.max(0, Math.round(Number(grade[t] ?? 1)) || 0)]));
     return {
       ...(limiteDeTempoMinutos.trim() !== '' && minutos > 0 ? { limiteDeTempoMinutos: minutos } : {}),
       ...(aproveitamentoDesejadoPercentual.trim() !== '' && aproveitamento > 0
         ? { aproveitamentoDesejadoPercentual: aproveitamento }
         : {}),
       ...(temGraduadas ? { todosOsTamanhos } : {}),
+      ...(temGraduadas && todosOsTamanhos && Object.values(gradeLida).some((n) => n !== 1) ? { gradeDeCorte: gradeLida } : {}),
       ...(temSimetria ? { abrirSimetrias } : {}),
       distanciaEntreMoldesMm: distanciaLida,
       ...(metodo !== 'grade' ? { metodo } : {}),
@@ -178,6 +186,26 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                       ? 'Cada tamanho entra como uma peça própria. Ao aplicar o encaixe, as peças graduadas passam a ser essas peças, sem graduação (Ctrl+Z desfaz).'
                       : 'Só o tamanho base de cada peça graduada entra no encaixe.'}
                   </p>
+                  {todosOsTamanhos && (
+                    <fieldset className="grupo-de-opcoes-do-formulario">
+                      <legend>Grade de corte</legend>
+                      {tamanhosDaGrade.map((t) => (
+                        <label key={t} className="opcao-em-linha">
+                          {t}
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            aria-label={`Grade de corte do tamanho ${t}`}
+                            className="campo-curto"
+                            value={grade[t] ?? '1'}
+                            onChange={(e) => setGrade((g) => ({ ...g, [t]: e.target.value }))}
+                          />
+                        </label>
+                      ))}
+                      <p className="nota-do-formulario">Quantas vezes cada tamanho entra no risco; zero tira o tamanho. Vale para todas as peças do modelo.</p>
+                    </fieldset>
+                  )}
                 </>
               )}
             </form>

@@ -1,3 +1,4 @@
+import { pesoNaUnidade, ROTULO_DA_UNIDADE_DE_PESO, type UnidadeDePeso } from './preferencias';
 import { Sobreposicao } from './Sobreposicao';
 import { numeroComVirgula } from '../core/numeros';
 import type { RelatorioDeProducao } from '../domain/relatorio';
@@ -11,9 +12,13 @@ interface PainelDeRelatorioProps {
   readonly onExportarPdf: () => void;
   readonly onExportarExcel: () => void;
   readonly onFechar: () => void;
+  /** A unidade do peso (ADR 0189). */
+  readonly unidadeDePeso?: UnidadeDePeso;
 }
 
 export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Element {
+  const unidadeDePeso = props.unidadeDePeso ?? 'kg';
+  const peso = (kg: number, casas?: number): string => `${numeroComVirgula(pesoNaUnidade(kg, unidadeDePeso), casas)} ${ROTULO_DA_UNIDADE_DE_PESO[unidadeDePeso]}`;
   const r = props.relatorio;
   return (
     <Sobreposicao titulo="Relatório de produção" onFechar={props.onFechar}>
@@ -50,9 +55,9 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
           <dt>Gramatura</dt>
           <dd>{r.gramaturaGm2 !== null ? `${numeroComVirgula(r.gramaturaGm2)} g/m²` : '— (configure no tecido)'}</dd>
           <dt>Estoque disponível</dt>
-          <dd>{r.quantidadeDisponivelKg !== null ? `${numeroComVirgula(r.quantidadeDisponivelKg)} kg` : '—'}</dd>
+          <dd>{r.quantidadeDisponivelKg !== null ? peso(r.quantidadeDisponivelKg) : '—'}</dd>
           <dt>Peso total estimado</dt>
-          <dd>{r.pesoTotalEstimadoKg !== null ? `${numeroComVirgula(r.pesoTotalEstimadoKg, 3)} kg` : '—'}</dd>
+          <dd>{r.pesoTotalEstimadoKg !== null ? peso(r.pesoTotalEstimadoKg, 3) : '—'}</dd>
           <dt>Rendimento</dt>
           <dd>{r.rendimentoLotes !== null ? `${r.rendimentoLotes} lote(s) igual(is) cabem no estoque` : '—'}</dd>
         </dl>
@@ -76,7 +81,7 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
                   <td>{linha.tamanho}</td>
                   <td className="coluna-numerica">{linha.quantidadeDeModelos}</td>
                   <td className="coluna-numerica">{linha.quantidadeTotal}</td>
-                  <td className="coluna-numerica">{linha.pesoEstimadoKg !== null ? `${numeroComVirgula(linha.pesoEstimadoKg, 3)} kg` : '—'}</td>
+                  <td className="coluna-numerica">{linha.pesoEstimadoKg !== null ? peso(linha.pesoEstimadoKg, 3) : '—'}</td>
                 </tr>
               ))}
             </tbody>

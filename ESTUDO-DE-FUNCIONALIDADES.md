@@ -300,3 +300,9 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Mover com referência | ✅ ADR 0183 |
 | Texto como linha; plotar direto; retângulo de organização | ✅ ADR 0184 (direto = pasta vigiada, não a porta da máquina) |
 | Imprimir: proporção, fatores de escala, em cores, prévia | ✅ ADR 0185 |
+| Grade de corte; aplicar para modelo | ✅ ADR 0186 (um tecido por projeto) |
+| Alterar risco | ✅ já existia: é a janela do Enfesto |
+| Mostra padronagem, padrão; cor do tecido | ✅ ADR 0187 |
+| Pontos de emenda | ✅ ADR 0188 (a explicação vem da prática, a referência não diz) |
+| Unidades de área e de peso | ✅ ADR 0189 (na tela; as exportações seguem em kg e m²) |
+| Giro faixa; par; espelhar; peça pronta; dobra; margens; listras | ✅ já existiam |

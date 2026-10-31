@@ -511,6 +511,19 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const modoDeMedida = MODOS_QUE_PRENDEM_NOS_VERTICES.has(modo);
   const prendeNosVertices = ferramentaDeVista === null && (modoDeMedida || (imaAtivo && MODOS_COM_IMA.has(modo)));
   const prendeNaGrade = prendeNosVertices && imaAtivo && mostrarGrade;
+  // A imagem da padronagem (ADR 0187): carregada de novo só quando muda.
+  const fonteDaPadronagem = enfesto?.padronagem?.imagem;
+  const [padronagemCarregada, setPadronagemCarregada] = useState<{ readonly fonte: string; readonly imagem: HTMLImageElement } | null>(null);
+  useEffect(() => {
+    if (!fonteDaPadronagem) return undefined;
+    const imagem = new Image();
+    imagem.onload = () => setPadronagemCarregada({ fonte: fonteDaPadronagem, imagem });
+    imagem.src = fonteDaPadronagem;
+    return () => {
+      imagem.onload = null;
+    };
+  }, [fonteDaPadronagem]);
+  const imagemDaPadronagem = padronagemCarregada && padronagemCarregada.fonte === fonteDaPadronagem ? padronagemCarregada.imagem : null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
   const reguaVerticalRef = useRef<HTMLCanvasElement | null>(null);
@@ -866,6 +879,31 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const cantoUtilOposto = mundoParaTela(ponto(util.maxX, util.maxY), transform);
       ctx.fillStyle = COR_MESA;
       ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
+      if (imagemDaPadronagem && enfesto.padronagem) {
+        const padrao = ctx.createPattern(imagemDaPadronagem, 'repeat');
+        if (padrao) {
+          const escala = (enfesto.padronagem.comprimentoMm * transform.escalaPxPorMm) / imagemDaPadronagem.width;
+          padrao.setTransform(new DOMMatrix([escala, 0, 0, escala, cantoExterno.x, cantoExterno.y]));
+          ctx.save();
+          ctx.globalAlpha = 0.45;
+          ctx.fillStyle = padrao;
+          ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
+          ctx.restore();
+        }
+      }
+      // Os pontos de emenda (ADR 0188).
+      for (const e of enfesto.emendasMm ?? []) {
+        const a = mundoParaTela(ponto(0, e), transform);
+        const b = mundoParaTela(ponto(enfesto.larguraUtilMm, e), transform);
+        ctx.strokeStyle = COR_PONTO_NAO_GRADUADO;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       // Os textos livres no risco (ADR 0165).
       ctx.fillStyle = '#7c2d12';
       ctx.font = '12px system-ui, sans-serif';
@@ -997,7 +1035,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       for (const furo of peca.furos) {
         traçarContorno(ctx, furo, transform);
       }
-      ctx.fillStyle = peca.cor ?? COR_TECIDO;
+      ctx.fillStyle = peca.cor ?? enfesto?.corDoTecido ?? COR_TECIDO;
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
@@ -1677,6 +1715,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    imagemDaPadronagem,
     retanguloDeOrganizacaoMm,
     estiloDaCostura,
     coresDosTamanhos,

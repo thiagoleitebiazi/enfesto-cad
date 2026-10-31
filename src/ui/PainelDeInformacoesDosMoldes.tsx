@@ -1,3 +1,4 @@
+import { areaNaUnidade, ROTULO_DA_UNIDADE_DE_AREA, type UnidadeDeArea } from './preferencias';
 import { Sobreposicao } from './Sobreposicao';
 import { perimetro } from '../core/geometria';
 import { comprimentoDasLinhasAuxiliares } from '../domain/linhasAuxiliares';
@@ -8,6 +9,8 @@ interface PainelDeInformacoesDosMoldesProps {
   readonly selecionadoId: string | null;
   readonly onSelecionar: (id: string) => void;
   readonly onFechar: () => void;
+  /** A unidade da área (ADR 0189). */
+  readonly unidadeDeArea?: UnidadeDeArea;
 }
 
 /** Número com vírgula decimal, como nos outros diálogos. */
@@ -24,6 +27,8 @@ function numero(valor: number, casas = 1): string {
 export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldesProps): React.JSX.Element {
   const linhas = props.pecas.map((peca) => ({ peca, dim: dimensoesDoMolde(peca), perimetroMm: perimetro(peca.contorno) }));
   const totalACortar = props.pecas.reduce((soma, p) => soma + p.quantidade, 0);
+  const unidade = props.unidadeDeArea ?? 'cm2';
+  const casas = unidade === 'cm2' ? 1 : 3;
   const areaTotalMm2 = linhas.reduce((soma, l) => soma + l.dim.areaMm2 * l.peca.quantidade, 0);
 
   return (
@@ -49,7 +54,7 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                     Altura (mm)
                   </th>
                   <th scope="col" className="coluna-numerica">
-                    Área (cm²)
+                    Área ({ROTULO_DA_UNIDADE_DE_AREA[unidade]})
                   </th>
                   <th scope="col" className="coluna-numerica">
                     Perímetro (mm)
@@ -85,7 +90,7 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                     <td className="coluna-numerica">{peca.quantidade}</td>
                     <td className="coluna-numerica">{numero(dim.larguraMm)}</td>
                     <td className="coluna-numerica">{numero(dim.alturaMm)}</td>
-                    <td className="coluna-numerica">{numero(dim.areaMm2 / 100)}</td>
+                    <td className="coluna-numerica">{numero(areaNaUnidade(dim.areaMm2, unidade), casas)}</td>
                     <td className="coluna-numerica">{numero(perimetroMm)}</td>
                     <td className="coluna-numerica">{numero(comprimentoDasLinhasAuxiliares(peca))}</td>
                     <td className="coluna-numerica">{numero(peca.margemDeCosturaMm)}</td>
@@ -102,7 +107,7 @@ export function PainelDeInformacoesDosMoldes(props: PainelDeInformacoesDosMoldes
                   </th>
                   <td className="coluna-numerica">{totalACortar}</td>
                   <td colSpan={2} />
-                  <td className="coluna-numerica">{numero(areaTotalMm2 / 100)}</td>
+                  <td className="coluna-numerica">{numero(areaNaUnidade(areaTotalMm2, unidade), casas)}</td>
                   <td colSpan={6} />
                 </tr>
               </tfoot>

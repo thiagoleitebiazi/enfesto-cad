@@ -20,7 +20,7 @@ export type FerramentaDeAnotacao =
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
-import { combinacaoDaTecla, ROTULO_DO_ESQUEMA, ROTULO_DO_ESTILO_DA_COSTURA, TECLAS_DO_PROGRAMA, type EsquemaDeCores, type EstiloDaCostura } from './preferencias';
+import { combinacaoDaTecla, ROTULO_DA_UNIDADE_DE_AREA, ROTULO_DA_UNIDADE_DE_PESO, ROTULO_DO_ESQUEMA, ROTULO_DO_ESTILO_DA_COSTURA, TECLAS_DO_PROGRAMA, type EsquemaDeCores, type EstiloDaCostura, type UnidadeDeArea, type UnidadeDePeso } from './preferencias';
 
 interface BarraDeFerramentasProps {
   readonly modo: ModoDeDesenho;
@@ -140,6 +140,11 @@ interface BarraDeFerramentasProps {
   readonly onEnviarAoPlotter?: () => void;
   readonly onEscolherPastaDoPlotter?: () => void;
   readonly onRetanguloDeOrganizacao?: () => void;
+  /** As unidades de área e de peso (ADR 0189). */
+  readonly unidadeDeArea?: UnidadeDeArea;
+  readonly onUnidadeDeArea?: (unidade: UnidadeDeArea) => void;
+  readonly unidadeDePeso?: UnidadeDePeso;
+  readonly onUnidadeDePeso?: (unidade: UnidadeDePeso) => void;
   readonly lembrarOriginal?: boolean;
   readonly onLembrarOriginal?: () => void;
   readonly onOrganizarMoldes?: () => void;
@@ -617,6 +622,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               ...(props.onFerramentasDoPlotter
                 ? [
                     { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    ...(props.onUnidadeDeArea ? (Object.keys(ROTULO_DA_UNIDADE_DE_AREA) as UnidadeDeArea[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Área em ${ROTULO_DA_UNIDADE_DE_AREA[u]}`, marcado: (props.unidadeDeArea ?? 'cm2') === u, onEscolher: () => props.onUnidadeDeArea?.(u) })) : []),
+                    ...(props.onUnidadeDePeso ? (Object.keys(ROTULO_DA_UNIDADE_DE_PESO) as UnidadeDePeso[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Peso em ${ROTULO_DA_UNIDADE_DE_PESO[u]}`, marcado: (props.unidadeDePeso ?? 'kg') === u, onEscolher: () => props.onUnidadeDePeso?.(u) })) : []),
                     ...(props.onEnviarAoPlotter
                       ? [
                           { tipo: 'opcao' as const, rotulo: 'Texto como linha no plotter', marcado: props.textoComoLinha === true, titulo: 'Os textos saem desenhados em traços, para o plotter que não tem letreiro próprio', onEscolher: props.onAlternarTextoComoLinha ?? (() => undefined) },
