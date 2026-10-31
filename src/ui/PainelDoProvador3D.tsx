@@ -43,7 +43,9 @@ import {
   type PosicaoNoCorpo,
   type PresetDeTecido,
   type Tecido3D,
+  COR_DE_PARTIDA,
 } from '../domain/montagem3d';
+import { corNaVariante, type VarianteDeCor } from '../domain/desenhoTecnico';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, ligarAutoColisao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
 import {
   cameraDeFrente,
@@ -238,9 +240,15 @@ export function PainelDoProvador3D(props: {
     return tons;
   }, []);
 
+  // A cor do modelo (ADR 0152): as variantes do desenho técnico vistas no 3D; só a vista muda, a física não.
+  const desenhoDaFicha = props.ficha?.desenho ?? null;
+  const variantesDeCor = desenhoDaFicha?.variantes ?? [];
+  const [varianteId, setVarianteId] = useState('');
+  const varianteAtual = variantesDeCor.find((v) => v.id === varianteId) ?? null;
+
   /** Desenha a cena no canvas dado (o da janela, ou um à parte para a imagem). */
   const desenharEm = useCallback(
-    (canvas: HTMLCanvasElement, cam: Camera3D, fundo: string | null): boolean => {
+    (canvas: HTMLCanvasElement, cam: Camera3D, fundo: string | null, variante: VarianteDeCor | null = varianteAtual): boolean => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return false;
       const m = obterMontada();
@@ -274,7 +282,7 @@ export function PainelDoProvador3D(props: {
           chave: p.chave,
           primeiroTriangulo: p.primeiroTriangulo,
           quantidade: p.malha.triangulos.length / 3,
-          cor: corRgb(config.cor),
+          cor: corRgb(desenhoDaFicha ? corNaVariante(config.cor, desenhoDaFicha, variante, COR_DE_PARTIDA) : config.cor),
           espelhada: inst.espelhada,
           inicio: p.inicio,
           camada: config.posicao === 'sobre-outra-peca' ? 1 : 0,
@@ -314,7 +322,7 @@ export function PainelDoProvador3D(props: {
       }
       return true;
     },
-    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem, pontosDoDesenho],
+    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem, pontosDoDesenho, varianteAtual, desenhoDaFicha],
   );
 
   const desenhar = useCallback((): void => {
@@ -398,6 +406,41 @@ export function PainelDoProvador3D(props: {
 
   const mudarPeca = (chave: string, mudanca: Partial<ConfiguracaoDaInstancia>): void =>
     setMontagem((m) => ({ ...m, pecas: { ...m.pecas, [chave]: { ...m.pecas[chave]!, ...mudanca } } }));
+
+  /** A cartela (ADR 0152): a vista de agora na cor original e em cada variante, lado a lado, com o nome. */
+  const salvarCartela = async (): Promise<void> => {
+    const cores: ReadonlyArray<readonly [string, VarianteDeCor | null]> = [['Original', null], ...variantesDeCor.map((v) => [v.nome, v] as const)];
+    const largura = 600 * fatorDaImagem;
+    const altura = 900 * fatorDaImagem;
+    const canvas = document.createElement('canvas');
+    canvas.width = largura * cores.length;
+    canvas.height = altura + 60 * fatorDaImagem;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setMensagem('Não foi possível gerar a imagem neste computador.');
+      return;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    cores.forEach(([nome, variante], i) => {
+      const parte = document.createElement('canvas');
+      parte.width = largura;
+      parte.height = altura;
+      desenharEm(parte, camera, '#ffffff', variante);
+      ctx.drawImage(parte, i * largura, 0);
+      ctx.fillStyle = '#1f2933';
+      ctx.font = `600 ${22 * fatorDaImagem}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(nome, i * largura + largura / 2, altura + 38 * fatorDaImagem);
+    });
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+    if (!blob) {
+      setMensagem('Não foi possível gerar a imagem neste computador.');
+      return;
+    }
+    const caminho = await props.onSalvarArquivo(`provador-3d-${props.nomeDoModelo.replace(/[^A-Za-z0-9._-]+/g, '-')}-cartela.png`, await blob.arrayBuffer());
+    setMensagem(caminho ? `Cartela salva em ${caminho}` : null);
+  };
 
   const salvarImagem = async (todas: boolean): Promise<void> => {
     // A resolução pedida (ADR 0139): 600 × 900 por vista, vezes o fator.
@@ -683,6 +726,19 @@ export function PainelDoProvador3D(props: {
                   <option value={4}>Muito alta (2400 × 3600)</option>
                 </select>
               </label>
+              {variantesDeCor.length > 0 && (
+                <label>
+                  Cor do modelo
+                  <select aria-label="Cor do modelo" value={varianteId} onChange={(e) => setVarianteId(e.target.value)}>
+                    <option value="">Original</option>
+                    {variantesDeCor.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <p className="acoes-da-fila">
                 <button type="button" onClick={() => void salvarImagem(false)}>
                   Salvar esta vista (PNG)
@@ -693,6 +749,11 @@ export function PainelDoProvador3D(props: {
                 <button type="button" disabled={gravandoGiro} onClick={() => void gravarGiro()}>
                   {gravandoGiro ? 'Gravando o giro…' : 'Gravar o giro (vídeo WebM)'}
                 </button>
+                {variantesDeCor.length > 0 && (
+                  <button type="button" onClick={() => void salvarCartela()}>
+                    Salvar a cartela de cores (PNG)
+                  </button>
+                )}
               </p>
             </section>
           )}

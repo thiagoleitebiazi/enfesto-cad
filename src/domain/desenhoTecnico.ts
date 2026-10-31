@@ -142,6 +142,19 @@ export function desenhoNaVariante(desenho: DesenhoTecnico, variante: VarianteDeC
 }
 
 /** A variante nova, sem trocas ainda. Recusa o nome vazio e o nome que já existe. */
+/**
+ * A cor de uma peça do provador numa variante (ADR 0152): a troca da própria cor; a peça na cor de partida (ninguém
+ * escolheu a cor dela) toma a troca da cor principal do desenho, a primeira dele.
+ */
+export function corNaVariante(cor: string, desenho: DesenhoTecnico, variante: VarianteDeCor | null, corDePartida?: string): string {
+  if (!variante) return cor;
+  const direta = variante.trocas[cor.toLowerCase()];
+  if (direta) return direta;
+  if (corDePartida?.toLowerCase() !== cor.toLowerCase()) return cor;
+  const principal = coresDoDesenho(desenho)[0];
+  return (principal && variante.trocas[principal]) || cor;
+}
+
 export function adicionarVariante(desenho: DesenhoTecnico, nome: string, id: string): DesenhoTecnico {
   const limpo = nome.trim();
   if (limpo === '') throw new Error('Dê um nome à variante de cor ("Marinho", "Off-white").');

@@ -1,3 +1,4 @@
+import { DESENHO_VAZIO } from '../domain/desenhoTecnico';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ponto } from '../core/geometria';
@@ -26,7 +27,7 @@ const FICHA: FichaTecnica = {
   medidas: [{ id: 'q', nome: 'Quadril', comoMedir: '', toleranciaCm: 1, valoresCm: { P: 98, M: 104 } }],
 };
 
-function abrir(opcoes: { readonly pecas?: readonly Molde[]; readonly montagem?: Montagem3D } = {}) {
+function abrir(opcoes: { readonly pecas?: readonly Molde[]; readonly montagem?: Montagem3D; readonly ficha?: FichaTecnica } = {}) {
   const onGuardar = vi.fn();
   const onSalvarArquivo = vi.fn(async (nome: string) => `C:\\saida\\${nome}`);
   let n = 0;
@@ -34,7 +35,7 @@ function abrir(opcoes: { readonly pecas?: readonly Molde[]; readonly montagem?: 
     <PainelDoProvador3D
       pecas={opcoes.pecas ?? [saia('f', 'Frente da saia'), saia('c', 'Costas da saia'), saia('b', 'Retalho')]}
       montagemGuardada={opcoes.montagem ?? MONTAGEM_VAZIA}
-      ficha={FICHA}
+      ficha={opcoes.ficha ?? FICHA}
       regrasDeCaimento={{ q: { usar: true, tipo: 'circunferencia', folgaCm: 6, peso: 2 } }}
       imagens={[]}
       nomeDoModelo="Saia"
@@ -168,6 +169,18 @@ describe('PainelDoProvador3D', () => {
     await waitFor(() => expect(ultima().autoColisao).toBe(false), { timeout: 2000 });
     fireEvent.click(screen.getByLabelText(/O tecido não atravessa a si mesmo/));
     await waitFor(() => expect(ultima().autoColisao).toBe(true), { timeout: 2000 });
+  });
+
+  it('a cor do modelo (ADR 0152): as variantes do desenho na aba Imagem; sem variante, nada aparece', () => {
+    abrir({ ficha: { ...FICHA, desenho: { ...DESENHO_VAZIO, variantes: [{ id: 'v', nome: 'Marinho', trocas: {} }] } } });
+    aba(/Imagem/);
+    fireEvent.change(screen.getByLabelText('Cor do modelo'), { target: { value: 'v' } });
+    expect(screen.getByLabelText('Cor do modelo')).toHaveValue('v');
+    expect(screen.getByRole('button', { name: 'Salvar a cartela de cores (PNG)' })).toBeInTheDocument();
+    cleanup();
+    abrir();
+    aba(/Imagem/);
+    expect(screen.queryByLabelText('Cor do modelo')).toBeNull();
   });
 
   it('o tecido: o pronto e o personalizado', async () => {
