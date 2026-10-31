@@ -1818,7 +1818,7 @@ export default function App(): React.JSX.Element {
       armazenamento = null;
     }
     void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
-  }, [, carregarListaDeProjetos]);
+  }, [carregarListaDeProjetos]);
 
   // ---- A biblioteca de materiais e aviamentos (aba Modelo, ADR 0104): lida ao abrir, com o cadastro (as malhas).
   const [bibliotecaDeMateriais, setBibliotecaDeMateriais] = useState<BibliotecaCarregada | null>(null);
