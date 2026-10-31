@@ -47,6 +47,7 @@ import {
   type PendenciaDePrazo,
 } from '../domain/colecoes';
 import { numeroComVirgula } from '../core/numeros';
+import { htmlDaVitrine } from '../domain/vitrine';
 import { coresEmComum, guardarLook, htmlDaPrancha, htmlDoCatalogo, looksDaColecao, MAXIMO_DE_MODELOS_NO_LOOK, tirarLook } from '../domain/looks';
 
 export type ParteDaColecao = 'mix' | 'looks' | 'etapas' | 'tarefas' | 'andamento';
@@ -485,6 +486,24 @@ function ParteLooks(props: {
         }}
       >
         Salvar o catálogo (HTML)
+      </button>
+      <button
+        type="button"
+        title="Vitrine: uma página pronta para pôr no ar ou mandar a quem compra, com os produtos, os looks, o filtro e o 'qual é o meu tamanho'"
+        onClick={(e) => {
+          const secao = e.currentTarget.closest('.looks-da-colecao');
+          const html = htmlDaVitrine(
+            colecao.nome,
+            colecao.modelos.map((m) => {
+              const ficha = projetoDe(m)?.fichaTecnica;
+              return { id: m.id, nome: m.nome, referencia: m.referencia, categoria: m.categoria, cores: m.cores, tecido: m.tecido, croquiSvg: secao?.querySelector(`[data-modelo="${m.id}"] svg`)?.outerHTML ?? null, tamanhos: ficha?.tamanhos ?? [], medidas: ficha?.medidas.map((p) => ({ nome: p.nome, valoresCm: p.valoresCm })) ?? [] };
+            }),
+            looks.map((l) => ({ nome: l.nome, produtoIds: l.modeloIds })),
+          );
+          void props.onSalvarTexto(`vitrine-${colecao.nome.replace(/[^A-Za-z0-9]+/g, '-')}.html`, html);
+        }}
+      >
+        Salvar a vitrine (HTML)
       </button>
       {looks.length === 0 && <p className="nota-do-formulario">Nenhum look ainda: escolha os modelos abaixo.</p>}
       {looks.map((l) => {
