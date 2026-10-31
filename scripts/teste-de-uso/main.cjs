@@ -388,7 +388,7 @@ async function principal() {
   const plts = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.plt'));
   const plt = plts[0] ? fs.readFileSync(path.join(SAIDA, plts[0]), 'latin1') : '';
   const nomesNoPlt = plt.split(';LB').length - 1;
-  conferir('o PLT foi gravado: HPGL, com o nome das 3 peças', plt.startsWith('IN;SP1;') && plt.trim().endsWith('PU0,0;SP0;') && nomesNoPlt === 3, `${JSON.stringify(plts)} ${nomesNoPlt} nome(s)`);
+  conferir('o PLT foi gravado: HPGL, com o nome das 3 peças', plt.startsWith('IN;SP1;') && plt.trim().endsWith('PU0,0;SP0;') && nomesNoPlt >= 3, `${JSON.stringify(plts)} ${nomesNoPlt} nome(s)`);
 
   // 3d. Exportar o ISO para a mesa de corte (ADR 0140): o diálogo pede a velocidade e a caneta; o G-code em mm,
   // absoluto, com um comentário por peça, a caneta antes da faca em cada peça, e o fim do programa.

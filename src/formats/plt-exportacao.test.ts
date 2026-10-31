@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
 import { criarMolde } from '../domain/molde';
-import { gerarPlt, textoParaPlotter, UNIDADES_POR_MM } from './plt-exportacao';
+import { cabecalhoDoRisco, gerarPlt, textoParaPlotter, UNIDADES_POR_MM } from './plt-exportacao';
 
 const ETX = String.fromCharCode(3);
 
@@ -110,5 +110,26 @@ describe('o PLT por partes (ADR 0158)', () => {
     const plt = gerarPlt([quadrado], { larguraDaMesaMm: 1000, larguraDoPapelMm: 600, faixa: 2 });
     expect(plt).toContain('IW0,0,44000,24000;');
     expect(plt).toContain('PU40000,12000;');
+  });
+});
+
+describe('o cabeçalho do risco (ADR 0162)', () => {
+  const peca = criarMolde(
+    { nome: 'Q', referencia: '', tamanho: '', contorno: [ponto(0, 0), ponto(500, 0), ponto(500, 1000), ponto(0, 1000)], linhaDeFio: { inicio: ponto(50, 10), fim: ponto(50, 90) } },
+    'q',
+  );
+
+  it('o modelo, a data, as medidas e o aproveitamento', () => {
+    expect(cabecalhoDoRisco({ nome: 'Saia', codigo: 'ENF-1', pecas: [peca], larguraMm: 1000, dataIso: '2026-10-31T10:00:00.000Z' })).toEqual([
+      'Saia (ENF-1) - 31/10/2026',
+      'Largura 100,0 cm - Comprimento 100,0 cm - Aproveitamento 50,0% - 1 pecas',
+    ]);
+    expect(cabecalhoDoRisco({ nome: 'Saia', codigo: 'ENF-1', pecas: [], larguraMm: null, dataIso: '2026-10-31T10:00:00.000Z' })).toHaveLength(1);
+  });
+
+  it('sai depois da última peça, sem acento; sem cabeçalho, o arquivo não muda', () => {
+    const plt = gerarPlt([peca], { larguraDaMesaMm: 1000, cabecalho: ['Saia Évasê'] });
+    expect(plt).toContain('PU40800,39600;SI0.25,0.35;LBSaia Evase');
+    expect(gerarPlt([peca], { larguraDaMesaMm: 1000 })).not.toContain('SI0.25');
   });
 });

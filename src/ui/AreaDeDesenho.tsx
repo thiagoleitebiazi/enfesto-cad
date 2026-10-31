@@ -837,6 +837,16 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const cantoUtilOposto = mundoParaTela(ponto(util.maxX, util.maxY), transform);
       ctx.fillStyle = COR_MESA;
       ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
+      // As áreas bloqueadas (ADR 0160): em vermelho, por cima da mesa e por baixo das peças.
+      for (const z of enfesto.zonasBloqueadas ?? []) {
+        const a = mundoParaTela(ponto(z.minX, z.minY), transform);
+        const b = mundoParaTela(ponto(z.maxX, z.maxY), transform);
+        ctx.fillStyle = 'rgba(198, 40, 40, 0.22)';
+        ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+        ctx.strokeStyle = '#c62828';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+      }
 
       ctx.strokeStyle = COR_BORDA_MESA;
       ctx.lineWidth = 1.5;

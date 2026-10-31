@@ -1,5 +1,5 @@
 import { linhaDeCorteDaPeca, rotacionarMolde, espelharMolde, transladarMolde, rotacoesNoEncaixe, type Molde } from './molde';
-import { areaUtilDaMesa, type ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, contornoDaZona, type ConfiguracaoDeEnfesto } from './enfesto';
 import { area, retanguloEnvolvente, type Contorno } from '../core/geometria';
 import { encontrarPrimeiraPosicaoValida, type LimitesDeArea } from './posicionamento';
 import { fazerRisco, moldeOrientado, type PecaDoRisco } from './risco';
@@ -154,6 +154,7 @@ export function* passosDoNesting(
 
   const instancias = construirInstancias(pecas);
   const limitesDaMesa: LimitesDeArea = areaUtilDaMesa(enfesto);
+  const zonas = (enfesto.zonasBloqueadas ?? []).map(contornoDaZona);
   // Cada grupo do encaixe começa depois de tudo o que já foi posto (à distância entre as peças): os grupos ficam em
   // trechos separados do comprimento. Sem grupos, a mesa toda o tempo todo.
   let limites: LimitesDeArea = limitesDaMesa;
@@ -228,7 +229,7 @@ export function* passosDoNesting(
     for (const candidato of candidatos) {
       const delta = encontrarPrimeiraPosicaoValida(
         linhaDeCorteDaPeca(candidato),
-        contornosColocados,
+        [...zonas, ...contornosColocados],
         limites,
         enfesto.distanciaMinimaEntrePecasMm,
         passoMm,
@@ -350,6 +351,7 @@ export function executarNestingPorPontosDeCanto(
     sentidoUnico: opcoes.tecidoDeSentidoUnico ?? false,
     deixarDeFora: true,
     agora,
+    ...(enfesto.zonasBloqueadas ? { zonasBloqueadas: enfesto.zonasBloqueadas.map((z) => ({ minX: z.minX - util.minX, maxX: z.maxX - util.minX, minY: z.minY - util.minY, maxY: z.maxY - util.minY })) } : {}),
     ...(opcoes.limiteDeTempoMs !== undefined ? { tempoLimiteMs: opcoes.limiteDeTempoMs } : {}),
     ...(opcoes.deveContinuar ? { deveParar: () => !opcoes.deveContinuar!() } : {}),
     ...(opcoes.aoProgredir ? { aoProgredir: opcoes.aoProgredir } : {}),

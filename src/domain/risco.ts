@@ -1,3 +1,4 @@
+import { contornoDaZona, type ZonaBloqueada } from './enfesto';
 import { area, distancia, retanguloEnvolvente, simplificarContorno, transladarContorno, type Contorno, type Ponto2D } from '../core/geometria';
 import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, type Molde } from './molde';
 import type { ModeloDoPlano } from './modeloDoPlano';
@@ -89,6 +90,8 @@ export interface OpcoesDoRisco {
   readonly larguraMm: number;
   /** O risco não pode passar disto (o comprimento da mesa menos as margens). */
   readonly comprimentoMaximoMm: number;
+  /** As áreas da mesa onde não entra peça (ADR 0160), nas coordenadas do risco. */
+  readonly zonasBloqueadas?: readonly ZonaBloqueada[];
   readonly distanciaMm: number;
   /** Tecido com pelo ou estampa com sentido: nenhuma peça vira 180° nem 270° (ver `rotacoesNoEncaixe`). */
   readonly sentidoUnico: boolean;
@@ -299,6 +302,13 @@ function porNaOrdem(
   const cortes: Contorno[] = [];
   const caixas: Caixa[] = [];
   let pontos: Ponto2D[] = [{ x: 0, y: 0 }];
+  // As áreas bloqueadas entram como peças já postas, com os cantos delas como pontos de partida.
+  for (const z of opcoes.zonasBloqueadas ?? []) {
+    const c = contornoDaZona(z);
+    cortes.push(c);
+    caixas.push(caixaDe(c));
+    pontos.push({ x: z.maxX + afastamento, y: z.minY }, { x: z.minX, y: z.maxY + afastamento }, { x: 0, y: z.maxY + afastamento });
+  }
   let fimDoComprimento = 0;
   const casar = opcoes.casamento;
   // A fase de cada grupo de casamento: o lugar do ponto do grupo na primeira peça posta que o tem (ADR 0129).

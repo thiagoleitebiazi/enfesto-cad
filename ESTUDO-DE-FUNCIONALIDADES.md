@@ -252,3 +252,8 @@ Fonte: a apostila unificada de treinamento, comparada com o programa. As ferrame
 | Importar PLT | ✅ ADR 0157 |
 | X inicial e faixas de plotagem | ✅ ADR 0158 (não testado num plotter) |
 | Etiquetas dos feixes | ✅ ADR 0159 |
+| Linhas de referência: enfesto em escada e áreas bloqueadas | ✅ ADR 0160 (no encaixe automático; a busca do planejamento ainda não) |
+| Alinhar moldes no encaixe | ✅ ADR 0161 |
+| A identificação do risco no papel | ✅ ADR 0162 |
+| Texto livre no risco; travar o movimento; cortar a peça no encaixe; sobreposição permitida | ⬜ a fazer |
+| Paleta do usuário; calculadora; teclado virtual | ⬜ a fazer |

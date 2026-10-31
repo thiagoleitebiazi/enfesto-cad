@@ -3,6 +3,8 @@ import { Sobreposicao } from './Sobreposicao';
 import { DiagramaDeEnfesto } from './DiagramaDeEnfesto';
 import {
   criarConfiguracaoDeEnfesto,
+  lerZonasBloqueadas,
+  textoDasZonas,
   DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   MARGEM_DE_SEGURANCA_DA_MESA_MM,
   margensDaMesa,
@@ -28,6 +30,7 @@ interface CamposDeFormulario {
   larguraDoTuboMm: string;
   alinhamentoDasBordas: 'alinhado' | 'escalonado';
   sentidoDeAlimentacao: 'unico' | 'alternado';
+  zonasBloqueadas: string;
 }
 
 function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulario {
@@ -44,11 +47,14 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     larguraDoTuboMm: String(config?.tipo === 'tubular' ? config.larguraDoTuboMm : 1500),
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
+    zonasBloqueadas: textoDasZonas(config?.zonasBloqueadas ?? []),
   };
 }
 
 function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
+  const zonasBloqueadas = lerZonasBloqueadas(c.zonasBloqueadas);
   const base = {
+    ...(zonasBloqueadas.length > 0 ? { zonasBloqueadas } : {}),
     larguraUtilMm: Number.parseFloat(c.larguraUtilMm),
     comprimentoMm: Number.parseFloat(c.comprimentoMm),
     quantidadeDeCamadas: Number.parseInt(c.quantidadeDeCamadas, 10),
@@ -151,6 +157,10 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
             value={campos.quantidadeDeCamadas}
             onChange={(e) => alterar({ quantidadeDeCamadas: e.target.value })}
           />
+        </label>
+        <label>
+          Áreas bloqueadas da mesa (enfesto em escada, emenda, defeito): uma por linha, em mm — comprimento de, até, largura de, até
+          <textarea rows={2} value={campos.zonasBloqueadas} placeholder="0 800 900 1500" onChange={(e) => alterar({ zonasBloqueadas: e.target.value })} />
         </label>
         <label>
           Margem lateral (mm, a partir de {MARGEM_DE_SEGURANCA_DA_MESA_MM})

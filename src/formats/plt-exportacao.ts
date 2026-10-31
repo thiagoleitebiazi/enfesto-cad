@@ -1,5 +1,5 @@
 import type { Ponto2D } from '../core/geometria';
-import { ponto, retanguloEnvolvente } from '../core/geometria';
+import { area, ponto, retanguloEnvolvente } from '../core/geometria';
 import type { Molde } from '../domain/molde';
 import { linhaDeCorteDaPeca } from '../domain/molde';
 import { arestaDeSimetria } from '../domain/anotacoes';
@@ -39,6 +39,8 @@ export interface OpcoesDoPlt {
   readonly larguraDoPapelMm?: number;
   /** A faixa (1, 2…), contada da borda de baixo do papel. */
   readonly faixa?: number;
+  /** As linhas que identificam o risco, escritas logo depois da última peça (ADR 0162). */
+  readonly cabecalho?: readonly string[];
 }
 
 const u = (mm: number): number => Math.round(mm * UNIDADES_POR_MM);
@@ -50,6 +52,20 @@ export function textoParaPlotter(texto: string): string {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[—–]/g, '-')
     .replace(/[^\x20-\x7e]/g, '?');
+}
+
+/** O que identifica o risco no papel: o modelo, a data, as medidas e o aproveitamento (ADR 0162). */
+export function cabecalhoDoRisco(d: { readonly nome: string; readonly codigo: string; readonly pecas: readonly Molde[]; readonly larguraMm: number | null; readonly dataIso: string }): string[] {
+  const linhas = [`${d.nome} (${d.codigo}) - ${d.dataIso.slice(8, 10)}/${d.dataIso.slice(5, 7)}/${d.dataIso.slice(0, 4)}`];
+  const cortes = d.pecas.map((p) => linhaDeCorteDaPeca(p));
+  if (cortes.length === 0) return linhas;
+  const caixa = retanguloEnvolvente(cortes.flat());
+  const comprimento = caixa.maxY - caixa.minY;
+  const cm = (mm: number): string => (mm / 10).toFixed(1).replace('.', ',');
+  const largura = d.larguraMm ?? caixa.maxX - caixa.minX;
+  const aproveitamento = (cortes.reduce((s, c) => s + area(c), 0) / (largura * comprimento)) * 100;
+  linhas.push(`Largura ${cm(largura)} cm - Comprimento ${cm(comprimento)} cm - Aproveitamento ${aproveitamento.toFixed(1).replace('.', ',')}% - ${d.pecas.length} pecas`);
+  return linhas;
 }
 
 export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): string {
@@ -116,6 +132,15 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
     comandos.push(`PU${u(inicio.x)},${u(inicio.y)}`, 'SI0.35,0.5', `LB${textoParaPlotter(`${peca.nome} ${peca.tamanho}`.trim())}${String.fromCharCode(3)}`);
+  }
+  if ((opcoes.cabecalho ?? []).length > 0 && pecas.length > 0) {
+    caneta(2);
+    // Depois da última peça sempre há papel: a largura da mesa pode não ter folga, o comprimento tem.
+    const fim = retanguloEnvolvente(pecas.flatMap((p) => linhaDeCorteDaPeca(p))).maxY;
+    opcoes.cabecalho!.forEach((texto, i) => {
+      const onde = noPapel(ponto(10 + i * 8, fim + 20));
+      comandos.push(`PU${u(onde.x)},${u(onde.y)}`, 'SI0.25,0.35', `LB${textoParaPlotter(texto)}${String.fromCharCode(3)}`);
+    });
   }
   comandos.push('PU0,0', 'SP0');
   return comandos.join(';') + ';\n';

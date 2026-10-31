@@ -105,6 +105,8 @@ interface BarraDeFerramentasProps {
   readonly onExportarPlt: () => void;
   /** O PLT por partes: de onde o papel acabou, ou uma faixa do papel (ADR 0158). */
   readonly onExportarPltPorPartes?: () => void;
+  /** Alinha e distribui as peças selecionadas (ADR 0161). */
+  readonly onAlinharPecas?: () => void;
   /** Importa peças de um PLT (ADR 0157). */
   readonly onImportarPlt?: () => void;
   /** O projeto num arquivo (ADR 0156). */
@@ -2106,6 +2108,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Encaixe">
+                {props.onAlinharPecas && (
+                  <button onClick={props.onAlinharPecas} title="Alinhar peças: alinha ou distribui as peças selecionadas, no comprimento ou na largura">
+                    <Icone nome="sugerir-posicao" />
+                    <span>Alinhar peças</span>
+                  </button>
+                )}
                 <button
                   onClick={props.onSugerirPosicao}
                   disabled={!props.podeSugerirPosicao}

@@ -1,6 +1,6 @@
 import type { Molde } from './molde';
 import { linhaDeCorteDaPeca, rotacaoEhPermitida } from './molde';
-import { areaUtilDaMesa, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, contornoDaZona, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
 import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
@@ -238,6 +238,9 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
         mensagem: `Peça "${peca.nome}" está fora da área útil do enfesto (limites: X [${minX}, ${maxX}] mm, Y [${minY}, ${maxY}] mm).`,
         pecasEnvolvidasIds: [peca.id],
       });
+    }
+    if ((enfesto.zonasBloqueadas ?? []).some((z) => contornosSeSobrepoem(linhaDeCorteDaPeca(peca), contornoDaZona(z)))) {
+      problemas.push({ tipo: 'fora-dos-limites', severidade: 'erro', mensagem: `Peça "${peca.nome}" está sobre uma área bloqueada da mesa.`, pecasEnvolvidasIds: [peca.id] });
     }
   }
   return problemas;

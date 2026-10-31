@@ -1,3 +1,4 @@
+import type { Contorno } from '../core/geometria';
 /**
  * Tipos de enfesto (seção 4 do escopo). Cinco modalidades, cada uma com
  * configuração própria — nenhuma é tratada como equivalente a outra
@@ -43,6 +44,16 @@ export function areaUtilDaMesa(enfesto: Pick<ConfiguracaoBase, 'larguraUtilMm' |
   return { minX: lateralMm, maxX: enfesto.larguraUtilMm - lateralMm, minY: extremidadeMm, maxY: enfesto.comprimentoMm - extremidadeMm };
 }
 
+/** Uma área da mesa onde não entra peça (ADR 0160): o enfesto em escada, uma emenda, um defeito. Em mm, na mesa. */
+export interface ZonaBloqueada {
+  /** Na largura. */
+  readonly minX: number;
+  readonly maxX: number;
+  /** No comprimento. */
+  readonly minY: number;
+  readonly maxY: number;
+}
+
 export interface ConfiguracaoBase {
   readonly larguraUtilMm: number;
   readonly comprimentoMm: number;
@@ -51,6 +62,7 @@ export interface ConfiguracaoBase {
   readonly margemDeExtremidadeMm: number;
   /** Distância mínima exigida entre os contornos de duas peças quaisquer (seção 6). */
   readonly distanciaMinimaEntrePecasMm: number;
+  readonly zonasBloqueadas?: readonly ZonaBloqueada[];
 }
 
 export interface ConfiguracaoPar extends ConfiguracaoBase {
@@ -161,4 +173,29 @@ export function enfestoInverteFaceEmAlgumaCamada(config: ConfiguracaoDeEnfesto):
     if (orientacaoDaCamada(config.tipo, i) === 'invertida') return true;
   }
   return false;
+}
+
+export const contornoDaZona = (z: ZonaBloqueada): Contorno => [
+  { x: z.minX, y: z.minY },
+  { x: z.maxX, y: z.minY },
+  { x: z.maxX, y: z.maxY },
+  { x: z.minX, y: z.maxY },
+];
+
+/** As áreas como aparecem no formulário: uma por linha, "comprimento de, até, largura de, até" (mm). */
+export const textoDasZonas = (zonas: readonly ZonaBloqueada[]): string => zonas.map((z) => `${z.minY} ${z.maxY} ${z.minX} ${z.maxX}`).join('\n');
+
+/** Lê as áreas do formulário; lança dizendo a linha que não serve. */
+export function lerZonasBloqueadas(texto: string): ZonaBloqueada[] {
+  return texto
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .map((l) => {
+      const n = l.replace(/,/g, '.').split(/[\s;]+/).map(Number);
+      if (n.length !== 4 || !n.every((v) => Number.isFinite(v) && v >= 0) || !(n[0]! < n[1]!) || !(n[2]! < n[3]!)) {
+        throw new Error(`Área bloqueada "${l}": use comprimento de, até, largura de, até, em mm (ex.: 0 800 900 1500).`);
+      }
+      return { minY: n[0]!, maxY: n[1]!, minX: n[2]!, maxX: n[3]! };
+    });
 }

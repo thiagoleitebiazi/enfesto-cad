@@ -361,7 +361,7 @@ import { extrairContornosDoPdf, linhaDeFioSobreContorno } from './formats/pdf-pe
 import { moldesDoDxf, moldesDosContornosDoPdf } from './formats/importacaoDireta';
 import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesIndividuais } from './formats/pdf-exportacao';
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
-import { gerarPlt, type OpcoesDoPlt } from './formats/plt-exportacao';
+import { cabecalhoDoRisco, gerarPlt, type OpcoesDoPlt } from './formats/plt-exportacao';
 import { pecasDoPlt } from './formats/plt-importacao';
 import { nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
@@ -399,6 +399,7 @@ import { comGrupoDoEncaixe, ordemDosGrupos } from './domain/gruposDoEncaixe';
 import { useFilaDeEncaixes, type WorkerDoEncaixe } from './ui/useFilaDeEncaixes';
 import { useFilaNaRede } from './ui/useFilaNaRede';
 import { montagemDoLook } from './domain/lookNoManequim';
+import { alinharPecas, ROTULO_DE_ALINHAR, type ModoDeAlinhar } from './domain/alinharPecas';
 import { adicionarTrabalho, concluidosSemAplicar, contagemDaFila, csvDaFila, descricaoDasOpcoes, marcarAplicado } from './domain/filaDeEncaixes';
 import { encaixeComOMoldeDeAgora, type EncaixeComOMoldeDeAgora } from './domain/encaixeAtualizado';
 import { aprovarComoBase, basesAprovadas, modeloDaBase, pecasDaBase, tirarDasBases } from './domain/basesAprovadas';
@@ -569,6 +570,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'componente' }
   | { readonly tipo: 'corte-iso' }
   | { readonly tipo: 'plt-por-partes' }
+  | { readonly tipo: 'alinhar-pecas' }
   | { readonly tipo: 'medidas-do-componente'; readonly componente: TipoDeComponente }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
@@ -3322,13 +3324,13 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
       const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, canetasDoPlotter, projetoAtual.nome, projetoAtual.codigo]);
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
@@ -4976,6 +4978,7 @@ export default function App(): React.JSX.Element {
         onExportarDxf={() => void exportarDxf()}
         onExportarPlt={() => void exportarPlt()}
         onExportarPltPorPartes={() => setDialogoDeFerramenta({ tipo: 'plt-por-partes' })}
+        onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
         onImportarPlt={importarPltHandler}
         onExportarProjeto={() => void exportarProjetoHandler()}
         onImportarProjeto={importarProjetoHandler}
@@ -5616,6 +5619,30 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'alinhar-pecas' && (
+        <DialogoDeCampos
+          titulo="Alinhar peças"
+          resumo={[['Selecionadas', String(new Set([...idsSelecionadosEmLote, ...(selecionadoId ? [selecionadoId] : [])]).size)]]}
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'modo',
+              rotulo: 'Como',
+              opcoes: (Object.keys(ROTULO_DE_ALINHAR) as ModoDeAlinhar[]).map((valor) => ({ valor, rotulo: ROTULO_DE_ALINHAR[valor] })),
+              inicial: 'comeco',
+            },
+          ]}
+          nota="Só a posição muda. Se uma peça cair sobre outra, a validação avisa; Ctrl+Z desfaz."
+          rotuloDoBotao="Alinhar"
+          onAplicar={(valores) => {
+            const ids = new Set([...idsSelecionadosEmLote, ...(selecionadoId ? [selecionadoId] : [])]);
+            if (ids.size < 2) return 'Selecione ao menos duas peças (retângulo, ou Ctrl+clique).';
+            aplicarMudanca(alinharPecas(pecas, ids, valores.modo as ModoDeAlinhar));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'alinhar-pecas' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'plt-por-partes' && (
         <DialogoDeCampos
           titulo="PLT por partes"
