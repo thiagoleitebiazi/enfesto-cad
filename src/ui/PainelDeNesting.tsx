@@ -39,6 +39,8 @@ export interface OpcoesAvancadasDeNesting {
 
 interface PainelDeNestingProps {
   readonly pecas: readonly Molde[];
+  /** O tecido ativo na mesa: o encaixe é dele (ADR 0209). */
+  readonly tecidoAtivo?: string;
   /** A distância entre os moldes configurada no enfesto (mm): o campo começa com ela. */
   readonly distanciaEntreMoldesMm: number;
   /** O tecido de sentido único (pelo, estampa direcional): o encaixe não vira as peças. */
@@ -75,7 +77,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
   const tamanhosDaGrade = [...new Set(props.pecas.flatMap((p) => p.graduacao?.tamanhos ?? []))];
   const tecidos = tecidosDoModelo(props.pecas);
-  const [tecidoDoEncaixe, setTecidoDoEncaixe] = useState('');
+  const [tecidoDoEncaixe, setTecidoDoEncaixe] = useState(props.tecidoAtivo ?? '');
   const gradeEscrita = (chave: string): Readonly<Record<string, string>> => Object.fromEntries(tamanhosDaGrade.map((t) => [t, String(props.gradesIniciais?.[chave]?.[t] ?? props.gradesIniciais?.['']?.[t] ?? 1)]));
   const [grades, setGrades] = useState<Readonly<Record<string, Readonly<Record<string, string>>>>>({});
   const grade = grades[tecidoDoEncaixe] ?? gradeEscrita(tecidoDoEncaixe);
@@ -208,7 +210,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por
                 posicionar.
               </p>
-              {tecidos.length > 1 && (
+              {tecidos.length > 1 && !props.tecidoAtivo && (
                 <label>
                   Gerar encaixe para
                   <select value={tecidoDoEncaixe} onChange={(e) => setTecidoDoEncaixe(e.target.value)}>

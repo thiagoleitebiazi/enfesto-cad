@@ -401,7 +401,7 @@ import {
   type OpcoesDoEncaixe,
   type VisaoDasPecas,
 } from './ui/visaoDasPecas';
-import { comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
+import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, pecasDoTecido, tecidosDoModelo, comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
 import { ajusteDeTextoGuardado, corDaAreaNoEsquema, corDaCaneta, CORES_DA_AREA_PADRAO, coresDaAreaGuardadas, guardarAjusteDeTexto, guardarCoresDaArea, type EsquemaDaArea, type EsquemasDaArea } from './ui/preferencias';
@@ -703,6 +703,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
   | { readonly tipo: 'envolvente' }
+  | { readonly tipo: 'largura-do-tecido' }
   | { readonly tipo: 'substituir-tamanho' }
   | { readonly tipo: 'cores-da-area' }
   | { readonly tipo: 'propriedades-de-encaixe' }
@@ -1157,26 +1158,33 @@ export default function App(): React.JSX.Element {
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
+  // O tecido ativo (ADR 0209): a mesa, a validação e as saídas veem só as peças dele, na largura dele. Em branco, todos.
+  const [tecidoEscolhido, setTecidoEscolhido] = useState('');
+  const tecidosDaMesa = useMemo(() => tecidosDoModelo(pecas), [pecas]);
+  const tecidoAtivo = tecidosDaMesa.includes(tecidoEscolhido) ? tecidoEscolhido : '';
+  const pecasNaMesa = useMemo(() => pecasDoTecido(pecas, tecidoAtivo), [pecas, tecidoAtivo]);
+  const enfestoNaMesa = useMemo(() => (enfesto ? enfestoDoTecido(enfesto, tecidoAtivo) : null), [enfesto, tecidoAtivo]);
+
   const resumoDaBarra = useMemo(() => {
-    if (!enfesto || camposDaBarra.length === 0) return null;
-    const s = statusDoEncaixe(pecas, enfesto, tecido?.gramaturaGm2);
+    if (!enfestoNaMesa || camposDaBarra.length === 0) return null;
+    const s = statusDoEncaixe(pecasNaMesa, enfestoNaMesa, tecido?.gramaturaGm2);
     const selecionada = pecas.find((p) => p.id === selecionadoId);
     return {
       encaixados: s.encaixados,
       comprimentoMm: s.comprimentoMm,
-      larguraMm: enfesto.larguraUtilMm,
+      larguraMm: enfestoNaMesa.larguraUtilMm,
       areaMm2: s.areaMm2,
       perimetroMm: selecionada ? perimetro(selecionada.contorno) : null,
       rendimentoConsumoM: s.rendimentoConsumoM,
       rendimentoPesoKg: s.rendimentoPesoKg,
     };
-  }, [pecas, enfesto, tecido, selecionadoId, camposDaBarra]);
+  }, [pecas, pecasNaMesa, enfestoNaMesa, tecido, selecionadoId, camposDaBarra]);
 
   const problemasDeValidacao = useMemo(
-    () => validarProjeto(pecas, enfesto, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }, tecido),
-    [pecas, enfesto, folgaForaDaPecaMm, tecido],
+    () => validarProjeto(pecasNaMesa, enfestoNaMesa, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }, tecido),
+    [pecasNaMesa, enfestoNaMesa, folgaForaDaPecaMm, tecido],
   );
-  const aproveitamentoAtualDaMesa = useMemo(() => aproveitamentoDaMesa(pecas, enfesto), [pecas, enfesto]);
+  const aproveitamentoAtualDaMesa = useMemo(() => aproveitamentoDaMesa(pecasNaMesa, enfestoNaMesa), [pecasNaMesa, enfestoNaMesa]);
   const idsComErro = useMemo(
     () =>
       new Set(
@@ -3269,23 +3277,23 @@ export default function App(): React.JSX.Element {
     (id: string, deslocamento: Ponto2D) => {
       const andou = pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p));
       const peca = andou.find((p) => p.id === id);
-      if (peca && enfesto && opcoesDoEncaixe.encostarAoSoltar) {
+      if (peca && enfestoNaMesa && opcoesDoEncaixe.encostarAoSoltar) {
         // O SNAP do encaixe (ADR 0202): a peça segue no rumo do arrasto até encostar.
         const direcao: DirecaoDoEncaixe = Math.abs(deslocamento.y) >= Math.abs(deslocamento.x) ? (deslocamento.y > 0 ? 'direita' : 'esquerda') : deslocamento.x > 0 ? 'baixo' : 'cima';
-        const d = moverAteEncostar(peca, andou.filter((p) => p.id !== id), enfesto, direcao);
+        const d = moverAteEncostar(peca, pecasDoTecido(andou, tecidoAtivo).filter((p) => p.id !== id), enfestoNaMesa, direcao);
         aplicarMudanca(andou.map((p) => (p.id === id ? transladarMolde(p, d, p.id) : p)));
         return;
       }
-      if (sobreposicaoDeMoldes || !enfesto || !peca) {
+      if (sobreposicaoDeMoldes || !enfestoNaMesa || !peca) {
         aplicarMudanca(andou);
         return;
       }
       // Sobreposição desligada (F12): a peça não fica em cima de outra.
-      const livre = lugarLivreMaisPerto(peca, andou.filter((p) => p.id !== id), enfesto);
+      const livre = lugarLivreMaisPerto(peca, pecasDoTecido(andou, tecidoAtivo).filter((p) => p.id !== id), enfestoNaMesa);
       if (!livre) avisar('Não há lugar livre perto de onde a peça foi solta: ela ficou em cima da outra.');
       aplicarMudanca(livre ? andou.map((p) => (p.id === id ? transladarMolde(p, livre, p.id) : p)) : andou);
     },
-    [pecas, aplicarMudanca, sobreposicaoDeMoldes, enfesto, avisar, opcoesDoEncaixe.encostarAoSoltar],
+    [pecas, tecidoAtivo, aplicarMudanca, sobreposicaoDeMoldes, enfestoNaMesa, avisar, opcoesDoEncaixe.encostarAoSoltar],
   );
 
   /** O grupo selecionado arrastado junto: um passo só no Desfazer. */
@@ -3359,17 +3367,17 @@ export default function App(): React.JSX.Element {
       else if (acao.tipo === 'meia-camada') trocar(comMeiaCamada(peca, !peca.meiaCamada));
       else if (!enfesto) avisar('Configure o enfesto primeiro.');
       else if (acao.tipo === 'mover') {
-        const d = moverAteEncostar(peca, pecas.filter((p) => p.id !== peca.id), enfesto, acao.direcao);
+        const d = moverAteEncostar(peca, pecasNaMesa.filter((p) => p.id !== peca.id), enfestoDoTecido(enfesto, tecidoAtivo), acao.direcao);
         if (d.x !== 0 || d.y !== 0) trocar(transladarMolde(peca, d, peca.id));
       } else {
         try {
-          trocar(pecaNaDobraDoTecido(peca, acao.tipo === 'dobra-horizontal' ? 'horizontal' : 'vertical', enfesto));
+          trocar(pecaNaDobraDoTecido(peca, acao.tipo === 'dobra-horizontal' ? 'horizontal' : 'vertical', enfestoDoTecido(enfesto, tecidoAtivo)));
         } catch (erro) {
           avisar(erro instanceof Error ? erro.message : String(erro));
         }
       }
     },
-    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, travaDoEixo, opcoesDoEncaixe.anguloDeGiro, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
+    [pecas, pecasNaMesa, tecidoAtivo, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, travaDoEixo, opcoesDoEncaixe.anguloDeGiro, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
   );
 
   /** Alt + clique numa peça: as do mesmo tamanho ficam selecionadas (ADR 0180). */
@@ -3428,11 +3436,11 @@ export default function App(): React.JSX.Element {
         );
       }
       // Com todos os tamanhos, cada peça graduada entra como uma peça comum por tamanho.
-      const trechos = opcoesAvancadas.tecido === TODOS_EM_TRECHOS;
+      const trechos = tecidoAtivo === '' && opcoesAvancadas.tecido === TODOS_EM_TRECHOS;
       const idsFixos = opcoesAvancadas.manterSelecionadas ? (idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : [])) : undefined;
       const escolha = separarParaOEncaixe(
         pecas,
-        { ...(opcoesAvancadas.tecido !== undefined && !trechos ? { tecido: opcoesAvancadas.tecido } : {}), ...(idsFixos ? { idsFixos } : {}), ...(opcoesAvancadas.somenteNaMesa ? { somenteNaMesa: true } : {}) },
+        { ...(tecidoAtivo !== '' ? { tecido: tecidoAtivo, manterOutrosTecidos: true } : opcoesAvancadas.tecido !== undefined && !trechos ? { tecido: opcoesAvancadas.tecido } : {}), ...(idsFixos ? { idsFixos } : {}), ...(opcoesAvancadas.somenteNaMesa ? { somenteNaMesa: true } : {}) },
         enfestoDoEncaixe,
       );
       let base: readonly Molde[] = trechos ? comUmTrechoPorTecido(escolha.paraEncaixar) : escolha.paraEncaixar;
@@ -3460,9 +3468,9 @@ export default function App(): React.JSX.Element {
       if (opcoesDoEncaixe.semEnvolvente) enfestoDoEncaixe = { ...enfestoDoEncaixe, semEnvolvente: true };
       if (opcoesAvancadas.manterOrientacaoDosPacotes) paraEncaixar = comSentidoAlternado(paraEncaixar, 'por-pacote', proximoId);
       if (sentidoUnicoDoTecido(tecido) && tecido?.sentidoNoEncaixe) paraEncaixar = comSentidoAlternado(paraEncaixar, tecido.sentidoNoEncaixe, proximoId);
-      return { paraEncaixar, enfestoDoEncaixe, fixas: escolha.fixas, foraDoEncaixe: escolha.foraDoEncaixe };
+      return { paraEncaixar, enfestoDoEncaixe: enfestoDoTecido(enfestoDoEncaixe, tecidoAtivo), fixas: [...escolha.fixas, ...escolha.deOutrosTecidos], foraDoEncaixe: escolha.foraDoEncaixe };
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId, opcoesDoEncaixe.semEnvolvente],
+    [pecas, enfesto, tecido, tecidoAtivo, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId, opcoesDoEncaixe.semEnvolvente],
   );
 
   const calcularNestingAutomatico = useCallback(
@@ -3644,7 +3652,7 @@ export default function App(): React.JSX.Element {
       }
       const mesa = (e: ConfiguracaoDeEnfesto | null): string =>
         e ? [e.larguraUtilMm, e.comprimentoMm, e.margemLateralMm, e.margemDeExtremidadeMm, e.distanciaMinimaEntrePecasMm].join('|') : '';
-      if (mesa(enfesto) !== mesa(trabalho.enfesto)) motivos.push('a mesa do projeto aberto (largura, comprimento, margens ou distância entre os moldes) não é a do encaixe');
+      if (mesa(enfestoNaMesa) !== mesa(trabalho.enfesto)) motivos.push('a mesa do projeto aberto (largura, comprimento, margens ou distância entre os moldes) não é a do encaixe');
       if (
         motivos.length > 0 &&
         !window.confirm(
@@ -3672,7 +3680,7 @@ export default function App(): React.JSX.Element {
         if (ligado.foraDoProjeto.length > 0) partes.push(umaOuMais(ligado.foraDoProjeto, 'saiu do projeto e ficou fora da mesa', 'saíram do projeto e ficaram fora da mesa'));
         if (ligado.foraDoEncaixe.length > 0) partes.push(umaOuMais(ligado.foraDoEncaixe, 'não está no encaixe', 'não estão no encaixe') + (ligado.novas.length > 0 ? ' (a peça nova continua no projeto, onde estava)' : ''));
         if (ligado.comoNoEncaixe.length > 0) partes.push(umaOuMais(ligado.comoNoEncaixe, 'ficou como no encaixe (há mais de uma peça com esse nome e tamanho)', 'ficaram como no encaixe (há mais de uma peça com esse nome e tamanho)'));
-        const conflitos = validarProjeto(novasPecas, enfesto).filter((p) => p.tipo === 'sobreposicao' || p.tipo === 'espacamento-insuficiente' || p.tipo === 'fora-dos-limites').length;
+        const conflitos = validarProjeto(pecasDoTecido(novasPecas, tecidoAtivo), enfestoNaMesa).filter((p) => p.tipo === 'sobreposicao' || p.tipo === 'espacamento-insuficiente' || p.tipo === 'fora-dos-limites').length;
         const fim =
           conflitos > 0
             ? ` A validação acha ${conflitos} ${conflitos === 1 ? 'problema' : 'problemas'} de sobreposição, distância entre os moldes ou limite da mesa: afaste as peças ou faça o encaixe de novo.`
@@ -3686,7 +3694,7 @@ export default function App(): React.JSX.Element {
         });
       }
     },
-    [filaDeEncaixes, projetoAtual, pecas, enfesto, tecido, aplicarMudanca, registrarEventoEPersistir],
+    [filaDeEncaixes, projetoAtual, pecas, enfesto, enfestoNaMesa, tecidoAtivo, tecido, aplicarMudanca, registrarEventoEPersistir],
   );
 
   const exportarPdf = useCallback(
@@ -3704,9 +3712,9 @@ export default function App(): React.JSX.Element {
           margemMm: opcoesEscolhidas.margemMm,
           ...(opcoesEscolhidas.emCores !== undefined ? { emCores: opcoesEscolhidas.emCores } : {}),
         };
-        const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfesto ? enfesto : null;
-        const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(pecas, noEncaixe), areaImprimivelMm(opcoesDePagina));
-        const naEscala = pecasNaEscala(pecas, fatores);
+        const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfestoNaMesa ? enfestoNaMesa : null;
+        const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(pecasNaMesa, noEncaixe), areaImprimivelMm(opcoesDePagina));
+        const naEscala = pecasNaEscala(pecasNaMesa, fatores);
         const blob = noEncaixe
           ? await gerarPdfDeEncaixe(naEscala, { ...noEncaixe, larguraUtilMm: noEncaixe.larguraUtilMm * fatores.vertical, comprimentoMm: noEncaixe.comprimentoMm * fatores.horizontal }, {
               ...opcoesDePagina,
@@ -3727,7 +3735,7 @@ export default function App(): React.JSX.Element {
         setGerandoPdf(false);
       }
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir],
   );
 
   // O DXF (ADR 0096): as peças como estão na mesa, direto para a janela de salvar — não há o que escolher antes.
@@ -3738,18 +3746,18 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = codificarDxf(gerarDxf(pecas, enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}));
+      const bytes = codificarDxf(gerarDxf(pecasNaMesa, enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm } : {}));
       const caminhoSalvo = await api.salvarArquivo('moldes.dxf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `DXF salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o DXF: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir]);
+  }, [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir]);
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecas, fatores), { ...(enfesto?.linhasDeReferencia ? { linhas: enfesto.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfesto)[0], ate: segmentoDaLinha(l, enfesto)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
-    [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
+    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
+    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => {
@@ -3791,7 +3799,7 @@ export default function App(): React.JSX.Element {
         return;
       }
       try {
-        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
+        const texto = gerarIso(pecasNaMesa, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm } : {}) });
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
@@ -3805,7 +3813,7 @@ export default function App(): React.JSX.Element {
         window.alert(`Falha ao gerar o ISO: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir],
   );
 
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
@@ -5517,7 +5525,7 @@ export default function App(): React.JSX.Element {
           else avisar('Configure o enfesto primeiro.');
         }}
         onCompactar={() => {
-          if (enfesto && pecas.length > 0) aplicarMudanca([...compactarEncaixe(pecas, enfesto)]);
+          if (enfestoNaMesa && pecasNaMesa.length > 0) aplicarMudanca(comPecasMudadas(pecas, compactarEncaixe(pecasNaMesa, enfestoNaMesa)));
         }}
         podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
         onNestingAutomatico={abrirConfiguracaoDeNesting}
@@ -5574,8 +5582,8 @@ export default function App(): React.JSX.Element {
           } else if (destino === 'fora') {
             aplicarMudanca(moverParaForaDoEnfesto(pecas, new Set(ids), enfesto));
           } else {
-            const r = trazerParaAMesa(pecas, ids, enfesto);
-            aplicarMudanca([...r.pecas]);
+            const r = trazerParaAMesa(pecasNaMesa, ids, enfestoDoTecido(enfesto, tecidoAtivo));
+            aplicarMudanca(comPecasMudadas(pecas, r.pecas));
             if (r.semLugar > 0) avisar(`${r.semLugar} ${r.semLugar === 1 ? 'peça não coube' : 'peças não couberam'} na mesa.`);
           }
         }}
@@ -5786,6 +5794,7 @@ export default function App(): React.JSX.Element {
       {mostrarPainelDeNesting && (
         <PainelDeNesting
           pecas={pecas}
+          tecidoAtivo={tecidoAtivo}
           distanciaEntreMoldesMm={enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM}
           gradesIniciais={gradesDoModelo}
           quantasSelecionadas={idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote.size : selecionadoId ? 1 : 0}
@@ -6570,7 +6579,7 @@ export default function App(): React.JSX.Element {
               }
             }
             const xml = valores['formato'] === 'xml';
-            const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, enfesto }) : gerarSvgDoEncaixe(pecas, enfesto);
+            const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, enfesto: enfestoNaMesa }) : gerarSvgDoEncaixe(pecasNaMesa, enfestoNaMesa);
             void salvarTexto(xml ? 'encaixe.xml' : 'encaixe.svg', conteudo);
             return null;
           }}
@@ -6803,6 +6812,23 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'substituir-tamanho' ? null : d))}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'largura-do-tecido' && enfesto && enfestoNaMesa && (
+        <DialogoDeCampos
+          titulo={`Largura do tecido ${tecidoAtivo}`}
+          campos={[{ tipo: 'medida', id: 'largura', rotulo: 'Largura útil (mm)', inicial: String(enfestoNaMesa.larguraUtilMm) }]}
+          nota="Vale só para este tecido: a mesa, o encaixe, a validação e as saídas usam esta largura enquanto ele estiver ativo."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const largura = valores['largura'] as number;
+            if (!(largura > 0)) return 'A largura tem de ser maior que zero.';
+            const novo = comLarguraDoTecido(enfesto, tecidoAtivo, largura);
+            setEnfesto(novo);
+            registrarEventoEPersistir('mudanca-de-configuracao', { pecas, tecido, enfesto: novo }, `Largura do tecido ${tecidoAtivo}: ${numeroComVirgula(largura)} mm`);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'largura-do-tecido' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'envolvente' && (
         <DialogoDeCampos
           titulo="Configuração envolvente de grupo"
@@ -6833,10 +6859,10 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'envolvente' ? null : d))}
         />
       )}
-      {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (
+      {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfestoNaMesa && (
         <PainelDeStatusDoEncaixe
-          status={statusDoEncaixe(pecas, enfesto, tecido?.gramaturaGm2)}
-          camadas={enfesto.quantidadeDeCamadas}
+          status={statusDoEncaixe(pecasNaMesa, enfestoNaMesa, tecido?.gramaturaGm2)}
+          camadas={enfestoNaMesa.quantidadeDeCamadas}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'status-do-encaixe' ? null : d))}
         />
       )}
@@ -6865,7 +6891,7 @@ export default function App(): React.JSX.Element {
           rotuloDoBotao="Aplicar"
           onAplicar={(valores) => {
             try {
-              const comprimento = statusDoEncaixe(pecas, enfesto).comprimentoMm;
+              const comprimento = statusDoEncaixe(pecasNaMesa, enfesto).comprimentoMm;
               const modo = String(valores['modo']);
               const pontos =
                 modo === 'apagar'
@@ -8128,15 +8154,15 @@ export default function App(): React.JSX.Element {
       <div className={mostrarListaDePecas ? 'corpo-principal' : 'corpo-principal sem-lista-de-pecas'}>
         {mostrarListaDePecas && (
           <PainelDePecas
-            pecas={opcoesDoEncaixe.ordemCrescente ? pecasEmOrdemDeTamanho(pecas) : pecas}
+            pecas={opcoesDoEncaixe.ordemCrescente ? pecasEmOrdemDeTamanho(pecasNaMesa) : pecasNaMesa}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
             onSelecionar={(id) => {
               selecionarUnico(id);
               // "Encaixa molde ao clicar" (ADR 0200): a peça de fora vai para a mesa.
-              if (id && enfesto && opcoesDoEncaixe.encaixaAoClicar) {
-                const r = trazerParaAMesa(pecas, [id], enfesto);
-                if (r.pecas.some((p, i) => p !== pecas[i])) aplicarMudanca([...r.pecas]);
+              if (id && enfestoNaMesa && opcoesDoEncaixe.encaixaAoClicar) {
+                const r = trazerParaAMesa(pecasNaMesa, [id], enfestoNaMesa);
+                if (r.pecas.some((p, i) => p !== pecasNaMesa[i])) aplicarMudanca(comPecasMudadas(pecas, r.pecas));
               }
             }}
             onAlternarSelecaoEmLote={alternarSelecaoEmLote}
@@ -8155,14 +8181,39 @@ export default function App(): React.JSX.Element {
                 {enfesto ? `${ROTULO_DO_TIPO[enfesto.tipo]}, ${enfesto.quantidadeDeCamadas} camada(s)` : 'não configurado'}
               </span>
             </span>
+            {tecidosDaMesa.length > 1 && (
+              <span className="abas-de-tecido" role="tablist" aria-label="Tecido ativo">
+                {['', ...tecidosDaMesa].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="tab"
+                    aria-selected={t === tecidoAtivo}
+                    className={t === tecidoAtivo ? 'ativa' : ''}
+                    title={t === '' ? 'Todas as peças na mesma mesa' : `Só as peças do tecido ${t}, com o encaixe e a largura dele`}
+                    onClick={() => {
+                      setTecidoEscolhido(t);
+                      selecionarUnico(null);
+                    }}
+                  >
+                    {t === '' ? 'Todos' : t}
+                  </button>
+                ))}
+                {tecidoAtivo !== '' && enfestoNaMesa && (
+                  <button type="button" title="A largura útil deste tecido" onClick={() => setDialogoDeFerramenta({ tipo: 'largura-do-tecido' })}>
+                    Largura: {numeroComVirgula(enfestoNaMesa.larguraUtilMm)} mm
+                  </button>
+                )}
+              </span>
+            )}
           </div>
           <AreaDeDesenho
             contornoOriginal={lembrarOriginal ? (projetoAtual.estadoAtual.pecas.find((p) => p.id === selecionadoId)?.contorno ?? null) : null}
             imagens={imagens}
-            pecas={pecas}
+            pecas={pecasNaMesa}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
-            enfesto={enfesto}
+            enfesto={enfestoNaMesa}
             idsComErro={idsComErro}
             transform={transform}
             modo={modo}

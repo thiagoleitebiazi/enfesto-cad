@@ -8,7 +8,7 @@ O manual do encaixe da referência explica: "Criar envolvente" põe uma margem e
 - O grupo anda junto: clicar numa peça seleciona as outras. Ctrl+G e Ctrl+U passam a criar e desfazer esse grupo; antes davam um grupo do encaixe.
 - O painel da peça ganha a margem por ponto do contorno.
 - A janela do encaixe ganha "Encaixar em blocos", com a separação completa, os tamanhos de cada bloco e a orientação, e "Manter orientação dos pacotes".
-- Nas blocos na vertical, o cálculo roda com a mesa de lado, e as peças voltam ao fim. As opções do encaixe têm "Usar envolvente de grupo".
+- Nos blocos na vertical, o cálculo roda com a mesa de lado, e as peças voltam ao fim. As opções do encaixe têm "Usar envolvente de grupo".
 
 **Limites:** o grupo entra no encaixe como a volta convexa das peças, então não aproveita os vãos dele. O grupo não sai espelhado. Na mesa de lado, a dobra não vale: o tecido é tratado como aberto. Na janela de blocos, os tamanhos são escritos, não escolhidos numa lista.
 

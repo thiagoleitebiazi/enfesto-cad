@@ -345,3 +345,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Importar de outros sistemas | ✅ ADR 0207, pelo ASTM/AAMA que todos exportam; o arquivo fechado em si continua impossível |
 | Arquivo de regras .RUL, importar e exportar | ✅ ADR 0207 |
 | Envolvente contorno e retangular, de peça ou de grupo; margem por ponto; grupo rígido; blocos por tamanho, separação completa, horizontal e vertical; manter orientação dos pacotes | ✅ ADR 0208 |
+| Tecido ativo: um encaixe e uma largura por tecido, nas telas e nas saídas | ✅ ADR 0209 |

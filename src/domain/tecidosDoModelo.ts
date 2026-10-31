@@ -30,6 +30,8 @@ export interface EscolhaDoEncaixe {
   readonly idsFixos?: ReadonlySet<string>;
   /** "Usar somente peças encaixadas": as que estão fora da mesa não entram. */
   readonly somenteNaMesa?: boolean;
+  /** Com o tecido ativo (ADR 0209), os outros tecidos têm o encaixe deles: ficam onde estão. */
+  readonly manterOutrosTecidos?: boolean;
 }
 
 export interface PecasDoEncaixe {
@@ -37,6 +39,8 @@ export interface PecasDoEncaixe {
   readonly fixas: readonly Molde[];
   /** As que não entram neste encaixe: saem da mesa quando ele for aplicado. */
   readonly foraDoEncaixe: readonly Molde[];
+  /** As dos outros tecidos, que ficam como estão. */
+  readonly deOutrosTecidos: readonly Molde[];
 }
 
 const estaNaMesa = (peca: Molde, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'>): boolean => retanguloEnvolvente(linhaDeCorteDaPeca(peca)).minY < enfesto.comprimentoMm;
@@ -45,7 +49,29 @@ export function separarParaOEncaixe(pecas: readonly Molde[], escolha: EscolhaDoE
   const fixas = pecas.filter((p) => escolha.idsFixos?.has(p.id));
   const resto = pecas.filter((p) => !escolha.idsFixos?.has(p.id));
   const entra = (p: Molde): boolean => !p.naoUsar && (escolha.tecido === undefined || tecidoDaPeca(p) === escolha.tecido) && (!escolha.somenteNaMesa || estaNaMesa(p, enfesto));
-  return { paraEncaixar: resto.filter(entra), fixas, foraDoEncaixe: resto.filter((p) => !entra(p)) };
+  const deOutro = (p: Molde): boolean => escolha.manterOutrosTecidos === true && escolha.tecido !== undefined && tecidoDaPeca(p) !== escolha.tecido;
+  return { paraEncaixar: resto.filter(entra), fixas, foraDoEncaixe: resto.filter((p) => !entra(p) && !deOutro(p)), deOutrosTecidos: resto.filter(deOutro) };
+}
+
+/** As peças do tecido ativo (ADR 0209): em branco, todas. */
+export function pecasDoTecido(pecas: readonly Molde[], tecido: string): readonly Molde[] {
+  return tecido === '' ? pecas : pecas.filter((p) => tecidoDaPeca(p) === tecido);
+}
+
+/** A mesa do tecido: o mesmo enfesto, na largura dele. */
+export function enfestoDoTecido(enfesto: ConfiguracaoDeEnfesto, tecido: string): ConfiguracaoDeEnfesto {
+  const largura = enfesto.largurasPorTecido?.[tecido];
+  return largura === undefined || largura === enfesto.larguraUtilMm ? enfesto : { ...enfesto, larguraUtilMm: largura };
+}
+
+export function comLarguraDoTecido(enfesto: ConfiguracaoDeEnfesto, tecido: string, larguraMm: number): ConfiguracaoDeEnfesto {
+  return { ...enfesto, largurasPorTecido: { ...enfesto.largurasPorTecido, [tecido]: larguraMm } };
+}
+
+/** As peças mudadas numa ferramenta do tecido ativo, de volta na lista inteira. */
+export function comPecasMudadas(pecas: readonly Molde[], mudadas: readonly Molde[]): Molde[] {
+  const porId = new Map(mudadas.map((p) => [p.id, p]));
+  return pecas.map((p) => porId.get(p.id) ?? p);
 }
 
 /** O enfesto com o lugar das peças fixas bloqueado: a caixa de cada uma. */

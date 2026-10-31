@@ -5870,3 +5870,29 @@ rect.destaque-do-desenho,
   font-size: 11px;
   text-align: center;
 }
+
+/* O tecido ativo (ADR 0209): uma aba por tecido, acima da mesa. */
+.abas-de-tecido {
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: auto;
+  padding-bottom: 4px;
+}
+
+.abas-de-tecido button {
+  padding: 2px 10px;
+  border: 1px solid var(--marca-700);
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: var(--cor-texto-secundario);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.abas-de-tecido button.ativa {
+  background: var(--marca-700);
+  color: var(--marca-texto);
+  font-weight: 600;
+}
