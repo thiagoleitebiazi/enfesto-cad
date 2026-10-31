@@ -1,5 +1,5 @@
 import type { Ponto2D } from '../core/geometria';
-import { retanguloEnvolvente } from '../core/geometria';
+import { ponto, retanguloEnvolvente } from '../core/geometria';
 import { linhaDeCorteDaPeca, type Molde } from '../domain/molde';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import { corteDoPique, mundoParaDxf } from './dxf-exportacao';
@@ -39,6 +39,8 @@ export interface OpcoesDoIso {
   readonly facaTangencial?: boolean;
   /** A virada (graus) acima da qual a faca tangencial sobe para girar. */
   readonly anguloDeLevantarGraus?: number;
+  /** A distância da ponta da lâmina ao eixo que gira (mm): o eixo anda adiantada dela no rumo do corte (ADR 0153). */
+  readonly compensacaoDaLaminaMm?: number;
 }
 
 export const VELOCIDADE_PADRAO_MM_MIN = 12000;
@@ -74,13 +76,21 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
     const t = caminho.filter((q, i) => i === 0 || Math.hypot(q.x - caminho[i - 1]!.x, q.y - caminho[i - 1]!.y) > 1e-6);
     if (t.length < 2) return;
     const limite = opcoes.anguloDeLevantarGraus ?? ANGULO_DE_LEVANTAR_PADRAO;
+    const lamina = opcoes.compensacaoDaLaminaMm ?? 0;
+    /** Onde o eixo fica para a ponta estar em `q`, no rumo `graus`. */
+    const eixo = (q: Ponto2D, graus: number): Ponto2D => ponto(q.x + lamina * Math.cos((graus * Math.PI) / 180), q.y + lamina * Math.sin((graus * Math.PI) / 180));
     let c = rumo(t[0]!, t[1]!);
-    linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 X${n(t[0]!.x)} Y${n(t[0]!.y)} C${n(c)}`, 'G1 Z0.00');
+    const comeco = eixo(t[0]!, c);
+    linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 X${n(comeco.x)} Y${n(comeco.y)} C${n(c)}`, 'G1 Z0.00');
     for (let i = 1; i < t.length; i++) {
       const novo = rumoContinuo(c, rumo(t[i - 1]!, t[i]!));
-      if (Math.abs(novo - c) > limite) linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 C${n(novo)}`, 'G1 Z0.00');
+      if (Math.abs(novo - c) > limite) {
+        const volta = eixo(t[i - 1]!, novo);
+        linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, lamina === 0 ? `G0 C${n(novo)}` : `G0 X${n(volta.x)} Y${n(volta.y)} C${n(novo)}`, 'G1 Z0.00');
+      }
       c = novo;
-      linhas.push(`G1 X${n(t[i]!.x)} Y${n(t[i]!.y)} C${n(c)}${i === 1 ? ` F${f}` : ''}`);
+      const q = eixo(t[i]!, c);
+      linhas.push(`G1 X${n(q.x)} Y${n(q.y)} C${n(c)}${i === 1 ? ` F${f}` : ''}`);
     }
     linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`);
   };

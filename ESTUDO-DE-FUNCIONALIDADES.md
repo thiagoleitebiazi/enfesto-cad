@@ -237,3 +237,6 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Furos, marcas e linhas internas tocados na mesa digitalizadora | ✅ ADR 0149 (não testado numa mesa) |
 | O pedido da fila da rede esquecido por uma estação que fechou | ✅ ADR 0150 |
 | A troca com o ERP de tempos em tempos | ✅ ADR 0151 (com a janela aberta) |
+| As variantes de cor no provador 3D, com a cartela | ✅ ADR 0152 |
+| Botões do cursor configuráveis; compensação da lâmina no ISO | ✅ ADR 0153 (não testado em equipamento) |
+| A troca com o ERP para todos os moldes da biblioteca | ✅ ADR 0154 |

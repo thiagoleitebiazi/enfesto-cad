@@ -5818,3 +5818,7 @@ rect.destaque-do-desenho,
   margin: 0;
   padding-left: 18px;
 }
+
+.botoes-da-mesa input {
+  width: 4em;
+}

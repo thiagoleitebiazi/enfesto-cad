@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { area } from '../core/geometria';
 import { criarMolde } from './molde';
-import { lerRegistro, lerRegistros, MESA_VAZIA, pecaDosPontos, pontoDaMesa, tocar, type EstadoDaMesa, type RegistroDaMesa } from './mesaDigitalizadora';
+import { botoesDaConfiguracao, botoesRepetidos, lerRegistro, lerRegistros, MESA_VAZIA, pecaDosPontos, pontoDaMesa, tocar, type EstadoDaMesa, type RegistroDaMesa } from './mesaDigitalizadora';
 
 const CONFIG = { linhasPorPolegada: 254, botaoNoComeco: false }; // 10 linhas por mm: as contas ficam redondas
 
@@ -152,5 +152,19 @@ describe('furos, marcas e linhas internas na mesa (ADR 0149)', () => {
     expect(d.estado.pontos).toEqual([]);
     expect(d.pecas).toHaveLength(1);
     expect(tocarTudo([...contorno, { x: 1, y: 1, botao: 10 }, { x: 0, y: 0, botao: 5 }]).recados.at(-1)).toMatch(/linha interna aberta/);
+  });
+});
+
+describe('os botões de cada mesa (ADR 0153)', () => {
+  it('o botão escolhido faz a ação, e o de antes fica sem uso; os repetidos são apontados', () => {
+    const config = { ...CONFIG, botaoDaAcao: { fechar: 12 } };
+    expect(botoesDaConfiguracao(config).find((b) => b.acao === 'fechar')?.botao).toBe(12);
+    let t = tocar(MESA_VAZIA, { x: 0, y: 0, botao: 1 }, config);
+    t = tocar(t.estado, { x: 2000, y: 0, botao: 1 }, config);
+    t = tocar(t.estado, { x: 0, y: 2000, botao: 1 }, config);
+    expect(tocar(t.estado, { x: 0, y: 0, botao: 5 }, config).recado).toMatch(/sem uso/);
+    expect(tocar(t.estado, { x: 0, y: 0, botao: 12 }, config).peca).toBeDefined();
+    expect(botoesRepetidos(config)).toEqual([]);
+    expect(botoesRepetidos({ ...CONFIG, botaoDaAcao: { fechar: 1 } })).toEqual([1]);
   });
 });

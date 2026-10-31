@@ -59,6 +59,17 @@ describe('a janela da mesa digitalizadora (ADR 0144)', () => {
     expect(JSON.parse(window.localStorage.getItem('enfesto-cad:mesa-digitalizadora')!)).toMatchObject({ botaoNoComeco: true, linhasPorPolegada: 254 });
   });
 
+  it('os botões da mesa (ADR 0153): trocar o número muda o que fecha a peça, fica guardado, e o repetido é avisado', () => {
+    const onCriarPecas = abrir();
+    fireEvent.change(screen.getByLabelText('Botão de: Fechar a peça'), { target: { value: '12' } });
+    expect(JSON.parse(window.localStorage.getItem('enfesto-cad:mesa-digitalizadora')!).botaoDaAcao).toEqual({ fechar: 12 });
+    fireEvent.change(screen.getByLabelText('Registro da mesa'), { target: { value: '0,0,1\n2000,0,1\n0,2000,1\n0,0,12\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ler o registro' }));
+    expect(onCriarPecas).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('Botão de: Fechar a peça'), { target: { value: '1' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Mais de uma ação no botão 1');
+  });
+
   it('a lista das portas que o programa manda: escolher uma, ou cancelar; sem nenhuma, diz isso', () => {
     let mostrar: ((portas: ReadonlyArray<{ readonly id: string; readonly nome: string }>) => void) | null = null;
     const escolher = vi.fn();

@@ -19,6 +19,8 @@ export interface ConfiguracaoDaMesa {
   readonly linhasPorPolegada: number;
   /** O botão vem antes das coordenadas ("B,XXXXX,YYYYY"). */
   readonly botaoNoComeco: boolean;
+  /** O botão de cada ação, quando não é o de `BOTOES_DA_MESA` (ADR 0153): os cursores variam de mesa para mesa. */
+  readonly botaoDaAcao?: Readonly<Partial<Record<AcaoDoBotao, number>>>;
 }
 
 export const CONFIGURACAO_PADRAO_DA_MESA: ConfiguracaoDaMesa = { linhasPorPolegada: 1000, botaoNoComeco: false };
@@ -42,9 +44,20 @@ export const BOTOES_DA_MESA: ReadonlyArray<{ readonly botao: number; readonly ac
   { botao: 7, acao: 'furo', rotulo: 'Ponto de furo' },
   { botao: 8, acao: 'fechar-furo', rotulo: 'Fechar o furo (3 pontos ou mais)' },
   { botao: 9, acao: 'marca', rotulo: 'Marca (um toque: botão, casa)' },
-  { botao: 10, acao: 'linha', rotulo: 'Ponto de linha interna (botão A)' },
-  { botao: 11, acao: 'fechar-linha', rotulo: 'Terminar a linha interna (botão B; 2 pontos ou mais)' },
+  { botao: 10, acao: 'linha', rotulo: 'Ponto de linha interna' },
+  { botao: 11, acao: 'fechar-linha', rotulo: 'Terminar a linha interna (2 pontos ou mais)' },
 ];
+
+/** Os botões como estão nesta mesa. */
+export function botoesDaConfiguracao(config: ConfiguracaoDaMesa): Array<{ readonly botao: number; readonly acao: AcaoDoBotao; readonly rotulo: string }> {
+  return BOTOES_DA_MESA.map((b) => ({ ...b, botao: config.botaoDaAcao?.[b.acao] ?? b.botao }));
+}
+
+/** Os botões que ficaram com mais de uma ação. */
+export function botoesRepetidos(config: ConfiguracaoDaMesa): number[] {
+  const usados = botoesDaConfiguracao(config).map((b) => b.botao);
+  return [...new Set(usados.filter((b, i) => usados.indexOf(b) !== i))];
+}
 
 const INTEIRO = /^[+-]?\d+$/;
 
@@ -162,7 +175,7 @@ export interface ResultadoDoToque {
 
 /** Um toque do cursor: o que o botão faz com os pontos de agora. */
 export function tocar(estado: EstadoDaMesa, registro: RegistroDaMesa, config: ConfiguracaoDaMesa = CONFIGURACAO_PADRAO_DA_MESA): ResultadoDoToque {
-  const acao = BOTOES_DA_MESA.find((b) => b.botao === registro.botao)?.acao;
+  const acao = botoesDaConfiguracao(config).find((b) => b.botao === registro.botao)?.acao;
   const p = pontoDaMesa(registro, config);
   switch (acao) {
     case 'canto':
@@ -205,8 +218,8 @@ export function tocar(estado: EstadoDaMesa, registro: RegistroDaMesa, config: Co
       if (estado.pontos.length === 0) return { estado, recado: 'Não há ponto para desfazer.' };
       return { estado: { ...estado, pontos: estado.pontos.slice(0, -1) }, recado: `Último ponto desfeito (ficaram ${estado.pontos.length - 1}).` };
     case 'fechar': {
-      if ((estado.furoAberto ?? []).length > 0) return { estado, recado: 'Há um furo aberto: feche-o (botão 8) ou desfaça os pontos dele.' };
-      if ((estado.linhaAberta ?? []).length > 0) return { estado, recado: 'Há uma linha interna aberta: termine-a (botão B) ou desfaça os pontos dela.' };
+      if ((estado.furoAberto ?? []).length > 0) return { estado, recado: 'Há um furo aberto: feche-o ou desfaça os pontos dele.' };
+      if ((estado.linhaAberta ?? []).length > 0) return { estado, recado: 'Há uma linha interna aberta: termine-a ou desfaça os pontos dela.' };
       const peca = pecaDosPontos(estado);
       if ('erro' in peca) return { estado, recado: peca.erro };
       const extras = [peca.piques.length > 0 ? ` e ${peca.piques.length} pique(s)` : '', peca.furos.length > 0 ? `, ${peca.furos.length} furo(s)` : '', peca.linhasInternas.length > 0 ? `, ${peca.linhasInternas.length} linha(s) interna(s)` : '', peca.marcas.length > 0 ? `, ${peca.marcas.length} marca(s)` : ''];

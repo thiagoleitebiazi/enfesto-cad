@@ -81,6 +81,12 @@ describe('a faca tangencial (ADR 0148)', () => {
     expect(gerarIso([peca('a', 0)], { larguraDaMesaMm: 1000 })).not.toMatch(/ C-?\d/);
   });
 
+  it('a compensação da lâmina (ADR 0153): o eixo anda adiantado da ponta, no rumo do corte; ao girar, ele vai junto', () => {
+    const c = comandos(gerarIso([peca('a', 0)], { larguraDaMesaMm: 1000, velocidadeMmMin: 9000, facaTangencial: true, compensacaoDaLaminaMm: 10 }));
+    const i = c.indexOf('T1');
+    expect(c.slice(i + 2, i + 9)).toEqual(['G0 X0.00 Y990.00 C-90.00', 'G1 Z0.00', 'G1 X0.00 Y890.00 C-90.00 F9000', 'G0 Z5.00', 'G0 X10.00 Y900.00 C0.00', 'G1 Z0.00', 'G1 X210.00 Y900.00 C0.00']);
+  });
+
   it('na virada pequena a faca gira cortando, e o ângulo de subir é o pedido', () => {
     const curva = criarMolde(
       { nome: 'Curva', referencia: '', tamanho: 'M', contorno: [ponto(0, 0), ponto(0, 100), ponto(10, 200), ponto(100, 200), ponto(100, 0)], linhaDeFio: { inicio: ponto(50, 20), fim: ponto(50, 180) } },

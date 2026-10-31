@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import {
-  BOTOES_DA_MESA,
+  botoesDaConfiguracao,
+  botoesRepetidos,
   CONFIGURACAO_PADRAO_DA_MESA,
   lerRegistro,
   lerRegistros,
@@ -62,6 +63,7 @@ function ajustesGuardados(): AjustesDaMesa {
       botaoNoComeco: a.botaoNoComeco === true,
       velocidade: VELOCIDADES.includes(a.velocidade as (typeof VELOCIDADES)[number]) ? (a.velocidade as number) : AJUSTES_PADRAO.velocidade,
       formato: a.formato && a.formato in FORMATOS ? a.formato : AJUSTES_PADRAO.formato,
+      ...(typeof a.botaoDaAcao === 'object' && a.botaoDaAcao !== null ? { botaoDaAcao: a.botaoDaAcao } : {}),
     };
   } catch {
     return AJUSTES_PADRAO;
@@ -295,14 +297,32 @@ export function PainelDaMesaDigitalizadora(props: PainelDaMesaDigitalizadoraProp
         <table className="tabela-de-relatorio botoes-da-mesa">
           <caption>Os botões do cursor</caption>
           <tbody>
-            {BOTOES_DA_MESA.map((b) => (
-              <tr key={b.botao}>
-                <th scope="row">{b.botao}</th>
+            {botoesDaConfiguracao(ajustes).map((b) => (
+              <tr key={b.acao}>
+                <th scope="row">
+                  <input
+                    type="number"
+                    min={0}
+                    max={15}
+                    aria-label={`Botão de: ${b.rotulo}`}
+                    value={b.botao}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isInteger(v) && v >= 0 && v <= 15) mudarAjustes({ botaoDaAcao: { ...ajustes.botaoDaAcao, [b.acao]: v } });
+                    }}
+                  />
+                </th>
                 <td>{b.rotulo}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p className="nota-do-formulario">Troque o número se o cursor da sua mesa for outro (10 a 15 são os botões A a F).</p>
+        {botoesRepetidos(ajustes).length > 0 && (
+          <p role="alert" className="mensagem-de-erro">
+            Mais de uma ação no botão {botoesRepetidos(ajustes).join(', ')}: só a primeira da tabela vale.
+          </p>
+        )}
 
         <details>
           <summary>Colar o registro da mesa</summary>

@@ -1809,6 +1809,7 @@ export default function App(): React.JSX.Element {
 
   // ---- Planejamento de corte (aba Encaixe > Planejamento de corte). O cadastro de produção é lido ao abrir.
   const abrirPlanejamento = useCallback(() => {
+    carregarListaDeProjetos();
     setMostrarPlanoDeCorte(true);
     let armazenamento: Storage | null = null;
     try {
@@ -1817,7 +1818,7 @@ export default function App(): React.JSX.Element {
       armazenamento = null;
     }
     void carregarCadastro(window.enfestoCad, armazenamento).then(setCadastroDeProducao);
-  }, []);
+  }, [, carregarListaDeProjetos]);
 
   // ---- A biblioteca de materiais e aviamentos (aba Modelo, ADR 0104): lida ao abrir, com o cadastro (as malhas).
   const [bibliotecaDeMateriais, setBibliotecaDeMateriais] = useState<BibliotecaCarregada | null>(null);
@@ -3301,14 +3302,14 @@ export default function App(): React.JSX.Element {
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
-    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean) => {
+    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean, compensacaoDaLaminaMm: number) => {
       const api = window.enfestoCad;
       if (!api) {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
         return;
       }
       try {
-        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
+        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
@@ -5044,6 +5045,7 @@ export default function App(): React.JSX.Element {
       {mostrarPlanoDeCorte && cadastroDeProducao && configuracaoDoPlanejamento && (
         <PainelDePlanejamento
           pastaDoErp={pastaDoErp}
+          projetosDaBiblioteca={projetos}
           nomeDoProjeto={(id) => nomesDosProjetos.get(id) ?? (id === projetoAtual.id ? `${projetoAtual.nome} (${projetoAtual.codigo})` : 'projeto não encontrado na biblioteca')}
           projeto={projetoAtual}
           pecas={pecas}
@@ -5504,13 +5506,14 @@ export default function App(): React.JSX.Element {
             { tipo: 'inteiro', id: 'velocidade', rotulo: 'Velocidade de corte (mm/min)', inicial: String(VELOCIDADE_PADRAO_MM_MIN) },
             { tipo: 'caixa', id: 'caneta', rotulo: 'Riscar as linhas internas e o fio com a caneta (T3)', inicial: false },
             { tipo: 'caixa', id: 'tangencial', rotulo: 'Faca tangencial: o eixo C acompanha o corte (sobe para girar nas viradas acima de 30°)', inicial: false },
+            { tipo: 'medida', id: 'lamina', rotulo: 'Faca tangencial: distância da ponta ao eixo (mm, opcional)', inicial: '', opcional: true },
           ]}
           nota="O encaixe em G-code (ISO 6983), em mm e coordenadas absolutas: T1 faca (contorno e furos), T2 piqueteador, T3 caneta, T4 furador (marcas). Em cada peça, o de dentro é feito antes do contorno. Não foi testado numa mesa de corte: confira o primeiro corte numa folha de papel."
           rotuloDoBotao="Salvar o ISO"
           onAplicar={(valores) => {
             const velocidade = Number(valores.velocidade);
             if (!(velocidade >= 100)) return 'A velocidade precisa ser de pelo menos 100 mm/min.';
-            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true);
+            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true, Number(valores.lamina ?? 0));
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'corte-iso' ? null : d))}
