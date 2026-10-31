@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
 import {
   acaoDaTeclaDoEncaixe,
+  comForaDaDobra,
   comOrientacaoInicial,
   lugarLivreMaisPerto,
   moverAteEncostar,
+  moverComReferencia,
   moverParaForaDoEnfesto,
   pecaNaDobraDoTecido,
   pecasDoTamanho,
+  proximoGrupo,
   voltarAoOriginal,
 } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
@@ -42,14 +45,24 @@ describe('as teclas do encaixe (ADR 0180)', () => {
     expect(tecla('F8')).toEqual({ tipo: 'original' });
     expect(tecla('F12')).toEqual({ tipo: 'sobreposicao' });
     expect(tecla('f', { ctrlKey: true })).toEqual({ tipo: 'para-fora' });
-    expect(tecla('ArrowLeft', { ctrlKey: true })).toEqual({ tipo: 'mover', direcao: 'esquerda' });
+    expect(tecla('ArrowLeft')).toEqual({ tipo: 'mover', direcao: 'esquerda' });
+    expect(tecla('ArrowLeft', { ctrlKey: true })).toEqual({ tipo: 'girar-esquerda' });
+    expect(tecla('ArrowRight', { ctrlKey: true })).toEqual({ tipo: 'girar-direita' });
+    expect(tecla('F9')).toEqual({ tipo: 'travar-horizontal' });
+    expect(tecla('F10')).toEqual({ tipo: 'travar-vertical' });
+    expect(tecla('F11')).toEqual({ tipo: 'so-na-dobra' });
+    for (const [letra, tipo] of Object.entries({ r: 'mover-com-referencia', g: 'agrupar', u: 'desagrupar', w: 'verificar', t: 'medir', k: 'cortar', p: 'plotar', l: 'localizar' })) {
+      expect(tecla(letra, { ctrlKey: true })).toEqual({ tipo });
+    }
+    expect(tecla('T', { ctrlKey: true, shiftKey: true })).toEqual({ tipo: 'texto' });
   });
 
   it('com outro modificador, ou sem Ctrl nas setas, a tecla não é do encaixe', () => {
     expect(tecla('F4', { altKey: true })).toBeNull();
     expect(tecla('F2', { shiftKey: true })).toBeNull();
-    expect(tecla('ArrowLeft')).toBeNull();
+    expect(tecla('ArrowUp', { ctrlKey: true })).toBeNull();
     expect(tecla('a')).toBeNull();
+    expect(tecla('s', { ctrlKey: true })).toBeNull();
   });
 });
 
@@ -176,6 +189,34 @@ describe('as propriedades do tecido na peça', () => {
   it('a peça sem nenhuma dessas propriedades não muda', () => {
     const p = quadrado('a');
     expect(comOrientacaoInicial(p)).toBe(p);
+  });
+});
+
+describe('mover com referência', () => {
+  it('a partir de onde a peça está, e só as indicadas', () => {
+    const r = moverComReferencia([quadrado('a'), quadrado('b')], new Set(['a']), 'peca', 30, -10);
+    expect(retanguloEnvolvente(r[0]!.contorno)).toMatchObject({ minX: 90, minY: 130 });
+    expect(retanguloEnvolvente(r[1]!.contorno)).toMatchObject({ minX: 100, minY: 100 });
+  });
+
+  it('a partir da mesa, o canto do grupo vai à distância pedida, e o grupo não desmancha', () => {
+    const r = moverComReferencia([quadrado('a', 100, 100), quadrado('b', 300, 400)], new Set(['a', 'b']), 'mesa', 10, 20);
+    expect(retanguloEnvolvente(r[0]!.contorno)).toMatchObject({ minX: 20, minY: 10 });
+    expect(retanguloEnvolvente(r[1]!.contorno)).toMatchObject({ minX: 220, minY: 310 });
+  });
+});
+
+describe('agrupar e a dobra por peça', () => {
+  it('o próximo grupo é o primeiro número livre', () => {
+    expect(proximoGrupo([quadrado('a')])).toBe('Grupo 1');
+    expect(proximoGrupo([{ ...quadrado('a'), grupoDoEncaixe: 'Grupo 1' }, { ...quadrado('b'), grupoDoEncaixe: 'Grupo 3' }])).toBe('Grupo 2');
+  });
+
+  it('F11: a peça marcada segue com as outras, e não na dobra', () => {
+    const d = prepararDobra([comForaDaDobra(meia('a'), true)], enfesto('par'));
+    expect(d.fixas).toEqual([]);
+    expect(d.resto).toHaveLength(1);
+    expect(comForaDaDobra(comForaDaDobra(meia('a'), true), false).foraDaDobra).toBeUndefined();
   });
 });
 

@@ -13,7 +13,32 @@ import { caixaDe, FOLGA_DO_ENCOSTO_MM, lugarLivre } from './posicionamento';
 export type DirecaoDoEncaixe = 'direita' | 'esquerda' | 'cima' | 'baixo';
 
 export type AcaoDaTecla =
-  | { readonly tipo: 'girar-livre' | 'girar-180' | 'espelhar' | 'dobra-horizontal' | 'dobra-vertical' | 'meia-camada' | 'original' | 'sobreposicao' | 'para-fora' }
+  | {
+      readonly tipo:
+        | 'girar-livre'
+        | 'girar-180'
+        | 'girar-esquerda'
+        | 'girar-direita'
+        | 'espelhar'
+        | 'dobra-horizontal'
+        | 'dobra-vertical'
+        | 'so-na-dobra'
+        | 'meia-camada'
+        | 'original'
+        | 'sobreposicao'
+        | 'travar-horizontal'
+        | 'travar-vertical'
+        | 'para-fora'
+        | 'mover-com-referencia'
+        | 'agrupar'
+        | 'desagrupar'
+        | 'verificar'
+        | 'medir'
+        | 'cortar'
+        | 'texto'
+        | 'plotar'
+        | 'localizar';
+    }
   | { readonly tipo: 'mover'; readonly direcao: DirecaoDoEncaixe };
 
 const TECLAS_F: Readonly<Record<string, AcaoDaTecla>> = {
@@ -24,17 +49,38 @@ const TECLAS_F: Readonly<Record<string, AcaoDaTecla>> = {
   F6: { tipo: 'dobra-vertical' },
   F7: { tipo: 'meia-camada' },
   F8: { tipo: 'original' },
+  F9: { tipo: 'travar-horizontal' },
+  F10: { tipo: 'travar-vertical' },
+  F11: { tipo: 'so-na-dobra' },
   F12: { tipo: 'sobreposicao' },
+};
+
+/** As letras com Ctrl da tabela da referência que não colidem com os atalhos do programa (Ctrl+O abrir, Ctrl+E exportar, Ctrl+D duplicar). */
+const LETRAS_COM_CTRL: Readonly<Record<string, AcaoDaTecla>> = {
+  f: { tipo: 'para-fora' },
+  r: { tipo: 'mover-com-referencia' },
+  g: { tipo: 'agrupar' },
+  u: { tipo: 'desagrupar' },
+  w: { tipo: 'verificar' },
+  t: { tipo: 'medir' },
+  k: { tipo: 'cortar' },
+  p: { tipo: 'plotar' },
+  l: { tipo: 'localizar' },
 };
 
 const SETAS: Readonly<Record<string, DirecaoDoEncaixe>> = { ArrowRight: 'direita', ArrowLeft: 'esquerda', ArrowUp: 'cima', ArrowDown: 'baixo' };
 
 export function acaoDaTeclaDoEncaixe(e: { readonly key: string; readonly ctrlKey: boolean; readonly metaKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean }): AcaoDaTecla | null {
-  if (e.altKey || e.shiftKey) return null;
-  if (!e.ctrlKey && !e.metaKey) return TECLAS_F[e.key] ?? null;
-  if (e.key.toLowerCase() === 'f') return { tipo: 'para-fora' };
+  if (e.altKey) return null;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (e.shiftKey) return ctrl && e.key.toLowerCase() === 't' ? { tipo: 'texto' } : null;
+  if (ctrl) {
+    if (e.key === 'ArrowLeft') return { tipo: 'girar-esquerda' };
+    if (e.key === 'ArrowRight') return { tipo: 'girar-direita' };
+    return LETRAS_COM_CTRL[e.key.toLowerCase()] ?? null;
+  }
   const direcao = SETAS[e.key];
-  return direcao ? { tipo: 'mover', direcao } : null;
+  return direcao ? { tipo: 'mover', direcao } : (TECLAS_F[e.key] ?? null);
 }
 
 const VETOR_DA_DIRECAO: Readonly<Record<DirecaoDoEncaixe, Ponto2D>> = {
@@ -156,6 +202,30 @@ export function comOrientacaoInicial(peca: Molde): Molde {
   if (refletidoHorizontal) m = rotacionarMolde(espelharMolde(m, m.id), 180);
   if (giroInicialGraus !== 0) m = rotacionarMolde(m, giroInicialGraus);
   return { ...m, restricaoDeRotacao: restricao, anguloDeRotacaoGraus: peca.anguloDeRotacaoGraus };
+}
+
+/** "Mover com referência": as peças andam a partir de onde estão, ou o canto do grupo vai a essa distância do canto da mesa. Horizontal é o comprimento; vertical, a largura. */
+export function moverComReferencia(pecas: readonly Molde[], ids: ReadonlySet<string>, referencia: 'peca' | 'mesa', horizontalMm: number, verticalMm: number): Molde[] {
+  const escolhidas = pecas.filter((p) => ids.has(p.id));
+  if (escolhidas.length === 0) return [...pecas];
+  const caixa = retanguloEnvolvente(escolhidas.flatMap((p) => [...linhaDeCorteDaPeca(p)]));
+  const d = referencia === 'peca' ? { x: verticalMm, y: horizontalMm } : { x: verticalMm - caixa.minX, y: horizontalMm - caixa.minY };
+  return pecas.map((p) => (ids.has(p.id) ? transladarMolde(p, d, p.id) : p));
+}
+
+/** O primeiro nome "Grupo N" ainda sem uso no projeto. */
+export function proximoGrupo(pecas: readonly Molde[]): string {
+  const usados = new Set(pecas.map((p) => p.grupoDoEncaixe));
+  let n = 1;
+  while (usados.has(`Grupo ${n}`)) n++;
+  return `Grupo ${n}`;
+}
+
+/** "Molde dobrado somente na dobra" (F11): ligado (o padrão), a peça de simetria vai na dobra; desligado, vai com as outras. */
+export function comForaDaDobra(peca: Molde, fora: boolean): Molde {
+  if (fora) return { ...peca, foraDaDobra: true };
+  const { foraDaDobra, ...resto } = peca;
+  return foraDaDobra ? resto : peca;
 }
 
 /** "½ camada": liga ou desliga na peça. */

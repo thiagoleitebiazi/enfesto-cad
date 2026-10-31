@@ -217,6 +217,14 @@ export function posicionarAsQueChegam(
 }
 
 /** O movimento só no eixo em que a peça mais andou (ADR 0164): com Shift, o arrasto fica reto, sem sair da fila. */
+/** F9 e F10 (ADR 0183): o arrasto só no eixo travado. Na tela, a horizontal é o y do mundo. */
+export type TravaDoEixo = 'horizontal' | 'vertical';
+
+export function soNoEixo(delta: Ponto2D, trava: TravaDoEixo | null): Ponto2D {
+  if (trava === 'horizontal') return { x: 0, y: delta.y };
+  return trava === 'vertical' ? { x: delta.x, y: 0 } : delta;
+}
+
 export function eixoTravado(delta: Ponto2D, travar: boolean): Ponto2D {
   if (!travar) return delta;
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y };

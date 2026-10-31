@@ -369,12 +369,15 @@ import { modificarComModo, type ModoDeModificar } from './domain/modificarElemen
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
+  comForaDaDobra,
   comMeiaCamada,
   lugarLivreMaisPerto,
   moverAteEncostar,
+  moverComReferencia,
   moverParaForaDoEnfesto,
   pecaNaDobraDoTecido,
   pecasDoTamanho,
+  proximoGrupo,
   voltarAoOriginal,
   type AcaoDaTecla,
 } from './domain/encaixeManual';
@@ -602,6 +605,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'ferramentas-do-plotter' }
   | { readonly tipo: 'sob-medida' }
   | { readonly tipo: 'cores-dos-tamanhos' }
+  | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'pique-padrao' }
   | { readonly tipo: 'tamanho-intermediario' }
   | { readonly tipo: 'exportar-projeto' }
@@ -676,6 +680,7 @@ export default function App(): React.JSX.Element {
   const [vistasSeguintes, setVistasSeguintes] = useState<readonly TransformacaoDeTela[]>([]);
   const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
+  const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
   const [mostrarNaoGraduados, setMostrarNaoGraduados] = useState(false);
   const [estiloDaCostura, setEstiloDaCostura] = useState<EstiloDaCostura>(() => {
     try {
@@ -3088,10 +3093,27 @@ export default function App(): React.JSX.Element {
         avisar(sobreposicaoDeMoldes ? 'Sobreposição de moldes desligada: a peça solta em cima de outra vai para o lugar livre mais perto.' : 'Sobreposição de moldes ligada.');
         return;
       }
+      if (acao.tipo === 'travar-horizontal' || acao.tipo === 'travar-vertical') {
+        const eixo = acao.tipo === 'travar-horizontal' ? 'horizontal' : 'vertical';
+        setTravaDoEixo(travaDoEixo === eixo ? null : eixo);
+        avisar(travaDoEixo === eixo ? 'Arrasto destravado.' : `Arrasto travado na ${eixo}.`);
+        return;
+      }
+      const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
       if (acao.tipo === 'para-fora') {
-        const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
         if (!enfesto || ids.size === 0) avisar('Selecione uma peça, com o enfesto configurado.');
         else aplicarMudanca(moverParaForaDoEnfesto(pecas, ids, enfesto));
+        return;
+      }
+      if (acao.tipo === 'agrupar' || acao.tipo === 'desagrupar') {
+        const grupo = acao.tipo === 'agrupar' ? proximoGrupo(pecas) : '';
+        if (ids.size === 0) avisar('Selecione as peças primeiro.');
+        else aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? comGrupoDoEncaixe(p, grupo) : p)));
+        return;
+      }
+      if (acao.tipo === 'mover-com-referencia') {
+        if (ids.size === 0) avisar('Selecione uma peça primeiro.');
+        else setDialogoDeFerramenta({ tipo: 'mover-com-referencia' });
         return;
       }
       const peca = pecas.find((p) => p.id === selecionadoId);
@@ -3102,6 +3124,12 @@ export default function App(): React.JSX.Element {
       const trocar = (nova: Molde): void => aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
       if (acao.tipo === 'girar-livre') girarLivreSelecionada();
       else if (acao.tipo === 'girar-180') girarPecaSelecionada(180);
+      else if (acao.tipo === 'girar-esquerda') girarPecaSelecionada(270);
+      else if (acao.tipo === 'girar-direita') girarPecaSelecionada(90);
+      else if (acao.tipo === 'so-na-dobra') {
+        trocar(comForaDaDobra(peca, !peca.foraDaDobra));
+        avisar(peca.foraDaDobra ? `“${peca.nome}” vai na dobra do tecido.` : `“${peca.nome}” segue com as outras peças, fora da dobra.`);
+      }
       else if (acao.tipo === 'espelhar') espelharSelecionadaManualmente();
       else if (acao.tipo === 'original') trocar(voltarAoOriginal(peca));
       else if (acao.tipo === 'meia-camada') trocar(comMeiaCamada(peca, !peca.meiaCamada));
@@ -3117,7 +3145,7 @@ export default function App(): React.JSX.Element {
         }
       }
     },
-    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
+    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, travaDoEixo, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
   );
 
   /** Alt + clique numa peça: as do mesmo tamanho ficam selecionadas (ADR 0180). */
@@ -4500,7 +4528,13 @@ export default function App(): React.JSX.Element {
       const teclaDoEncaixe = modo === 'selecionar' ? acaoDaTeclaDoEncaixe(e) : null;
       if (teclaDoEncaixe) {
         e.preventDefault();
-        executarTeclaDoEncaixe(teclaDoEncaixe);
+        if (teclaDoEncaixe.tipo === 'plotar') void exportarPlt();
+        else if (teclaDoEncaixe.tipo === 'localizar') abrirBiblioteca();
+        else if (teclaDoEncaixe.tipo === 'verificar') setMostrarValidacao(true);
+        else if (teclaDoEncaixe.tipo === 'medir') entrarModoDeMedida('medir-distancia');
+        else if (teclaDoEncaixe.tipo === 'cortar') usarFerramentaDeMolde('cortar');
+        else if (teclaDoEncaixe.tipo === 'texto') usarFerramentaDeAnotacao('inserir-texto');
+        else executarTeclaDoEncaixe(teclaDoEncaixe);
         return;
       }
 
@@ -4641,6 +4675,10 @@ export default function App(): React.JSX.Element {
       aplicarMudanca,
       ferramentaDeVista,
       executarTeclaDoEncaixe,
+      exportarPlt,
+      entrarModoDeMedida,
+      usarFerramentaDeMolde,
+      usarFerramentaDeAnotacao,
       cancelarModo,
       finalizarContornoEmEdicao,
       desfazer,
@@ -5902,6 +5940,32 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'ferramentas-do-plotter' ? null : d))}
         />
       )}
+      {dialogoDeFerramenta?.tipo === 'mover-com-referencia' && (
+        <DialogoDeCampos
+          titulo="Mover com referência"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'referencia',
+              rotulo: 'A partir de',
+              opcoes: [
+                { valor: 'peca', rotulo: 'Onde a peça está' },
+                { valor: 'mesa', rotulo: 'O canto da mesa' },
+              ],
+              inicial: 'peca',
+            },
+            { tipo: 'medida', id: 'horizontal', rotulo: 'Horizontal (mm, + para a direita)', inicial: '0' },
+            { tipo: 'medida', id: 'vertical', rotulo: 'Vertical (mm, + para baixo)', inicial: '0' },
+          ]}
+          rotuloDoBotao="Mover"
+          onAplicar={(valores) => {
+            const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+            aplicarMudanca(moverComReferencia(pecas, ids, valores['referencia'] === 'mesa' ? 'mesa' : 'peca', valores['horizontal'] as number, valores['vertical'] as number));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'mover-com-referencia' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'cores-dos-tamanhos' && (
         <DialogoDeCampos
           titulo="Cores dos tamanhos"
@@ -7149,6 +7213,7 @@ export default function App(): React.JSX.Element {
             onMoverPeca={moverPeca}
             onMoverPecas={moverPecas}
             onConferirTamanho={conferirTamanho}
+            travaDoEixo={travaDoEixo}
             onAlternarNaSelecao={alternarPecaNaSelecao}
             onSelecionarVarias={selecionarPecasPeloRetangulo}
             onAbrirPropriedades={abrirPropriedadesDaPeca}

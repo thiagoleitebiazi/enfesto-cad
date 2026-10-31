@@ -10,11 +10,11 @@ A auditoria final, item por item contra o manual e a apostila da referência, ac
 - F8 desfaz o giro acumulado.
 - F12, ou Visão › "Sobreposição de moldes": desligada, a peça solta em cima de outra vai para o lugar livre mais perto.
 - Ctrl+F leva as peças selecionadas para depois do fim da mesa, em fila.
-- Ctrl+setas deslizam a peça até encostar na vizinha ou na margem.
+- As setas deslizam a peça até encostar na vizinha ou na margem (a primeira versão usava Ctrl+setas; o ADR 0183 corrige).
 - Alt+clique seleciona as peças do mesmo tamanho e diz quantas são.
 
 O painel da peça ganha "Giro livre" (o encaixe tenta de 15 em 15 graus), "Giro inicial", "Refletido na horizontal" e "Refletido na vertical". As três últimas valem no próximo encaixe: a peça entra assim e fica assim, sem aplicar de novo no encaixe seguinte.
 
-**Limites:** a tabela da apostila não diz a tecla de "mover encaixe", e usar Ctrl+setas é leitura minha; "mover" como deslizar até encostar também é. F8 não desfaz o espelho, porque a peça não guarda se foi espelhada. "½ camada" é um aviso para o corte: não muda o consumo nem a quantidade. A peça fora da mesa continua no projeto, a validação acusa e ela sai no plotter até voltar. A dobra vertical usa só a ponta do começo da mesa. O giro livre deixa o encaixe mais lento, com 24 ângulos em vez de até 4.
+**Limites:** "mover" como deslizar até encostar é leitura minha. F8 não desfaz o espelho, porque a peça não guarda se foi espelhada. "½ camada" é um aviso para o corte: não muda o consumo nem a quantidade. A peça fora da mesa continua no projeto, a validação acusa e ela sai no plotter até voltar. A dobra vertical usa só a ponta do começo da mesa. O giro livre deixa o encaixe mais lento, com 24 ângulos em vez de até 4.
 
 Conferência: testes unitários, `npx eslint` e `npx tsc -b --noEmit`. O programa não foi aberto (pedido do usuário: só testes unitários).

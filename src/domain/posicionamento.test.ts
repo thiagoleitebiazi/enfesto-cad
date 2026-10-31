@@ -1,3 +1,4 @@
+import { soNoEixo } from './posicionamento';
 import { describe, it, expect } from 'vitest';
 import { contornosSeSobrepoem, ponto, transladarContorno, retanguloEnvolvente } from '../core/geometria';
 import { criarMolde, type Molde } from './molde';
@@ -151,5 +152,13 @@ describe('sugerirPosicaoSemSobreposicao — a peça com costura', () => {
     const sozinha = retanguloEnvolvente(transladarContorno(comCostura.contorno, sugerirPosicaoSemSobreposicao(comCostura, [], enfestoBase())!));
     expect(sozinha.minX).toBeCloseTo(14, 6);
     expect(sozinha.minY).toBeCloseTo(14, 6);
+  });
+});
+
+describe('o arrasto travado num eixo (ADR 0183)', () => {
+  it('F9 deixa só a horizontal da tela, F10 só a vertical; sem trava, nada muda', () => {
+    expect(soNoEixo({ x: 3, y: 5 }, 'horizontal')).toEqual({ x: 0, y: 5 });
+    expect(soNoEixo({ x: 3, y: 5 }, 'vertical')).toEqual({ x: 3, y: 0 });
+    expect(soNoEixo({ x: 3, y: 5 }, null)).toEqual({ x: 3, y: 5 });
   });
 });

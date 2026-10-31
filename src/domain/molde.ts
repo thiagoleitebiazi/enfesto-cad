@@ -431,6 +431,8 @@ export interface Molde {
   readonly cor?: string;
   /** "½ camada" (ADR 0180): no tecido dobrado, a peça é cortada numa camada só. */
   readonly meiaCamada?: true;
+  /** A peça de simetria que não vai na dobra do tecido (F11, ADR 0183): segue com as outras no encaixe. */
+  readonly foraDaDobra?: true;
   /**
    * Linha de simetria (aba Produção): a aresta em que a peça é dobrada, guardada
    * pelas duas pontas. Só vale enquanto as duas forem pontos seguidos do contorno.

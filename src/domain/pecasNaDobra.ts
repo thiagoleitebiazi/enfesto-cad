@@ -53,7 +53,7 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
   const fim = horizontal ? util.maxY : util.maxX;
   const fundo = horizontal ? util.maxX : util.maxY;
   for (const peca of pecas) {
-    const orientada = naPosicaoDaDobra(peca, sentidoUnico, dobra);
+    const orientada = peca.foraDaDobra ? null : naPosicaoDaDobra(peca, sentidoUnico, dobra);
     if (!orientada) {
       resto.push(peca);
       continue;

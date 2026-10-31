@@ -1,6 +1,6 @@
 import { passoDeReguaEmPolegadas, rotuloDaRegua } from './transformacaoDeTela';
 import type { Contorno } from '../core/geometria';
-import { eixoTravado } from '../domain/posicionamento';
+import { eixoTravado, soNoEixo, type TravaDoEixo } from '../domain/posicionamento';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
 import { pecasDentroDoRetangulo } from '../domain/selecao';
@@ -357,6 +357,8 @@ interface AreaDeDesenhoProps {
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
   /** Arrastar uma das peças selecionadas leva todas: um passo só para desfazer. */
   readonly onMoverPecas?: (ids: readonly string[], deslocamento: Ponto2D) => void;
+  /** O arrasto das peças só num eixo (F9 e F10, ADR 0183). */
+  readonly travaDoEixo?: TravaDoEixo | null;
   /** Alt + clique numa peça: confere o tamanho dela (ADR 0180). */
   readonly onConferirTamanho?: (id: string) => void;
   /** Ctrl+clique (⌘ no Mac) numa peça: entra na seleção, ou sai dela se já estava. */
@@ -467,6 +469,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onMoverPeca,
     onMoverPecas,
     onConferirTamanho,
+    travaDoEixo = null,
     onAlternarNaSelecao,
     onSelecionarVarias,
     onAbrirPropriedades,
@@ -1973,7 +1976,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       arrastoRef.current.ultimoMundo = mundo;
       arrastoRef.current.total = somar(arrastoRef.current.total, deltaPasso);
       // Com Shift, o arrasto fica reto, no eixo em que a peça mais andou (ADR 0164).
-      const delta = eixoTravado(arrastoRef.current.total, e.shiftKey);
+      const delta = soNoEixo(eixoTravado(arrastoRef.current.total, e.shiftKey), travaDoEixo);
       setDeltaDeArrasto((atual) => (atual ? { ids: atual.ids, delta } : atual));
     }
   }

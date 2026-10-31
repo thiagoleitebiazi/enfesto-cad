@@ -296,3 +296,5 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Zoom de um elemento; ponto não graduado | ✅ ADR 0181 |
 | Medida do pique padrão; estilo da linha de costura; cor por tamanho | ✅ ADR 0182 |
 | Converter primitivas em linhas auxiliares | ✅ já existia em duas etapas: "Extrair molde" e depois "Inserir ou remover" das linhas auxiliares |
+| Tabela completa de teclas (F9, F10, F11, Ctrl+R, G, U, W, T, K, P, L, Ctrl+Shift+T) | ✅ ADR 0183 (Ctrl+A, O, D, E seguem como eram no programa) |
+| Mover com referência | ✅ ADR 0183 |
