@@ -99,6 +99,8 @@ export interface PatchDeMolde {
   readonly corteNaMesa?: Exclude<Molde['corteNaMesa'], undefined>;
   /** A peça em ½ camada (ADR 0180). */
   readonly meiaCamada?: boolean;
+  /** O tecido do molde (ADR 0194). */
+  readonly tecidoDoMolde?: string;
   /** O fio (ADR 0190) e as linhas do desenho (ADR 0192). */
   readonly linhaDeFio?: Molde['linhaDeFio'];
   readonly linhaDoDesenho?: Exclude<Molde['linhaDoDesenho'], undefined>;
@@ -344,6 +346,17 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             ½ camada
           </label>
         </fieldset>
+
+        <label title="O tecido em que a peça é cortada: o encaixe pode gerar um tecido por vez">
+          Tecido do molde
+          <input list="tecidos-do-molde" value={peca.tecidoDoMolde ?? ''} placeholder="Principal" onChange={(e) => props.onAlterar({ tecidoDoMolde: e.target.value })} />
+          <datalist id="tecidos-do-molde">
+            <option value="Principal" />
+            <option value="Contraste" />
+            <option value="Forro" />
+            <option value="Entretela" />
+          </datalist>
+        </label>
 
         <fieldset className="grupo-de-rotacao">
           <legend>Fio e linhas do desenho</legend>

@@ -322,3 +322,38 @@ describe('a grade de corte (ADR 0186)', () => {
     expect(onCalcular.mock.calls[1]![0].gradeDeCorte).toEqual({ P: 1, M: 2 });
   });
 });
+
+describe('os tecidos e o encaixe avançado (ADR 0194 e 0195)', () => {
+  const com = (id: string, tecidoDoMolde?: string) => ({ ...criarMolde({ nome: id, referencia: '', tamanho: 'M', quantidade: 1, contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 200), ponto(0, 200)], margemDeCosturaMm: 0, linhaDeFio: { inicio: ponto(50, 20), fim: ponto(50, 180) }, restricaoDeRotacao: { permite180: false, permite90e270: false } }, id), ...(tecidoDoMolde ? { tecidoDoMolde } : {}) });
+  const abrir = (pecas: readonly Molde[], extra: { quantasSelecionadas?: number; temDobra?: boolean } = {}) => {
+    cleanup();
+    const onCalcular = vi.fn();
+    render(<PainelDeNesting pecas={pecas} distanciaEntreMoldesMm={3} executando={false} progresso={null} resultado={null} onCalcular={onCalcular} onCancelar={() => {}} onAplicar={() => {}} onFechar={() => {}} {...extra} />);
+    return onCalcular;
+  };
+
+  it('com um tecido só, a escolha nem aparece', () => {
+    abrir([com('a')]);
+    expect(screen.queryByLabelText('Gerar encaixe para')).not.toBeInTheDocument();
+  });
+
+  it('com mais de um, entrega o tecido escolhido', () => {
+    const onCalcular = abrir([com('a'), com('b', 'Forro')]);
+    fireEvent.change(screen.getByLabelText('Gerar encaixe para'), { target: { value: 'Forro' } });
+    calcular();
+    expect(onCalcular.mock.calls[0]![0].tecido).toBe('Forro');
+  });
+
+  it('entrega as opções marcadas, e a de manter só existe com peças selecionadas', () => {
+    expect(screen.queryByLabelText(/Manter no lugar/)).not.toBeInTheDocument();
+    cleanup();
+    const onCalcular = abrir([com('a')], { quantasSelecionadas: 2, temDobra: true });
+    fireEvent.click(screen.getByLabelText(/Manter no lugar as 2/));
+    fireEvent.click(screen.getByLabelText('Compactar'));
+    fireEvent.click(screen.getByLabelText('Usar espelhamento de peças'));
+    fireEvent.click(screen.getByLabelText('Usar somente as peças que estão na mesa'));
+    fireEvent.change(screen.getByLabelText('Dobra do tecido'), { target: { value: 'inferior' } });
+    calcular();
+    expect(onCalcular.mock.calls[0]![0]).toMatchObject({ manterSelecionadas: true, compactar: true, usarEspelhamento: true, somenteNaMesa: true, dobraInferior: true });
+  });
+});

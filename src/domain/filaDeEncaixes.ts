@@ -40,6 +40,9 @@ export interface OpcoesDoTrabalho {
   readonly tecidoDeSentidoUnico?: boolean;
   /** Só para dizer na tela como as peças entraram (as peças do trabalho já vêm abertas e com os tamanhos). */
   readonly todosOsTamanhos?: boolean;
+  /** As peças que ficaram no lugar e as que não entraram (ADR 0194), para refazer o projeto ao aplicar. */
+  readonly idsFixos?: readonly string[];
+  readonly idsForaDoEncaixe?: readonly string[];
   /** A grade de corte (ADR 0186), para refazer as peças ao aplicar. */
   readonly gradeDeCorte?: Readonly<Record<string, number>>;
   readonly abrirSimetrias?: boolean;

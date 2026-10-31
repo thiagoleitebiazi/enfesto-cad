@@ -366,6 +366,7 @@ import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjet
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
+import { comEspelhamentoPermitido, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
 import { ajusteDeTextoGuardado, corDaCaneta, guardarAjusteDeTexto } from './ui/preferencias';
@@ -375,6 +376,7 @@ import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './d
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
+  compactarEncaixe,
   comForaDaDobra,
   comMeiaCamada,
   lugarLivreMaisPerto,
@@ -703,7 +705,8 @@ export default function App(): React.JSX.Element {
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
   const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
   const [retanguloDeOrganizacaoMm, setRetanguloDeOrganizacaoMm] = useState<number | null>(null);
-  const [gradeDoModelo, setGradeDoModelo] = useState<Readonly<Record<string, number>> | null>(null);
+  const [gradesDoModelo, setGradesDoModelo] = useState<Readonly<Record<string, Readonly<Record<string, number>>>>>({});
+  const foraDoCalculoRef = useRef<{ readonly fixas: readonly Molde[]; readonly foraDoEncaixe: readonly Molde[] }>({ fixas: [], foraDoEncaixe: [] });
   const [relacaoDoPontoDeCasamento, setRelacaoDoPontoDeCasamento] = useState<RelacaoDoCasamento | ''>('');
   const [ajusteDeTexto, setAjusteDeTexto] = useState<AjusteDeTexto | null>(() => {
     try {
@@ -3252,7 +3255,7 @@ export default function App(): React.JSX.Element {
    * os moldes passa a ser a do enfesto (a validação mede com ela), os tamanhos e as simetrias abertos, se pedido.
    */
   const prepararEncaixe = useCallback(
-    (opcoesAvancadas: OpcoesAvancadasDeNesting): { readonly paraEncaixar: readonly Molde[]; readonly enfestoDoEncaixe: ConfiguracaoDeEnfesto } | null => {
+    (opcoesAvancadas: OpcoesAvancadasDeNesting): { readonly paraEncaixar: readonly Molde[]; readonly enfestoDoEncaixe: ConfiguracaoDeEnfesto; readonly fixas: readonly Molde[]; readonly foraDoEncaixe: readonly Molde[] } | null => {
       if (!enfesto || pecas.length === 0) return null;
       let enfestoDoEncaixe = enfesto;
       const distancia = opcoesAvancadas.distanciaEntreMoldesMm;
@@ -3271,10 +3274,24 @@ export default function App(): React.JSX.Element {
         );
       }
       // Com todos os tamanhos, cada peça graduada entra como uma peça comum por tamanho.
-      let paraEncaixar: readonly Molde[] = pecas;
+      const trechos = opcoesAvancadas.tecido === TODOS_EM_TRECHOS;
+      const idsFixos = opcoesAvancadas.manterSelecionadas ? (idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : [])) : undefined;
+      const escolha = separarParaOEncaixe(
+        pecas,
+        { ...(opcoesAvancadas.tecido !== undefined && !trechos ? { tecido: opcoesAvancadas.tecido } : {}), ...(idsFixos ? { idsFixos } : {}), ...(opcoesAvancadas.somenteNaMesa ? { somenteNaMesa: true } : {}) },
+        enfestoDoEncaixe,
+      );
+      let base: readonly Molde[] = trechos ? comUmTrechoPorTecido(escolha.paraEncaixar) : escolha.paraEncaixar;
+      if (opcoesAvancadas.usarEspelhamento) base = comEspelhamentoPermitido(base);
+      if (opcoesAvancadas.dobraInferior !== undefined && opcoesAvancadas.dobraInferior !== (enfestoDoEncaixe.dobraInferior === true)) {
+        enfestoDoEncaixe = { ...enfestoDoEncaixe, dobraInferior: opcoesAvancadas.dobraInferior };
+        setEnfesto(enfestoDoEncaixe);
+      }
+      enfestoDoEncaixe = enfestoComFixas(opcoesAvancadas.compactar ? { ...enfestoDoEncaixe, compactar: true } : enfestoDoEncaixe, escolha.fixas);
+      let paraEncaixar: readonly Molde[] = base;
       if (opcoesAvancadas.todosOsTamanhos) {
         try {
-          paraEncaixar = opcoesAvancadas.gradeDeCorte ? expandirComGrade(pecas, proximoId, opcoesAvancadas.gradeDeCorte) : expandirTamanhos(pecas, proximoId);
+          paraEncaixar = opcoesAvancadas.gradeDeCorte ? expandirComGrade(base, proximoId, opcoesAvancadas.gradeDeCorte) : expandirTamanhos(base, proximoId);
         } catch (e) {
           window.alert(e instanceof Error ? e.message : String(e));
           return null;
@@ -3282,17 +3299,18 @@ export default function App(): React.JSX.Element {
       }
       // As peças com linha de simetria entram abertas, inteiras.
       if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
-      return { paraEncaixar, enfestoDoEncaixe };
+      return { paraEncaixar, enfestoDoEncaixe, fixas: escolha.fixas, foraDoEncaixe: escolha.foraDoEncaixe };
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir],
+    [pecas, enfesto, tecido, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId],
   );
 
   const calcularNestingAutomatico = useCallback(
     (opcoesAvancadas: OpcoesAvancadasDeNesting) => {
       const preparado = prepararEncaixe(opcoesAvancadas);
       if (!preparado) return;
-      setGradeDoModelo(opcoesAvancadas.gradeDeCorte ?? null);
+      if (opcoesAvancadas.gradesDoModelo) setGradesDoModelo(opcoesAvancadas.gradesDoModelo);
       const { paraEncaixar, enfestoDoEncaixe } = preparado;
+      foraDoCalculoRef.current = { fixas: preparado.fixas, foraDoEncaixe: preparado.foraDoEncaixe };
       setResultadoNesting(null);
       setProgressoNesting({ colocadas: 0, total: paraEncaixar.reduce((soma, p) => soma + p.quantidade, 0) });
       setNestingExecutando(true);
@@ -3367,7 +3385,7 @@ export default function App(): React.JSX.Element {
 
   const aplicarResultadoNesting = useCallback(() => {
     if (!resultadoNesting) return;
-    const novasPecas = resultadoNesting.pecasColocadas.map((p) => p.molde);
+    const novasPecas = juntarAoEncaixe(resultadoNesting.pecasColocadas.map((p) => p.molde), foraDoCalculoRef.current.fixas, foraDoCalculoRef.current.foraDoEncaixe, enfesto);
     aplicarMudanca(novasPecas);
     setSelecionadoId(null);
     // As peças do encaixe são outras (outros ids): a marca do lote era das de antes.
@@ -3409,6 +3427,8 @@ export default function App(): React.JSX.Element {
                 ...(sentidoUnicoDoTecido(tecido) ? { tecidoDeSentidoUnico: true } : {}),
                 ...(opcoesAvancadas.todosOsTamanhos ? { todosOsTamanhos: true } : {}),
                 ...(opcoesAvancadas.gradeDeCorte ? { gradeDeCorte: opcoesAvancadas.gradeDeCorte } : {}),
+                ...(preparado.fixas.length > 0 ? { idsFixos: preparado.fixas.map((p) => p.id) } : {}),
+                ...(preparado.foraDoEncaixe.length > 0 ? { idsForaDoEncaixe: preparado.foraDoEncaixe.map((p) => p.id) } : {}),
                 ...(opcoesAvancadas.abrirSimetrias ? { abrirSimetrias: true } : {}),
               },
             },
@@ -3443,6 +3463,8 @@ export default function App(): React.JSX.Element {
       const resultado = trabalho?.resultado;
       if (!trabalho || !resultado || resultado.pecasColocadas.length === 0) return;
       const motivos: string[] = [];
+      const fixasDoTrabalho = pecas.filter((p) => trabalho.opcoes.idsFixos?.includes(p.id));
+      const foraDoTrabalho = pecas.filter((p) => trabalho.opcoes.idsForaDoEncaixe?.includes(p.id));
       // O encaixe ligado ao molde (ADR 0125): as peças que mudaram depois do encaixe entram como estão agora, no lugar
       // e na posição em que o encaixe pôs as de antes.
       let ligado: EncaixeComOMoldeDeAgora | null = null;
@@ -3451,7 +3473,7 @@ export default function App(): React.JSX.Element {
       } else if (impressaoDigitalDoMolde(pecas) !== trabalho.impressaoDasPecas) {
         try {
           // As de agora preparadas como as do encaixe: com os tamanhos e as simetrias abertas, se ele pediu.
-          let preparadas: readonly Molde[] = pecas;
+          let preparadas: readonly Molde[] = pecas.filter((p) => !fixasDoTrabalho.includes(p) && !foraDoTrabalho.includes(p));
           if (trabalho.opcoes.todosOsTamanhos) preparadas = trabalho.opcoes.gradeDeCorte ? expandirComGrade(preparadas, proximoId, trabalho.opcoes.gradeDeCorte) : expandirTamanhos(preparadas, proximoId);
           if (trabalho.opcoes.abrirSimetrias) preparadas = abrirSimetrias(preparadas, proximoId);
           ligado = encaixeComOMoldeDeAgora(resultado.pecasColocadas, trabalho.pecas, preparadas);
@@ -3470,7 +3492,7 @@ export default function App(): React.JSX.Element {
       ) {
         return;
       }
-      const novasPecas = ligado ? [...ligado.pecas, ...ligado.novas] : resultado.pecasColocadas.map((p) => p.molde);
+      const novasPecas = juntarAoEncaixe(ligado ? [...ligado.pecas, ...ligado.novas] : resultado.pecasColocadas.map((p) => p.molde), fixasDoTrabalho, foraDoTrabalho, enfesto);
       aplicarMudanca(novasPecas);
       setSelecionadoId(null);
       setIdsSelecionadosEmLote(new Set());
@@ -5293,6 +5315,9 @@ export default function App(): React.JSX.Element {
         onAbrirTecido={() => setPainelAberto('tecido')}
         onAbrirEnfesto={() => setPainelAberto('enfesto')}
         onSugerirPosicao={sugerirPosicaoParaSelecionada}
+        onCompactar={() => {
+          if (enfesto && pecas.length > 0) aplicarMudanca([...compactarEncaixe(pecas, enfesto)]);
+        }}
         podeSugerirPosicao={selecionadoId !== null && enfesto !== null}
         onNestingAutomatico={abrirConfiguracaoDeNesting}
         podeExecutarNesting={enfesto !== null && pecas.length > 0 && !nestingExecutando}
@@ -5499,7 +5524,10 @@ export default function App(): React.JSX.Element {
         <PainelDeNesting
           pecas={pecas}
           distanciaEntreMoldesMm={enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM}
-          gradeInicial={gradeDoModelo}
+          gradesIniciais={gradesDoModelo}
+          quantasSelecionadas={idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote.size : selecionadoId ? 1 : 0}
+          temDobra={enfesto?.tipo === 'par' || enfesto?.tipo === 'tubular'}
+          dobraInferior={enfesto?.dobraInferior === true}
           sentidoDoTecido={sentidoUnicoDoTecido(tecido) ? { nome: tecido?.nome ?? '', sentido: sentidoUnicoDoTecido(tecido)! } : null}
           executando={nestingExecutando}
           progresso={progressoNesting}

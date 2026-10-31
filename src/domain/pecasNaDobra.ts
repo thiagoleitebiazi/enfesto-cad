@@ -23,7 +23,7 @@ export interface DobraPreparada {
 const TOLERANCIA_MM = 1;
 
 /** A peça girada de modo que a linha de simetria fique na borda da dobra: a de cima (horizontal) ou a do começo do comprimento (vertical). */
-export function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean, dobra: DobraDoTecido = 'horizontal'): Molde | null {
+export function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean, dobra: DobraDoTecido = 'horizontal', inferior = false): Molde | null {
   const indice = arestaDeSimetria(peca);
   if (indice === null) return null;
   const eixo = dobra === 'horizontal' ? 'x' : 'y';
@@ -32,7 +32,7 @@ export function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean, dobra: Dobr
     const a = m.contorno[indice]!;
     const b = m.contorno[(indice + 1) % m.contorno.length]!;
     const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(m));
-    const borda = dobra === 'horizontal' ? caixa.minX : caixa.minY;
+    const borda = dobra === 'vertical' ? caixa.minY : inferior ? caixa.maxX : caixa.minX;
     if (Math.abs(a[eixo] - b[eixo]) <= TOLERANCIA_MM && Math.abs(a[eixo] - borda) <= TOLERANCIA_MM) return m;
   }
   return null;
@@ -44,6 +44,7 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
   const dobra = dobraDoEnfesto(enfesto.tipo);
   if (!dobra) return { fixas: [], resto: pecas, enfesto };
   const horizontal = dobra === 'horizontal';
+  const inferior = horizontal && enfesto.dobraInferior === true;
   const util = areaUtilDaMesa(enfesto);
   const bloqueadas = [...(enfesto.zonasBloqueadas ?? [])];
   const fixas: PecaColocada[] = [];
@@ -53,7 +54,7 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
   const fim = horizontal ? util.maxY : util.maxX;
   const fundo = horizontal ? util.maxX : util.maxY;
   for (const peca of pecas) {
-    const orientada = peca.foraDaDobra ? null : naPosicaoDaDobra(peca, sentidoUnico, dobra);
+    const orientada = peca.foraDaDobra ? null : naPosicaoDaDobra(peca, sentidoUnico, dobra, inferior);
     if (!orientada) {
       resto.push(peca);
       continue;
@@ -62,14 +63,16 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
     const largura = caixa.maxX - caixa.minX;
     const comprimento = caixa.maxY - caixa.minY;
     const zona = (inicio: number): ZonaBloqueada =>
-      horizontal ? { minX: 0, maxX: largura, minY: inicio, maxY: inicio + comprimento } : { minX: inicio, maxX: inicio + largura, minY: 0, maxY: comprimento };
+      horizontal
+        ? { minX: inferior ? enfesto.larguraUtilMm - largura : 0, maxX: inferior ? enfesto.larguraUtilMm : largura, minY: inicio, maxY: inicio + comprimento }
+        : { minX: inicio, maxX: inicio + largura, minY: 0, maxY: comprimento };
     let postas = 0;
     for (let copia = 0; copia < peca.quantidade; copia++) {
       for (let z = bloqueadas.find((b) => seCruzam(b, zona(s))); z; z = bloqueadas.find((b) => seCruzam(b, zona(s)))) {
         s = (horizontal ? z.maxY : z.maxX) + enfesto.distanciaMinimaEntrePecasMm;
       }
       if ((horizontal ? largura : comprimento) > fundo || s + (horizontal ? comprimento : largura) > fim) break;
-      const molde = transladarMolde(orientada, horizontal ? { x: -caixa.minX, y: s - caixa.minY } : { x: s - caixa.minX, y: -caixa.minY }, `${peca.id}#${copia}`);
+      const molde = transladarMolde(orientada, horizontal ? { x: (inferior ? enfesto.larguraUtilMm - largura : 0) - caixa.minX, y: s - caixa.minY } : { x: s - caixa.minX, y: -caixa.minY }, `${peca.id}#${copia}`);
       fixas.push({ idOriginal: peca.id, indiceCopia: copia, molde });
       bloqueadas.push(zona(s));
       s += (horizontal ? comprimento : largura) + enfesto.distanciaMinimaEntrePecasMm;
@@ -83,7 +86,11 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
 /** O resultado do encaixe com as peças da dobra de volta, e as contas refeitas com elas. */
 export function juntarDobra(resultado: ResultadoDeNesting, dobra: DobraPreparada, enfesto: ConfiguracaoDeEnfesto): ResultadoDeNesting {
   if (dobra.fixas.length === 0) return resultado;
-  const pecasColocadas = [...dobra.fixas, ...resultado.pecasColocadas];
+  return comContasRefeitas(resultado, [...dobra.fixas, ...resultado.pecasColocadas], enfesto);
+}
+
+/** O resultado com estas peças, e o comprimento, a área e o aproveitamento contados de novo. */
+export function comContasRefeitas(resultado: ResultadoDeNesting, pecasColocadas: readonly PecaColocada[], enfesto: Pick<ConfiguracaoDeEnfesto, 'larguraUtilMm'>): ResultadoDeNesting {
   const cortes = pecasColocadas.map((p) => linhaDeCorteDaPeca(p.molde));
   const comprimentoUtilizadoMm = Math.max(...cortes.map((c) => retanguloEnvolvente(c).maxY));
   const areaOcupadaMm2 = cortes.reduce((s, c) => s + area(c), 0);

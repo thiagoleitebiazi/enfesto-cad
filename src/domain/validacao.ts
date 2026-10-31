@@ -240,7 +240,7 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
         problemas.push({ tipo: 'peca-na-emenda', severidade: 'aviso', mensagem: `Peça "${peca.nome}" atravessa a emenda em ${e} mm do comprimento.`, pecasEnvolvidasIds: [peca.id] });
       }
     }
-    if (bbox.minX < (naDobra === 'horizontal' ? 0 : minX) - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < (naDobra === 'vertical' ? 0 : minY) - folgaMm || bbox.maxY > maxY + folgaMm) {
+    if (bbox.minX < (naDobra === 'horizontal' && !enfesto.dobraInferior ? 0 : minX) - folgaMm || bbox.maxX > (naDobra === 'horizontal' && enfesto.dobraInferior ? enfesto.larguraUtilMm : maxX) + folgaMm || bbox.minY < (naDobra === 'vertical' ? 0 : minY) - folgaMm || bbox.maxY > maxY + folgaMm) {
       problemas.push({
         tipo: 'fora-dos-limites',
         severidade: 'erro',

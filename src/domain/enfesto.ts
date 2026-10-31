@@ -75,6 +75,10 @@ export interface ConfiguracaoBase {
   /** A padronagem do tecido, na área de encaixe, e a cor de preenchimento das peças (ADR 0187). */
   readonly padronagem?: { readonly imagem: string; readonly comprimentoMm: number };
   readonly corDoTecido?: string;
+  /** A dobra do tecido embaixo, e não em cima (ADR 0195). */
+  readonly dobraInferior?: boolean;
+  /** Compactar no fim do encaixe automático (ADR 0195). */
+  readonly compactar?: boolean;
   /** Os pontos de emenda do tecido, no comprimento (mm; ADR 0188). */
   readonly emendasMm?: readonly number[];
 }

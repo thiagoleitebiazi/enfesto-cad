@@ -220,7 +220,7 @@ export function aoLadoSemSobrepor(nova: Molde, outras: readonly Molde[], folgaMm
 export function pecaDerivada(molde: Molde, opcoes: OpcoesDaPecaDerivada, trecho: { readonly a: PosicaoNoContorno; readonly b: PosicaoNoContorno } | null, novoId: string): Molde {
   conferirOpcoesDaPecaDerivada(opcoes);
   let nova: Molde;
-  if (opcoes.tipo === 'entretela') nova = entretelaDoMolde(molde, opcoes.recuoMm, novoId);
+  if (opcoes.tipo === 'entretela') nova = { ...entretelaDoMolde(molde, opcoes.recuoMm, novoId), tecidoDoMolde: 'Entretela' };
   else {
     if (!trecho) throw new Error(`Indique o trecho ${opcoes.tipo === 'vista' ? 'da vista' : 'que o forro encurta'} no contorno da peça.`);
     const partes = dividirPeloTrecho(molde, trecho.a, trecho.b, opcoes.larguraMm, opcoes.tipo === 'vista' ? opcoes.largura2Mm : undefined);
@@ -230,6 +230,7 @@ export function pecaDerivada(molde: Molde, opcoes: OpcoesDaPecaDerivada, trecho:
     if (!grupo) delete (semGrupo as { grupoDoEncaixe?: string }).grupoDoEncaixe;
     nova = { ...semGrupo, id: novoId, nome: `${ROTULO_DA_PECA_DERIVADA[opcoes.tipo]} de ${molde.nome}`, ...(grupo ? { grupoDoEncaixe: grupo } : molde.grupoDoEncaixe ? { grupoDoEncaixe: molde.grupoDoEncaixe } : {}) };
   }
+  if (opcoes.tipo === 'forro') nova = { ...nova, tecidoDoMolde: 'Forro' };
   // Ao lado da peça principal (na tela, à direita: o y do mundo).
   const daPeca = retanguloEnvolvente(molde.contorno);
   const daNova = retanguloEnvolvente(nova.contorno);

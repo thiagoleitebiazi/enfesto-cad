@@ -69,7 +69,7 @@ export interface RestricaoDeRotacao {
 export const PASSO_DO_GIRO_LIVRE_GRAUS = 15;
 
 /** A maior inclinação do fio aceita no encaixe (graus). */
-export const INCLINACAO_MAXIMA_GRAUS = 5;
+export const INCLINACAO_MAXIMA_GRAUS = 10;
 
 export const RESTRICAO_PADRAO: RestricaoDeRotacao = {
   permite180: false,
@@ -437,6 +437,8 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** O tecido do molde (ADR 0194): "Principal" ausente; "Forro", "Entretela", "Contraste"... */
+  readonly tecidoDoMolde?: string;
   /** A cor, o estilo e o peso das linhas internas no desenho (ADR 0192). */
   readonly linhaDoDesenho?: { readonly cor?: string; readonly estilo?: EstiloDeLinha; readonly peso?: number };
   /** "½ camada" (ADR 0180): no tecido dobrado, a peça é cortada numa camada só. */

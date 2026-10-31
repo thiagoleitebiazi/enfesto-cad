@@ -315,3 +315,13 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Níveis de impressão | ⬜ não feito: é do plotter Mutoh; as canetas por elemento (ADR 0174) cobrem a escolha da caneta |
 | Itens institucionais (licença, clube, dados do autor, teclado virtual, sobre, janela em cascata) | não se aplicam |
 | Importar e exportar Lectra, Gerber, Investrônica, MDL, VET, IBA, ALF, metafile | não feito: formatos fechados |
+
+## Nona rodada: o manual do programa de encaixe (2026-10-31)
+
+As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, versão 10, e as páginas oficiais de cada módulo trouxeram o que faltava.
+
+| Item | Situação |
+| --- | --- |
+| Tecido por molde; gerar encaixe para um tecido ou todos; grade por tecido | ✅ ADR 0194 |
+| Manter peças encaixadas; usar somente peças encaixadas; espelhamento; dobra superior ou inferior; tolerância até 10° | ✅ ADR 0195 |
+| Compactar | ✅ ADR 0195 |

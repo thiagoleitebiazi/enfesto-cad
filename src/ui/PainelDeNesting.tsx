@@ -1,3 +1,4 @@
+import { TODOS_EM_TRECHOS, tecidosDoModelo } from '../domain/tecidosDoModelo';
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import type { MetodoDoNesting, ResultadoDeNesting } from '../domain/nesting';
@@ -20,6 +21,16 @@ export interface OpcoesAvancadasDeNesting {
   readonly distanciaEntreMoldesMm: number;
   /** O método: só vem quando não é o de sempre (a busca em grade). */
   readonly metodo?: MetodoDoNesting;
+  /** "Gerar encaixe para": um tecido só, ou todos num trecho para cada (ADR 0194). */
+  readonly tecido?: string;
+  /** As grades de cada tecido, para lembrar na próxima vez. */
+  readonly gradesDoModelo?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** As opções do encaixe avançado (ADR 0195). */
+  readonly manterSelecionadas?: boolean;
+  readonly somenteNaMesa?: boolean;
+  readonly usarEspelhamento?: boolean;
+  readonly compactar?: boolean;
+  readonly dobraInferior?: boolean;
 }
 
 interface PainelDeNestingProps {
@@ -28,8 +39,13 @@ interface PainelDeNestingProps {
   readonly distanciaEntreMoldesMm: number;
   /** O tecido de sentido único (pelo, estampa direcional): o encaixe não vira as peças. */
   readonly sentidoDoTecido?: { readonly nome: string; readonly sentido: string } | null;
-  /** A grade de corte do modelo, a última usada (ADR 0186). */
-  readonly gradeInicial?: Readonly<Record<string, number>> | null;
+  /** As grades de corte do modelo, por tecido, as últimas usadas (ADR 0186, 0194). */
+  readonly gradesIniciais?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** Quantas peças estão selecionadas: elas podem ficar no lugar. */
+  readonly quantasSelecionadas?: number;
+  /** O enfesto tem dobra no sentido do comprimento (par ou tubular), e de que lado ela está. */
+  readonly temDobra?: boolean;
+  readonly dobraInferior?: boolean;
   readonly executando: boolean;
   readonly progresso: { readonly colocadas: number; readonly total: number } | null;
   readonly resultado: ResultadoDeNesting | null;
@@ -54,7 +70,17 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const temGraduadas = props.pecas.some((p) => p.graduacao !== undefined);
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
   const tamanhosDaGrade = [...new Set(props.pecas.flatMap((p) => p.graduacao?.tamanhos ?? []))];
-  const [grade, setGrade] = useState<Readonly<Record<string, string>>>(() => Object.fromEntries(tamanhosDaGrade.map((t) => [t, String(props.gradeInicial?.[t] ?? 1)])));
+  const tecidos = tecidosDoModelo(props.pecas);
+  const [tecidoDoEncaixe, setTecidoDoEncaixe] = useState('');
+  const gradeEscrita = (chave: string): Readonly<Record<string, string>> => Object.fromEntries(tamanhosDaGrade.map((t) => [t, String(props.gradesIniciais?.[chave]?.[t] ?? props.gradesIniciais?.['']?.[t] ?? 1)]));
+  const [grades, setGrades] = useState<Readonly<Record<string, Readonly<Record<string, string>>>>>({});
+  const grade = grades[tecidoDoEncaixe] ?? gradeEscrita(tecidoDoEncaixe);
+  const setGrade = (mudar: (g: Readonly<Record<string, string>>) => Readonly<Record<string, string>>): void => setGrades((todas) => ({ ...todas, [tecidoDoEncaixe]: mudar(grade) }));
+  const [manterSelecionadas, setManterSelecionadas] = useState(false);
+  const [somenteNaMesa, setSomenteNaMesa] = useState(false);
+  const [usarEspelhamento, setUsarEspelhamento] = useState(false);
+  const [compactar, setCompactar] = useState(false);
+  const [dobraInferior, setDobraInferior] = useState(props.dobraInferior === true);
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
   const [metodo, setMetodo] = useState<MetodoDoNesting>('grade');
@@ -70,7 +96,9 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
     if (erroDaDistancia !== null || distanciaLida === null) return null;
     const minutos = Number(limiteDeTempoMinutos);
     const aproveitamento = Number(aproveitamentoDesejadoPercentual);
-    const gradeLida = Object.fromEntries(tamanhosDaGrade.map((t) => [t, Math.max(0, Math.round(Number(grade[t] ?? 1)) || 0)]));
+    const lida = (g: Readonly<Record<string, string>>): Readonly<Record<string, number>> => Object.fromEntries(tamanhosDaGrade.map((t) => [t, Math.max(0, Math.round(Number(g[t] ?? 1)) || 0)]));
+    const gradeLida = lida(grade);
+    const gradesDoModelo = Object.fromEntries(Object.entries({ ...grades, [tecidoDoEncaixe]: grade }).map(([chave, g]) => [chave, lida(g)]));
     return {
       ...(limiteDeTempoMinutos.trim() !== '' && minutos > 0 ? { limiteDeTempoMinutos: minutos } : {}),
       ...(aproveitamentoDesejadoPercentual.trim() !== '' && aproveitamento > 0
@@ -81,6 +109,13 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(temSimetria ? { abrirSimetrias } : {}),
       distanciaEntreMoldesMm: distanciaLida,
       ...(metodo !== 'grade' ? { metodo } : {}),
+      ...(tecidoDoEncaixe !== '' ? { tecido: tecidoDoEncaixe } : {}),
+      ...(Object.keys(grades).length > 0 ? { gradesDoModelo } : {}),
+      ...(manterSelecionadas ? { manterSelecionadas } : {}),
+      ...(somenteNaMesa ? { somenteNaMesa } : {}),
+      ...(usarEspelhamento ? { usarEspelhamento } : {}),
+      ...(compactar ? { compactar } : {}),
+      ...(props.temDobra ? { dobraInferior } : {}),
     };
   }
 
@@ -162,6 +197,47 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 O cálculo para assim que atingir o aproveitamento desejado, mesmo que ainda haja peças por
                 posicionar.
               </p>
+              {tecidos.length > 1 && (
+                <label>
+                  Gerar encaixe para
+                  <select value={tecidoDoEncaixe} onChange={(e) => setTecidoDoEncaixe(e.target.value)}>
+                    <option value="">Todos os tecidos, juntos</option>
+                    <option value={TODOS_EM_TRECHOS}>Todos os tecidos, um trecho para cada</option>
+                    {tecidos.map((t) => (
+                      <option key={t} value={t}>
+                        Só {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {(props.quantasSelecionadas ?? 0) > 0 && (
+                <label className="opcao-em-linha" title="Manter peças encaixadas: as selecionadas ficam onde estão, e as outras se encaixam em volta">
+                  <input type="checkbox" checked={manterSelecionadas} onChange={(e) => setManterSelecionadas(e.target.checked)} />
+                  Manter no lugar as {props.quantasSelecionadas} peças selecionadas
+                </label>
+              )}
+              <label className="opcao-em-linha" title="As peças que estão depois do fim da mesa ficam fora deste encaixe">
+                <input type="checkbox" checked={somenteNaMesa} onChange={(e) => setSomenteNaMesa(e.target.checked)} />
+                Usar somente as peças que estão na mesa
+              </label>
+              <label className="opcao-em-linha" title="Todas as peças podem sair espelhadas neste encaixe">
+                <input type="checkbox" checked={usarEspelhamento} onChange={(e) => setUsarEspelhamento(e.target.checked)} />
+                Usar espelhamento de peças
+              </label>
+              <label className="opcao-em-linha" title="No fim, as peças andam para o começo da mesa até encostar">
+                <input type="checkbox" checked={compactar} onChange={(e) => setCompactar(e.target.checked)} />
+                Compactar
+              </label>
+              {props.temDobra && (
+                <label>
+                  Dobra do tecido
+                  <select value={dobraInferior ? 'inferior' : 'superior'} onChange={(e) => setDobraInferior(e.target.value === 'inferior')}>
+                    <option value="superior">Superior</option>
+                    <option value="inferior">Inferior</option>
+                  </select>
+                </label>
+              )}
               {temSimetria && (
                 <>
                   <label className="opcao-em-linha">
@@ -203,7 +279,12 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                           />
                         </label>
                       ))}
-                      <p className="nota-do-formulario">Quantas vezes cada tamanho entra no risco; zero tira o tamanho. Vale para todas as peças do modelo.</p>
+                      <p className="nota-do-formulario">Quantas vezes cada tamanho entra no risco; zero tira o tamanho.</p>
+                      {tecidos.length > 1 && (
+                        <button type="button" onClick={() => setGrades(Object.fromEntries(['', TODOS_EM_TRECHOS, ...tecidos].map((c) => [c, grade])))}>
+                          Aplicar para modelo
+                        </button>
+                      )}
                     </fieldset>
                   )}
                 </>

@@ -78,6 +78,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirTecido: () => void;
   readonly onAbrirEnfesto: () => void;
   readonly onSugerirPosicao: () => void;
+  /** "Compactar": diminui o comprimento do encaixe (ADR 0195). */
+  readonly onCompactar?: () => void;
   readonly podeSugerirPosicao: boolean;
   readonly onNestingAutomatico: () => void;
   /** Encaixe > Fila de encaixes: os encaixes calculados em segundo plano, um de cada vez (ADR 0102). */
@@ -2405,6 +2407,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <button onClick={props.onAlinharPecas} title="Alinhar peças: alinha ou distribui as peças selecionadas, no comprimento ou na largura">
                     <Icone nome="sugerir-posicao" />
                     <span>Alinhar peças</span>
+                  </button>
+                )}
+                {props.onCompactar && (
+                  <button onClick={props.onCompactar} title="Compactar: as peças andam para o começo da mesa até encostar, e o encaixe fica mais curto">
+                    <Icone nome="sugerir-posicao" />
+                    <span>Compactar</span>
                   </button>
                 )}
                 <button

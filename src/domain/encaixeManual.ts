@@ -1,8 +1,9 @@
 import { retanguloEnvolvente, transladarContorno, type Ponto2D } from '../core/geometria';
 import { arestaDeSimetria } from './anotacoes';
-import { areaUtilDaMesa, dobraDoEnfesto, type ConfiguracaoDeEnfesto, type DobraDoTecido } from './enfesto';
+import { areaUtilDaMesa, contornoDaZona, dobraDoEnfesto, enfestoComEmendas, type ConfiguracaoDeEnfesto, type DobraDoTecido } from './enfesto';
 import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, transladarMolde, type Molde } from './molde';
-import { naPosicaoDaDobra } from './pecasNaDobra';
+import type { ResultadoDeNesting } from './nesting';
+import { comContasRefeitas, juntarDobra, naPosicaoDaDobra, type DobraPreparada } from './pecasNaDobra';
 import { caixaDe, FOLGA_DO_ENCOSTO_MM, lugarLivre } from './posicionamento';
 
 /**
@@ -101,7 +102,7 @@ export function moverAteEncostar(peca: Molde, outras: readonly Molde[], enfesto:
   const ate = { direita: util.maxY - caixa.maxY, esquerda: caixa.minY - util.minY, baixo: util.maxX - caixa.maxX, cima: caixa.minX - util.minX }[direcao];
   if (ate <= 0) return { x: 0, y: 0 };
   const v = VETOR_DA_DIRECAO[direcao];
-  const existentes = outras.map(linhaDeCorteDaPeca);
+  const existentes = [...outras.map(linhaDeCorteDaPeca), ...(enfesto.zonasBloqueadas ?? []).map(contornoDaZona)];
   const caixas = existentes.map(caixaDe);
   const livre = (d: number): boolean =>
     lugarLivre(transladarContorno(corte, { x: v.x * d, y: v.y * d }), existentes, caixas, enfesto.distanciaMinimaEntrePecasMm, FOLGA_DO_ENCOSTO_MM);
@@ -121,6 +122,45 @@ export function moverAteEncostar(peca: Molde, outras: readonly Molde[], enfesto:
     if (alvo === ate) break;
   }
   return { x: v.x * bom + 0, y: v.y * bom + 0 };
+}
+
+/**
+ * "Compactar" (ADR 0195): cada peça, do começo do comprimento para o fim, anda para trás e para cima até encostar, e
+ * isso se repete enquanto alguma andar. Com grupos, não mexe: os trechos da mesa não podem misturar.
+ */
+export function compactarEncaixe(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): readonly Molde[] {
+  if (pecas.some((p) => p.grupoDoEncaixe)) return pecas;
+  const comEmendas = enfestoComEmendas(enfesto);
+  const atual = [...pecas];
+  const ordem = atual.map((_, i) => i).sort((a, b) => retanguloEnvolvente(linhaDeCorteDaPeca(atual[a]!)).minY - retanguloEnvolvente(linhaDeCorteDaPeca(atual[b]!)).minY);
+  for (let volta = 0; volta < VOLTAS_DA_COMPACTACAO; volta++) {
+    let andou = false;
+    for (const i of ordem) {
+      for (const direcao of ['esquerda', 'cima'] as const) {
+        const peca = atual[i]!;
+        const d = moverAteEncostar(peca, atual.filter((_, k) => k !== i), comEmendas, direcao);
+        if (Math.hypot(d.x, d.y) > 0.5) {
+          atual[i] = transladarMolde(peca, d, peca.id);
+          andou = true;
+        }
+      }
+    }
+    if (!andou) break;
+  }
+  return atual;
+}
+
+const VOLTAS_DA_COMPACTACAO = 4;
+
+export function compactarResultado(resultado: ResultadoDeNesting, enfesto: ConfiguracaoDeEnfesto): ResultadoDeNesting {
+  const compactadas = compactarEncaixe(resultado.pecasColocadas.map((p) => p.molde), enfesto);
+  return comContasRefeitas(resultado, resultado.pecasColocadas.map((p, i) => ({ ...p, molde: compactadas[i]! })), enfesto);
+}
+
+/** O fim do encaixe automático: as peças da dobra de volta e, se pedido, a compactação. */
+export function fecharEncaixe(resultado: ResultadoDeNesting, dobra: DobraPreparada, enfesto: ConfiguracaoDeEnfesto): ResultadoDeNesting {
+  const junto = juntarDobra(resultado, dobra, enfesto);
+  return enfesto.compactar ? compactarResultado(junto, enfesto) : junto;
 }
 
 const AFASTAMENTO_FORA_DA_MESA_MM = 100;
@@ -149,16 +189,17 @@ export function voltarAoOriginal(peca: Molde): Molde {
 }
 
 /** A peça levada à dobra do tecido: a simetria na borda, sem a margem de segurança (ADR 0172). No resto, fica onde está. */
-export function pecaNaDobraDoTecido(peca: Molde, dobra: DobraDoTecido, enfesto: Pick<ConfiguracaoDeEnfesto, 'tipo'>, sentidoUnico = false): Molde {
+export function pecaNaDobraDoTecido(peca: Molde, dobra: DobraDoTecido, enfesto: Pick<ConfiguracaoDeEnfesto, 'tipo' | 'larguraUtilMm' | 'dobraInferior'>, sentidoUnico = false): Molde {
   if (dobraDoEnfesto(enfesto.tipo) !== dobra) {
     throw new Error(dobra === 'horizontal' ? 'A dobra horizontal só existe no enfesto par e no tubular.' : 'A dobra vertical só existe no enfesto em zigue-zague.');
   }
-  const orientada = naPosicaoDaDobra(peca, sentidoUnico, dobra);
+  const inferior = dobra === 'horizontal' && enfesto.dobraInferior === true;
+  const orientada = naPosicaoDaDobra(peca, sentidoUnico, dobra, inferior);
   if (!orientada) {
     throw new Error(arestaDeSimetria(peca) === null ? 'A peça não tem linha de simetria: marque-a antes de levar à dobra.' : 'As rotações permitidas desta peça não a deixam na dobra.');
   }
   const c = retanguloEnvolvente(linhaDeCorteDaPeca(orientada));
-  return transladarMolde(orientada, dobra === 'horizontal' ? { x: -c.minX, y: 0 } : { x: 0, y: -c.minY }, peca.id);
+  return transladarMolde(orientada, dobra === 'horizontal' ? { x: inferior ? enfesto.larguraUtilMm - c.maxX : -c.minX, y: 0 } : { x: 0, y: -c.minY }, peca.id);
 }
 
 /**
