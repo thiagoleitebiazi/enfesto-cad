@@ -11,6 +11,6 @@ O manual do encaixe da referência tem, em Moldes e no Tecido: "Fundir pique ao 
 - Opções › "Propriedades de encaixe": conjuntos com nome de giro, quantidade e tecido, para aplicar de uma vez.
 - "Encostar ao soltar": a peça arrastada segue no rumo do arrasto até a vizinha, no lugar do SNAP.
 
-**Limites:** a envolvente é a margem de cada peça, não em volta de um grupo, e não há a forma retangular. A margem por lado do contorno não foi feita. "Por pacote" divide as cópias de cada peça ao meio, sem saber quais peças formam cada pacote. "Substituir" (trocar um tamanho já encaixado por outro) não foi feito: depois de aplicado, o encaixe não guarda a graduação das peças; o caminho aqui é refazer com outra grade.
+**Limites:** a envolvente é a margem de cada peça, não em volta de um grupo, e não há a forma retangular. A margem por lado do contorno não foi feita. "Por pacote" divide as cópias de cada peça ao meio, sem saber quais peças formam cada pacote. "Substituir" entrou depois, no ADR 0206.
 
 Conferência: testes unitários, `npx eslint` e `npx tsc -b --noEmit`. O programa não foi aberto (pedido do usuário: só testes unitários).

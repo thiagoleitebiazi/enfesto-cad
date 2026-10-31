@@ -136,7 +136,7 @@ import { regraDaTabela } from './ui/tabelaDaRegra';
 import { aplicarDialogoDoPique, dialogoDoPique, type GraduacaoDePiqueCopiada } from './ui/graduacaoDePiques';
 import { PainelDeRegras } from './ui/PainelDeRegras';
 import { definirRegra, pontoGraduadoEm, regraDoVertice } from './domain/graduacao';
-import { expandirComGrade, expandirTamanhos } from './domain/tamanhosGraduados';
+import { expandirComGrade, expandirTamanhos, substituirTamanho } from './domain/tamanhosGraduados';
 import {
   arredondarCanto,
   cotaDeRaioEm,
@@ -696,6 +696,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'substituir-tamanho' }
   | { readonly tipo: 'cores-da-area' }
   | { readonly tipo: 'propriedades-de-encaixe' }
   | { readonly tipo: 'exportar-dados' }
@@ -5590,6 +5591,10 @@ export default function App(): React.JSX.Element {
           carregarListaDeProjetos();
           setDialogoDeFerramenta({ tipo: 'unir-encaixes' });
         }}
+        onSubstituirTamanho={() => {
+          carregarListaDeProjetos();
+          setDialogoDeFerramenta({ tipo: 'substituir-tamanho' });
+        }}
         onColarVarios={() => {
           if (clipboard && clipboard.length > 0) setDialogoDeFerramenta({ tipo: 'colar-varios' });
           else avisar('Copie as peças primeiro (Ctrl+C).');
@@ -6697,6 +6702,36 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'cores-da-area' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'substituir-tamanho' && (
+        <DialogoDeCampos
+          titulo="Substituir tamanho"
+          campos={[
+            { tipo: 'texto', id: 'de', rotulo: 'Tamanho a trocar (em branco: as peças selecionadas)', inicial: '', opcional: true },
+            { tipo: 'texto', id: 'por', rotulo: 'Trocar pelo tamanho', inicial: '' },
+            {
+              tipo: 'escolha',
+              id: 'fonte',
+              rotulo: 'Projeto com as peças graduadas',
+              opcoes: [{ valor: projetoAtual.id, rotulo: 'Este projeto' }, ...projetos.filter((p) => p.id !== projetoAtual.id).map((p) => ({ valor: p.id, rotulo: `${p.nome} (${p.codigo})` }))],
+              inicial: projetoAtual.id,
+            },
+          ]}
+          nota="A peça nova vem da peça graduada de mesmo nome, e fica no mesmo lugar e no mesmo giro. Se ela for maior, a validação avisa da sobreposição."
+          rotuloDoBotao="Substituir"
+          onAplicar={(valores) => {
+            const de = String(valores['de'] ?? '').trim();
+            const ids = de !== '' ? new Set(pecas.filter((p) => p.tamanho === de).map((p) => p.id)) : idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+            if (ids.size === 0) return 'Nenhuma peça para trocar: selecione uma, ou diga o tamanho.';
+            const fonte = valores['fonte'] === projetoAtual.id ? pecas : (projetos.find((p) => p.id === valores['fonte'])?.estadoAtual.pecas ?? []);
+            const r = substituirTamanho(pecas, ids, fonte, String(valores['por']).trim());
+            if (r.trocadas === 0) return `Não há peça graduada nesse tamanho para: ${r.semFonte.join(', ')}.`;
+            aplicarMudanca([...r.pecas]);
+            if (r.semFonte.length > 0) avisar(`Ficaram como estavam: ${r.semFonte.join(', ')}.`);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'substituir-tamanho' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (

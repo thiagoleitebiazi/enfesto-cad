@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, type Pique, curvaLevada, penceLevada } from './molde';
+import { rotacionarMolde, cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, type Pique, curvaLevada, penceLevada } from './molde';
 import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
@@ -231,6 +231,33 @@ export function moldeDoTamanho(molde: Molde, tamanho: number, novoId: string): M
  * graduada vira uma peça comum por tamanho (a do base continua sendo ela, com
  * o mesmo id), na ordem dos tamanhos; as outras ficam como estão.
  */
+/**
+ * "Substituir" (ADR 0206): as peças indicadas do encaixe trocam de tamanho, no mesmo lugar e no mesmo giro. O encaixe
+ * aplicado não guarda a graduação, então a peça nova vem de uma peça graduada de mesmo nome, no projeto de moldes.
+ */
+export function substituirTamanho(pecas: readonly Molde[], ids: ReadonlySet<string>, fonte: readonly Molde[], novoTamanho: string): { readonly pecas: readonly Molde[]; readonly trocadas: number; readonly semFonte: readonly string[] } {
+  let trocadas = 0;
+  const semFonte = new Set<string>();
+  const novas = pecas.map((peca) => {
+    if (!ids.has(peca.id)) return peca;
+    const origem = fonte.find((p) => p.nome === peca.nome && p.graduacao?.tamanhos.includes(novoTamanho));
+    const g = origem?.graduacao;
+    if (!origem || !g) {
+      semFonte.add(peca.nome);
+      return peca;
+    }
+    const t = g.tamanhos.indexOf(novoTamanho);
+    const nova = t === g.base ? semGraduacao(origem) : moldeDoTamanho(origem, t, peca.id);
+    const giro = peca.anguloDeRotacaoGraus - nova.anguloDeRotacaoGraus;
+    const girada = giro === 0 ? nova : rotacionarMolde(nova, giro);
+    const a = retanguloEnvolvente(peca.contorno);
+    const b = retanguloEnvolvente(girada.contorno);
+    trocadas++;
+    return { ...transladarMolde(girada, { x: (a.minX + a.maxX - b.minX - b.maxX) / 2, y: (a.minY + a.maxY - b.minY - b.maxY) / 2 }, peca.id), tamanho: novoTamanho, quantidade: peca.quantidade };
+  });
+  return { pecas: novas, trocadas, semFonte: [...semFonte] };
+}
+
 /** "Grade de corte" (ADR 0186): cada tamanho entra quantas vezes a grade diz; zero tira, e o que não está nela entra uma vez. */
 export function expandirComGrade(pecas: readonly Molde[], novoId: () => string, grade: Readonly<Record<string, number>>): Molde[] {
   return pecas.flatMap((peca) => {

@@ -332,8 +332,9 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Molde, tamanho e todos na mesa ou fora; encaixa ao clicar; usar; verifica ao plotar; padrões do novo encaixe | ✅ ADR 0200 |
 | Informações do arquivo; unir; SVG no lugar do metafile; XML; importar ISO; colar vários; colar incrementar grade; plotar com fatores, espelho e limites; imprimir ajustado | ✅ ADR 0201 |
 | Fundir pique; margem por peça; usar distância; sentido por tamanho e por pacote; quantidade por tamanho; tamanho do texto; propriedades de encaixe; SNAP | ✅ ADR 0202 |
-| Envolvente de grupo; margem por lado; retangular; Substituir tamanho no encaixe | ⬜ não feito: ver ADR 0202 |
+| Envolvente de grupo; margem por lado; retangular | ⬜ não feito: ver ADR 0202 |
 | Captura em lote; rastreabilidade; previsão de compra; catálogo; modelo virtual; recorte para a loja; miniatura; esquemas de cores próprios | ✅ ADR 0203 |
 | Cores dos pacotes; manual e novidades; sugestão do método de enfesto | ✅ ADR 0204 |
 | Réguas e barra de status; ordem crescente dos tamanhos | ✅ ADR 0205 |
-| .aoc; DMPL; Substituir; blocos na vertical; envolvente de grupo; TrueType; níveis Mutoh; cascata; teclado virtual | ⬜ não feito: motivo de cada um no ADR 0205 |
+| Substituir tamanho no encaixe | ✅ ADR 0206 |
+| .aoc; DMPL; blocos na vertical; envolvente de grupo; TrueType; níveis Mutoh; cascata; teclado virtual | ⬜ não feito: motivo de cada um no ADR 0205 |
