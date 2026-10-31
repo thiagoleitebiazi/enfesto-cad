@@ -17,6 +17,7 @@ export type CampoDoDialogo =
       readonly opcional?: boolean;
     }
   | { readonly tipo: 'caixa'; readonly id: string; readonly rotulo: string; readonly inicial: boolean }
+  | { readonly tipo: 'cor'; readonly id: string; readonly rotulo: string; readonly inicial: string }
   | {
       readonly tipo: 'escolha';
       readonly id: string;
@@ -67,7 +68,7 @@ export function DialogoDeCampos(props: DialogoDeCamposProps): React.JSX.Element 
       const bruto = valores[campo.id];
       if (campo.tipo === 'caixa') {
         lidos[campo.id] = bruto === true;
-      } else if (campo.tipo === 'escolha') {
+      } else if (campo.tipo === 'escolha' || campo.tipo === 'cor') {
         lidos[campo.id] = String(bruto);
       } else if (campo.opcional && String(bruto).trim() === '') {
         continue;
@@ -117,6 +118,14 @@ export function DialogoDeCampos(props: DialogoDeCamposProps): React.JSX.Element 
             return (
               <label key={campo.id} className="opcao-em-linha">
                 <input type="checkbox" checked={valores[campo.id] === true} onChange={(e) => mudar(campo.id, e.target.checked)} />
+                {campo.rotulo}
+              </label>
+            );
+          }
+          if (campo.tipo === 'cor') {
+            return (
+              <label key={campo.id} className="opcao-em-linha">
+                <input type="color" value={String(valores[campo.id])} onChange={(e) => mudar(campo.id, e.target.value)} />
                 {campo.rotulo}
               </label>
             );

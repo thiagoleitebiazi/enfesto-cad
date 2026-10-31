@@ -292,3 +292,7 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Teclas do encaixe (F2 a F8, F12, Ctrl+F, Ctrl+setas, Alt+clique) | ✅ ADR 0180 |
 | Giro livre, giro inicial, refletido horizontal e vertical | ✅ ADR 0180 |
 | Dobra vertical; ½ camada; sobreposição de moldes | ✅ ADR 0180 |
+| Modificar: Discreto, Proporcional, linha auxiliar | ✅ ADR 0181 (o como é leitura minha) |
+| Zoom de um elemento; ponto não graduado | ✅ ADR 0181 |
+| Medida do pique padrão; estilo da linha de costura; cor por tamanho | ✅ ADR 0182 |
+| Converter primitivas em linhas auxiliares | ✅ já existia em duas etapas: "Extrair molde" e depois "Inserir ou remover" das linhas auxiliares |

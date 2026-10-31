@@ -1,3 +1,5 @@
+import type { FormatoDePique } from '../domain/molde';
+import { PIQUE_PADRAO } from '../domain/piques';
 /**
  * As preferências deste computador (ADR 0175 a 0177): as teclas de atalho, o perfil (salvar, carregar, restaurar) e o
  * esquema de cores. Tudo fica no armazenamento do navegador, nas chaves que começam por `enfesto-cad:`.
@@ -50,6 +52,65 @@ export function combinacaoDaTecla(e: { readonly key: string; readonly ctrlKey: b
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !funcao) return null;
   const tecla = e.key.length === 1 ? e.key.toUpperCase() : e.key;
   return [e.ctrlKey || e.metaKey ? 'Ctrl' : null, e.altKey ? 'Alt' : null, e.shiftKey ? 'Shift' : null, tecla].filter((p) => p !== null).join('+');
+}
+
+// ---- O pique padrão, o estilo da costura e as cores dos tamanhos (ADR 0182).
+
+const CHAVE_DO_PIQUE = `${PREFIXO}pique-padrao`;
+
+export function piquePadraoGuardado(a: Pick<Armazenamento, 'getItem'>): FormatoDePique {
+  try {
+    const v = JSON.parse(a.getItem(CHAVE_DO_PIQUE) ?? 'null') as Partial<FormatoDePique> | null;
+    const numero = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+    if (v && numero(v.larguraMm) && numero(v.alturaMm) && numero(v.anguloGraus)) return { ...PIQUE_PADRAO, larguraMm: v.larguraMm, alturaMm: v.alturaMm, anguloGraus: v.anguloGraus };
+  } catch {
+    // Valor estragado: fica o padrão do programa.
+  }
+  return PIQUE_PADRAO;
+}
+
+export function guardarPiquePadrao(a: Pick<Armazenamento, 'setItem'>, pique: Pick<FormatoDePique, 'larguraMm' | 'alturaMm' | 'anguloGraus'>): void {
+  a.setItem(CHAVE_DO_PIQUE, JSON.stringify({ larguraMm: pique.larguraMm, alturaMm: pique.alturaMm, anguloGraus: pique.anguloGraus }));
+}
+
+export type EstiloDaCostura = 'tracejada' | 'pontilhada' | 'continua';
+
+export const ROTULO_DO_ESTILO_DA_COSTURA: Readonly<Record<EstiloDaCostura, string>> = { tracejada: 'Costura tracejada', pontilhada: 'Costura pontilhada', continua: 'Costura contínua' };
+
+/** Os traços da linha na tela (px). */
+export const TRACOS_DA_COSTURA: Readonly<Record<EstiloDaCostura, readonly number[]>> = { tracejada: [5, 4], pontilhada: [1, 3], continua: [] };
+
+const CHAVE_DA_COSTURA = `${PREFIXO}estilo-da-costura`;
+
+export function estiloDaCosturaGuardado(a: Pick<Armazenamento, 'getItem'>): EstiloDaCostura {
+  const v = a.getItem(CHAVE_DA_COSTURA);
+  return v !== null && v in ROTULO_DO_ESTILO_DA_COSTURA ? (v as EstiloDaCostura) : 'tracejada';
+}
+
+export function guardarEstiloDaCostura(a: Pick<Armazenamento, 'setItem'>, estilo: EstiloDaCostura): void {
+  a.setItem(CHAVE_DA_COSTURA, estilo);
+}
+
+const CORES_PADRAO_DOS_TAMANHOS = ['#d9480f', '#2b8a3e', '#1971c2', '#9c36b5', '#e67700', '#0b7285', '#c2255c'] as const;
+const CHAVE_DAS_CORES = `${PREFIXO}cores-dos-tamanhos`;
+
+/** A cor do tamanho na área de trabalho: a escolhida para esse nome, ou a da paleta, pela posição dele. */
+export function corDoTamanho(nome: string, indice: number, escolhidas: Readonly<Record<string, string>>): string {
+  return escolhidas[nome] ?? CORES_PADRAO_DOS_TAMANHOS[indice % CORES_PADRAO_DOS_TAMANHOS.length]!;
+}
+
+export function coresDosTamanhosGuardadas(a: Pick<Armazenamento, 'getItem'>): Readonly<Record<string, string>> {
+  try {
+    const v = JSON.parse(a.getItem(CHAVE_DAS_CORES) ?? 'null') as unknown;
+    if (typeof v === 'object' && v !== null) return Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string' && /^#[0-9a-f]{6}$/i.test(e[1])));
+  } catch {
+    // Valor estragado: fica a paleta.
+  }
+  return {};
+}
+
+export function guardarCoresDosTamanhos(a: Pick<Armazenamento, 'setItem'>, cores: Readonly<Record<string, string>>): void {
+  a.setItem(CHAVE_DAS_CORES, JSON.stringify(cores));
 }
 
 // ---- O esquema de cores (ADR 0177).

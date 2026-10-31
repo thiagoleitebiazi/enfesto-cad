@@ -13,7 +13,8 @@ import {
   type Cota,
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
-import { contornosDosTamanhos } from '../domain/graduacao';
+import { contornosDosTamanhos, pontosNaoGraduados } from '../domain/graduacao';
+import { corDoTamanho, TRACOS_DA_COSTURA, type EstiloDaCostura } from './preferencias';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { desenharLinhasInternas } from './desenhoDasLinhasInternas';
 import { desenharPiquesDosTamanhos } from './desenhoDosTamanhos';
@@ -203,7 +204,10 @@ export type ModoDeDesenho =
  * do modo de desenho, sem trocá-lo: a Mão fica ligada até ser desligada (ou
  * Esc); o Zoom por janela vale para um retângulo e se desliga sozinho.
  */
-export type FerramentaDeVista = 'mao' | 'zoom-janela';
+export type FerramentaDeVista = 'mao' | 'zoom-janela' | 'zoom-elemento';
+
+const COR_PONTO_NAO_GRADUADO = '#c92a2a';
+const SEM_CORES_ESCOLHIDAS: Readonly<Record<string, string>> = {};
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'mover-ponto',
@@ -377,6 +381,13 @@ interface AreaDeDesenhoProps {
   readonly onDefinirCerca?: (cerca: Cerca) => void;
   readonly ferramentaDeVista: FerramentaDeVista | null;
   readonly onZoomJanelaConcluido?: () => void;
+  /** "Zoom de um elemento": o clique, em mm do mundo (ADR 0181). */
+  readonly onZoomNoElemento?: (ponto: Ponto2D, raioMm: number) => void;
+  /** O traço da costura, e as cores dos tamanhos na área de trabalho (ADR 0182). */
+  readonly estiloDaCostura?: EstiloDaCostura;
+  readonly coresDosTamanhos?: Readonly<Record<string, string>>;
+  /** Marca os pontos sem graduação na peça selecionada (ADR 0181). */
+  readonly mostrarNaoGraduados?: boolean;
   /** Chamado antes de a vista mudar por mão, roda ou zoom por janela — para "Vista anterior". */
   readonly onGuardarVista?: () => void;
   readonly mostrarGrade: boolean;
@@ -471,6 +482,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onDefinirCerca,
     ferramentaDeVista,
     onZoomJanelaConcluido,
+    onZoomNoElemento,
+    estiloDaCostura = 'tracejada',
+    coresDosTamanhos = SEM_CORES_ESCOLHIDAS,
+    mostrarNaoGraduados = false,
     onGuardarVista,
     mostrarGrade,
     imaAtivo,
@@ -977,11 +992,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
       // Peça graduada: os outros tamanhos, em linha fina, em volta do base.
       if (peca.graduacao) {
-        const base = peca.graduacao.base;
-        ctx.strokeStyle = COR_TAMANHO_GRADUADO;
+        const { base, tamanhos } = peca.graduacao;
         ctx.lineWidth = 1;
         contornosDosTamanhos(peca.graduacao, peca.contorno).forEach((contorno, t) => {
           if (t === base) return;
+          ctx.strokeStyle = corDoTamanho(tamanhos[t]!, t, coresDosTamanhos);
           ctx.beginPath();
           traçarContorno(ctx, contorno, transform);
           ctx.stroke();
@@ -998,6 +1013,15 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.stroke();
       }
 
+      if (mostrarNaoGraduados && estaSelecionada) {
+        ctx.strokeStyle = COR_PONTO_NAO_GRADUADO;
+        ctx.lineWidth = 1.5;
+        for (const i of pontosNaoGraduados(peca)) {
+          const t = mundoParaTela(peca.contorno[i]!, transform);
+          ctx.strokeRect(t.x - 5, t.y - 5, 10, 10);
+        }
+      }
+
       // As linhas internas: as que fazem parte do molde, cheias; os elementos (só de construção), claros e pontilhados.
       desenharLinhasInternas(ctx, peca, transform, COR_CONTORNO);
 
@@ -1006,7 +1030,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         traçarContorno(ctx, contornoDeCorte(peca), transform);
         ctx.strokeStyle = COR_LINHA_DE_CORTE;
         ctx.lineWidth = 1;
-        ctx.setLineDash([5, 4]);
+        ctx.setLineDash([...TRACOS_DA_COSTURA[estiloDaCostura]]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -1636,6 +1660,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    estiloDaCostura,
+    coresDosTamanhos,
+    mostrarNaoGraduados,
     pecaSelecionada,
     arestaEmDestaque,
     rotularSegmento,
@@ -1765,6 +1792,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     }
     if (e.button !== 0) return;
     const tela = posicaoDoMouse(e);
+
+    if (ferramentaDeVista === 'zoom-elemento') {
+      onZoomNoElemento?.(telaParaMundo(tela, transform), 8 / transform.escalaPxPorMm);
+      return;
+    }
 
     if (ferramentaDeVista === 'zoom-janela') {
       const inicio = telaParaMundo(tela, transform);
@@ -2079,7 +2111,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     ? 'grabbing'
     : ferramentaDeVista === 'mao'
       ? 'grab'
-      : ferramentaDeVista === 'zoom-janela'
+      : ferramentaDeVista === 'zoom-janela' || ferramentaDeVista === 'zoom-elemento'
         ? 'zoom-in'
         : modo === 'selecionar'
           ? 'default'

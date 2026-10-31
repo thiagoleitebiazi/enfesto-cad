@@ -20,7 +20,7 @@ export type FerramentaDeAnotacao =
 import { Icone, type NomeDoIcone } from './Icone';
 import { MenuSuspenso } from './MenuSuspenso';
 import type { UnidadeDeRegua } from './transformacaoDeTela';
-import { combinacaoDaTecla, ROTULO_DO_ESQUEMA, TECLAS_DO_PROGRAMA, type EsquemaDeCores } from './preferencias';
+import { combinacaoDaTecla, ROTULO_DO_ESQUEMA, ROTULO_DO_ESTILO_DA_COSTURA, TECLAS_DO_PROGRAMA, type EsquemaDeCores, type EstiloDaCostura } from './preferencias';
 
 interface BarraDeFerramentasProps {
   readonly modo: ModoDeDesenho;
@@ -125,6 +125,15 @@ interface BarraDeFerramentasProps {
   /** A sobreposição de moldes (F12, ADR 0180). */
   readonly sobreposicaoDeMoldes?: boolean;
   readonly onAlternarSobreposicao?: () => void;
+  /** O zoom de um elemento e os pontos não graduados (ADR 0181). */
+  readonly onZoomDeUmElemento?: () => void;
+  readonly mostrarNaoGraduados?: boolean;
+  readonly onAlternarNaoGraduados?: () => void;
+  /** O pique padrão, o estilo da costura e as cores dos tamanhos (ADR 0182). */
+  readonly onPiquePadrao?: () => void;
+  readonly estiloDaCostura?: EstiloDaCostura;
+  readonly onEstiloDaCostura?: (estilo: EstiloDaCostura) => void;
+  readonly onCoresDosTamanhos?: () => void;
   readonly lembrarOriginal?: boolean;
   readonly onLembrarOriginal?: () => void;
   readonly onOrganizarMoldes?: () => void;
@@ -537,6 +546,13 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     { tipo: 'acao' as const, rotulo: 'Próximo molde', titulo: 'Seleciona e enquadra a peça seguinte', onEscolher: () => props.onMoldeVizinho!(1) },
                     { tipo: 'opcao' as const, rotulo: 'Lembrar molde original', marcado: props.lembrarOriginal === true, titulo: 'Mostra tracejado o contorno salvo da peça selecionada', onEscolher: props.onLembrarOriginal ?? (() => {}) },
                     { tipo: 'acao' as const, rotulo: 'Organizar os moldes', titulo: 'Reorganiza todas as peças em colunas na largura da mesa (Ctrl+Z desfaz; tira as peças do encaixe)', onEscolher: props.onOrganizarMoldes ?? (() => {}) },
+                    ...(props.onZoomDeUmElemento
+                      ? [
+                          { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
+                          { tipo: 'opcao' as const, rotulo: 'Pontos não graduados', marcado: props.mostrarNaoGraduados === true, titulo: 'Marca, na peça selecionada, os cantos que não têm regra de graduação', onEscolher: props.onAlternarNaoGraduados ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Cores dos tamanhos…', titulo: 'A cor de cada tamanho na área de trabalho', onEscolher: props.onCoresDosTamanhos ?? (() => undefined) },
+                        ]
+                      : []),
                     ...(props.onAlternarSobreposicao
                       ? [{ tipo: 'opcao' as const, rotulo: 'Sobreposição de moldes', marcado: props.sobreposicaoDeMoldes !== false, titulo: 'Desligada, a peça solta em cima de outra vai para o lugar livre mais perto (F12)', onEscolher: props.onAlternarSobreposicao }]
                       : []),
@@ -594,6 +610,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               ...(props.onFerramentasDoPlotter
                 ? [
                     { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    ...(props.onPiquePadrao ? [{ tipo: 'acao' as const, rotulo: 'Pique padrão…', titulo: 'A largura, a altura e o ângulo com que os piques novos começam', onEscolher: props.onPiquePadrao }] : []),
+                    ...(props.onEstiloDaCostura
+                      ? (Object.keys(ROTULO_DO_ESTILO_DA_COSTURA) as EstiloDaCostura[]).map((e) => ({ tipo: 'opcao' as const, rotulo: ROTULO_DO_ESTILO_DA_COSTURA[e], marcado: (props.estiloDaCostura ?? 'tracejada') === e, onEscolher: () => props.onEstiloDaCostura?.(e) }))
+                      : []),
                     { tipo: 'separador' as const },
                     ...(Object.keys(ROTULO_DO_ESQUEMA) as EsquemaDeCores[]).map((e) => ({ tipo: 'opcao' as const, rotulo: ROTULO_DO_ESQUEMA[e], marcado: props.esquemaDeCores === e, onEscolher: () => props.onEsquemaDeCores?.(e) })),
                     { tipo: 'separador' as const },

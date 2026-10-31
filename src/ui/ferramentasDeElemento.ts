@@ -6,6 +6,8 @@ import {
   criarRetaPorAngulo,
   dividirLinha,
   elementoPerto,
+  moverPontoDaLinha,
+  pontoDeLinhaPerto,
   moverElemento,
   removerElemento,
   estenderAteElemento,
@@ -385,6 +387,9 @@ export function cliqueDeElemento(
         // O elemento anda o mesmo que o mouse andou do primeiro clique ao segundo.
         const delta = { x: clique.livre.x - primeiro.x, y: clique.livre.y - primeiro.y };
         if (Math.hypot(delta.x, delta.y) < 1e-6) return recusar('Clique onde o elemento deve ficar, ou tecle Delete para apagá-lo.');
+        // Em cima de um ponto da linha, anda só ele: é o "Modificar linha auxiliar" da referência (ADR 0181).
+        const pontoDaLinha = escolhido.tipo === 'linha' ? pontoDeLinhaPerto(peca, primeiro, raioMm) : null;
+        if (pontoDaLinha) return com(moverPontoDaLinha(peca, pontoDaLinha.linha, pontoDaLinha.ponto, delta), `Ponto da linha movido em “${peca.nome}”.`);
         return com(moverElemento(peca, escolhido, delta), `${escolhido.tipo === 'marca' ? 'Ponto movido' : 'Linha movida'} em “${peca.nome}”.`);
       }
       case 'dividir-linha': {

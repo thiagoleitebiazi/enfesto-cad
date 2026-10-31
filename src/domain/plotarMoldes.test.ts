@@ -1,3 +1,4 @@
+import { retanguloDoElemento } from './plotarMoldes';
 import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
 import { criarMolde } from './molde';
@@ -59,5 +60,24 @@ describe('o tamanho intermediário (ADR 0168)', () => {
     expect(contornoNoTamanho(comTamanhoIntermediario(graduada(), '46', '44'), '46')[1]!.x).toBeCloseTo(910);
     expect(() => comTamanhoIntermediario(graduada(), '44', '40')).toThrow(/Já há o tamanho/);
     expect(() => comTamanhoIntermediario(graduada(), '50', '48')).toThrow(/depois de/);
+  });
+});
+
+describe('o zoom de um elemento (ADR 0181)', () => {
+  const peca = {
+    ...criarMolde(
+      { nome: 'a', referencia: '', tamanho: 'M', quantidade: 1, contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 200), ponto(0, 200)], margemDeCosturaMm: 0, linhaDeFio: { inicio: ponto(50, 20), fim: ponto(50, 180) }, restricaoDeRotacao: { permite180: false, permite90e270: false } },
+      'a',
+    ),
+    linhasInternas: [[ponto(20, 50), ponto(20, 150)]],
+  };
+
+  it('em cima de uma linha, enquadra a linha, com folga para ela não ficar sem largura', () => {
+    expect(retanguloDoElemento([peca], ponto(21, 100), 5)).toMatchObject({ minX: 0, maxX: 40, minY: 30, maxY: 170 });
+  });
+
+  it('dentro da peça, enquadra a peça; fora de tudo, nada', () => {
+    expect(retanguloDoElemento([peca], ponto(70, 100), 5)).toMatchObject({ minX: 0, maxX: 100, minY: 0, maxY: 200 });
+    expect(retanguloDoElemento([peca], ponto(500, 500), 5)).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { moverPontoDaLinha, pontoDeLinhaPerto } from './elementos';
 import { describe, it, expect } from 'vitest';
 import { arcoPorTresPontos } from '../core/curvas';
 import { area, distancia, ponto, type Ponto2D } from '../core/geometria';
@@ -302,5 +303,18 @@ describe('todas as regiões da peça (ADR 0128)', () => {
   it('sem linhas que dividam (a linha que não chega à borda), nenhuma', () => {
     expect(regioesDaPeca(molde())).toEqual([]);
     expect(regioesDaPeca(molde({ linhasInternas: [[ponto(50, 50), ponto(50, 150)]] }))).toEqual([]);
+  });
+});
+
+describe('o ponto de uma linha auxiliar (ADR 0181)', () => {
+  const peca = { linhasInternas: [[{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }]] } as unknown as Parameters<typeof pontoDeLinhaPerto>[0];
+
+  it('acha o ponto mais perto, só dentro do raio', () => {
+    expect(pontoDeLinhaPerto(peca, { x: 11, y: 1 }, 3)).toEqual({ linha: 0, ponto: 1 });
+    expect(pontoDeLinhaPerto(peca, { x: 15, y: 0 }, 3)).toBeNull();
+  });
+
+  it('move só ele', () => {
+    expect(moverPontoDaLinha(peca, 0, 1, { x: 0, y: 5 }).linhasInternas[0]).toEqual([{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }]);
   });
 });

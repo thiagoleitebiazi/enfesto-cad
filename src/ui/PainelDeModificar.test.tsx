@@ -52,7 +52,7 @@ describe('PainelDeModificar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Modificar' }));
 
     // Eixos trocados na tela: horizontal = Y do mundo, vertical = X do mundo.
-    expect(aplicar).toHaveBeenCalledExactlyOnceWith({ x: -4, y: 12.5 });
+    expect(aplicar).toHaveBeenCalledExactlyOnceWith({ x: -4, y: 12.5 }, 'pontos', 30);
     expect(fechar).toHaveBeenCalledTimes(1);
   });
 
@@ -78,13 +78,12 @@ describe('PainelDeModificar', () => {
     expect(fechar).not.toHaveBeenCalled();
   });
 
-  it('Discreto e Proporcional aparecem desligados, dizendo por quê', () => {
+  it('Discreto e Proporcional ficam disponíveis, e o Discreto pede o alcance', () => {
     renderizar([1]);
 
-    for (const modo of [/Discreto/, /Proporcional/]) {
-      const opcao = screen.getByLabelText(modo);
-      expect(opcao).toBeDisabled();
-      expect(opcao.closest('label')).toHaveAttribute('title', expect.stringContaining('não foi confirmado'));
-    }
+    expect(screen.getByLabelText(/Proporcional/)).toBeEnabled();
+    expect(screen.queryByLabelText('Alcance (mm)')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Discreto/));
+    expect(screen.getByLabelText('Alcance (mm)')).toHaveValue('30');
   });
 });

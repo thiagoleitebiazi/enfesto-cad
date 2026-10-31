@@ -1,3 +1,5 @@
+import { PIQUE_PADRAO } from '../domain/piques';
+import { corDoTamanho, coresDosTamanhosGuardadas, estiloDaCosturaGuardado, guardarCoresDosTamanhos, guardarEstiloDaCostura, guardarPiquePadrao, piquePadraoGuardado, TRACOS_DA_COSTURA } from './preferencias';
 import { afterEach, describe, expect, it } from 'vitest';
 import { aplicarEsquema, aplicarPerfil, combinacaoDaTecla, esquemaGuardado, perfilAtual, restaurarPadroes } from './preferencias';
 
@@ -52,5 +54,45 @@ describe('o esquema de cores (ADR 0177)', () => {
     expect(esquemaGuardado(a)).toBe('escuro');
     a.setItem('enfesto-cad:esquema-de-cores', 'roxo');
     expect(esquemaGuardado(a)).toBe('padrao');
+  });
+});
+
+describe('o pique padrão, o estilo da costura e as cores dos tamanhos (ADR 0182)', () => {
+  const memoria = (): Pick<Storage, 'getItem' | 'setItem'> => {
+    const m = new Map<string, string>();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v) };
+  };
+
+  it('o pique padrão volta como foi guardado; sem nada ou estragado, é o do programa', () => {
+    const a = memoria();
+    expect(piquePadraoGuardado(a)).toBe(PIQUE_PADRAO);
+    guardarPiquePadrao(a, { larguraMm: 3, alturaMm: 8, anguloGraus: 15 });
+    expect(piquePadraoGuardado(a)).toEqual({ ...PIQUE_PADRAO, larguraMm: 3, alturaMm: 8, anguloGraus: 15 });
+    a.setItem('enfesto-cad:pique-padrao', '{quebrado');
+    expect(piquePadraoGuardado(a)).toBe(PIQUE_PADRAO);
+  });
+
+  it('o estilo da costura é lembrado, e cada um tem o seu traço', () => {
+    const a = memoria();
+    expect(estiloDaCosturaGuardado(a)).toBe('tracejada');
+    guardarEstiloDaCostura(a, 'continua');
+    expect(estiloDaCosturaGuardado(a)).toBe('continua');
+    expect(TRACOS_DA_COSTURA.continua).toEqual([]);
+    a.setItem('enfesto-cad:estilo-da-costura', 'outra');
+    expect(estiloDaCosturaGuardado(a)).toBe('tracejada');
+  });
+
+  it('a cor escolhida vale; sem ela, cada posição tem a sua da paleta', () => {
+    expect(corDoTamanho('M', 0, { M: '#123456' })).toBe('#123456');
+    expect(corDoTamanho('P', 0, {})).not.toBe(corDoTamanho('G', 1, {}));
+    expect(corDoTamanho('P', 0, {})).toBe(corDoTamanho('Z', 7, {}));
+  });
+
+  it('as cores lembradas descartam o que não é cor', () => {
+    const a = memoria();
+    guardarCoresDosTamanhos(a, { P: '#112233' });
+    expect(coresDosTamanhosGuardadas(a)).toEqual({ P: '#112233' });
+    a.setItem('enfesto-cad:cores-dos-tamanhos', JSON.stringify({ P: '#112233', G: 'url(x)' }));
+    expect(coresDosTamanhosGuardadas(a)).toEqual({ P: '#112233' });
   });
 });

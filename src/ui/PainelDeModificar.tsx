@@ -1,3 +1,4 @@
+import { ALCANCE_DO_DISCRETO_MM, type ModoDeModificar } from '../domain/modificarElemento';
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { lerMedida } from './medidas';
@@ -8,13 +9,12 @@ interface PainelDeModificarProps {
   readonly peca: Molde;
   /** Vértices do contorno indicados no desenho (índices a partir de 0). */
   readonly indices: readonly number[];
-  /** Aplica o deslocamento; devolve a mensagem de erro, ou `null` se deu certo. */
-  readonly onAplicar: (delta: Ponto2D) => string | null;
+  /** Aplica o deslocamento no modo escolhido; devolve a mensagem de erro, ou `null` se deu certo. */
+  readonly onAplicar: (delta: Ponto2D, modo: ModoDeModificar, alcanceMm: number) => string | null;
   readonly onFechar: () => void;
 }
 
 const MAXIMO_DE_NUMEROS = 10;
-const NAO_CONFIRMADO = 'Ainda não disponível: o comportamento exato deste modo ainda não foi confirmado.';
 
 /** "3", "1 e 4", "1, 2 e 5" — os números que o desenho mostra (a partir de 1); depois de 10, "e mais N". */
 function listarPontos(indices: readonly number[]): string {
@@ -27,16 +27,17 @@ function listarPontos(indices: readonly number[]): string {
 
 /**
  * "Modificar" com medida exata (a janela de coordenadas da ferramenta):
- * desloca os pontos do contorno indicados no desenho. Só eles andam — os
- * vizinhos ficam no lugar, como no arrasto. Horizontal e vertical são os da
- * tela, como em "Mover cerca". Os modos que também mexem nos pontos próximos
- * (Discreto, Proporcional) aparecem desligados: o comportamento deles não
- * foi confirmado.
+ * desloca os pontos do contorno indicados no desenho. No primeiro modo só
+ * eles andam, como no arrasto; Discreto e Proporcional levam os vizinhos junto
+ * (ver `domain/modificarElemento`). Horizontal e vertical são os da tela, como
+ * em "Mover cerca".
  */
 export function PainelDeModificar(props: PainelDeModificarProps): React.JSX.Element {
   const [horizontal, setHorizontal] = useState('0');
   const [vertical, setVertical] = useState('0');
   const [erro, setErro] = useState<string | null>(null);
+  const [modo, setModo] = useState<ModoDeModificar>('pontos');
+  const [alcance, setAlcance] = useState(String(ALCANCE_DO_DISCRETO_MM));
   const umPonto = props.indices.length === 1;
 
   function aplicar(): void {
@@ -50,9 +51,14 @@ export function PainelDeModificar(props: PainelDeModificarProps): React.JSX.Elem
       setErro('Informe um deslocamento diferente de zero.');
       return;
     }
+    const alcanceMm = modo === 'discreto' ? lerMedida(alcance) : ALCANCE_DO_DISCRETO_MM;
+    if (alcanceMm === null || !(alcanceMm > 0)) {
+      setErro('O alcance precisa ser um número maior que zero, em mm.');
+      return;
+    }
     // Eixos trocados na tela (ver ui/transformacaoDeTela.ts): a horizontal é o
     // Y do mundo (comprimento) e a vertical é o X (largura).
-    const mensagem = props.onAplicar({ x: dv, y: dh });
+    const mensagem = props.onAplicar({ x: dv, y: dh }, modo, alcanceMm);
     if (mensagem) {
       setErro(mensagem);
       return;
@@ -79,20 +85,36 @@ export function PainelDeModificar(props: PainelDeModificarProps): React.JSX.Elem
         <fieldset className="grupo-de-opcoes-do-formulario">
           <legend>Modo</legend>
           <label className="opcao-em-linha">
-            <input type="radio" name="modo-de-modificar" defaultChecked />
+            <input type="radio" name="modo-de-modificar" checked={modo === 'pontos'} onChange={() => setModo('pontos')} />
             {umPonto ? '1 ponto: só ele anda' : `N pontos: só os ${props.indices.length} indicados andam`}
           </label>
-          <label className="opcao-em-linha opcao-indisponivel" title={NAO_CONFIRMADO}>
-            <input type="radio" name="modo-de-modificar" disabled />
+          <label className="opcao-em-linha">
+            <input type="radio" name="modo-de-modificar" checked={modo === 'discreto'} onChange={() => setModo('discreto')} />
             Discreto: leva junto os pontos próximos
           </label>
-          <label className="opcao-em-linha opcao-indisponivel" title={NAO_CONFIRMADO}>
-            <input type="radio" name="modo-de-modificar" disabled />
+          {modo === 'discreto' && (
+            <label className="opcao-em-linha">
+              Alcance (mm)
+              <input
+                type="text"
+                inputMode="decimal"
+                className="campo-curto"
+                value={alcance}
+                onChange={(e) => {
+                  setAlcance(e.target.value);
+                  setErro(null);
+                }}
+              />
+            </label>
+          )}
+          <label className="opcao-em-linha">
+            <input type="radio" name="modo-de-modificar" checked={modo === 'proporcional'} onChange={() => setModo('proporcional')} />
             Proporcional: move em conjunto, mantendo a proporção
           </label>
           <p className="nota-do-formulario">
-            Os vizinhos ficam no lugar e as arestas até eles esticam ou encolhem; os piques acompanham a aresta em que
-            estão. Discreto e Proporcional ainda não estão disponíveis: o comportamento exato deles não foi confirmado.
+            {modo === 'pontos' && 'Os vizinhos ficam no lugar e as arestas até eles esticam ou encolhem; os piques acompanham a aresta em que estão.'}
+            {modo === 'discreto' && 'Os pontos dentro do alcance, medido sobre o contorno, andam cada vez menos.'}
+            {modo === 'proporcional' && 'O trecho até os dois cantos vizinhos acompanha, e os cantos ficam no lugar: a curva estica sem mudar de jeito.'}
           </p>
         </fieldset>
 

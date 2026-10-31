@@ -118,6 +118,13 @@ function verticeEm(contorno: Contorno, posicao: Ponto2D): number {
 }
 
 /** Para cada ponto do contorno que é graduado, o ponto graduado dele. */
+/** "Ponto não graduado" (ADR 0181): os cantos da peça graduada sem regra, ou com a regra toda em zero. */
+export function pontosNaoGraduados(molde: { readonly contorno: Contorno; readonly graduacao?: Graduacao }): number[] {
+  if (!molde.graduacao) return [];
+  const regras = graduadosPorVertice(molde.graduacao, molde.contorno);
+  return cantosDoContorno(molde.contorno).filter((i) => !regras.get(i)?.deslocamentos.some((d) => d.x !== 0 || d.y !== 0));
+}
+
 function graduadosPorVertice(graduacao: Graduacao, contorno: Contorno): Map<number, PontoGraduado> {
   const mapa = new Map<number, PontoGraduado>();
   for (const ponto of graduacao.pontos) {

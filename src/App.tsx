@@ -332,7 +332,6 @@ import {
   rotacoesPermitidas,
   espelharMolde,
   moverVariosPontosDoMolde,
-  modificarPontosDoMolde,
   redefinirComprimentoDaAresta,
   inserirPontoNoMolde,
   removerPontoDoMolde,
@@ -365,7 +364,9 @@ import { cabecalhoDoRisco, gerarPlt, ROTULO_DO_ELEMENTO, type ElementoDoPlotter,
 import { pecasDoPlt } from './formats/plt-importacao';
 import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarDxfAstm } from './formats/dxf-astm';
-import { moldesParaPlotar, moldeVizinho, organizarPecas } from './domain/plotarMoldes';
+import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
+import { modificarComModo, type ModoDeModificar } from './domain/modificarElemento';
+import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
   comMeiaCamada,
@@ -380,6 +381,16 @@ import {
 import { comTamanhoIntermediario } from './domain/tamanhoIntermediario';
 import { comTamanhoSobMedida, posicaoDasMedidas } from './domain/sobMedida';
 import { aplicarEsquema, aplicarPerfil, esquemaGuardado, perfilAtual, restaurarPadroes, type EsquemaDeCores } from './ui/preferencias';
+import {
+  corDoTamanho,
+  coresDosTamanhosGuardadas,
+  estiloDaCosturaGuardado,
+  guardarCoresDosTamanhos,
+  guardarEstiloDaCostura,
+  guardarPiquePadrao,
+  piquePadraoGuardado,
+  type EstiloDaCostura,
+} from './ui/preferencias';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
 import { PainelDaMesaDigitalizadora } from './ui/PainelDaMesaDigitalizadora';
@@ -590,6 +601,8 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'plotar-moldes' }
   | { readonly tipo: 'ferramentas-do-plotter' }
   | { readonly tipo: 'sob-medida' }
+  | { readonly tipo: 'cores-dos-tamanhos' }
+  | { readonly tipo: 'pique-padrao' }
   | { readonly tipo: 'tamanho-intermediario' }
   | { readonly tipo: 'exportar-projeto' }
   | { readonly tipo: 'senha-do-projeto'; readonly conteudo: string }
@@ -663,6 +676,21 @@ export default function App(): React.JSX.Element {
   const [vistasSeguintes, setVistasSeguintes] = useState<readonly TransformacaoDeTela[]>([]);
   const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
+  const [mostrarNaoGraduados, setMostrarNaoGraduados] = useState(false);
+  const [estiloDaCostura, setEstiloDaCostura] = useState<EstiloDaCostura>(() => {
+    try {
+      return estiloDaCosturaGuardado(window.localStorage);
+    } catch {
+      return 'tracejada';
+    }
+  });
+  const [coresDosTamanhos, setCoresDosTamanhos] = useState<Readonly<Record<string, string>>>(() => {
+    try {
+      return coresDosTamanhosGuardadas(window.localStorage);
+    } catch {
+      return {};
+    }
+  });
   const [mostrarGrade, setMostrarGrade] = useState(false);
   const [imaAtivo, setImaAtivo] = useState(false);
   const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
@@ -774,7 +802,14 @@ export default function App(): React.JSX.Element {
   // Graduação: as opções dos diálogos, o cadastro de regras deste computador, a
   // regra escolhida em "Regras" e a regra guardada pelo "Copiar" da tabela.
   const [opcoesDaGraduacao, setOpcoesDaGraduacao] = useState<OpcoesDaGraduacao>(OPCOES_INICIAIS_DA_GRADUACAO);
-  const [opcoesDeMarcacao, setOpcoesDeMarcacao] = useState<OpcoesDeMarcacao>(OPCOES_INICIAIS_DE_MARCACAO);
+  const [opcoesDeMarcacao, setOpcoesDeMarcacao] = useState<OpcoesDeMarcacao>(() => {
+    try {
+      const formato = piquePadraoGuardado(window.localStorage);
+      return { ...OPCOES_INICIAIS_DE_MARCACAO, inserir: { ...OPCOES_INICIAIS_DE_MARCACAO.inserir, formato }, multiplos: { ...OPCOES_INICIAIS_DE_MARCACAO.multiplos, formato } };
+    } catch {
+      return OPCOES_INICIAIS_DE_MARCACAO;
+    }
+  });
   const [regrasDoUsuario, setRegrasDoUsuario] = useState<readonly RegraCadastrada[]>(() =>
     lerRegrasCadastradas(window.localStorage),
   );
@@ -2799,11 +2834,11 @@ export default function App(): React.JSX.Element {
 
   /** "Modificar" com medida exata nos vértices indicados; devolve a mensagem de erro (nada muda) ou `null`. */
   const aplicarModificar = useCallback(
-    (indices: readonly number[], delta: Ponto2D): string | null => {
+    (indices: readonly number[], delta: Ponto2D, modoDeModificar: ModoDeModificar, alcanceMm: number): string | null => {
       if (!selecionadoId) return 'Selecione uma peça primeiro.';
       let novasPecas: Molde[];
       try {
-        novasPecas = pecas.map((p) => (p.id === selecionadoId ? modificarPontosDoMolde(p, indices, delta) : p));
+        novasPecas = pecas.map((p) => (p.id === selecionadoId ? modificarComModo(p, indices, delta, modoDeModificar, alcanceMm) : p));
       } catch (e) {
         return e instanceof Error ? e.message : String(e);
       }
@@ -4965,6 +5000,7 @@ export default function App(): React.JSX.Element {
 
   const textoDaFaixa = ((): React.ReactNode => {
     if (ferramentaDeVista === 'mao') return 'Mão: arraste para mover a vista. Esc ou um novo clique na Mão para sair.';
+    if (ferramentaDeVista === 'zoom-elemento') return 'Zoom de um elemento: clique numa peça, numa linha ou num furo. Esc para cancelar.';
     if (ferramentaDeVista === 'zoom-janela') {
       return 'Zoom por janela: arraste um retângulo sobre a área a ampliar. Esc para cancelar.';
     }
@@ -5155,6 +5191,23 @@ export default function App(): React.JSX.Element {
         onMoldeVizinho={verMoldeVizinho}
         sobreposicaoDeMoldes={sobreposicaoDeMoldes}
         onAlternarSobreposicao={() => executarTeclaDoEncaixe({ tipo: 'sobreposicao' })}
+        onZoomDeUmElemento={() => alternarFerramentaDeVista('zoom-elemento')}
+        mostrarNaoGraduados={mostrarNaoGraduados}
+        onAlternarNaoGraduados={() => setMostrarNaoGraduados((v) => !v)}
+        onCoresDosTamanhos={() => {
+          if (pecas.some((p) => p.graduacao)) setDialogoDeFerramenta({ tipo: 'cores-dos-tamanhos' });
+          else avisar('Nenhuma peça tem tamanhos: gradue-a antes.');
+        }}
+        onPiquePadrao={() => setDialogoDeFerramenta({ tipo: 'pique-padrao' })}
+        estiloDaCostura={estiloDaCostura}
+        onEstiloDaCostura={(estilo) => {
+          setEstiloDaCostura(estilo);
+          try {
+            guardarEstiloDaCostura(window.localStorage, estilo);
+          } catch {
+            // Sem o armazenamento do navegador, vale até fechar.
+          }
+        }}
         lembrarOriginal={lembrarOriginal}
         onLembrarOriginal={() => setLembrarOriginal((v) => !v)}
         onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, enfesto?.larguraUtilMm ?? 1500))}
@@ -5608,7 +5661,7 @@ export default function App(): React.JSX.Element {
         <PainelDeModificar
           peca={pecaSelecionada}
           indices={pontosParaModificar}
-          onAplicar={(delta) => aplicarModificar(pontosParaModificar, delta)}
+          onAplicar={(delta, modoDeModificar, alcanceMm) => aplicarModificar(pontosParaModificar, delta, modoDeModificar, alcanceMm)}
           onFechar={() => setPontosParaModificar(null)}
         />
       )}
@@ -5847,6 +5900,51 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'ferramentas-do-plotter' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'cores-dos-tamanhos' && (
+        <DialogoDeCampos
+          titulo="Cores dos tamanhos"
+          campos={[...new Set(pecas.flatMap((p) => p.graduacao?.tamanhos ?? []))].map((t, i) => ({ tipo: 'cor' as const, id: t, rotulo: t, inicial: corDoTamanho(t, i, coresDosTamanhos) }))}
+          nota="A cor de cada tamanho na área de trabalho. Fica lembrada neste computador."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const cores = { ...coresDosTamanhos, ...(valores as Readonly<Record<string, string>>) };
+            setCoresDosTamanhos(cores);
+            try {
+              guardarCoresDosTamanhos(window.localStorage, cores);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'cores-dos-tamanhos' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'pique-padrao' && (
+        <DialogoDeCampos
+          titulo="Pique padrão"
+          campos={[
+            { tipo: 'medida', id: 'largura', rotulo: 'Largura (mm)', inicial: String(opcoesDeMarcacao.inserir.formato.larguraMm).replace('.', ',') },
+            { tipo: 'medida', id: 'altura', rotulo: 'Altura (mm)', inicial: String(opcoesDeMarcacao.inserir.formato.alturaMm).replace('.', ',') },
+            { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo (graus)', inicial: String(opcoesDeMarcacao.inserir.formato.anguloGraus).replace('.', ',') },
+          ]}
+          nota="As medidas com que os piques novos começam. Fica lembrado neste computador; os piques já postos não mudam."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const pique = { larguraMm: valores['largura'] as number, alturaMm: valores['altura'] as number, anguloGraus: valores['angulo'] as number };
+            if (pique.larguraMm < MEDIDA_MINIMA_DO_PIQUE_MM || pique.alturaMm < MEDIDA_MINIMA_DO_PIQUE_MM || pique.larguraMm > MEDIDA_MAXIMA_DO_PIQUE_MM || pique.alturaMm > MEDIDA_MAXIMA_DO_PIQUE_MM) {
+              return `Largura e altura vão de ${MEDIDA_MINIMA_DO_PIQUE_MM} a ${MEDIDA_MAXIMA_DO_PIQUE_MM} mm.`;
+            }
+            setOpcoesDeMarcacao((o) => ({ ...o, inserir: { ...o.inserir, formato: { ...o.inserir.formato, ...pique } }, multiplos: { ...o.multiplos, formato: { ...o.multiplos.formato, ...pique } } }));
+            try {
+              guardarPiquePadrao(window.localStorage, pique);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'pique-padrao' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'sob-medida' &&
@@ -7066,6 +7164,14 @@ export default function App(): React.JSX.Element {
             onDefinirCerca={definirCerca}
             ferramentaDeVista={ferramentaDeVista}
             onZoomJanelaConcluido={() => setFerramentaDeVista(null)}
+            onZoomNoElemento={(ponto, raioMm) => {
+              const r = retanguloDoElemento(pecas, ponto, raioMm);
+              if (r) mudarVistaPara(enquadrarRetanguloDoMundo(r, tamanhoDaTela));
+              setFerramentaDeVista(null);
+            }}
+            estiloDaCostura={estiloDaCostura}
+            coresDosTamanhos={coresDosTamanhos}
+            mostrarNaoGraduados={mostrarNaoGraduados}
             onGuardarVista={guardarVista}
             mostrarGrade={mostrarGrade}
             imaAtivo={imaAtivo}

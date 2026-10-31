@@ -55,6 +55,27 @@ export function linhaInternaPerto(molde: Molde, p: Ponto2D, raioMm: number): Lin
   return { linha, ponta: distancia(p, pontos[0]!) <= distancia(p, pontos.at(-1)!) ? 'inicio' : 'fim' };
 }
 
+/** O ponto de uma linha interna perto de `p`, ou `null`: a "Manipulação rápida" move só ele (ADR 0181). */
+export function pontoDeLinhaPerto(molde: Molde, p: Ponto2D, raioMm: number): { readonly linha: number; readonly ponto: number } | null {
+  let melhor: { readonly linha: number; readonly ponto: number; readonly d: number } | null = null;
+  molde.linhasInternas.forEach((linha, l) => {
+    linha.forEach((q, i) => {
+      const d = distancia(p, q);
+      if (d <= raioMm && (!melhor || d < melhor.d)) melhor = { linha: l, ponto: i, d };
+    });
+  });
+  const achado = melhor as { readonly linha: number; readonly ponto: number } | null;
+  return achado && { linha: achado.linha, ponto: achado.ponto };
+}
+
+/** O ponto de uma linha interna levado por `delta`; o resto da linha fica. */
+export function moverPontoDaLinha(molde: Molde, linha: number, ponto: number, delta: Ponto2D): Molde {
+  return {
+    ...molde,
+    linhasInternas: molde.linhasInternas.map((l, i) => (i === linha ? l.map((q, k) => (k === ponto ? { x: q.x + delta.x, y: q.y + delta.y } : q)) : l)),
+  };
+}
+
 /** Um trecho reto da peça: uma aresta do contorno ou um segmento de uma linha interna. */
 export interface SegmentoDaPeca {
   readonly de: Ponto2D;
