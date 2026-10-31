@@ -1,12 +1,13 @@
 import { area, retanguloEnvolvente } from '../core/geometria';
 import { arestaDeSimetria } from './anotacoes';
-import { areaUtilDaMesa, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
+import { areaUtilDaMesa, dobraDoEnfesto, type ConfiguracaoDeEnfesto, type DobraDoTecido, type ZonaBloqueada } from './enfesto';
 import { linhaDeCorteDaPeca, rotacionarMolde, rotacoesNoEncaixe, transladarMolde, type Molde } from './molde';
 import type { PecaColocada, ResultadoDeNesting } from './nesting';
 
 /**
  * O molde dobrado na dobra do tecido (ADR 0172): no enfesto par e no tubular, o tecido vem dobrado, e a peça de simetria
- * (meia peça) tem de ir com a linha de simetria na dobra — em qualquer outro lugar, ela sairia cortada em duas. Essas
+ * (meia peça) tem de ir com a linha de simetria na dobra — em qualquer outro lugar, ela sairia cortada em duas. No
+ * zigue-zague, o tecido dobra nas pontas da mesa, e a peça vai na do começo (ADR 0180). Essas
  * peças entram primeiro, uma depois da outra, encostadas na borda da dobra (o começo da largura, sem a margem de
  * segurança: a 4 mm da dobra a peça sairia em duas), giradas só no que a restrição delas deixa; as outras se encaixam em volta, como numa área bloqueada. A peça que não dá para pôr na dobra
  * (a rotação não deixa, ou acabou a mesa) segue com as outras, como antes.
@@ -21,16 +22,18 @@ export interface DobraPreparada {
 
 const TOLERANCIA_MM = 1;
 
-/** A peça girada de modo que a linha de simetria fique na borda de cima da largura, no sentido do comprimento. */
-function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean): Molde | null {
+/** A peça girada de modo que a linha de simetria fique na borda da dobra: a de cima (horizontal) ou a do começo do comprimento (vertical). */
+export function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean, dobra: DobraDoTecido = 'horizontal'): Molde | null {
   const indice = arestaDeSimetria(peca);
   if (indice === null) return null;
+  const eixo = dobra === 'horizontal' ? 'x' : 'y';
   for (const angulo of rotacoesNoEncaixe(peca.restricaoDeRotacao, sentidoUnico)) {
     const m = angulo === 0 ? peca : rotacionarMolde(peca, angulo);
     const a = m.contorno[indice]!;
     const b = m.contorno[(indice + 1) % m.contorno.length]!;
     const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(m));
-    if (Math.abs(a.x - b.x) <= TOLERANCIA_MM && Math.abs(a.x - caixa.minX) <= TOLERANCIA_MM) return m;
+    const borda = dobra === 'horizontal' ? caixa.minX : caixa.minY;
+    if (Math.abs(a[eixo] - b[eixo]) <= TOLERANCIA_MM && Math.abs(a[eixo] - borda) <= TOLERANCIA_MM) return m;
   }
   return null;
 }
@@ -38,14 +41,19 @@ function naPosicaoDaDobra(peca: Molde, sentidoUnico: boolean): Molde | null {
 const seCruzam = (a: ZonaBloqueada, b: ZonaBloqueada): boolean => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
 
 export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto, sentidoUnico = false): DobraPreparada {
-  if (enfesto.tipo !== 'par' && enfesto.tipo !== 'tubular') return { fixas: [], resto: pecas, enfesto };
+  const dobra = dobraDoEnfesto(enfesto.tipo);
+  if (!dobra) return { fixas: [], resto: pecas, enfesto };
+  const horizontal = dobra === 'horizontal';
   const util = areaUtilDaMesa(enfesto);
   const bloqueadas = [...(enfesto.zonasBloqueadas ?? [])];
   const fixas: PecaColocada[] = [];
   const resto: Molde[] = [];
-  let y = util.minY;
+  // Anda-se ao longo da dobra: no comprimento, na horizontal; na largura, na vertical.
+  let s = horizontal ? util.minY : util.minX;
+  const fim = horizontal ? util.maxY : util.maxX;
+  const fundo = horizontal ? util.maxX : util.maxY;
   for (const peca of pecas) {
-    const orientada = naPosicaoDaDobra(peca, sentidoUnico);
+    const orientada = naPosicaoDaDobra(peca, sentidoUnico, dobra);
     if (!orientada) {
       resto.push(peca);
       continue;
@@ -53,16 +61,18 @@ export function prepararDobra(pecas: readonly Molde[], enfesto: ConfiguracaoDeEn
     const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(orientada));
     const largura = caixa.maxX - caixa.minX;
     const comprimento = caixa.maxY - caixa.minY;
+    const zona = (inicio: number): ZonaBloqueada =>
+      horizontal ? { minX: 0, maxX: largura, minY: inicio, maxY: inicio + comprimento } : { minX: inicio, maxX: inicio + largura, minY: 0, maxY: comprimento };
     let postas = 0;
     for (let copia = 0; copia < peca.quantidade; copia++) {
-      for (let z = bloqueadas.find((b) => seCruzam(b, { minX: 0, maxX: largura, minY: y, maxY: y + comprimento })); z; z = bloqueadas.find((b) => seCruzam(b, { minX: 0, maxX: largura, minY: y, maxY: y + comprimento }))) {
-        y = z.maxY + enfesto.distanciaMinimaEntrePecasMm;
+      for (let z = bloqueadas.find((b) => seCruzam(b, zona(s))); z; z = bloqueadas.find((b) => seCruzam(b, zona(s)))) {
+        s = (horizontal ? z.maxY : z.maxX) + enfesto.distanciaMinimaEntrePecasMm;
       }
-      if (largura > util.maxX || y + comprimento > util.maxY) break;
-      const molde = transladarMolde(orientada, { x: -caixa.minX, y: y - caixa.minY }, `${peca.id}#${copia}`);
+      if ((horizontal ? largura : comprimento) > fundo || s + (horizontal ? comprimento : largura) > fim) break;
+      const molde = transladarMolde(orientada, horizontal ? { x: -caixa.minX, y: s - caixa.minY } : { x: s - caixa.minX, y: -caixa.minY }, `${peca.id}#${copia}`);
       fixas.push({ idOriginal: peca.id, indiceCopia: copia, molde });
-      bloqueadas.push({ minX: 0, maxX: largura, minY: y, maxY: y + comprimento });
-      y += comprimento + enfesto.distanciaMinimaEntrePecasMm;
+      bloqueadas.push(zona(s));
+      s += (horizontal ? comprimento : largura) + enfesto.distanciaMinimaEntrePecasMm;
       postas++;
     }
     if (postas < peca.quantidade) resto.push({ ...peca, quantidade: peca.quantidade - postas });

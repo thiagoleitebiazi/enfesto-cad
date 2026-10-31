@@ -1,7 +1,7 @@
 import type { Molde } from './molde';
 import { linhaDeCorteDaPeca, rotacaoEhPermitida } from './molde';
 import { arestaDeSimetria } from './anotacoes';
-import { areaUtilDaMesa, contornoDaZona, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto } from './enfesto';
+import { areaUtilDaMesa, contornoDaZona, enfestoInverteFaceEmAlgumaCamada, type ConfiguracaoDeEnfesto, dobraDoEnfesto } from './enfesto';
 import { sentidoUnicoDoTecido, type Tecido } from './tecido';
 import { FOLGA_FORA_DA_PECA_MM, linhasQueSaem, linhasSoltas, type LinhaDeFora } from './linhasSoltas';
 import {
@@ -233,8 +233,8 @@ function validarLimitesDoTecido(pecas: readonly Molde[], enfesto: ConfiguracaoDe
     if (peca.contorno.length === 0) continue;
     const bbox = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
     // A peça de simetria no tecido dobrado encosta na dobra, sem a margem de segurança (ADR 0172).
-    const naDobra = (enfesto.tipo === 'par' || enfesto.tipo === 'tubular') && arestaDeSimetria(peca) !== null;
-    if (bbox.minX < (naDobra ? 0 : minX) - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < minY - folgaMm || bbox.maxY > maxY + folgaMm) {
+    const naDobra = arestaDeSimetria(peca) !== null ? dobraDoEnfesto(enfesto.tipo) : null;
+    if (bbox.minX < (naDobra === 'horizontal' ? 0 : minX) - folgaMm || bbox.maxX > maxX + folgaMm || bbox.minY < (naDobra === 'vertical' ? 0 : minY) - folgaMm || bbox.maxY > maxY + folgaMm) {
       problemas.push({
         tipo: 'fora-dos-limites',
         severidade: 'erro',

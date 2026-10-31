@@ -81,6 +81,8 @@ export function cabecalhoDoRisco(d: { readonly nome: string; readonly codigo: st
   const largura = d.larguraMm ?? caixa.maxX - caixa.minX;
   const aproveitamento = (cortes.reduce((s, c) => s + area(c), 0) / (largura * comprimento)) * 100;
   linhas.push(`Largura ${cm(largura)} cm - Comprimento ${cm(comprimento)} cm - Aproveitamento ${aproveitamento.toFixed(1).replace('.', ',')}% - ${d.pecas.length} pecas`);
+  const meias = [...new Set(d.pecas.filter((p) => p.meiaCamada).map((p) => p.nome))];
+  if (meias.length > 0) linhas.push(`1/2 camada: ${meias.join(', ')}`);
   return linhas;
 }
 

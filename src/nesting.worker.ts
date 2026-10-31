@@ -1,3 +1,4 @@
+import { comOrientacaoInicial } from './domain/encaixeManual';
 import { juntarDobra, prepararDobra } from './domain/pecasNaDobra';
 import { executarEmFatias, executarNestingPorPontosDeCanto, passosDoNesting, type MetodoDoNesting } from './domain/nesting';
 import type { Molde } from './domain/molde';
@@ -34,7 +35,7 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar' && mensagem.metodo === 'pontos-de-canto') {
     // De uma vez só (é rápido): o cancelar deste método é a janela fechar o Worker.
     try {
-      const dobra = prepararDobra(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+      const dobra = prepararDobra(mensagem.pecas.map(comOrientacaoInicial), mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
       const resultado = executarNestingPorPontosDeCanto(dobra.resto, dobra.enfesto, {
         ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
         ...(mensagem.tecidoDeSentidoUnico ? { tecidoDeSentidoUnico: true } : {}),
@@ -50,7 +51,7 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar') {
     cancelado = false;
     // Em fatias, com uma pausa entre elas: é na pausa que a mensagem "cancelar" chega e muda `cancelado`.
-    const dobra = prepararDobra(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+    const dobra = prepararDobra(mensagem.pecas.map(comOrientacaoInicial), mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
     const passos = passosDoNesting(dobra.resto, dobra.enfesto, {
       ...(mensagem.passoMm !== undefined ? { passoMm: mensagem.passoMm } : {}),
       ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),

@@ -96,6 +96,8 @@ export interface PatchDeMolde {
   readonly grupoDoEncaixe?: string;
   /** Os pontos CAM (ADR 0173); `null` volta ao normal. */
   readonly corteNaMesa?: Exclude<Molde['corteNaMesa'], undefined>;
+  /** A peça em ½ camada (ADR 0180). */
+  readonly meiaCamada?: boolean;
 }
 
 interface PainelDePropriedadesProps {
@@ -291,6 +293,51 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
                 props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, inclinacaoGraus: Math.min(INCLINACAO_MAXIMA_GRAUS, Math.max(0, v)) } });
               }}
             />
+          </label>
+          <label className="opcao-em-linha" title="No encaixe, a peça pode girar em qualquer ângulo, de 15 em 15 graus: o fio deixa de valer">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.giroLivre ?? false}
+              onChange={(e) => props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, giroLivre: e.target.checked } })}
+            />
+            Giro livre
+          </label>
+          <label className="opcao-em-linha">
+            Giro inicial (°)
+            <input
+              type="number"
+              min={-360}
+              max={360}
+              step={1}
+              aria-label="Giro inicial"
+              title="O ângulo de que a peça parte no próximo encaixe; depois de encaixada, já fica assim"
+              className="campo-curto"
+              value={peca.restricaoDeRotacao.giroInicialGraus ?? 0}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v)) props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, giroInicialGraus: v } });
+              }}
+            />
+          </label>
+          <label className="opcao-em-linha" title="A peça entra espelhada de lado no próximo encaixe">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.refletidoHorizontal ?? false}
+              onChange={(e) => props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, refletidoHorizontal: e.target.checked } })}
+            />
+            Refletido na horizontal
+          </label>
+          <label className="opcao-em-linha" title="A peça entra espelhada de cima para baixo no próximo encaixe">
+            <input
+              type="checkbox"
+              checked={peca.restricaoDeRotacao.refletidoVertical ?? false}
+              onChange={(e) => props.onAlterar({ restricaoDeRotacao: { ...peca.restricaoDeRotacao, refletidoVertical: e.target.checked } })}
+            />
+            Refletido na vertical
+          </label>
+          <label className="opcao-em-linha" title="No tecido dobrado, a peça é cortada numa camada só (F7)">
+            <input type="checkbox" checked={peca.meiaCamada === true} onChange={(e) => props.onAlterar({ meiaCamada: e.target.checked })} />
+            ½ camada
           </label>
         </fieldset>
 

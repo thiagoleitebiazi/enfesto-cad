@@ -366,6 +366,17 @@ import { pecasDoPlt } from './formats/plt-importacao';
 import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas } from './domain/plotarMoldes';
+import {
+  acaoDaTeclaDoEncaixe,
+  comMeiaCamada,
+  lugarLivreMaisPerto,
+  moverAteEncostar,
+  moverParaForaDoEnfesto,
+  pecaNaDobraDoTecido,
+  pecasDoTamanho,
+  voltarAoOriginal,
+  type AcaoDaTecla,
+} from './domain/encaixeManual';
 import { comTamanhoIntermediario } from './domain/tamanhoIntermediario';
 import { comTamanhoSobMedida, posicaoDasMedidas } from './domain/sobMedida';
 import { aplicarEsquema, aplicarPerfil, esquemaGuardado, perfilAtual, restaurarPadroes, type EsquemaDeCores } from './ui/preferencias';
@@ -651,6 +662,7 @@ export default function App(): React.JSX.Element {
   const [vistasAnteriores, setVistasAnteriores] = useState<readonly TransformacaoDeTela[]>([]);
   const [vistasSeguintes, setVistasSeguintes] = useState<readonly TransformacaoDeTela[]>([]);
   const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
+  const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
   const [mostrarGrade, setMostrarGrade] = useState(false);
   const [imaAtivo, setImaAtivo] = useState(false);
   const [unidadeDaRegua, setUnidadeDaRegua] = useState<UnidadeDeRegua>('cm');
@@ -1826,11 +1838,11 @@ export default function App(): React.JSX.Element {
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
-      const { emPar, grupoDoEncaixe, ...resto } = patch;
+      const { emPar, grupoDoEncaixe, meiaCamada, ...resto } = patch;
       aplicarMudanca(
         pecas.map((p) => {
           if (p.id !== selecionadoId) return p;
-          const mudada = comPar({ ...p, ...resto }, emPar ?? p.emPar === true);
+          const mudada = comPar(comMeiaCamada({ ...p, ...resto }, meiaCamada ?? p.meiaCamada === true), emPar ?? p.emPar === true);
           return grupoDoEncaixe === undefined ? mudada : comGrupoDoEncaixe(mudada, grupoDoEncaixe);
         }),
       );
@@ -3010,9 +3022,18 @@ export default function App(): React.JSX.Element {
 
   const moverPeca = useCallback(
     (id: string, deslocamento: Ponto2D) => {
-      aplicarMudanca(pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p)));
+      const andou = pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p));
+      const peca = andou.find((p) => p.id === id);
+      if (sobreposicaoDeMoldes || !enfesto || !peca) {
+        aplicarMudanca(andou);
+        return;
+      }
+      // Sobreposição desligada (F12): a peça não fica em cima de outra.
+      const livre = lugarLivreMaisPerto(peca, andou.filter((p) => p.id !== id), enfesto);
+      if (!livre) avisar('Não há lugar livre perto de onde a peça foi solta: ela ficou em cima da outra.');
+      aplicarMudanca(livre ? andou.map((p) => (p.id === id ? transladarMolde(p, livre, p.id) : p)) : andou);
     },
-    [pecas, aplicarMudanca],
+    [pecas, aplicarMudanca, sobreposicaoDeMoldes, enfesto, avisar],
   );
 
   /** O grupo selecionado arrastado junto: um passo só no Desfazer. */
@@ -3022,6 +3043,57 @@ export default function App(): React.JSX.Element {
       aplicarMudanca(pecas.map((p) => (doGrupo.has(p.id) ? transladarMolde(p, deslocamento, p.id) : p)));
     },
     [pecas, aplicarMudanca],
+  );
+
+  /** As teclas do encaixe (ADR 0180), na peça selecionada. */
+  const executarTeclaDoEncaixe = useCallback(
+    (acao: AcaoDaTecla) => {
+      if (acao.tipo === 'sobreposicao') {
+        setSobreposicaoDeMoldes(!sobreposicaoDeMoldes);
+        avisar(sobreposicaoDeMoldes ? 'Sobreposição de moldes desligada: a peça solta em cima de outra vai para o lugar livre mais perto.' : 'Sobreposição de moldes ligada.');
+        return;
+      }
+      if (acao.tipo === 'para-fora') {
+        const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+        if (!enfesto || ids.size === 0) avisar('Selecione uma peça, com o enfesto configurado.');
+        else aplicarMudanca(moverParaForaDoEnfesto(pecas, ids, enfesto));
+        return;
+      }
+      const peca = pecas.find((p) => p.id === selecionadoId);
+      if (!peca) {
+        avisar('Selecione uma peça primeiro.');
+        return;
+      }
+      const trocar = (nova: Molde): void => aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
+      if (acao.tipo === 'girar-livre') girarLivreSelecionada();
+      else if (acao.tipo === 'girar-180') girarPecaSelecionada(180);
+      else if (acao.tipo === 'espelhar') espelharSelecionadaManualmente();
+      else if (acao.tipo === 'original') trocar(voltarAoOriginal(peca));
+      else if (acao.tipo === 'meia-camada') trocar(comMeiaCamada(peca, !peca.meiaCamada));
+      else if (!enfesto) avisar('Configure o enfesto primeiro.');
+      else if (acao.tipo === 'mover') {
+        const d = moverAteEncostar(peca, pecas.filter((p) => p.id !== peca.id), enfesto, acao.direcao);
+        if (d.x !== 0 || d.y !== 0) trocar(transladarMolde(peca, d, peca.id));
+      } else {
+        try {
+          trocar(pecaNaDobraDoTecido(peca, acao.tipo === 'dobra-horizontal' ? 'horizontal' : 'vertical', enfesto));
+        } catch (erro) {
+          avisar(erro instanceof Error ? erro.message : String(erro));
+        }
+      }
+    },
+    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
+  );
+
+  /** Alt + clique numa peça: as do mesmo tamanho ficam selecionadas (ADR 0180). */
+  const conferirTamanho = useCallback(
+    (id: string) => {
+      const achado = pecasDoTamanho(pecas, id);
+      if (!achado) return;
+      setIdsSelecionadosEmLote(new Set(achado.ids));
+      avisar(`Tamanho ${achado.tamanho}: ${achado.ids.length} ${achado.ids.length === 1 ? 'peça' : 'peças'}.`);
+    },
+    [pecas, avisar],
   );
 
   const sugerirPosicaoParaSelecionada = useCallback(() => {
@@ -4390,6 +4462,13 @@ export default function App(): React.JSX.Element {
 
       if (ehCampoDeDigitar(e.target)) return;
 
+      const teclaDoEncaixe = modo === 'selecionar' ? acaoDaTeclaDoEncaixe(e) : null;
+      if (teclaDoEncaixe) {
+        e.preventDefault();
+        executarTeclaDoEncaixe(teclaDoEncaixe);
+        return;
+      }
+
       if (e.key === 'Escape') {
         e.preventDefault();
         // Primeiro desliga a Mão/Zoom por janela; a ferramenta de baixo continua.
@@ -4526,6 +4605,7 @@ export default function App(): React.JSX.Element {
       transform.escalaPxPorMm,
       aplicarMudanca,
       ferramentaDeVista,
+      executarTeclaDoEncaixe,
       cancelarModo,
       finalizarContornoEmEdicao,
       desfazer,
@@ -5073,6 +5153,8 @@ export default function App(): React.JSX.Element {
         onPlotarMoldes={() => setDialogoDeFerramenta({ tipo: 'plotar-moldes' })}
         onTamanhoIntermediario={() => setDialogoDeFerramenta({ tipo: 'tamanho-intermediario' })}
         onMoldeVizinho={verMoldeVizinho}
+        sobreposicaoDeMoldes={sobreposicaoDeMoldes}
+        onAlternarSobreposicao={() => executarTeclaDoEncaixe({ tipo: 'sobreposicao' })}
         lembrarOriginal={lembrarOriginal}
         onLembrarOriginal={() => setLembrarOriginal((v) => !v)}
         onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, enfesto?.larguraUtilMm ?? 1500))}
@@ -6968,6 +7050,7 @@ export default function App(): React.JSX.Element {
             onCliqueNoCanvas={onCliqueNoCanvas}
             onMoverPeca={moverPeca}
             onMoverPecas={moverPecas}
+            onConferirTamanho={conferirTamanho}
             onAlternarNaSelecao={alternarPecaNaSelecao}
             onSelecionarVarias={selecionarPecasPeloRetangulo}
             onAbrirPropriedades={abrirPropriedadesDaPeca}

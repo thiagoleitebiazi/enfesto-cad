@@ -156,6 +156,14 @@ export function espessurasFisicasPorCamada(tipo: TipoDeEnfesto): 1 | 2 {
   return tipo === 'par' || tipo === 'tubular' ? 2 : 1;
 }
 
+/** Onde o tecido dobra: ao longo do comprimento, no par e no tubular; nas pontas da mesa, no zigue-zague (ADR 0180). */
+export type DobraDoTecido = 'horizontal' | 'vertical';
+
+export function dobraDoEnfesto(tipo: TipoDeEnfesto): DobraDoTecido | null {
+  if (tipo === 'par' || tipo === 'tubular') return 'horizontal';
+  return tipo === 'zigue-zague' ? 'vertical' : null;
+}
+
 export type OrientacaoDaCamada = 'normal' | 'invertida';
 
 /**

@@ -353,6 +353,8 @@ interface AreaDeDesenhoProps {
   readonly onMoverPeca: (id: string, deslocamento: Ponto2D) => void;
   /** Arrastar uma das peças selecionadas leva todas: um passo só para desfazer. */
   readonly onMoverPecas?: (ids: readonly string[], deslocamento: Ponto2D) => void;
+  /** Alt + clique numa peça: confere o tamanho dela (ADR 0180). */
+  readonly onConferirTamanho?: (id: string) => void;
   /** Ctrl+clique (⌘ no Mac) numa peça: entra na seleção, ou sai dela se já estava. */
   readonly onAlternarNaSelecao?: (id: string) => void;
   /** O retângulo arrastado no vazio: as peças inteiras dentro dele passam a ser a seleção (com o Ctrl, somam-se a ela). */
@@ -453,6 +455,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onCliqueNoCanvas,
     onMoverPeca,
     onMoverPecas,
+    onConferirTamanho,
     onAlternarNaSelecao,
     onSelecionarVarias,
     onAbrirPropriedades,
@@ -1120,7 +1123,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.rotate(anguloDoFio);
       ctx.textAlign = 'center';
       ctx.font = 'bold 12px sans-serif';
-      desenharRotuloComFundo(ctx, peca.nome, 0, -7, corDaPeca);
+      desenharRotuloComFundo(ctx, peca.meiaCamada ? `${peca.nome} (½ camada)` : peca.nome, 0, -7, corDaPeca);
       ctx.restore();
 
       // Textos da peça: centrados no ponto em que foram postos, na altura pedida.
@@ -1853,6 +1856,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
 
     if (modo === 'selecionar') {
       const encontrada = [...pecas].reverse().find((p) => pontoDentroDoContorno(mundo, p.contorno));
+      if (e.altKey && encontrada && onConferirTamanho) {
+        onConferirTamanho(encontrada.id);
+        return;
+      }
       // Ctrl+clique (⌘ no Mac): a peça entra na seleção ou sai dela; no vazio, o retângulo soma à seleção.
       if (e.ctrlKey || e.metaKey) {
         if (encontrada) onAlternarNaSelecao?.(encontrada.id);

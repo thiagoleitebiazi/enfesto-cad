@@ -56,7 +56,17 @@ export interface RestricaoDeRotacao {
    * um lado e para o outro de cada rotação permitida, para caber melhor (ADR 0135). Ausente ou 0: nenhuma.
    */
   readonly inclinacaoGraus?: number;
+  /** "Livre" (ADR 0180): no encaixe, a peça gira em qualquer ângulo, de `PASSO_DO_GIRO_LIVRE_GRAUS` em `PASSO_DO_GIRO_LIVRE_GRAUS`. */
+  readonly giroLivre?: boolean;
+  /** "Giro inicial" (ADR 0180): o ângulo de que a peça parte no próximo encaixe (graus). */
+  readonly giroInicialGraus?: number;
+  /** "Refletido" (ADR 0180): a peça entra espelhada no próximo encaixe. */
+  readonly refletidoHorizontal?: boolean;
+  readonly refletidoVertical?: boolean;
 }
+
+/** Os ângulos que o giro livre tenta no encaixe. */
+export const PASSO_DO_GIRO_LIVRE_GRAUS = 15;
 
 /** A maior inclinação do fio aceita no encaixe (graus). */
 export const INCLINACAO_MAXIMA_GRAUS = 5;
@@ -419,6 +429,8 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** "½ camada" (ADR 0180): no tecido dobrado, a peça é cortada numa camada só. */
+  readonly meiaCamada?: true;
   /**
    * Linha de simetria (aba Produção): a aresta em que a peça é dobrada, guardada
    * pelas duas pontas. Só vale enquanto as duas forem pontos seguidos do contorno.
@@ -1346,6 +1358,7 @@ export const MAXIMO_DE_COPIAS_DA_PECA = 999;
 
 /** Lista as rotações (em graus, relativas à orientação original) que a restrição do molde permite. */
 export function rotacoesPermitidas(restricao: RestricaoDeRotacao): readonly number[] {
+  if (restricao.giroLivre) return Array.from({ length: 360 / PASSO_DO_GIRO_LIVRE_GRAUS }, (_, i) => i * PASSO_DO_GIRO_LIVRE_GRAUS);
   const permitidas = [0];
   if (restricao.permite180) permitidas.push(180);
   if (restricao.permite90e270) permitidas.push(90, 270);
@@ -1362,7 +1375,7 @@ export function rotacoesNoEncaixe(restricao: RestricaoDeRotacao, tecidoDeSentido
   const base = tecidoDeSentidoUnico ? permitidas.filter((a) => a === 0 || a === 90) : permitidas;
   // A inclinação (ADR 0135): cada rotação também com a peça inclinada metade e o todo da tolerância, para cada lado.
   const inclinacao = inclinacaoDaPeca(restricao);
-  if (inclinacao === 0) return base;
+  if (inclinacao === 0 || restricao.giroLivre) return base;
   return base.flatMap((a) => [a, ...[inclinacao / 2, inclinacao, -inclinacao / 2, -inclinacao].map((d) => normalizarAngulo(a + d))]);
 }
 
@@ -1374,6 +1387,7 @@ export function inclinacaoDaPeca(restricao: RestricaoDeRotacao): number {
 
 /** Verdadeiro se `anguloGraus` (rotação proposta, qualquer valor) corresponde a uma das rotações permitidas, ou a uma delas inclinada dentro da tolerância. */
 export function rotacaoEhPermitida(restricao: RestricaoDeRotacao, anguloGraus: number): boolean {
+  if (restricao.giroLivre) return true;
   const alvo = normalizarAngulo(anguloGraus);
   const folga = inclinacaoDaPeca(restricao) + 1e-6;
   return rotacoesPermitidas(restricao).some((permitida) => {

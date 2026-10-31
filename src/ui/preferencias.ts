@@ -41,7 +41,7 @@ export function restaurarPadroes(a: Armazenamento): void {
 // ---- As teclas de atalho (ADR 0175).
 
 /** As combinações que o programa já usa: a nova não pode ser uma delas. */
-export const TECLAS_DO_PROGRAMA: ReadonlySet<string> = new Set(['Ctrl+N', 'Ctrl+O', 'Ctrl+S', 'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+I', 'Ctrl+H', 'Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+C', 'Ctrl+X', 'Ctrl+V', 'Ctrl+A']);
+export const TECLAS_DO_PROGRAMA: ReadonlySet<string> = new Set(['F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F12', 'Ctrl+F', 'Ctrl+N', 'Ctrl+O', 'Ctrl+S', 'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+I', 'Ctrl+H', 'Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Ctrl+C', 'Ctrl+X', 'Ctrl+V', 'Ctrl+A']);
 
 /** A combinação de uma tecla apertada ("Ctrl+Shift+K"), ou `null`: só vale com Ctrl ou Alt, ou numa tecla F. */
 export function combinacaoDaTecla(e: { readonly key: string; readonly ctrlKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean; readonly metaKey: boolean }): string | null {

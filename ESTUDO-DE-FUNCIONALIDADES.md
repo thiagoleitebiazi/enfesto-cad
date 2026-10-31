@@ -282,3 +282,13 @@ Fontes: o manual digital da referência, lido por inteiro; a página pública so
 | Esquemas de cores | ✅ ADR 0177 (quatro prontos; não configuráveis) |
 | Unidade de medida | 🟡 polegadas na régua e nas coordenadas: ADR 0178 |
 | Sob medida | ✅ ADR 0179 |
+
+## Oitava rodada: a auditoria item por item
+
+Cada nome do manual e da apostila foi conferido contra o código. Vários itens da lista inicial já existiam com outro nome ("Graduar molde automático" é o "Automático" da aba Graduação; "Marcar pique" é o campo "marcar" do Conferir) e saíram dela.
+
+| Item | Situação |
+| --- | --- |
+| Teclas do encaixe (F2 a F8, F12, Ctrl+F, Ctrl+setas, Alt+clique) | ✅ ADR 0180 |
+| Giro livre, giro inicial, refletido horizontal e vertical | ✅ ADR 0180 |
+| Dobra vertical; ½ camada; sobreposição de moldes | ✅ ADR 0180 |

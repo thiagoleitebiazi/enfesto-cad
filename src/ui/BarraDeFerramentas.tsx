@@ -122,6 +122,9 @@ interface BarraDeFerramentasProps {
   readonly onTamanhoIntermediario?: () => void;
   /** Visão: a peça seguinte ou a anterior, enquadrada; lembrar o molde salvo; organizar as peças (ADR 0167, 0170). */
   readonly onMoldeVizinho?: (passo: 1 | -1) => void;
+  /** A sobreposição de moldes (F12, ADR 0180). */
+  readonly sobreposicaoDeMoldes?: boolean;
+  readonly onAlternarSobreposicao?: () => void;
   readonly lembrarOriginal?: boolean;
   readonly onLembrarOriginal?: () => void;
   readonly onOrganizarMoldes?: () => void;
@@ -534,6 +537,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     { tipo: 'acao' as const, rotulo: 'Próximo molde', titulo: 'Seleciona e enquadra a peça seguinte', onEscolher: () => props.onMoldeVizinho!(1) },
                     { tipo: 'opcao' as const, rotulo: 'Lembrar molde original', marcado: props.lembrarOriginal === true, titulo: 'Mostra tracejado o contorno salvo da peça selecionada', onEscolher: props.onLembrarOriginal ?? (() => {}) },
                     { tipo: 'acao' as const, rotulo: 'Organizar os moldes', titulo: 'Reorganiza todas as peças em colunas na largura da mesa (Ctrl+Z desfaz; tira as peças do encaixe)', onEscolher: props.onOrganizarMoldes ?? (() => {}) },
+                    ...(props.onAlternarSobreposicao
+                      ? [{ tipo: 'opcao' as const, rotulo: 'Sobreposição de moldes', marcado: props.sobreposicaoDeMoldes !== false, titulo: 'Desligada, a peça solta em cima de outra vai para o lugar livre mais perto (F12)', onEscolher: props.onAlternarSobreposicao }]
+                      : []),
                   ]
                 : []),
               { tipo: 'separador' },
