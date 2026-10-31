@@ -8,6 +8,7 @@ O risco só saía por arquivo ou pela pasta que o programa do plotter vigia. O m
 - **Gerenciador de impressão**: com a porta escolhida, "Enviar ao plotter" põe o risco numa fila. Um por vez, com subir, descer, cancelar, pausar e enviar de novo. Se um falha, a fila pausa: o plotter desligado faria os seguintes falharem também.
 - **Níveis de impressão** (Ferramentas do plotter): com "Usar níveis de impressão", sai o nível menor em todas as peças, depois o seguinte. O plotter que desenha e corta faz a tinta primeiro e o corte por último.
 - **DMPL**: o arquivo entra por "Importar PLT", reconhecido pelo começo `;:`, e vira HPGL como o ISO.
+- **ISO**: com a porta escolhida, a janela do ISO pode enviar o arquivo direto, pela mesma fila, para a mesa de corte que recebe assim.
 - **Emendas no PDF do encaixe**: a linha tracejada na largura toda, como no PLT.
 
 **Limites:**

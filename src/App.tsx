@@ -3929,7 +3929,7 @@ export default function App(): React.JSX.Element {
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
-    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean, compensacaoDaLaminaMm: number, furadorM43: boolean) => {
+    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean, compensacaoDaLaminaMm: number, furadorM43: boolean, pelaPorta: boolean) => {
       const api = window.enfestoCad;
       if (!api) {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
@@ -3937,10 +3937,16 @@ export default function App(): React.JSX.Element {
       }
       try {
         const texto = gerarIso(pecasNaMesa, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm } : {}) });
+        if (pelaPorta) {
+          mudarFilaDeImpressao(comTrabalho(filaDeImpressaoRef.current, { id: proximoId(), nome: `${projetoAtual.codigo || 'encaixe'}.iso`, destino: portaDeSaida, texto }));
+          esvaziarFilaDeImpressao();
+          avisar('O ISO entrou na fila de impressão.');
+          return;
+        }
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
-        const r = resumoDoIso(pecas);
+        const r = resumoDoIso(pecasNaMesa);
         registrarEventoEPersistir(
           'exportacao-de-pdf',
           { pecas, tecido, enfesto },
@@ -3950,7 +3956,7 @@ export default function App(): React.JSX.Element {
         window.alert(`Falha ao gerar o ISO: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir, portaDeSaida, projetoAtual.codigo, mudarFilaDeImpressao, esvaziarFilaDeImpressao, avisar],
   );
 
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
@@ -7312,8 +7318,8 @@ export default function App(): React.JSX.Element {
         <DialogoDeCampos
           titulo="Exportar para a mesa de corte (ISO)"
           resumo={[
-            ['Peças', String(pecas.length)],
-            ['Largura da mesa', enfesto ? `${numeroComVirgula(enfesto.larguraUtilMm / 10, 1)} cm (do enfesto)` : 'a das peças (sem enfesto)'],
+            ['Peças', String(pecasNaMesa.length)],
+            ['Largura da mesa', enfestoNaMesa ? `${numeroComVirgula(enfestoNaMesa.larguraUtilMm / 10, 1)} cm (do enfesto)` : 'a das peças (sem enfesto)'],
           ]}
           campos={[
             { tipo: 'inteiro', id: 'velocidade', rotulo: 'Velocidade de corte (mm/min)', inicial: String(VELOCIDADE_PADRAO_MM_MIN) },
@@ -7321,13 +7327,14 @@ export default function App(): React.JSX.Element {
             { tipo: 'caixa', id: 'tangencial', rotulo: 'Faca tangencial: o eixo C acompanha o corte (sobe para girar nas viradas acima de 30°)', inicial: false },
             { tipo: 'caixa', id: 'furador', rotulo: 'Furador pelos comandos M43 e M44, e não pelo eixo Z', inicial: false },
             { tipo: 'medida', id: 'lamina', rotulo: 'Faca tangencial: distância da ponta ao eixo (mm, opcional)', inicial: '', opcional: true },
+            ...(portaDeSaida !== '' ? [{ tipo: 'caixa' as const, id: 'pelaPorta', rotulo: `Enviar direto pela porta de saída (${portaDeSaida}), em vez de salvar`, inicial: false }] : []),
           ]}
           nota="O encaixe em G-code (ISO 6983), em mm e coordenadas absolutas: T1 faca (contorno e furos), T2 piqueteador, T3 caneta, T4 furador (marcas). Em cada peça, o de dentro é feito antes do contorno. Não foi testado numa mesa de corte: confira o primeiro corte numa folha de papel."
           rotuloDoBotao="Salvar o ISO"
           onAplicar={(valores) => {
             const velocidade = Number(valores.velocidade);
             if (!(velocidade >= 100)) return 'A velocidade precisa ser de pelo menos 100 mm/min.';
-            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true, Number(valores.lamina ?? 0), valores.furador === true);
+            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true, Number(valores.lamina ?? 0), valores.furador === true, valores.pelaPorta === true);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'corte-iso' ? null : d))}
