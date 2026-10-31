@@ -363,7 +363,10 @@ import { comprimentoDoEncaixeAImprimirMm, gerarPdfDeEncaixe, gerarPdfDeMoldesInd
 import { codificarDxf, gerarDxf } from './formats/dxf-exportacao';
 import { cabecalhoDoRisco, gerarPlt, type OpcoesDoPlt } from './formats/plt-exportacao';
 import { pecasDoPlt } from './formats/plt-importacao';
-import { nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
+import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
+import { gerarDxfAstm } from './formats/dxf-astm';
+import { moldesParaPlotar, moldeVizinho, organizarPecas } from './domain/plotarMoldes';
+import { comTamanhoIntermediario } from './domain/tamanhoIntermediario';
 import { gerarIso, resumoDoIso, VELOCIDADE_PADRAO_MM_MIN } from './formats/iso-exportacao';
 import { acessoAPasta } from './ui/pastasCompartilhadas';
 import { PainelDaMesaDigitalizadora } from './ui/PainelDaMesaDigitalizadora';
@@ -571,6 +574,10 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'corte-iso' }
   | { readonly tipo: 'plt-por-partes' }
   | { readonly tipo: 'alinhar-pecas' }
+  | { readonly tipo: 'plotar-moldes' }
+  | { readonly tipo: 'tamanho-intermediario' }
+  | { readonly tipo: 'exportar-projeto' }
+  | { readonly tipo: 'senha-do-projeto'; readonly conteudo: string }
   | { readonly tipo: 'medidas-do-componente'; readonly componente: TipoDeComponente }
   | { readonly tipo: 'cortar' }
   | { readonly tipo: 'remover-regiao' }
@@ -2163,6 +2170,19 @@ export default function App(): React.JSX.Element {
       return nomes;
     },
     [pecas, tecido, enfesto, aplicarMudanca, registrarEventoEPersistir, mudarVistaPara, tamanhoDaTela],
+  );
+
+  // Molde a molde e o molde original (ADR 0170).
+  const [lembrarOriginal, setLembrarOriginal] = useState(false);
+  const verMoldeVizinho = useCallback(
+    (passo: 1 | -1) => {
+      const peca = moldeVizinho(pecas, selecionadoId, passo);
+      if (!peca) return;
+      setSelecionadoId(peca.id);
+      setIdsSelecionadosEmLote(new Set());
+      mudarVistaPara(enquadrarRetanguloDoMundo(retanguloEnvolvente(peca.contorno), tamanhoDaTela));
+    },
+    [pecas, selecionadoId, mudarVistaPara, tamanhoDaTela],
   );
 
   // ---- As coleções (aba Modelo, ADR 0108): a lista da Biblioteca para ligar os modelos aos projetos.
@@ -4207,22 +4227,36 @@ export default function App(): React.JSX.Element {
     });
   }, [enfesto, acrescentarPecasImportadas]);
 
+  // Os dois arquivos que saem pelo mesmo caminho do texto.
+  const exportarAstm = useCallback(async () => {
+    const caminho = await salvarTexto('moldes-astm.dxf', gerarDxfAstm(pecas, projetoAtual.nome, proximoId));
+    if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `DXF ASTM salvo em ${caminho}`);
+  }, [pecas, tecido, enfesto, projetoAtual.nome, salvarTexto, registrarEventoEPersistir]);
+
+  const plotarMoldes = useCallback(
+    async (opcoes: Parameters<typeof moldesParaPlotar>[1]) => {
+      const lista = moldesParaPlotar(pecas, opcoes, proximoId);
+      const plt = gerarPlt(lista, { canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
+      const caminho = await salvarTexto('moldes.plt', plt);
+      if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Moldes (PLT) salvos em ${caminho}: ${lista.length} peça(s)`);
+    },
+    [pecas, tecido, enfesto, canetasDoPlotter, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
+  );
+
   // O projeto num arquivo (ADR 0156): sai como está agora; entra na biblioteca e abre, sem trocar o que há nela.
-  const exportarProjetoHandler = useCallback(async () => {
+  const exportarProjetoHandler = useCallback(async (senha: string | null) => {
     const api = window.enfestoCad;
     const projeto = projetoParaEnviarARede(projetoAtual.id);
     if (!api || !projeto) return;
-    const bytes = new TextEncoder().encode(textoDoProjeto(projeto));
+    const claro = textoDoProjeto(projeto);
+    const bytes = new TextEncoder().encode(senha ? await cifrarProjeto(claro, senha) : claro);
     const caminho = await api.salvarArquivo(nomeDoArquivoDoProjeto(projeto), bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     if (caminho) setMensagensImportacao([`Projeto salvo em ${caminho}.`]);
   }, [projetoAtual.id, projetoParaEnviarARede]);
 
-  const importarProjetoHandler = useCallback(() => {
-    const api = window.enfestoCad;
-    if (!api) return;
-    void api.abrirArquivoTexto('projeto').then((arquivo) => {
-      if (!arquivo) return;
-      const r = projetoDoArquivo(arquivo.conteudo, projetos, { id: () => `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, codigo: novoCodigoDeProjeto });
+  const entrarComOProjeto = useCallback(
+    (texto: string) => {
+      const r = projetoDoArquivo(texto, projetos, { id: () => `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, codigo: novoCodigoDeProjeto });
       if ('erro' in r) {
         setMensagensImportacao([r.erro]);
         return;
@@ -4234,8 +4268,19 @@ export default function App(): React.JSX.Element {
       setProjetos((lista) => [...lista, r.projeto]);
       mostrarProjeto(r.projeto);
       void persistirProjeto(r.projeto).then(carregarListaDeProjetos);
+    },
+    [projetos, projetoAtual, pecas, tecido, enfesto, novoCodigoDeProjeto, salvarAntesDeTrocar, mostrarProjeto, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const importarProjetoHandler = useCallback(() => {
+    const api = window.enfestoCad;
+    if (!api) return;
+    void api.abrirArquivoTexto('projeto').then((arquivo) => {
+      if (!arquivo) return;
+      if (ehProjetoCifrado(arquivo.conteudo)) setDialogoDeFerramenta({ tipo: 'senha-do-projeto', conteudo: arquivo.conteudo });
+      else entrarComOProjeto(arquivo.conteudo);
     });
-  }, [projetos, projetoAtual, pecas, tecido, enfesto, novoCodigoDeProjeto, salvarAntesDeTrocar, mostrarProjeto, persistirProjeto, carregarListaDeProjetos]);
+  }, [entrarComOProjeto]);
 
   const importarPdfHandler = useCallback(() => {
     const api = window.enfestoCad;
@@ -4978,9 +5023,16 @@ export default function App(): React.JSX.Element {
         onExportarDxf={() => void exportarDxf()}
         onExportarPlt={() => void exportarPlt()}
         onExportarPltPorPartes={() => setDialogoDeFerramenta({ tipo: 'plt-por-partes' })}
+        onExportarAstm={() => void exportarAstm()}
+        onPlotarMoldes={() => setDialogoDeFerramenta({ tipo: 'plotar-moldes' })}
+        onTamanhoIntermediario={() => setDialogoDeFerramenta({ tipo: 'tamanho-intermediario' })}
+        onMoldeVizinho={verMoldeVizinho}
+        lembrarOriginal={lembrarOriginal}
+        onLembrarOriginal={() => setLembrarOriginal((v) => !v)}
+        onOrganizarMoldes={() => aplicarMudanca(organizarPecas(pecas, enfesto?.larguraUtilMm ?? 1500))}
         onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
         onImportarPlt={importarPltHandler}
-        onExportarProjeto={() => void exportarProjetoHandler()}
+        onExportarProjeto={() => setDialogoDeFerramenta({ tipo: 'exportar-projeto' })}
         onImportarProjeto={importarProjetoHandler}
         onExportarIso={() => setDialogoDeFerramenta({ tipo: 'corte-iso' })}
         onSalvar={salvarProjetoAtual}
@@ -5619,6 +5671,77 @@ export default function App(): React.JSX.Element {
             />
           );
         })()}
+      {dialogoDeFerramenta?.tipo === 'exportar-projeto' && (
+        <DialogoDeCampos
+          titulo="Exportar projeto"
+          campos={[{ tipo: 'texto', id: 'senha', rotulo: 'Senha (opcional)', inicial: '', opcional: true }]}
+          nota="Com senha, o arquivo só abre com ela. Quem perde a senha perde o arquivo: não há como recuperar."
+          rotuloDoBotao="Salvar o arquivo"
+          onAplicar={(valores) => {
+            void exportarProjetoHandler(typeof valores.senha === 'string' && valores.senha !== '' ? valores.senha : null);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'exportar-projeto' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'senha-do-projeto' && (
+        <DialogoDeCampos
+          titulo="Projeto com senha"
+          campos={[{ tipo: 'texto', id: 'senha', rotulo: 'Senha do arquivo', inicial: '' }]}
+          rotuloDoBotao="Abrir"
+          onAplicar={(valores) => {
+            void decifrarProjeto(dialogoDeFerramenta.conteudo, String(valores.senha)).then(entrarComOProjeto, (e: unknown) => setMensagensImportacao([e instanceof Error ? e.message : String(e)]));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'senha-do-projeto' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'plotar-moldes' && (
+        <DialogoDeCampos
+          titulo="Plotar moldes"
+          campos={[
+            { tipo: 'medida', id: 'papel', rotulo: 'Largura do papel (mm)', inicial: String(enfesto?.larguraUtilMm ?? 1500) },
+            { tipo: 'caixa', id: 'selecionadas', rotulo: 'Só as peças selecionadas', inicial: false },
+            { tipo: 'caixa', id: 'tamanhos', rotulo: 'Cada tamanho separado', inicial: false },
+            { tipo: 'caixa', id: 'desdobrar', rotulo: 'Desdobrar as peças de simetria', inicial: true },
+            { tipo: 'caixa', id: 'girar', rotulo: 'Girar 90°', inicial: false },
+          ]}
+          nota="Sai um PLT com os moldes em colunas na largura do papel, sem mexer no encaixe. Confira a escala no primeiro risco."
+          rotuloDoBotao="Salvar o PLT"
+          onAplicar={(valores) => {
+            const larguraDoPapelMm = Number(valores.papel);
+            if (!(larguraDoPapelMm > 0)) return 'Diga a largura do papel.';
+            const ids = new Set([...idsSelecionadosEmLote, ...(selecionadoId ? [selecionadoId] : [])]);
+            if (valores.selecionadas === true && ids.size === 0) return 'Nenhuma peça selecionada.';
+            void plotarMoldes({ larguraDoPapelMm, ...(valores.selecionadas === true ? { ids } : {}), tamanhosSeparados: valores.tamanhos === true, desdobrar: valores.desdobrar === true, girar90: valores.girar === true });
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'plotar-moldes' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'tamanho-intermediario' && (
+        <DialogoDeCampos
+          titulo="Tamanho intermediário"
+          campos={[
+            { tipo: 'texto', id: 'nome', rotulo: 'Nome do tamanho novo', inicial: '' },
+            { tipo: 'texto', id: 'depois', rotulo: 'Depois de qual tamanho', inicial: pecaSelecionada?.graduacao?.tamanhos[0] ?? '' },
+          ]}
+          nota="Entra em todas as peças que têm esse tamanho e um seguinte, com as regras no meio do caminho entre os dois."
+          rotuloDoBotao="Criar"
+          onAplicar={(valores) => {
+            try {
+              const depois = String(valores.depois);
+              const comEle = pecas.map((p) => (p.graduacao && p.graduacao.tamanhos.indexOf(depois) >= 0 && p.graduacao.tamanhos.indexOf(depois) < p.graduacao.tamanhos.length - 1 ? comTamanhoIntermediario(p, String(valores.nome), depois) : p));
+              if (comEle.every((p, i) => p === pecas[i])) return `Nenhuma peça tem um tamanho depois de “${depois}”.`;
+              aplicarMudanca(comEle);
+              return null;
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'tamanho-intermediario' ? null : d))}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'alinhar-pecas' && (
         <DialogoDeCampos
           titulo="Alinhar peças"
@@ -6725,6 +6848,7 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
           <AreaDeDesenho
+            contornoOriginal={lembrarOriginal ? (projetoAtual.estadoAtual.pecas.find((p) => p.id === selecionadoId)?.contorno ?? null) : null}
             imagens={imagens}
             pecas={pecas}
             selecionadoId={selecionadoId}

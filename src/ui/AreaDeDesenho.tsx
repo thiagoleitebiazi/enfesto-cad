@@ -1,3 +1,4 @@
+import type { Contorno } from '../core/geometria';
 import { eixoTravado } from '../domain/posicionamento';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
@@ -335,6 +336,8 @@ const TAMANHO_MINIMO_DA_SELECAO_PX = 4;
 interface AreaDeDesenhoProps {
   readonly pecas: readonly Molde[];
   readonly selecionadoId: string | null;
+  /** O contorno salvo da peça selecionada, tracejado por baixo da edição ("Lembrar molde original", ADR 0170). */
+  readonly contornoOriginal?: Contorno | null;
   readonly idsSelecionadosEmLote: ReadonlySet<string>;
   readonly enfesto: ConfiguracaoDeEnfesto | null;
   readonly idsComErro: ReadonlySet<string>;
@@ -478,6 +481,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     imagens = SEM_IMAGENS,
   } = props;
   const pecaSelecionada = pecas.find((p) => p.id === selecionadoId) ?? null;
+  const contornoOriginal = props.contornoOriginal ?? null;
   // O que prende o cursor agora: os vértices, com o ímã ligado ou num modo de
   // medida; a grade, só com o ímã ligado e a grade à vista.
   const modoDeMedida = MODOS_QUE_PRENDEM_NOS_VERTICES.has(modo);
@@ -1564,6 +1568,23 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       desenharSeta(ctx, pontosEmEdicao[0]!, cursorLocal, COR_FIO);
     }
 
+    // O molde como estava salvo, tracejado (ADR 0170): dá para ver o quanto a edição mudou.
+    if (contornoOriginal && contornoOriginal.length > 1) {
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = '#e65100';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      contornoOriginal.forEach((p, i) => {
+        const q = mundoParaTela(p, transform);
+        if (i === 0) ctx.moveTo(q.x, q.y);
+        else ctx.lineTo(q.x, q.y);
+      });
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // Onde o ímã prendeu: quadrado vazado num vértice, cruz num ponto da
     // grade — para o usuário ver antes de clicar ou de soltar o vértice.
     const cursorPreso =
@@ -1586,6 +1607,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.stroke();
     }
   }, [
+    contornoOriginal,
     pecas,
     selecionadoId,
     idsSelecionadosEmLote,

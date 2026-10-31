@@ -177,6 +177,21 @@ const botoesDesligados = (): HTMLButtonElement[] =>
 describe('BarraDeFerramentas: abas', () => {
   afterEach(() => cleanup());
 
+  it('os favoritos (ADR 0171): o botão direito guarda a ferramenta; o favorito faz o que ela faz; lá, o botão direito tira', () => {
+    window.localStorage.removeItem('enfesto-cad:favoritos');
+    const props = renderizar('Início');
+    fireEvent.contextMenu(botao('Exportar DXF'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Favoritos' }));
+    fireEvent.click(botao('Exportar DXF'));
+    expect(props.onExportarDxf).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('tab', { name: 'Início' })).toHaveAttribute('aria-selected', 'true');
+    expect(JSON.parse(window.localStorage.getItem('enfesto-cad:favoritos')!)).toEqual([{ aba: 'inicio', rotulo: 'Exportar DXF' }]);
+    fireEvent.click(screen.getByRole('tab', { name: 'Favoritos' }));
+    fireEvent.contextMenu(botao('Exportar DXF'));
+    expect(within(painel()).getByText(/botão direito numa ferramenta/)).toBeInTheDocument();
+    window.localStorage.removeItem('enfesto-cad:favoritos');
+  });
+
   it('mostra as abas na ordem de um CAD de moldes, com a de Encaixe no fim, e abre em Início', () => {
     render(<BarraDeFerramentas {...propsBase()} />);
 
@@ -191,6 +206,7 @@ describe('BarraDeFerramentas: abas', () => {
       'Conferência',
       'Modelo',
       'Encaixe',
+      'Favoritos',
     ]);
     expect(screen.getByRole('tab', { name: 'Início' })).toHaveAttribute('aria-selected', 'true');
   });

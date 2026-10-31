@@ -260,4 +260,20 @@ Fonte: a apostila unificada de treinamento, comparada com o programa. As ferrame
 | Texto no risco | ✅ ADR 0165 (na mesa e no PLT) |
 | Cortar o molde e sobreposição permitida | ✅ já cobertos: Cortar (Construção) e a tolerância da validação (ADR 0082) |
 | Molde dobrado só na dobra (F11) | ⬜ a fazer |
-| Paleta do usuário | ⬜ a fazer |
+| Paleta do usuário | ✅ ADR 0171 |
+
+## Sétima rodada: o manual inteiro, menu por menu (2026-10-31)
+
+Fontes: o manual digital da referência, lido por inteiro; a página pública sobre as camadas do padrão ASTM. Os vídeos não podem ser assistidos: só títulos, descrições e transcrições públicas, e as páginas de aulas e o blog não trouxeram função nova.
+
+| Item | Situação |
+|---|---|
+| Exportar ASTM D6673 | ✅ ADR 0166 (sem o .RUL; não testado em outro sistema) |
+| Plotar os moldes: tamanhos separados, desdobrar, girar, selecionados, reorganizar; organizar todos os moldes | ✅ ADR 0167 |
+| Tamanho intermediário | ✅ ADR 0168 |
+| Senha do modelo | ✅ ADR 0169 (no arquivo exportado) |
+| Molde a molde; lembrar molde original | ✅ ADR 0170 |
+| Paleta do usuário | ✅ ADR 0171 |
+| Molde dobrado só na dobra | ⬜ a fazer |
+| Importar de outros sistemas (arquivos proprietários do manual) | ⬜ formatos fechados, sem especificação pública |
+| Perfil, teclas de atalho, esquema de cores, unidade de medida geral, pontos CAM, semi-corte | ⬜ a fazer |

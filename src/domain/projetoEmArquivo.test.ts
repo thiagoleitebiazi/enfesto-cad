@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { criarProjeto } from './projeto';
-import { nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './projetoEmArquivo';
+import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './projetoEmArquivo';
 
 const PROJETO = criarProjeto('Saia Évasê', 'p1', 'ENF-1', '2026-10-31T10:00:00.000Z', { pecas: [], tecido: null, enfesto: null });
 const novo = { id: () => 'p-novo', codigo: () => 'ENF-9' };
+
+describe('a senha do arquivo (ADR 0169)', () => {
+  it('cifrado, o conteúdo não aparece; a senha certa devolve o projeto, a errada não', async () => {
+    const cifrado = await cifrarProjeto(textoDoProjeto(PROJETO), 'segredo');
+    expect(ehProjetoCifrado(cifrado)).toBe(true);
+    expect(ehProjetoCifrado(textoDoProjeto(PROJETO))).toBe(false);
+    expect(ehProjetoCifrado('{quebrado')).toBe(false);
+    expect(cifrado).not.toContain('Saia');
+    expect(projetoDoArquivo(await decifrarProjeto(cifrado, 'segredo'), [], novo)).toEqual({ projeto: PROJETO });
+    await expect(decifrarProjeto(cifrado, 'outra')).rejects.toThrow(/senha não é esta/);
+  });
+});
 
 describe('o projeto num arquivo (ADR 0156)', () => {
   it('o nome do arquivo, sem acento nem espaço', () => {

@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
 import { ajustarCompactacao } from './compactacaoDaFita';
@@ -103,6 +104,17 @@ interface BarraDeFerramentasProps {
   readonly onExportarDxf: () => void;
   /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
   readonly onExportarPlt: () => void;
+  /** O DXF no padrão ASTM (ADR 0166). */
+  readonly onExportarAstm?: () => void;
+  /** Plotar os moldes, e não o encaixe (ADR 0167). */
+  readonly onPlotarMoldes?: () => void;
+  /** Um tamanho entre dois da grade (ADR 0168). */
+  readonly onTamanhoIntermediario?: () => void;
+  /** Visão: a peça seguinte ou a anterior, enquadrada; lembrar o molde salvo; organizar as peças (ADR 0167, 0170). */
+  readonly onMoldeVizinho?: (passo: 1 | -1) => void;
+  readonly lembrarOriginal?: boolean;
+  readonly onLembrarOriginal?: () => void;
+  readonly onOrganizarMoldes?: () => void;
   /** O PLT por partes: de onde o papel acabou, ou uma faixa do papel (ADR 0158). */
   readonly onExportarPltPorPartes?: () => void;
   /** Alinha e distribui as peças selecionadas (ADR 0161). */
@@ -247,6 +259,25 @@ interface FerramentaProps {
  * ferramenta — com a fita compactada o botão pequeno fica só com o ícone — e
  * diz por que ela não está disponível.
  */
+/** A paleta do usuário (ADR 0171): as ferramentas que a pessoa mais usa, lembradas neste computador. */
+interface Favorito {
+  readonly aba: Aba;
+  readonly rotulo: string;
+}
+
+const CHAVE_DOS_FAVORITOS = 'enfesto-cad:favoritos';
+
+function favoritosGuardados(): readonly Favorito[] {
+  try {
+    const lidos: unknown = JSON.parse(window.localStorage.getItem(CHAVE_DOS_FAVORITOS) ?? '[]');
+    return Array.isArray(lidos) ? lidos.filter((f): f is Favorito => typeof f?.aba === 'string' && typeof f?.rotulo === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+const rotuloDoBotao = (b: Element): string => (b.textContent ?? '').replace(/\s+/g, ' ').trim();
+
 function Ferramenta(props: FerramentaProps): React.JSX.Element {
   const nome = typeof props.rotulo === 'string' ? props.rotulo : props.rotulo.join(' ');
   const motivo = props.falta ?? null;
@@ -278,7 +309,8 @@ type Aba =
   | 'manipulacao'
   | 'conferencia'
   | 'modelo'
-  | 'encaixe';
+  | 'encaixe'
+  | 'favoritos';
 
 const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
   { id: 'arquivo', rotulo: 'Arquivo' },
@@ -314,6 +346,22 @@ const ABAS: ReadonlyArray<{ id: Aba; rotulo: string }> = [
  */
 export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.Element {
   const [abaAtiva, setAbaAtiva] = useState<Aba>('inicio');
+  const [favoritos, setFavoritos] = useState<readonly Favorito[]>(favoritosGuardados);
+  const mudarFavoritos = (novos: readonly Favorito[]): void => {
+    setFavoritos(novos);
+    try {
+      window.localStorage.setItem(CHAVE_DOS_FAVORITOS, JSON.stringify(novos));
+    } catch {
+      // Sem o armazenamento do navegador, valem até fechar.
+    }
+  };
+  /** Vai à aba da ferramenta e clica nela: o favorito faz o que o botão original faz, inclusive ficar sem ação se ele estiver apagado. */
+  const usarFavorito = (f: Favorito): void => {
+    flushSync(() => setAbaAtiva(f.aba));
+    Array.from(conteudoRef.current?.querySelectorAll<HTMLButtonElement>('.grupo-de-ferramentas button') ?? [])
+      .find((b) => rotuloDoBotao(b) === f.rotulo)
+      ?.click();
+  };
   // O que falta para usar uma ferramenta de graduação: uma peça selecionada, com tamanhos definidos.
   const faltaParaGraduar = !props.temSelecaoUnica ? SEM_PECA : props.temGraduacao ? null : SEM_TAMANHOS;
   const conteudoRef = useRef<HTMLDivElement | null>(null);
@@ -382,7 +430,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       </div>
       <div className="ribbon-cabecalho">
         <div className="ribbon-abas" role="tablist" aria-label="Categorias de ferramentas">
-          {ABAS.map((aba) => (
+          {[...ABAS, { id: 'favoritos' as const, rotulo: 'Favoritos' }].map((aba) => (
             <button
               key={aba.id}
               role="tab"
@@ -422,6 +470,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 titulo: props.podeProximaVista ? 'Refaz o enquadramento desfeito por Vista anterior' : 'Nada para refazer',
                 onEscolher: props.onProximaVista,
               },
+              ...(props.onMoldeVizinho
+                ? [
+                    { tipo: 'separador' as const },
+                    { tipo: 'acao' as const, rotulo: 'Molde anterior', titulo: 'Seleciona e enquadra a peça anterior', onEscolher: () => props.onMoldeVizinho!(-1) },
+                    { tipo: 'acao' as const, rotulo: 'Próximo molde', titulo: 'Seleciona e enquadra a peça seguinte', onEscolher: () => props.onMoldeVizinho!(1) },
+                    { tipo: 'opcao' as const, rotulo: 'Lembrar molde original', marcado: props.lembrarOriginal === true, titulo: 'Mostra tracejado o contorno salvo da peça selecionada', onEscolher: props.onLembrarOriginal ?? (() => {}) },
+                    { tipo: 'acao' as const, rotulo: 'Organizar os moldes', titulo: 'Reorganiza todas as peças em colunas na largura da mesa (Ctrl+Z desfaz; tira as peças do encaixe)', onEscolher: props.onOrganizarMoldes ?? (() => {}) },
+                  ]
+                : []),
               { tipo: 'separador' },
               { tipo: 'alternar', rotulo: 'Grade', marcado: props.mostrarGrade, onEscolher: props.onAlternarGrade },
             ]}
@@ -512,7 +569,29 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
       </div>
 
       <div className="ribbon-conteudo" ref={conteudoRef}>
-        <div className="ribbon-conteudo-abas" role="tabpanel">
+        <div
+          className="ribbon-conteudo-abas"
+          role="tabpanel"
+          onContextMenu={(e) => {
+            const botao = (e.target as HTMLElement).closest('.grupo-de-ferramentas button');
+            if (!botao) return;
+            e.preventDefault();
+            const rotulo = rotuloDoBotao(botao);
+            if (abaAtiva === 'favoritos') mudarFavoritos(favoritos.filter((f) => f.rotulo !== rotulo));
+            else if (!favoritos.some((f) => f.rotulo === rotulo && f.aba === abaAtiva)) mudarFavoritos([...favoritos, { aba: abaAtiva, rotulo }]);
+          }}
+        >
+          {abaAtiva === 'favoritos' && (
+            <div className="grupo-de-ferramentas" role="group" aria-label="Favoritos">
+              {favoritos.length === 0 && <span className="nota-do-formulario">Clique com o botão direito numa ferramenta de qualquer aba para pô-la aqui. Aqui, o botão direito tira.</span>}
+              {favoritos.map((f) => (
+                <button key={`${f.aba}:${f.rotulo}`} title={`Ferramenta da outra aba: ${f.rotulo}`} onClick={() => usarFavorito(f)}>
+                  <Icone nome="biblioteca" />
+                  <span>{f.rotulo}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {abaAtiva === 'arquivo' && (
             <div className="grupo-de-ferramentas" role="group" aria-label="Arquivo">
               <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">
@@ -575,6 +654,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onExportarDxf}
                 />
+                {props.onExportarAstm && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Exportar', 'ASTM']}
+                    icone="exportar"
+                    dica="Exportar DXF no padrão ASTM: cada peça num bloco, um por tamanho, para abrir em outros sistemas de modelagem (não testado em outro sistema; sem o arquivo de regras)"
+                    falta={props.podeExportarPdf ? null : SEM_PECAS}
+                    onClick={props.onExportarAstm}
+                  />
+                )}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Exportar', 'PDF']}
@@ -591,6 +680,16 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onExportarPlt}
                 />
+                {props.onPlotarMoldes && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Plotar', 'moldes']}
+                    icone="exportar"
+                    dica="Plotar os moldes, e não o encaixe: só as selecionadas, cada tamanho separado, desdobradas, giradas 90°, reorganizadas na largura do papel"
+                    falta={props.podeExportarPdf ? null : SEM_PECAS}
+                    onClick={props.onPlotarMoldes}
+                  />
+                )}
                 {props.onExportarPltPorPartes && (
                   <Ferramenta
                     tamanho="grande"
@@ -1427,6 +1526,15 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={() => props.onUsarFerramentaDeGraduacao('graduar-tangente')}
                   />
                 </div>
+                {props.onTamanhoIntermediario && (
+                  <Ferramenta
+                    tamanho="grande"
+                    rotulo={['Tamanho', 'intermediário']}
+                    icone="exportar"
+                    dica="Tamanho intermediário: um tamanho novo entre dois da grade, com as regras no meio do caminho entre eles"
+                    onClick={props.onTamanhoIntermediario}
+                  />
+                )}
                 <div className="coluna-de-ferramenta">
                   <Ferramenta
                     tamanho="pequeno"

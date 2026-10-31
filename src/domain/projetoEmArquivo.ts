@@ -7,6 +7,47 @@ import { lerProjeto, type Projeto } from './projeto';
 
 export const EXTENSAO_DO_PROJETO = 'enfesto';
 
+/**
+ * A senha do arquivo (ADR 0169): o manual da referência protege o modelo com senha. O projeto vai cifrado (AES-GCM, com
+ * a chave tirada da senha por PBKDF2). Quem perde a senha perde o arquivo: não há como recuperar.
+ */
+const FORMATO_CIFRADO = 'enfesto-cifrado';
+const VOLTAS_DA_CHAVE = 200_000;
+
+const emBase64 = (b: Uint8Array): string => btoa(Array.from(b, (c) => String.fromCharCode(c)).join(''));
+const deBase64 = (t: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+
+async function chaveDaSenha(senha: string, sal: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(senha), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: sal, iterations: VOLTAS_DA_CHAVE, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+export async function cifrarProjeto(texto: string, senha: string): Promise<string> {
+  const sal = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const dados = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await chaveDaSenha(senha, sal), new TextEncoder().encode(texto));
+  return JSON.stringify({ formato: FORMATO_CIFRADO, sal: emBase64(sal), iv: emBase64(iv), dados: emBase64(new Uint8Array(dados)) });
+}
+
+export function ehProjetoCifrado(texto: string): boolean {
+  try {
+    return (JSON.parse(texto) as { formato?: unknown }).formato === FORMATO_CIFRADO;
+  } catch {
+    return false;
+  }
+}
+
+/** O texto do projeto; lança se a senha não for a certa (ou se o arquivo foi mexido). */
+export async function decifrarProjeto(texto: string, senha: string): Promise<string> {
+  const c = JSON.parse(texto) as { sal: string; iv: string; dados: string };
+  try {
+    const claro = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: deBase64(c.iv) }, await chaveDaSenha(senha, deBase64(c.sal)), deBase64(c.dados));
+    return new TextDecoder().decode(claro);
+  } catch {
+    throw new Error('A senha não é esta (ou o arquivo foi alterado).');
+  }
+}
+
 export const textoDoProjeto = (projeto: Projeto): string => JSON.stringify(projeto);
 
 export function nomeDoArquivoDoProjeto(projeto: Projeto): string {
