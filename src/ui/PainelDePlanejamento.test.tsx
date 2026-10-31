@@ -367,6 +367,17 @@ describe('PainelDePlanejamento — a troca com o ERP por uma pasta (ADR 0141)', 
     expect(await screen.findByText(/deixou de ser usada/)).toBeInTheDocument();
   });
 
+  it('a troca sozinha (ADR 0151): ligada, o arquivo que chega entra sem clicar', async () => {
+    const pasta = pastaNaMemoria();
+    const { onMudarCadastro } = abrir({ pastaDoErp: pasta, intervaloDaTrocaMs: 20 });
+    etapa('2. Ordem');
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher a pasta…' }));
+    fireEvent.click(await screen.findByLabelText(/Trocar sozinho/));
+    await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
+    expect(pasta.pastas.get('saida')!.get('ordens.csv')).toContain('OP-70');
+    fireEvent.click(screen.getByLabelText(/Trocar sozinho/));
+  });
+
   it('o arquivo com erro: nenhuma ordem entra, o erro aparece e o arquivo vai para com-erro', async () => {
     const pasta = pastaNaMemoria();
     pasta.pastas.get('entrada')!.set('ENF-1_ordens.csv', 'codigo;P;XG\nOP-71;1;1\n');

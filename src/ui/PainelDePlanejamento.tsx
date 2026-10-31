@@ -113,6 +113,8 @@ export interface PainelDePlanejamentoProps {
   readonly onGuardarConfiguracao: (configuracao: ConfiguracaoDoPlanejamento) => void;
   /** A pasta de troca com o ERP (ADR 0141); sem ela (fora do programa), a troca não aparece. */
   readonly pastaDoErp?: AcessoAPastaDeTroca | null;
+  /** De quanto em quanto a troca sozinha acontece (padrão: 5 minutos). */
+  readonly intervaloDaTrocaMs?: number;
   /** O nome de um projeto da biblioteca, para os cortes que vão ao ERP. */
   readonly nomeDoProjeto?: (projetoId: string) => string;
   /** Fecha a janela e mostra a peça (para corrigir o que falta nela). */
@@ -341,6 +343,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
   const acessoAoErp = props.pastaDoErp ?? null;
   const [pastaDoErp, setPastaDoErp] = useState<string | null>(null);
   const [trocandoComOErp, setTrocandoComOErp] = useState(false);
+  const [trocaAutomatica, setTrocaAutomatica] = useState(false);
   const [recusadosNaTroca, setRecusadosNaTroca] = useState<readonly string[]>([]);
   useEffect(() => {
     if (!acessoAoErp) return;
@@ -806,7 +809,7 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
 
   /** A troca (ADR 0141): as ordens deste molde que estão na entrada e, depois, a saída com o cadastro de agora. */
   const trocarComOErpAgora = async (): Promise<void> => {
-    if (!acessoAoErp) return;
+    if (!acessoAoErp || trocandoComOErp) return;
     if (props.cadastroSomenteLeitura) {
       setMensagem('O cadastro de produção é de uma versão mais nova do programa: esta versão não grava nele.');
       return;
@@ -846,6 +849,19 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       setTrocandoComOErp(false);
     }
   };
+
+  // A troca sozinha (ADR 0151), enquanto a janela está aberta: o relógio chama a troca de agora.
+  const trocarRef = useRef(trocarComOErpAgora);
+  useEffect(() => {
+    trocarRef.current = trocarComOErpAgora;
+  });
+  const trocaLigada = trocaAutomatica && pastaDoErp !== null;
+  const intervaloDaTroca = props.intervaloDaTrocaMs ?? 5 * 60_000;
+  useEffect(() => {
+    if (!trocaLigada) return;
+    const relogio = setInterval(() => void trocarRef.current(), intervaloDaTroca);
+    return () => clearInterval(relogio);
+  }, [trocaLigada, intervaloDaTroca]);
 
   const guardarMalha = (): void => {
     const id = malhaEscolhida === NOVA || malhaEscolhida === DO_PROJETO ? props.novoId('malha') : malhaEscolhida;
@@ -1216,6 +1232,12 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     </button>
                   )}
                 </p>
+                {pastaDoErp && (
+                  <label className="opcao-em-linha">
+                    <input type="checkbox" checked={trocaAutomatica} onChange={(e) => setTrocaAutomatica(e.target.checked)} />
+                    Trocar sozinho a cada 5 minutos, enquanto esta janela estiver aberta
+                  </label>
+                )}
                 {recusadosNaTroca.length > 0 && <Faltas titulo="Arquivos recusados (nenhuma ordem deles entrou):" itens={recusadosNaTroca} />}
               </fieldset>
             )}

@@ -228,3 +228,12 @@ servidor ou serviço de terceiros, entra o que o programa consegue fazer sozinho
 | Combinar os modelos em looks; achar o modelo parecido com uma foto | ✅ os looks da coleção e a busca por imagem: ADR 0145 (a loja virtual continua de fora) |
 | O tecido colidindo consigo mesmo no caimento 3D | ✅ ponto a ponto, fora das costuras: ADR 0146 |
 | Uma máquina só para calcular os encaixes das outras | ✅ o modo servidor de encaixes (--servidor-de-encaixes): ADR 0147 |
+
+## Quinta rodada: o que os ADRs deixaram em "não feito" (2026-10-31)
+
+| Item | Situação |
+|---|---|
+| Faca tangencial (eixo C) no arquivo ISO | ✅ ADR 0148 (não testado numa mesa) |
+| Furos, marcas e linhas internas tocados na mesa digitalizadora | ✅ ADR 0149 (não testado numa mesa) |
+| O pedido da fila da rede esquecido por uma estação que fechou | ✅ ADR 0150 |
+| A troca com o ERP de tempos em tempos | ✅ ADR 0151 (com a janela aberta) |
