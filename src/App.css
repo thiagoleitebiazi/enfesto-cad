@@ -5896,3 +5896,44 @@ rect.destaque-do-desenho,
   color: var(--marca-texto);
   font-weight: 600;
 }
+
+/* O teclado na tela (ADR 0211): por cima de tudo, também dos diálogos. */
+.teclado-virtual {
+  position: fixed;
+  z-index: 200;
+  left: 50%;
+  bottom: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--marca-900);
+  transform: translateX(-50%);
+}
+
+.teclado-virtual > div {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.teclado-virtual button {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--marca-700);
+  color: var(--marca-texto);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.teclado-virtual button.ativa {
+  outline: 2px solid var(--marca-texto);
+}
+
+.teclado-virtual button.larga {
+  min-width: 220px;
+}

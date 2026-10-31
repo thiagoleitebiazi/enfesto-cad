@@ -1,8 +1,9 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, screen, session, shell } from 'electron';
 import { execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { emCascata, ladoALado } from './arrumarJanelas';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -980,6 +981,45 @@ ipcMain.handle('pasta-gravar', async (_evento, p: PedidoNaPasta) => {
   const raiz = await raizDaPasta(p?.tipo);
   return raiz ? gravarNaPasta(raiz, p.tipo, p.subpasta, p.nome, p.texto) : false;
 });
+// A fonte TrueType (ADR 0211): o caminho fica em <userData>/fonte-do-plotter.json, e nunca vem da interface.
+const arquivoDaFonte = (): string => path.join(app.getPath('userData'), 'fonte-do-plotter.json');
+
+async function lerFonteGuardada(): Promise<{ nome: string; bytes: Uint8Array } | null> {
+  try {
+    const { caminho } = JSON.parse(await readFile(arquivoDaFonte(), 'utf-8')) as { caminho?: unknown };
+    if (typeof caminho !== 'string') return null;
+    return { nome: path.basename(caminho), bytes: new Uint8Array(await readFile(caminho)) };
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('fonte-ler', () => lerFonteGuardada());
+ipcMain.handle('fonte-escolher', async () => {
+  const resultado = await dialog.showOpenDialog({ title: 'Fonte dos textos do plotter e do PDF', ...(process.platform === 'win32' ? { defaultPath: 'C:\\Windows\\Fonts' } : {}), filters: [{ name: 'Fontes TrueType', extensions: ['ttf', 'otf'] }], properties: ['openFile'] });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  await writeFile(arquivoDaFonte(), JSON.stringify({ caminho: resultado.filePaths[0] }));
+  return lerFonteGuardada();
+});
+ipcMain.handle('fonte-esquecer', () => unlink(arquivoDaFonte()).catch(() => undefined));
+
+// As janelas (ADR 0211): outra janela do programa, e as visíveis arrumadas na tela da primeira.
+ipcMain.handle('janelas-arrumar', (_evento, como: unknown) => {
+  if (como === 'nova') {
+    criarJanelaPrincipal();
+    return;
+  }
+  const janelas = BrowserWindow.getAllWindows().filter((j) => j.isVisible() && !j.isMinimized());
+  const primeira = janelas[0];
+  if (!primeira) return;
+  const area = screen.getDisplayMatching(primeira.getBounds()).workArea;
+  const lugares = como === 'lado-a-lado' ? ladoALado(janelas.length, area) : emCascata(janelas.length, area);
+  janelas.forEach((janela, i) => {
+    if (janela.isMaximized()) janela.unmaximize();
+    janela.setBounds(lugares[i]!);
+  });
+});
+
 ipcMain.handle('saida-enviar', async (_evento, p: { destino?: unknown; texto?: unknown }) => {
   const porta = lerPortaDeSaida(p?.destino);
   if (!porta || typeof p?.texto !== 'string') return { ok: false, erro: 'A porta de saída não vale: use um endereço da rede local, \\\\servidor\\plotter, LPT1 ou COM1.' };

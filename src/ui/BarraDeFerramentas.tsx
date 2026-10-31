@@ -171,6 +171,13 @@ interface BarraDeFerramentasProps {
   readonly textoComoLinha?: boolean;
   readonly onAlternarTextoComoLinha?: () => void;
   readonly onEnviarAoPlotter?: () => void;
+  /** A fonte TrueType, o teclado virtual e as janelas (ADR 0211). */
+  readonly fonteDoPlotter?: string;
+  readonly onFonteDoPlotter?: () => void;
+  readonly onTirarFonteDoPlotter?: () => void;
+  readonly mostrarTeclado?: boolean;
+  readonly onAlternarTeclado?: () => void;
+  readonly onJanelas?: (como: 'nova' | 'cascata' | 'lado-a-lado') => void;
   /** A porta de saída e o gerenciador de impressão (ADR 0210). */
   readonly portaDeSaida?: string;
   readonly onPortaDeSaida?: () => void;
@@ -620,6 +627,10 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                           { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
                           { tipo: 'opcao' as const, rotulo: 'Réguas', marcado: props.mostrarReguas !== false, onEscolher: props.onAlternarReguas ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Barra de status', marcado: props.mostrarBarraDeStatus !== false, onEscolher: props.onAlternarBarraDeStatus ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Teclado virtual', marcado: props.mostrarTeclado === true, titulo: 'Um teclado na tela, para a mesa sem teclado (Ctrl+F1)', onEscolher: props.onAlternarTeclado ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Nova janela', titulo: 'Outra janela do programa, para ver outro projeto ao lado', onEscolher: () => props.onJanelas?.('nova') },
+                          { tipo: 'acao' as const, rotulo: 'Janelas em cascata', onEscolher: () => props.onJanelas?.('cascata') },
+                          { tipo: 'acao' as const, rotulo: 'Janelas lado a lado', onEscolher: () => props.onJanelas?.('lado-a-lado') },
                           { tipo: 'acao' as const, rotulo: 'Moldes no encaixe…', titulo: 'O que aparece em cada peça na tela; não muda o que sai impresso', onEscolher: props.onMoldesNoEncaixe ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar pacotes', marcado: props.destacarPacotes === true, titulo: 'Cada pacote do encaixe numa cor, com o código dele', onEscolher: props.onAlternarDestacarPacotes ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar relacionamento de piques', marcado: props.destacarRelacionamento === true, titulo: 'Marca os pontos de casamento das peças', onEscolher: props.onAlternarDestacarRelacionamento ?? (() => undefined) },
@@ -707,6 +718,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onEnviarAoPlotter
                       ? [
                           { tipo: 'opcao' as const, rotulo: 'Texto como linha no plotter', marcado: props.textoComoLinha === true, titulo: 'Os textos saem desenhados em traços, para o plotter que não tem letreiro próprio', onEscolher: props.onAlternarTextoComoLinha ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: props.fonteDoPlotter ? `Fonte TrueType: ${props.fonteDoPlotter}…` : 'Fonte TrueType…', titulo: 'Os textos do plotter e do PDF saem nesta fonte', onEscolher: props.onFonteDoPlotter ?? (() => undefined) },
+                          ...(props.fonteDoPlotter ? [{ tipo: 'acao' as const, rotulo: 'Tirar a fonte TrueType', onEscolher: props.onTirarFonteDoPlotter ?? (() => undefined) }] : []),
                           { tipo: 'acao' as const, rotulo: props.portaDeSaida ? `Enviar ao plotter (${props.portaDeSaida})` : 'Enviar ao plotter (pasta)', titulo: props.portaDeSaida ? 'Põe o risco na fila do gerenciador de impressão' : 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
                           { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde o plotter está: na rede, compartilhado ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Gerenciador de impressão…', titulo: 'Os riscos que vão para o plotter, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },

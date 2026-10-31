@@ -373,6 +373,8 @@ import { ehDmpl, hpglDoDmpl } from './formats/dmpl-importacao';
 import { hpglDoIso } from './formats/iso-importacao';
 import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
 import { PainelDaFilaDeImpressao } from './ui/PainelDaFilaDeImpressao';
+import { TecladoVirtual } from './ui/TecladoVirtual';
+import type { FonteDoPlotter } from './formats/fonteTrueType';
 import { ehArquivoAstm, lerAstm, moldesDoAstm } from './formats/astm-importacao';
 import { gerarDxfAstmComRegras } from './formats/dxf-astm';
 import { gerarRul, lerRul } from './formats/rul';
@@ -929,6 +931,25 @@ export default function App(): React.JSX.Element {
       return '';
     }
   });
+  // A fonte TrueType e o teclado virtual (ADR 0211). A leitura da fonte só vem quando há uma.
+  const [fonteDoPlotter, setFonteDoPlotter] = useState<FonteDoPlotter | null>(null);
+  const [mostrarTeclado, setMostrarTeclado] = useState(false);
+  const usarFonte = useCallback(async (arquivo: { readonly nome: string; readonly bytes: Uint8Array } | null) => {
+    if (!arquivo) return;
+    const { fonteDoArquivo } = await import('./formats/fonteTrueType');
+    setFonteDoPlotter(fonteDoArquivo(arquivo.bytes, arquivo.nome));
+  }, []);
+  useEffect(() => {
+    void window.enfestoCad?.lerFonte?.().then(usarFonte).catch(() => undefined);
+    const ouvir = (e: KeyboardEvent): void => {
+      if (e.key !== 'F1' || !e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setMostrarTeclado((v) => !v);
+    };
+    window.addEventListener('keydown', ouvir, true);
+    return () => window.removeEventListener('keydown', ouvir, true);
+  }, [usarFonte]);
   const [filaDeImpressao, setFilaDeImpressao] = useState<FilaDeImpressao>(FILA_DE_IMPRESSAO_VAZIA);
   const filaDeImpressaoRef = useRef(filaDeImpressao);
   const esvaziandoRef = useRef(false);
@@ -3751,6 +3772,7 @@ export default function App(): React.JSX.Element {
           orientacao: opcoesEscolhidas.orientacao,
           margemMm: opcoesEscolhidas.margemMm,
           ...(opcoesEscolhidas.emCores !== undefined ? { emCores: opcoesEscolhidas.emCores } : {}),
+          ...(fonteDoPlotter ? { fonte: fonteDoPlotter.bytes } : {}),
         };
         const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfestoNaMesa ? enfestoNaMesa : null;
         const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(pecasNaMesa, noEncaixe), areaImprimivelMm(opcoesDePagina));
@@ -3775,7 +3797,7 @@ export default function App(): React.JSX.Element {
         setGerandoPdf(false);
       }
     },
-    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, fonteDoPlotter, registrarEventoEPersistir],
   );
 
   // O DXF (ADR 0096): as peças como estão na mesa, direto para a janela de salvar — não há o que escolher antes.
@@ -3796,8 +3818,8 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
-    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
+    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
+    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, fonteDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => {
@@ -4764,11 +4786,11 @@ export default function App(): React.JSX.Element {
   const plotarMoldes = useCallback(
     async (opcoes: Parameters<typeof moldesParaPlotar>[1]) => {
       const lista = moldesParaPlotar(pecas, opcoes, proximoId);
-      const plt = gerarPlt(lista, { textoComoLinha, canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
+      const plt = gerarPlt(lista, { textoComoLinha, ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
       const caminho = await salvarTexto('moldes.plt', plt);
       if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Moldes (PLT) salvos em ${caminho}: ${lista.length} peça(s)`);
     },
-    [pecas, tecido, enfesto, canetasDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
+    [pecas, tecido, enfesto, canetasDoPlotter, fonteDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
   );
 
   // O projeto num arquivo (ADR 0156): sai como está agora; entra na biblioteca e abre, sem trocar o que há nela.
@@ -5683,6 +5705,18 @@ export default function App(): React.JSX.Element {
           }
         }}
         onEnviarAoPlotter={() => void enviarAoPlotter()}
+        fonteDoPlotter={fonteDoPlotter?.nome ?? ''}
+        onFonteDoPlotter={() => {
+          const api = window.enfestoCad;
+          if (api) void api.escolherFonte().then(usarFonte).catch(() => avisar('Este arquivo não pôde ser lido como fonte.'));
+        }}
+        onTirarFonteDoPlotter={() => {
+          void window.enfestoCad?.esquecerFonte();
+          setFonteDoPlotter(null);
+        }}
+        mostrarTeclado={mostrarTeclado}
+        onAlternarTeclado={() => setMostrarTeclado((v) => !v)}
+        onJanelas={(como) => void window.enfestoCad?.arrumarJanelas(como)}
         portaDeSaida={portaDeSaida}
         onPortaDeSaida={() => setDialogoDeFerramenta({ tipo: 'porta-de-saida' })}
         onGerenciadorDeImpressao={() => setDialogoDeFerramenta({ tipo: 'gerenciador-de-impressao' })}
@@ -6871,6 +6905,7 @@ export default function App(): React.JSX.Element {
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'substituir-tamanho' ? null : d))}
         />
       )}
+      {mostrarTeclado && <TecladoVirtual onFechar={() => setMostrarTeclado(false)} />}
       {dialogoDeFerramenta?.tipo === 'porta-de-saida' && (
         <DialogoDeCampos
           titulo="Porta de saída"

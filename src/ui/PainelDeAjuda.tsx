@@ -30,6 +30,7 @@ const GESTOS_DO_TRACKPAD: ReadonlyArray<readonly [string, string]> = [
 /** Os mesmos atalhos tratados em `aoTeclar` (App.tsx) — manter as duas listas juntas. */
 const ATALHOS_DE_TECLADO: ReadonlyArray<readonly [string, string]> = [
   ['F1', 'Esta lista de atalhos'],
+  ['Ctrl+F1', 'Mostrar ou esconder o teclado virtual'],
   ['Ctrl+N', 'Novo projeto'],
   ['Ctrl+O', 'Abrir (Biblioteca)'],
   ['Ctrl+S', 'Salvar'],

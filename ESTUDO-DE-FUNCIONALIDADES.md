@@ -336,7 +336,8 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Cores dos pacotes; manual e novidades; sugestão do método de enfesto | ✅ ADR 0204 |
 | Réguas e barra de status; ordem crescente dos tamanhos | ✅ ADR 0205 |
 | Substituir tamanho no encaixe | ✅ ADR 0206 |
-| .aoc; DMPL; blocos na vertical; envolvente de grupo; TrueType; níveis Mutoh; cascata; teclado virtual | ⬜ não feito: motivo de cada um no ADR 0205 |
+| .aoc | ⬜ formato fechado, sem especificação pública |
+| TrueType; janelas em cascata e lado a lado; teclado virtual | ✅ ADR 0211 |
 
 ## Décima rodada: o que tinha ficado de fora (2026-10-31)
 

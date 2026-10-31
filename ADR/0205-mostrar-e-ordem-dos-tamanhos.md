@@ -7,3 +7,5 @@ A auditoria do manual do encaixe, com 104 itens contra o código, achou quatro q
 **O que ficou de fora, com o motivo:** o arquivo .aoc da enfestadeira, formato fechado; a importação de DMPL, sem um arquivo para conferir; (os blocos na vertical e a envolvente entraram depois, no ADR 0208); a fonte TrueType nos textos; os níveis de impressão do plotter Mutoh, sem a máquina para conferir; as janelas em cascata, porque o programa tem uma janela só; o teclado virtual, que o Windows já tem.
 
 Conferência: testes unitários, `npx eslint` e `npx tsc -b --noEmit`. O programa não foi aberto (pedido do usuário: só testes unitários).
+
+**Depois:** o DMPL entrou no ADR 0210; a TrueType, a cascata e o teclado virtual, no ADR 0211.

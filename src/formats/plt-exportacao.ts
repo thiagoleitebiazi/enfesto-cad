@@ -96,6 +96,8 @@ export interface OpcoesDoPlt {
   readonly cabecalho?: readonly string[];
   /** A caneta de cada elemento (ADR 0174): a aba Ferramentas do manual da referência. Quem não está aqui usa a regra de `canetas`. */
   readonly ferramentas?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
+  /** Os textos desenhados com a fonte TrueType (ADR 0211): vale mais que o letreiro e que o texto em traços. */
+  readonly tracosDaFonte?: (texto: string, alturaMm: number) => Ponto2D[][];
   /** Os níveis de impressão (ADR 0210): sai o nível menor em todas as peças, depois o seguinte. Quem não está aqui é do nível 1. */
   readonly niveis?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
   /** Os textos livres, no lugar deles na mesa (ADR 0165). */
@@ -158,13 +160,13 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   const rotulo = (onde: Ponto2D, texto: string, larguraCm: number, alturaCm: number, giroGraus = 0): void => {
     const c = Math.round(Math.cos((giroGraus * Math.PI) / 180));
     const s = Math.round(Math.sin((giroGraus * Math.PI) / 180));
-    if (!opcoes.textoComoLinha) {
+    if (!opcoes.textoComoLinha && !opcoes.tracosDaFonte) {
       if (giroGraus !== 0) comandos.push(`DI${c},${s}`);
       comandos.push(`PU${u(onde.x)},${u(onde.y)}`, `SI${larguraCm},${alturaCm}`, `LB${textoParaPlotter(texto)}${String.fromCharCode(3)}`);
       if (giroGraus !== 0) comandos.push('DI1,0');
       return;
     }
-    for (const traco of tracosDoTexto(texto, alturaCm * 10)) {
+    for (const traco of opcoes.tracosDaFonte?.(texto, alturaCm * 10) ?? tracosDoTexto(texto, alturaCm * 10)) {
       const [primeiro, ...resto] = traco.map((p) => ({ x: onde.x + p.x * c - p.y * s, y: onde.y + p.x * s + p.y * c }));
       comandos.push(`PU${u(primeiro!.x)},${u(primeiro!.y)}`, `PD${resto.map((p) => `${u(p.x)},${u(p.y)}`).join(',')}`);
     }

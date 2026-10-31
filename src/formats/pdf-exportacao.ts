@@ -53,6 +53,8 @@ export interface OpcoesDePagina {
   readonly formato: FormatoDePagina;
   readonly orientacao: OrientacaoDePagina;
   readonly margemMm: number;
+  /** A fonte TrueType, embutida: todos os textos saem nela (ADR 0211). */
+  readonly fonte?: Uint8Array;
   /** "Em cores" (ADR 0185): ligado, a peça sai com a cor dela; `false`, tudo em preto e branco. Ausente, como sempre saiu. */
   readonly emCores?: boolean;
 }
@@ -128,6 +130,7 @@ function novoDocumento(opcoes: OpcoesDePagina): PDFKit.PDFDocument {
     compress: false,
   });
   if (opcoes.emCores === false) emPretoEBranco(doc);
+  if (opcoes.fonte) doc.font(opcoes.fonte as unknown as ArrayBuffer);
   return doc;
 }
 

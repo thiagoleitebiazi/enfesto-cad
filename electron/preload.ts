@@ -123,6 +123,20 @@ const api = {
   async gravarNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, texto: string): Promise<boolean> {
     return ipcRenderer.invoke('pasta-gravar', { tipo, subpasta, nome, texto }) as Promise<boolean>;
   },
+  /** A fonte TrueType (ADR 0211): a interface nunca dá o caminho, só pede para escolher, ler ou esquecer. */
+  async lerFonte(): Promise<{ readonly nome: string; readonly bytes: Uint8Array } | null> {
+    return ipcRenderer.invoke('fonte-ler') as Promise<{ readonly nome: string; readonly bytes: Uint8Array } | null>;
+  },
+  async escolherFonte(): Promise<{ readonly nome: string; readonly bytes: Uint8Array } | null> {
+    return ipcRenderer.invoke('fonte-escolher') as Promise<{ readonly nome: string; readonly bytes: Uint8Array } | null>;
+  },
+  async esquecerFonte(): Promise<void> {
+    await ipcRenderer.invoke('fonte-esquecer');
+  },
+  /** Abrir outra janela do programa, ou arrumar as que estão abertas (ADR 0211). */
+  async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<void> {
+    await ipcRenderer.invoke('janelas-arrumar', como);
+  },
   /** O risco direto para o plotter (ADR 0210): o destino é o texto da porta de saída. */
   async enviarAPorta(destino: string, texto: string): Promise<{ readonly ok: boolean; readonly erro?: string }> {
     return ipcRenderer.invoke('saida-enviar', { destino, texto }) as Promise<{ readonly ok: boolean; readonly erro?: string }>;
