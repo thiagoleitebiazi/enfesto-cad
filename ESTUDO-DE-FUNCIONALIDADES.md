@@ -350,3 +350,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Porta de saída na rede, compartilhada, LPT e COM; gerenciador de impressão; DMPL | ✅ ADR 0210, sem plotter de verdade; o DMPL sem a especificação |
 | Ordem de corte: criar arquivos de encaixe, um por risco | ✅ ADR 0212 |
 | Loja virtual | 🟡 ADR 0213: vitrine em uma página, com looks, filtro e tamanho; sem carrinho nem pagamento |
+| Nuvem: projeto compartilhado, várias pessoas, comentários, aprovação | 🟡 ADR 0214: servidor da própria empresa, sem a nuvem da referência |

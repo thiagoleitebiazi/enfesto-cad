@@ -374,6 +374,8 @@ import { hpglDoIso } from './formats/iso-importacao';
 import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
 import { PainelDaFilaDeImpressao } from './ui/PainelDaFilaDeImpressao';
 import { TecladoVirtual } from './ui/TecladoVirtual';
+import { PainelDeColaboracao, type ApiDaColaboracao } from './ui/PainelDeColaboracao';
+import type { ProjetoCompartilhado } from './domain/colaboracao';
 import { estadosDosRiscos } from './domain/encaixeDoRisco';
 import { modeloDoPlano } from './domain/modeloDoPlano';
 import type { FonteDoPlotter } from './formats/fonteTrueType';
@@ -2538,6 +2540,32 @@ export default function App(): React.JSX.Element {
 
   // ---- A sala de corte (aba Encaixe > Sala de corte, ADR 0100): o cadastro e os nomes dos projetos, lidos ao abrir.
   const [mostrarSalaDeCorte, setMostrarSalaDeCorte] = useState(false);
+  // A colaboração (ADR 0214): a versão do servidor de onde cada projeto partiu fica neste computador.
+  const [mostrarColaboracao, setMostrarColaboracao] = useState(false);
+  const [versoesCompartilhadas, setVersoesCompartilhadas] = useState<Readonly<Record<string, number>>>(() => {
+    try {
+      const lidas: unknown = JSON.parse(window.localStorage.getItem('enfesto-cad:versoes-compartilhadas') ?? '{}');
+      return typeof lidas === 'object' && lidas !== null ? (lidas as Record<string, number>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const guardarVersaoCompartilhada = useCallback((id: string, versao: number) => {
+    setVersoesCompartilhadas((v) => {
+      const novas = { ...v, [id]: versao };
+      try {
+        window.localStorage.setItem('enfesto-cad:versoes-compartilhadas', JSON.stringify(novas));
+      } catch {
+        // Sem o armazenamento do navegador, vale até fechar.
+      }
+      return novas;
+    });
+  }, []);
+  const apiDaColaboracao = useMemo((): ApiDaColaboracao | null => {
+    const api = window.enfestoCad;
+    if (!api) return null;
+    return { estado: () => api.colaboracaoEstado(), conectar: (url, chave, nome) => api.colaboracaoConectar(url, chave, nome), pedir: (metodo, caminho, corpo) => api.colaboracaoPedir(metodo, caminho, corpo), servir: (porta) => api.colaboracaoServir(porta) };
+  }, []);
   const [nomesDosProjetos, setNomesDosProjetos] = useState<ReadonlyMap<string, string>>(new Map());
   const abrirSalaDeCorte = useCallback(() => {
     setMostrarSalaDeCorte(true);
@@ -2703,6 +2731,31 @@ export default function App(): React.JSX.Element {
       return `${novos.length} ${novos.length === 1 ? 'arquivo de encaixe criado' : 'arquivos de encaixe criados'} na biblioteca: ${novos.map((p) => p.nome).join(', ')}.`;
     },
     [pecas, tecido, enfesto, projetoAtual.nome, novoCodigoDeProjeto, persistirProjeto, carregarListaDeProjetos],
+  );
+
+  const aplicarEstadoCompartilhado = useCallback(
+    (estado: EstadoDoProjeto) => {
+      aplicarMudanca([...estado.pecas]);
+      setTecido(estado.tecido);
+      setEnfesto(estado.enfesto);
+    },
+    [aplicarMudanca],
+  );
+
+  const baixarProjetoCompartilhado = useCallback(
+    (baixado: ProjetoCompartilhado, versao: number) => {
+      guardarVersaoCompartilhada(baixado.id, versao);
+      if (baixado.id === projetoAtual.id) {
+        aplicarEstadoCompartilhado(baixado.estado);
+        return;
+      }
+      const agora = new Date().toISOString();
+      const existente = projetos.find((p) => p.id === baixado.id);
+      const novo = existente ? registrarEvento(existente, 'mudanca-de-configuracao', baixado.estado, agora, `Baixado do servidor: versão ${versao}`) : criarProjeto(baixado.nome, baixado.id, baixado.codigo, agora, baixado.estado);
+      setProjetos((lista) => [...lista.filter((p) => p.id !== novo.id), novo]);
+      void persistirProjeto(novo).then(carregarListaDeProjetos);
+    },
+    [projetoAtual.id, projetos, guardarVersaoCompartilhada, aplicarEstadoCompartilhado, persistirProjeto, carregarListaDeProjetos],
   );
 
   const confirmarPlanoDeCorte = useCallback(
@@ -5732,6 +5785,7 @@ export default function App(): React.JSX.Element {
         mostrarTeclado={mostrarTeclado}
         onAlternarTeclado={() => setMostrarTeclado((v) => !v)}
         onJanelas={(como) => void window.enfestoCad?.arrumarJanelas(como)}
+        {...(apiDaColaboracao ? { onAbrirColaboracao: () => setMostrarColaboracao(true) } : {})}
         portaDeSaida={portaDeSaida}
         onPortaDeSaida={() => setDialogoDeFerramenta({ tipo: 'porta-de-saida' })}
         onGerenciadorDeImpressao={() => setDialogoDeFerramenta({ tipo: 'gerenciador-de-impressao' })}
@@ -6922,6 +6976,17 @@ export default function App(): React.JSX.Element {
         />
       )}
       {mostrarTeclado && <TecladoVirtual onFechar={() => setMostrarTeclado(false)} />}
+      {mostrarColaboracao && apiDaColaboracao && (
+        <PainelDeColaboracao
+          api={apiDaColaboracao}
+          projeto={{ id: projetoAtual.id, nome: projetoAtual.nome, codigo: projetoAtual.codigo, estado: { pecas, tecido, enfesto } }}
+          versaoBase={versoesCompartilhadas[projetoAtual.id] ?? 0}
+          onVersao={guardarVersaoCompartilhada}
+          onEstado={aplicarEstadoCompartilhado}
+          onBaixar={baixarProjetoCompartilhado}
+          onFechar={() => setMostrarColaboracao(false)}
+        />
+      )}
       {dialogoDeFerramenta?.tipo === 'porta-de-saida' && (
         <DialogoDeCampos
           titulo="Porta de saída"

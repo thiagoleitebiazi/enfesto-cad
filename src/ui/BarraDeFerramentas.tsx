@@ -233,6 +233,8 @@ interface BarraDeFerramentasProps {
   readonly onAbrirPlanoDeCorte: () => void;
   /** Encaixe > Sala de corte: todas as ordens de corte, os indicadores, os retalhos e os relatórios (ADR 0100). */
   readonly onAbrirSalaDeCorte: () => void;
+  /** O servidor de colaboração (ADR 0214). */
+  readonly onAbrirColaboracao?: () => void;
   readonly onInverterSelecao: () => void;
   readonly onCriarPontoDeRestauracao: () => void;
   readonly onRestaurar: () => void;
@@ -2466,6 +2468,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   <Icone nome="recortar" />
                   <span>Sala de corte</span>
                 </button>
+                {props.onAbrirColaboracao && (
+                  <button onClick={props.onAbrirColaboracao} title="Colaboração: os projetos num servidor da empresa, com comentários, aprovação e as mudanças de cada um juntas">
+                    <Icone nome="biblioteca" />
+                    <span>Colaboração</span>
+                  </button>
+                )}
               </div>
 
               <div className="grupo-de-ferramentas" role="group" aria-label="Configuração">

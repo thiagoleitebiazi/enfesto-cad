@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { EstadoDaColaboracao, ServidorLigado } from '../src/ui/PainelDeColaboracao';
 import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
 import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
@@ -122,6 +123,19 @@ const api = {
   },
   async gravarNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, texto: string): Promise<boolean> {
     return ipcRenderer.invoke('pasta-gravar', { tipo, subpasta, nome, texto }) as Promise<boolean>;
+  },
+  /** A colaboração (ADR 0214): o endereço e a chave ficam no processo principal. */
+  async colaboracaoEstado(): Promise<EstadoDaColaboracao> {
+    return ipcRenderer.invoke('colaboracao-estado') as Promise<EstadoDaColaboracao>;
+  },
+  async colaboracaoConectar(url: string, chave: string, nome: string): Promise<string | null> {
+    return ipcRenderer.invoke('colaboracao-conectar', { url, chave, nome }) as Promise<string | null>;
+  },
+  async colaboracaoPedir(metodo: 'GET' | 'PUT' | 'POST', caminho: string, corpo?: unknown): Promise<{ readonly status: number; readonly corpo: unknown }> {
+    return ipcRenderer.invoke('colaboracao-pedir', { metodo, caminho, corpo }) as Promise<{ readonly status: number; readonly corpo: unknown }>;
+  },
+  async colaboracaoServir(porta: number | null): Promise<ServidorLigado | string | null> {
+    return ipcRenderer.invoke('colaboracao-servir', porta) as Promise<ServidorLigado | string | null>;
   },
   /** A fonte TrueType (ADR 0211): a interface nunca dá o caminho, só pede para escolher, ler ou esquecer. */
   async lerFonte(): Promise<{ readonly nome: string; readonly bytes: Uint8Array } | null> {

@@ -3,7 +3,11 @@ import { execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
+import type { Server } from 'node:http';
 import { emCascata, ladoALado } from './arrumarJanelas';
+import { pedirAoServidor, urlDoServidorValida } from './conexaoDeColaboracao';
+import { criarServidorDeColaboracao } from './servidorDeColaboracao';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -981,6 +985,101 @@ ipcMain.handle('pasta-gravar', async (_evento, p: PedidoNaPasta) => {
   const raiz = await raizDaPasta(p?.tipo);
   return raiz ? gravarNaPasta(raiz, p.tipo, p.subpasta, p.nome, p.texto) : false;
 });
+/**
+ * A colaboração (ADR 0214), em <userData>/colaboracao.json: o endereço, o nome e as chaves, cifradas pelo cofre do
+ * sistema. Sem cofre, a chave vale até fechar o programa. O servidor só liga a pedido, e não volta sozinho.
+ */
+interface ColaboracaoNoDisco {
+  readonly url?: string;
+  readonly nome?: string;
+  readonly chaveCifrada?: string;
+  readonly chaveDoServidorCifrada?: string;
+}
+
+const arquivoDaColaboracao = (): string => path.join(app.getPath('userData'), 'colaboracao.json');
+let chaveDaConexao = '';
+let servidorDeColaboracao: { readonly servidor: Server; readonly porta: number; readonly chave: string } | null = null;
+
+async function lerColaboracao(): Promise<ColaboracaoNoDisco> {
+  try {
+    return JSON.parse(await readFile(arquivoDaColaboracao(), 'utf-8')) as ColaboracaoNoDisco;
+  } catch {
+    return {};
+  }
+}
+
+const cifrada = (chave: string): string | null => (cofreDoSistema.disponivel() ? cofreDoSistema.cifrar(chave).toString('base64') : null);
+
+function decifrada(guardada: string | undefined): string {
+  if (!guardada || !cofreDoSistema.disponivel()) return '';
+  try {
+    return cofreDoSistema.decifrar(Buffer.from(guardada, 'base64'));
+  } catch {
+    return '';
+  }
+}
+
+async function chaveDaConexaoAtual(disco: ColaboracaoNoDisco): Promise<string> {
+  if (chaveDaConexao === '') chaveDaConexao = decifrada(disco.chaveCifrada);
+  return chaveDaConexao;
+}
+
+function servidorParaAInterface(): { porta: number; chave: string; enderecos: string[] } | null {
+  if (!servidorDeColaboracao) return null;
+  const { porta, chave } = servidorDeColaboracao;
+  const ips = Object.values(os.networkInterfaces()).flatMap((lista) => lista ?? []);
+  return { porta, chave, enderecos: ips.filter((i) => i.family === 'IPv4' && !i.internal).map((i) => `http://${i.address}:${porta}`) };
+}
+
+function desligarServidorDeColaboracao(): Promise<void> {
+  const ligado = servidorDeColaboracao;
+  servidorDeColaboracao = null;
+  return new Promise((resolver) => (ligado ? ligado.servidor.close(() => resolver()) : resolver()));
+}
+
+ipcMain.handle('colaboracao-estado', async () => {
+  const disco = await lerColaboracao();
+  return { url: disco.url ?? '', nome: disco.nome ?? '', conectado: Boolean(disco.url) && (await chaveDaConexaoAtual(disco)) !== '', servidor: servidorParaAInterface() };
+});
+ipcMain.handle('colaboracao-conectar', async (_evento, d: { url?: unknown; chave?: unknown; nome?: unknown }) => {
+  const url = urlDoServidorValida(d?.url);
+  if (!url) return 'Escreva o endereço completo do servidor, como http://192.168.0.10:8931.';
+  const disco = await lerColaboracao();
+  const nova = typeof d?.chave === 'string' ? d.chave.trim() : '';
+  if (nova === '' && (await chaveDaConexaoAtual(disco)) === '') return 'Escreva a chave do servidor.';
+  if (nova !== '') chaveDaConexao = nova;
+  const guardada = nova !== '' ? cifrada(nova) : (disco.chaveCifrada ?? null);
+  const { chaveCifrada: _antiga, ...resto } = disco;
+  void _antiga;
+  await writeFile(arquivoDaColaboracao(), JSON.stringify({ ...resto, url, nome: typeof d?.nome === 'string' ? d.nome.trim().slice(0, 80) : '', ...(guardada ? { chaveCifrada: guardada } : {}) }));
+  return null;
+});
+ipcMain.handle('colaboracao-pedir', async (_evento, p: { metodo?: unknown; caminho?: unknown; corpo?: unknown }) => {
+  const disco = await lerColaboracao();
+  if (!disco.url) throw new Error('Ligue o programa a um servidor primeiro.');
+  return pedirAoServidor((url, init) => net.fetch(url, init), disco.url, await chaveDaConexaoAtual(disco), p?.metodo, p?.caminho, p?.corpo);
+});
+ipcMain.handle('colaboracao-servir', async (_evento, porta: unknown) => {
+  await desligarServidorDeColaboracao();
+  if (porta === null) return null;
+  if (typeof porta !== 'number' || !Number.isInteger(porta) || porta < 1024 || porta > 65535) return 'A porta vai de 1024 a 65535.';
+  const disco = await lerColaboracao();
+  const chave = decifrada(disco.chaveDoServidorCifrada) || randomBytes(24).toString('base64url');
+  const servidor = criarServidorDeColaboracao({ pasta: path.join(app.getPath('userData'), 'colaboracao'), chave });
+  try {
+    await new Promise<void>((resolver, rejeitar) => {
+      servidor.once('error', rejeitar);
+      servidor.listen(porta, '0.0.0.0', resolver);
+    });
+  } catch {
+    return `A porta ${porta} não pôde ser aberta: outro programa pode estar usando.`;
+  }
+  servidorDeColaboracao = { servidor, porta, chave };
+  const guardada = cifrada(chave);
+  if (guardada) await writeFile(arquivoDaColaboracao(), JSON.stringify({ ...disco, chaveDoServidorCifrada: guardada }));
+  return servidorParaAInterface();
+});
+
 // A fonte TrueType (ADR 0211): o caminho fica em <userData>/fonte-do-plotter.json, e nunca vem da interface.
 const arquivoDaFonte = (): string => path.join(app.getPath('userData'), 'fonte-do-plotter.json');
 
