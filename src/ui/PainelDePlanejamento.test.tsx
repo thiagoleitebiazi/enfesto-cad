@@ -403,7 +403,7 @@ describe('PainelDePlanejamento — a troca com o ERP por uma pasta (ADR 0141)', 
     fireEvent.click(screen.getByRole('button', { name: 'Escolher a pasta…' }));
     fireEvent.click(await screen.findByLabelText(/Trocar sozinho/));
     await waitFor(() => expect(onMudarCadastro).toHaveBeenCalledTimes(1));
-    expect(pasta.pastas.get('saida')!.get('ordens.csv')).toContain('OP-70');
+    expect(pasta.pastas.get('processados')!.size).toBe(1);
     fireEvent.click(screen.getByLabelText(/Trocar sozinho/));
   });
 

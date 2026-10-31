@@ -474,7 +474,7 @@ export function comPar(molde: Molde, emPar: boolean): Molde {
 /** A origem da importação de uma peça que acabou de chegar, com as medidas dela. */
 export function origemDaPecaImportada(
   peca: Molde,
-  dados: { readonly formato: 'dxf' | 'pdf'; readonly arquivo: string; readonly importadaEmIso: string; readonly unidade: string; readonly unidadeAssumida: boolean },
+  dados: { readonly formato: 'dxf' | 'pdf' | 'plt'; readonly arquivo: string; readonly importadaEmIso: string; readonly unidade: string; readonly unidadeAssumida: boolean },
 ): OrigemDaImportacao {
   return { ...dados, areaMm2: area(peca.contorno), perimetroMm: perimetro(peca.contorno), pontos: peca.contorno.length };
 }
