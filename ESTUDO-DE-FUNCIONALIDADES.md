@@ -312,7 +312,7 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Relacionamento piques | ✅ ADR 0191 e 0204 (o como é leitura minha) |
 | Auto ajuste de texto; estilos de linha no plotter; calculadora; cor, estilo e peso da linha | ✅ ADR 0192 |
 | Mostrar conforme definição das ferramentas; ponto de pique | ✅ ADR 0193 (só o contorno; ponto de cor fixa) |
-| Níveis de impressão | ⬜ não feito: é do plotter Mutoh; as canetas por elemento (ADR 0174) cobrem a escolha da caneta |
+| Níveis de impressão | ✅ ADR 0210, sem comando próprio do Mutoh, e sem plotter de verdade |
 | Itens institucionais (licença, clube, dados do autor, teclado virtual, sobre, janela em cascata) | não se aplicam |
 | Importar e exportar Lectra, Gerber, Investrônica, MDL, VET, IBA, ALF, metafile | não feito: formatos fechados |
 
@@ -346,3 +346,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Arquivo de regras .RUL, importar e exportar | ✅ ADR 0207 |
 | Envolvente contorno e retangular, de peça ou de grupo; margem por ponto; grupo rígido; blocos por tamanho, separação completa, horizontal e vertical; manter orientação dos pacotes | ✅ ADR 0208 |
 | Tecido ativo: um encaixe e uma largura por tecido, nas telas e nas saídas | ✅ ADR 0209 |
+| Porta de saída na rede, compartilhada, LPT e COM; gerenciador de impressão; DMPL | ✅ ADR 0210, sem plotter de verdade; o DMPL sem a especificação |

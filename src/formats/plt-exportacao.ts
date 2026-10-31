@@ -96,6 +96,8 @@ export interface OpcoesDoPlt {
   readonly cabecalho?: readonly string[];
   /** A caneta de cada elemento (ADR 0174): a aba Ferramentas do manual da referência. Quem não está aqui usa a regra de `canetas`. */
   readonly ferramentas?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
+  /** Os níveis de impressão (ADR 0210): sai o nível menor em todas as peças, depois o seguinte. Quem não está aqui é do nível 1. */
+  readonly niveis?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
   /** Os textos livres, no lugar deles na mesa (ADR 0165). */
   readonly textos?: readonly { readonly x: number; readonly y: number; readonly texto: string }[];
 }
@@ -192,27 +194,40 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
       rotulo(onde, nomeDoBloco(bloco), 0.35, 0.5);
     }
   }
-  for (const peca of pecas) {
+  const desenharPeca = (peca: Molde, vale: (e: ElementoDoPlotter) => boolean): void => {
     const corte = linhaDeCorteDaPeca(peca);
-    caneta(1, 'corte');
-    linha(corte, true);
-    caneta(2, 'costura');
-    if (corte !== peca.contorno) {
-      if (opcoes.estiloDaCostura) comandos.push(opcoes.estiloDaCostura === 'tracejada' ? 'LT2,1' : 'LT1,1');
-      linha(peca.contorno, true);
-      if (opcoes.estiloDaCostura) comandos.push('LT');
+    if (vale('corte')) {
+      caneta(1, 'corte');
+      linha(corte, true);
     }
-    caneta(2, 'furos');
-    for (const furo of peca.furos) linha(furo, true);
-    caneta(2, 'internas');
-    for (const interna of linhasDoMolde(peca)) linha(interna, false);
-    caneta(2, 'fio');
-    const fio = opcoes.ajusteDeTexto ? fioAjustado(peca.linhaDeFio, opcoes.ajusteDeTexto) : peca.linhaDeFio;
-    linha([fio.inicio, fio.fim], false);
-    caneta(2, 'piques');
-    for (const pique of peca.piques) linha(corteDoPique(peca, corte, pique), false);
-    const simetria = arestaDeSimetria(peca);
-    if (simetria !== null) linha([peca.contorno[simetria]!, peca.contorno[(simetria + 1) % peca.contorno.length]!], false);
+    if (vale('costura')) {
+      caneta(2, 'costura');
+      if (corte !== peca.contorno) {
+        if (opcoes.estiloDaCostura) comandos.push(opcoes.estiloDaCostura === 'tracejada' ? 'LT2,1' : 'LT1,1');
+        linha(peca.contorno, true);
+        if (opcoes.estiloDaCostura) comandos.push('LT');
+      }
+    }
+    if (vale('furos')) {
+      caneta(2, 'furos');
+      for (const furo of peca.furos) linha(furo, true);
+    }
+    if (vale('internas')) {
+      caneta(2, 'internas');
+      for (const interna of linhasDoMolde(peca)) linha(interna, false);
+    }
+    if (vale('fio')) {
+      caneta(2, 'fio');
+      const fio = opcoes.ajusteDeTexto ? fioAjustado(peca.linhaDeFio, opcoes.ajusteDeTexto) : peca.linhaDeFio;
+      linha([fio.inicio, fio.fim], false);
+    }
+    if (vale('piques')) {
+      caneta(2, 'piques');
+      for (const pique of peca.piques) linha(corteDoPique(peca, corte, pique), false);
+      const simetria = arestaDeSimetria(peca);
+      if (simetria !== null) linha([peca.contorno[simetria]!, peca.contorno[(simetria + 1) % peca.contorno.length]!], false);
+    }
+    if (!vale('textos')) return;
     // O nome, a partir do canto de baixo da caixa da peça (no papel), em letras de 5 mm.
     caneta(2, 'textos');
     const caixa = retanguloEnvolvente(peca.contorno);
@@ -223,7 +238,13 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
       rotulo(inicio, nomeDaPeca, altura * 0.7, altura, opcoes.ajusteDeTexto.orientacaoGraus);
     } else if (peca.alturaDoTextoMm) rotulo(inicio, nomeDaPeca, (peca.alturaDoTextoMm * 0.7) / 10, peca.alturaDoTextoMm / 10);
     else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
-  }
+  };
+  const { niveis } = opcoes;
+  if (niveis) {
+    const nivelDe = (e: ElementoDoPlotter): number => niveis[e] ?? 1;
+    const usados = [...new Set((Object.keys(ROTULO_DO_ELEMENTO) as ElementoDoPlotter[]).map(nivelDe))].sort((a, b) => a - b);
+    for (const nivel of usados) for (const peca of pecas) desenharPeca(peca, (e) => nivelDe(e) === nivel);
+  } else for (const peca of pecas) desenharPeca(peca, () => true);
   for (const l of opcoes.linhas ?? []) {
     caneta(2);
     linha([l.de, l.ate], false);

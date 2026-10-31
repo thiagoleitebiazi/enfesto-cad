@@ -171,6 +171,10 @@ interface BarraDeFerramentasProps {
   readonly textoComoLinha?: boolean;
   readonly onAlternarTextoComoLinha?: () => void;
   readonly onEnviarAoPlotter?: () => void;
+  /** A porta de saída e o gerenciador de impressão (ADR 0210). */
+  readonly portaDeSaida?: string;
+  readonly onPortaDeSaida?: () => void;
+  readonly onGerenciadorDeImpressao?: () => void;
   readonly onEscolherPastaDoPlotter?: () => void;
   readonly onRetanguloDeOrganizacao?: () => void;
   /** O fio por seleção e inverter a costura (ADR 0190). */
@@ -703,7 +707,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onEnviarAoPlotter
                       ? [
                           { tipo: 'opcao' as const, rotulo: 'Texto como linha no plotter', marcado: props.textoComoLinha === true, titulo: 'Os textos saem desenhados em traços, para o plotter que não tem letreiro próprio', onEscolher: props.onAlternarTextoComoLinha ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Enviar ao plotter (pasta)', titulo: 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
+                          { tipo: 'acao' as const, rotulo: props.portaDeSaida ? `Enviar ao plotter (${props.portaDeSaida})` : 'Enviar ao plotter (pasta)', titulo: props.portaDeSaida ? 'Põe o risco na fila do gerenciador de impressão' : 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
+                          { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde o plotter está: na rede, compartilhado ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Gerenciador de impressão…', titulo: 'Os riscos que vão para o plotter, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Escolher a pasta do plotter…', onEscolher: props.onEscolherPastaDoPlotter ?? (() => undefined) },
                         ]
                       : []),

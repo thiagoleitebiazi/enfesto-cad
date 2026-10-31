@@ -398,6 +398,16 @@ export async function gerarPdfDeEncaixe(
       }
 
       // Os grupos do encaixe (ADR 0103): a divisa tracejada atravessando a mesa e o nome no começo de cada trecho.
+      // Os pontos de emenda (ADR 0210): a linha na largura toda, como no PLT.
+      for (const emenda of enfesto.emendasMm ?? []) {
+        const de = naFolha({ x: 0, y: emenda }, origem);
+        const ate = naFolha({ x: larguraTotal, y: emenda }, origem);
+        doc.save();
+        doc.lineWidth(mmParaPontos(0.3)).strokeColor(COR_DOS_GRUPOS).dash(mmParaPontos(1.5), { space: mmParaPontos(1.5) });
+        doc.moveTo(de.x, de.y).lineTo(ate.x, ate.y).stroke();
+        doc.undash();
+        doc.restore();
+      }
       if (blocos.length > 0) {
         doc.save();
         doc.lineWidth(mmParaPontos(0.4)).strokeColor(COR_DOS_GRUPOS).dash(mmParaPontos(4), { space: mmParaPontos(2.5) });

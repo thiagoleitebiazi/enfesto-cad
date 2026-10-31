@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -600,7 +601,7 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
 // Os outros arquivos de texto que a interface abre: o projeto exportado (ADR 0156) e o PLT (ADR 0157).
 const ARQUIVOS_DE_TEXTO = {
   projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto CAD', extensions: ['enfesto'] },
-  plt: { title: 'Importar PLT', name: 'PLT (HPGL)', extensions: ['plt', 'hpgl', 'hpg'] },
+  plt: { title: 'Importar PLT', name: 'PLT (HPGL) ou DMPL', extensions: ['plt', 'hpgl', 'hpg', 'dmpl', 'dmp'] },
   perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto CAD', extensions: ['json'] },
   iso: { title: 'Importar arquivo de corte ISO', name: 'ISO (G-code)', extensions: ['iso', 'nc', 'cnc', 'tap', 'txt'] },
   rul: { title: 'Arquivo de regras de graduação', name: 'Regras (RUL)', extensions: ['rul', 'txt'] },
@@ -978,6 +979,16 @@ ipcMain.handle('pasta-ler', async (_evento, p: PedidoNaPasta) => {
 ipcMain.handle('pasta-gravar', async (_evento, p: PedidoNaPasta) => {
   const raiz = await raizDaPasta(p?.tipo);
   return raiz ? gravarNaPasta(raiz, p.tipo, p.subpasta, p.nome, p.texto) : false;
+});
+ipcMain.handle('saida-enviar', async (_evento, p: { destino?: unknown; texto?: unknown }) => {
+  const porta = lerPortaDeSaida(p?.destino);
+  if (!porta || typeof p?.texto !== 'string') return { ok: false, erro: 'A porta de saída não vale: use um endereço da rede local, \\\\servidor\\plotter, LPT1 ou COM1.' };
+  try {
+    await enviarAPorta(porta, p.texto);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : String(e) };
+  }
 });
 ipcMain.handle('pasta-mover', async (_evento, p: PedidoNaPasta) => {
   const raiz = await raizDaPasta(p?.tipo);

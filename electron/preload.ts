@@ -123,6 +123,10 @@ const api = {
   async gravarNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, texto: string): Promise<boolean> {
     return ipcRenderer.invoke('pasta-gravar', { tipo, subpasta, nome, texto }) as Promise<boolean>;
   },
+  /** O risco direto para o plotter (ADR 0210): o destino é o texto da porta de saída. */
+  async enviarAPorta(destino: string, texto: string): Promise<{ readonly ok: boolean; readonly erro?: string }> {
+    return ipcRenderer.invoke('saida-enviar', { destino, texto }) as Promise<{ readonly ok: boolean; readonly erro?: string }>;
+  },
   async moverNaPasta(tipo: TipoDePasta, subpasta: string, nome: string, para: string, novoNome?: string): Promise<boolean> {
     return ipcRenderer.invoke('pasta-mover', { tipo, subpasta, nome, para, novoNome }) as Promise<boolean>;
   },
