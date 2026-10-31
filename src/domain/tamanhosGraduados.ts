@@ -236,8 +236,8 @@ export function expandirComGrade(pecas: readonly Molde[], novoId: () => string, 
   return pecas.flatMap((peca) => {
     const tamanhos = peca.graduacao?.tamanhos;
     if (!tamanhos) return [peca];
-    return expandirTamanhos([peca], novoId).flatMap((m, t) => {
-      const vezes = grade[tamanhos[t]!] ?? 1;
+    return expandirTamanhos([peca], novoId).flatMap((m) => {
+      const vezes = grade[m.tamanho] ?? 1;
       return vezes > 0 ? [{ ...m, quantidade: m.quantidade * vezes }] : [];
     });
   });
@@ -247,7 +247,11 @@ export function expandirTamanhos(pecas: readonly Molde[], novoId: () => string):
   return pecas.flatMap((peca) => {
     const graduacao = peca.graduacao;
     if (!graduacao) return [peca];
-    return graduacao.tamanhos.map((_, t) => (t === graduacao.base ? semGraduacao(peca) : moldeDoTamanho(peca, t, novoId())));
+    return graduacao.tamanhos.flatMap((nome, t) => {
+      const quantidade = peca.quantidadePorTamanho?.[nome] ?? peca.quantidade;
+      if (quantidade <= 0) return [];
+      return [{ ...(t === graduacao.base ? semGraduacao(peca) : moldeDoTamanho(peca, t, novoId())), tamanho: nome, quantidade }];
+    });
   });
 }
 

@@ -1,8 +1,8 @@
 import { retanguloEnvolvente } from '../core/geometria';
-import { areaUtilDaMesa, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
+import type { ConfiguracaoDeEnfesto, ZonaBloqueada } from './enfesto';
 import { moverParaForaDoEnfesto } from './encaixeManual';
 import { comGrupoDoEncaixe } from './gruposDoEncaixe';
-import { linhaDeCorteDaPeca, type Molde } from './molde';
+import { linhaDeCorteDaPeca, rotacionarMolde, type Molde } from './molde';
 
 /**
  * Os tecidos de um modelo (ADR 0194): no manual do encaixe da referência, cada molde diz o tecido dele (principal,
@@ -75,8 +75,22 @@ export function juntarAoEncaixe(colocadas: readonly Molde[], fixas: readonly Mol
   return moverParaForaDoEnfesto(todas, new Set(foraDoEncaixe.map((p) => p.id)), enfesto);
 }
 
-/** Quanto da largura as peças têm a ocupar: serve à conferência de que a mesa comporta o tecido escolhido. */
-export function larguraUtilDoEncaixe(enfesto: ConfiguracaoDeEnfesto): number {
-  const u = areaUtilDaMesa(enfesto);
-  return u.maxX - u.minX;
+export type SentidoNoEncaixe = 'por-tamanho' | 'por-pacote';
+
+const virada = (p: Molde): Molde => ({ ...rotacionarMolde(p, 180), anguloDeRotacaoGraus: p.anguloDeRotacaoGraus });
+
+/**
+ * "Sentido por tamanho" e "Sentido por pacote" (ADR 0202): no tecido de um sentido só, cada tamanho (ou cada pacote)
+ * pode ir num sentido, desde que fique todo nele. Aqui uma parte já entra virada, e o encaixe segue sem girar 180°.
+ */
+export function comSentidoAlternado(pecas: readonly Molde[], modo: SentidoNoEncaixe, novoId: () => string): Molde[] {
+  if (modo === 'por-tamanho') {
+    const tamanhos = [...new Set(pecas.map((p) => p.tamanho))];
+    return pecas.map((p) => (tamanhos.indexOf(p.tamanho) % 2 === 1 ? virada(p) : p));
+  }
+  return pecas.flatMap((p) => {
+    const metade = Math.floor(p.quantidade / 2);
+    if (metade === 0) return [p];
+    return [{ ...p, quantidade: p.quantidade - metade }, { ...virada(p), id: novoId(), quantidade: metade }];
+  });
 }

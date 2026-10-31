@@ -76,6 +76,8 @@ export interface Tecido {
   /** Estampa/textura com sentido único (não pode ser virada 180° sem inverter o desenho). */
   readonly direcional: boolean;
   readonly temPelo: boolean;
+  /** No tecido de um sentido só: cada tamanho, ou cada pacote, pode ir num sentido (ADR 0202). */
+  readonly sentidoNoEncaixe?: 'por-tamanho' | 'por-pacote';
   readonly padrao: PadraoDoTecido;
   /** Gramatura em g/m² — peso do tecido por área, usado para calcular o rendimento (quantas peças cabem no estoque). */
   readonly gramaturaGm2?: number;
@@ -105,6 +107,7 @@ export interface DadosDeNovoTecido {
   readonly tipoDeTecido?: TipoDeTecido;
   readonly custo?: CustoDoTecido;
   readonly rendimentoMmPorG?: number;
+  readonly sentidoNoEncaixe?: 'por-tamanho' | 'por-pacote';
 }
 
 export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
@@ -145,6 +148,7 @@ export function criarTecido(dados: DadosDeNovoTecido, id: string): Tecido {
     larguraUtilMm: dados.larguraUtilMm,
     direcional: dados.direcional ?? false,
     temPelo: dados.temPelo ?? false,
+    ...(dados.sentidoNoEncaixe ? { sentidoNoEncaixe: dados.sentidoNoEncaixe } : {}),
     padrao: dados.padrao ?? 'liso',
     ...(dados.gramaturaGm2 !== undefined ? { gramaturaGm2: dados.gramaturaGm2 } : {}),
     ...(dados.quantidadeDisponivelKg !== undefined ? { quantidadeDisponivelKg: dados.quantidadeDisponivelKg } : {}),

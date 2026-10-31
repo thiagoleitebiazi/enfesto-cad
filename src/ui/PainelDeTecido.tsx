@@ -28,6 +28,7 @@ function paraCampo(dados: DadosDeNovoTecido) {
     larguraUtilMm: String(dados.larguraUtilMm),
     direcional: dados.direcional ?? false,
     temPelo: dados.temPelo ?? false,
+    sentidoNoEncaixe: (dados.sentidoNoEncaixe ?? '') as '' | 'por-tamanho' | 'por-pacote',
     padrao: dados.padrao ?? ('liso' as PadraoDoTecido),
     gramaturaGm2: dados.gramaturaGm2 !== undefined ? String(dados.gramaturaGm2) : '',
     quantidadeDisponivelKg: dados.quantidadeDisponivelKg !== undefined ? String(dados.quantidadeDisponivelKg) : '',
@@ -74,6 +75,7 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
           larguraUtilMm: Number.parseFloat(campos.larguraUtilMm),
           direcional: campos.direcional,
           temPelo: campos.temPelo,
+          ...(campos.sentidoNoEncaixe ? { sentidoNoEncaixe: campos.sentidoNoEncaixe } : {}),
           padrao: campos.padrao,
           ...(campos.gramaturaGm2 ? { gramaturaGm2: Number.parseFloat(campos.gramaturaGm2) } : {}),
           ...(campos.quantidadeDisponivelKg
@@ -229,6 +231,16 @@ export function PainelDeTecido(props: PainelDeTecidoProps): React.JSX.Element {
           />
           Tem pelo
         </label>
+        {(campos.direcional || campos.temPelo) && (
+          <label>
+            Sentido no encaixe
+            <select value={campos.sentidoNoEncaixe} onChange={(e) => setCampos({ ...campos, sentidoNoEncaixe: e.target.value as typeof campos.sentidoNoEncaixe })}>
+              <option value="">Sentido único: todas as peças iguais</option>
+              <option value="por-tamanho">Sentido por tamanho</option>
+              <option value="por-pacote">Sentido por pacote</option>
+            </select>
+          </label>
+        )}
         <label>
           Observações (opcional)
           <textarea

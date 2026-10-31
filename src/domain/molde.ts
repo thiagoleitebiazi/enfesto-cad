@@ -437,6 +437,12 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** A folga em volta da peça, só no encaixe automático (ADR 0202). */
+  readonly folgaNoEncaixeMm?: number;
+  /** A quantidade própria de cada tamanho, por cima da quantidade da peça (ADR 0202). */
+  readonly quantidadePorTamanho?: Readonly<Record<string, number>>;
+  /** A altura do nome da peça no plotter (ADR 0202). */
+  readonly alturaDoTextoMm?: number;
   /** A descrição da peça, que pode aparecer nela (ADR 0199). */
   readonly descricao?: string;
   /** "Usar" desligado: a peça fica fora do encaixe (ADR 0200). */

@@ -1,6 +1,6 @@
 import { perimetro } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
-import type { Molde } from '../domain/molde';
+import type { Molde, RestricaoDeRotacao } from '../domain/molde';
 import { tecidoDaPeca } from '../domain/tecidosDoModelo';
 
 /**
@@ -93,11 +93,13 @@ export interface OpcoesDoEncaixe {
   readonly precisao: number | null;
   /** O clique numa peça da lista põe na mesa a que está fora dela. */
   readonly encaixaAoClicar: boolean;
+  /** A peça solta anda no rumo do arrasto até encostar: o SNAP do encaixe. */
+  readonly encostarAoSoltar: boolean;
   readonly verificarAoPlotar: boolean;
   readonly codigoDosPacotes: CodigoDosPacotes;
 }
 
-export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, verificarAoPlotar: true, codigoDosPacotes: 'alfanumerico' };
+export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, encostarAoSoltar: false, verificarAoPlotar: true, codigoDosPacotes: 'alfanumerico' };
 
 const CHAVE_DAS_OPCOES = 'enfesto-cad:opcoes-do-encaixe';
 
@@ -112,6 +114,49 @@ export function opcoesDoEncaixeGuardadas(a: Leitura): OpcoesDoEncaixe {
 export function guardarOpcoesDoEncaixe(a: Escrita, opcoes: OpcoesDoEncaixe): void {
   a.setItem(CHAVE_DAS_OPCOES, JSON.stringify(opcoes));
 }
+
+/** "Propriedades de encaixe" (ADR 0202): um conjunto com nome, para aplicar de uma vez. */
+export interface ConjuntoDePropriedades {
+  readonly nome: string;
+  readonly restricao: RestricaoDeRotacao;
+  readonly quantidade: number;
+  readonly tecidoDoMolde?: string;
+}
+
+const CHAVE_DOS_CONJUNTOS = 'enfesto-cad:propriedades-de-encaixe';
+
+export function conjuntosGuardados(a: Leitura): readonly ConjuntoDePropriedades[] {
+  try {
+    const v = JSON.parse(a.getItem(CHAVE_DOS_CONJUNTOS) ?? '[]') as unknown;
+    return Array.isArray(v) ? (v as ConjuntoDePropriedades[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function guardarConjuntos(a: Escrita, conjuntos: readonly ConjuntoDePropriedades[]): void {
+  a.setItem(CHAVE_DOS_CONJUNTOS, JSON.stringify(conjuntos));
+}
+
+/** A lista com o conjunto: o do mesmo nome é trocado. */
+export const comConjunto = (lista: readonly ConjuntoDePropriedades[], conjunto: ConjuntoDePropriedades): ConjuntoDePropriedades[] => [...lista.filter((c) => c.nome !== conjunto.nome), conjunto];
+
+export function aplicarConjunto(peca: Molde, conjunto: ConjuntoDePropriedades): Molde {
+  return { ...peca, restricaoDeRotacao: conjunto.restricao, quantidade: conjunto.quantidade, ...(conjunto.tecidoDoMolde ? { tecidoDoMolde: conjunto.tecidoDoMolde } : {}) };
+}
+
+/** A quantidade por tamanho no campo: "P:2 M:1"; o que não é número fica de fora. */
+export function lerQuantidades(texto: string): Readonly<Record<string, number>> {
+  return Object.fromEntries(
+    texto
+      .split(/\s+/)
+      .map((par) => par.split(':'))
+      .filter(([t, q]) => t && q && /^\d+$/.test(q))
+      .map(([t, q]) => [t, Number(q)]),
+  );
+}
+
+export const textoDasQuantidades = (q: Readonly<Record<string, number>> | undefined): string => Object.entries(q ?? {}).map(([t, n]) => `${t}:${n}`).join(' ');
 
 export type CampoDaBarra = 'encaixados' | 'comprimento' | 'largura' | 'area' | 'perimetro' | 'rendimentoConsumo' | 'rendimentoPeso';
 

@@ -124,7 +124,7 @@ describe('as janelas', () => {
     expect(dialogoDaMarcacao('remover-pique', O, [molde()])!.campos.map((c) => c.id)).toEqual(['doContorno', 'internos']);
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['modo', 'por', 'quantidade', 'espaco', 'tipo', 'largura', 'altura', 'angulo']);
     expect(dialogoDaMarcacao('multiplos-piques', O, [molde()])!.nota).toMatch(/não a conta: os espaços iguais do começo ao fim e a contagem a partir do começo são a nossa leitura\./);
-    expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'tipo', 'largura', 'altura', 'angulo', 'distancia', 'internos']);
+    expect(dialogoDaMarcacao('substituir-piques', O, [molde()])!.campos.map((c) => c.id)).toEqual(['de', 'onde', 'acao', 'naoFundidos', 'tipo', 'largura', 'altura', 'angulo', 'distancia', 'internos']);
     expect(dialogoDaMarcacao('alterar-pique', O, [molde()])).toBeNull();
     expect(lerDialogoDaMarcacao('alterar-pique', O, {})).toBe(O);
   });

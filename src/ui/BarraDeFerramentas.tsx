@@ -148,6 +148,8 @@ interface BarraDeFerramentasProps {
   readonly onAlternarDestacarRelacionamento?: () => void;
   readonly onBarraDeStatus?: () => void;
   readonly onOpcoesDoEncaixe?: () => void;
+  /** Os conjuntos de propriedades de encaixe (ADR 0202). */
+  readonly onPropriedadesDeEncaixe?: () => void;
   /** Mandar as peças para a mesa ou para fora dela (ADR 0200). */
   readonly onPosicionar?: (destino: 'mesa' | 'fora', alvo: AlvoDoPosicionar) => void;
   /** As cores pelas ferramentas e os pontos de pique (ADR 0193). */
@@ -667,6 +669,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onOpcoesDoEncaixe
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Opções do encaixe…', titulo: 'O ângulo de giro, a precisão, encaixar ao clicar, verificar ao plotar', onEscolher: props.onOpcoesDoEncaixe },
+                          { tipo: 'acao' as const, rotulo: 'Propriedades de encaixe…', titulo: 'Conjuntos com nome de giro, quantidade e tecido, para aplicar de uma vez', onEscolher: props.onPropriedadesDeEncaixe ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Barra de status…', titulo: 'Quais informações do encaixe a barra de status mostra', onEscolher: props.onBarraDeStatus ?? (() => undefined) },
                         ]
                       : []),

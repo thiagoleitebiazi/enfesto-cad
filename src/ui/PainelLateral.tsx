@@ -1,3 +1,4 @@
+import { lerQuantidades, textoDasQuantidades } from './visaoDasPecas';
 import type { EstiloDeLinha, Molde, RestricaoDeRotacao } from '../domain/molde';
 import { dimensoesDoMolde, fioNoAngulo, INCLINACAO_MAXIMA_GRAUS, MAXIMO_DE_COPIAS_DA_PECA, rotacoesPermitidas } from '../domain/molde';
 import { fioNoCentro } from '../domain/corteEUniao';
@@ -101,6 +102,10 @@ export interface PatchDeMolde {
   readonly meiaCamada?: boolean;
   /** O tecido do molde (ADR 0194). */
   readonly tecidoDoMolde?: string;
+  /** A folga no encaixe, a quantidade por tamanho e o tamanho do texto (ADR 0202). */
+  readonly folgaNoEncaixeMm?: number;
+  readonly quantidadePorTamanho?: Readonly<Record<string, number>>;
+  readonly alturaDoTextoMm?: number;
   /** A descrição, e se a peça entra no encaixe (ADR 0199, 0200). */
   readonly descricao?: string;
   readonly usarNoEncaixe?: boolean;
@@ -357,6 +362,38 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
         <label className="opcao-em-linha" title="Desligado, a peça fica fora do encaixe, sem sair do projeto">
           <input type="checkbox" checked={!peca.naoUsar} onChange={(e) => props.onAlterar({ usarNoEncaixe: e.target.checked })} />
           Usar no encaixe
+        </label>
+        <label title="Uma margem de segurança em volta desta peça, no encaixe automático: nenhuma outra chega mais perto">
+          Margem em volta no encaixe (mm)
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={peca.folgaNoEncaixeMm ?? 0}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (v >= 0) props.onAlterar({ folgaNoEncaixeMm: v });
+            }}
+          />
+        </label>
+        {peca.graduacao && (
+          <label title="A quantidade própria de cada tamanho, por cima da quantidade da peça; zero tira o tamanho do encaixe">
+            Quantidade por tamanho
+            <input key={peca.id} type="text" defaultValue={textoDasQuantidades(peca.quantidadePorTamanho)} placeholder="P:2 M:1" onBlur={(e) => props.onAlterar({ quantidadePorTamanho: lerQuantidades(e.target.value) })} />
+          </label>
+        )}
+        <label title="A altura do nome da peça no plotter">
+          Tamanho do texto (mm)
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={peca.alturaDoTextoMm ?? 5}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (v > 0) props.onAlterar({ alturaDoTextoMm: v });
+            }}
+          />
         </label>
         <label title="O tecido em que a peça é cortada: o encaixe pode gerar um tecido por vez">
           Tecido do molde

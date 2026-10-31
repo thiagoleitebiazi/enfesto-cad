@@ -221,7 +221,8 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     if (opcoes.ajusteDeTexto) {
       const altura = alturaDoTextoDaPeca(caixa.maxX - caixa.minX, caixa.maxY - caixa.minY, opcoes.ajusteDeTexto) / 10;
       rotulo(inicio, nomeDaPeca, altura * 0.7, altura, opcoes.ajusteDeTexto.orientacaoGraus);
-    } else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
+    } else if (peca.alturaDoTextoMm) rotulo(inicio, nomeDaPeca, (peca.alturaDoTextoMm * 0.7) / 10, peca.alturaDoTextoMm / 10);
+    else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
   }
   for (const l of opcoes.linhas ?? []) {
     caneta(2);

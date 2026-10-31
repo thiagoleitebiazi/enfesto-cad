@@ -31,6 +31,7 @@ export type AcaoDaTecla =
         | 'travar-vertical'
         | 'para-fora'
         | 'mover-com-referencia'
+        | 'usar-distancia'
         | 'agrupar'
         | 'desagrupar'
         | 'verificar'
@@ -74,7 +75,11 @@ const SETAS: Readonly<Record<string, DirecaoDoEncaixe>> = { ArrowRight: 'direita
 export function acaoDaTeclaDoEncaixe(e: { readonly key: string; readonly ctrlKey: boolean; readonly metaKey: boolean; readonly altKey: boolean; readonly shiftKey: boolean }): AcaoDaTecla | null {
   if (e.altKey) return null;
   const ctrl = e.ctrlKey || e.metaKey;
-  if (e.shiftKey) return ctrl && e.key.toLowerCase() === 't' ? { tipo: 'texto' } : null;
+  if (e.shiftKey) {
+    if (!ctrl) return null;
+    const letra = e.key.toLowerCase();
+    return letra === 't' ? { tipo: 'texto' } : letra === 'd' ? { tipo: 'usar-distancia' } : null;
+  }
   if (ctrl) {
     if (e.key === 'ArrowLeft') return { tipo: 'girar-esquerda' };
     if (e.key === 'ArrowRight') return { tipo: 'girar-direita' };
@@ -157,10 +162,21 @@ export function compactarResultado(resultado: ResultadoDeNesting, enfesto: Confi
   return comContasRefeitas(resultado, resultado.pecasColocadas.map((p, i) => ({ ...p, molde: compactadas[i]! })), enfesto);
 }
 
-/** O fim do encaixe automático: as peças da dobra de volta e, se pedido, a compactação. */
+/** A peça como o encaixe a enxerga: a folga dela soma à linha de corte, e assim ninguém encosta nela. */
+export function comFolgaNoEncaixe(peca: Molde): Molde {
+  return peca.folgaNoEncaixeMm ? { ...peca, margemDeCosturaMm: peca.margemDeCosturaMm + peca.folgaNoEncaixeMm } : peca;
+}
+
+export function semFolgaNoEncaixe(peca: Molde): Molde {
+  return peca.folgaNoEncaixeMm ? { ...peca, margemDeCosturaMm: peca.margemDeCosturaMm - peca.folgaNoEncaixeMm } : peca;
+}
+
+/** O fim do encaixe automático: as peças da dobra de volta, a compactação, se pedida, e as folgas fora. */
 export function fecharEncaixe(resultado: ResultadoDeNesting, dobra: DobraPreparada, enfesto: ConfiguracaoDeEnfesto): ResultadoDeNesting {
   const junto = juntarDobra(resultado, dobra, enfesto);
-  return enfesto.compactar ? compactarResultado(junto, enfesto) : junto;
+  const compactado = enfesto.compactar ? compactarResultado(junto, enfesto) : junto;
+  if (!compactado.pecasColocadas.some((p) => p.molde.folgaNoEncaixeMm)) return compactado;
+  return comContasRefeitas(compactado, compactado.pecasColocadas.map((p) => ({ ...p, molde: semFolgaNoEncaixe(p.molde) })), enfesto);
 }
 
 const AFASTAMENTO_FORA_DA_MESA_MM = 100;

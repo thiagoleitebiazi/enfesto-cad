@@ -373,8 +373,12 @@ import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/
 import { perimetro } from './core/geometria';
 import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
 import {
+  aplicarConjunto,
   camposDaBarraGuardados,
+  comConjunto,
+  conjuntosGuardados,
   guardarCamposDaBarra,
+  guardarConjuntos,
   guardarOpcoesDoEncaixe,
   guardarVisao,
   opcoesDoEncaixeGuardadas,
@@ -385,10 +389,11 @@ import {
   visaoGuardada,
   type AtributoDaVisao,
   type CampoDaBarra,
+  type ConjuntoDePropriedades,
   type OpcoesDoEncaixe,
   type VisaoDasPecas,
 } from './ui/visaoDasPecas';
-import { comEspelhamentoPermitido, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
+import { comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
 import { ajusteDeTextoGuardado, corDaCaneta, guardarAjusteDeTexto } from './ui/preferencias';
@@ -662,6 +667,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'propriedades-de-encaixe' }
   | { readonly tipo: 'exportar-dados' }
   | { readonly tipo: 'informacoes-do-arquivo' }
   | { readonly tipo: 'unir-encaixes' }
@@ -748,6 +754,7 @@ export default function App(): React.JSX.Element {
   const [ferramentaDeVista, setFerramentaDeVista] = useState<FerramentaDeVista | null>(null);
   const [sobreposicaoDeMoldes, setSobreposicaoDeMoldes] = useState(true);
   const [travaDoEixo, setTravaDoEixo] = useState<'horizontal' | 'vertical' | null>(null);
+  const distanciaGuardadaRef = useRef(DISTANCIA_PADRAO_ENTRE_PECAS_MM);
   const [retanguloDeOrganizacaoMm, setRetanguloDeOrganizacaoMm] = useState<number | null>(null);
   const [gradesDoModelo, setGradesDoModelo] = useState<Readonly<Record<string, Readonly<Record<string, number>>>>>({});
   const foraDoCalculoRef = useRef<{ readonly fixas: readonly Molde[]; readonly foraDoEncaixe: readonly Molde[] }>({ fixas: [], foraDoEncaixe: [] });
@@ -802,6 +809,13 @@ export default function App(): React.JSX.Element {
       return opcoesDoEncaixeGuardadas(window.localStorage);
     } catch {
       return OPCOES_PADRAO_DO_ENCAIXE;
+    }
+  });
+  const [conjuntosDePropriedades, setConjuntosDePropriedades] = useState<readonly ConjuntoDePropriedades[]>(() => {
+    try {
+      return conjuntosGuardados(window.localStorage);
+    } catch {
+      return [];
     }
   });
   const [camposDaBarra, setCamposDaBarra] = useState<readonly CampoDaBarra[]>(() => {
@@ -3216,6 +3230,13 @@ export default function App(): React.JSX.Element {
     (id: string, deslocamento: Ponto2D) => {
       const andou = pecas.map((p) => (p.id === id ? transladarMolde(p, deslocamento, p.id) : p));
       const peca = andou.find((p) => p.id === id);
+      if (peca && enfesto && opcoesDoEncaixe.encostarAoSoltar) {
+        // O SNAP do encaixe (ADR 0202): a peça segue no rumo do arrasto até encostar.
+        const direcao: DirecaoDoEncaixe = Math.abs(deslocamento.y) >= Math.abs(deslocamento.x) ? (deslocamento.y > 0 ? 'direita' : 'esquerda') : deslocamento.x > 0 ? 'baixo' : 'cima';
+        const d = moverAteEncostar(peca, andou.filter((p) => p.id !== id), enfesto, direcao);
+        aplicarMudanca(andou.map((p) => (p.id === id ? transladarMolde(p, d, p.id) : p)));
+        return;
+      }
       if (sobreposicaoDeMoldes || !enfesto || !peca) {
         aplicarMudanca(andou);
         return;
@@ -3225,7 +3246,7 @@ export default function App(): React.JSX.Element {
       if (!livre) avisar('Não há lugar livre perto de onde a peça foi solta: ela ficou em cima da outra.');
       aplicarMudanca(livre ? andou.map((p) => (p.id === id ? transladarMolde(p, livre, p.id) : p)) : andou);
     },
-    [pecas, aplicarMudanca, sobreposicaoDeMoldes, enfesto, avisar],
+    [pecas, aplicarMudanca, sobreposicaoDeMoldes, enfesto, avisar, opcoesDoEncaixe.encostarAoSoltar],
   );
 
   /** O grupo selecionado arrastado junto: um passo só no Desfazer. */
@@ -3243,6 +3264,18 @@ export default function App(): React.JSX.Element {
       if (acao.tipo === 'sobreposicao') {
         setSobreposicaoDeMoldes(!sobreposicaoDeMoldes);
         avisar(sobreposicaoDeMoldes ? 'Sobreposição de moldes desligada: a peça solta em cima de outra vai para o lugar livre mais perto.' : 'Sobreposição de moldes ligada.');
+        return;
+      }
+      if (acao.tipo === 'usar-distancia') {
+        if (!enfesto) {
+          avisar('Configure o enfesto primeiro.');
+          return;
+        }
+        const atual = enfesto.distanciaMinimaEntrePecasMm;
+        if (atual > 0) distanciaGuardadaRef.current = atual;
+        const nova = atual > 0 ? 0 : distanciaGuardadaRef.current;
+        setEnfesto({ ...enfesto, distanciaMinimaEntrePecasMm: nova });
+        avisar(nova > 0 ? `Distância entre os moldes ligada: ${String(nova).replace('.', ',')} mm.` : 'Distância entre os moldes desligada.');
         return;
       }
       if (acao.tipo === 'travar-horizontal' || acao.tipo === 'travar-vertical') {
@@ -3381,6 +3414,7 @@ export default function App(): React.JSX.Element {
       }
       // As peças com linha de simetria entram abertas, inteiras.
       if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
+      if (sentidoUnicoDoTecido(tecido) && tecido?.sentidoNoEncaixe) paraEncaixar = comSentidoAlternado(paraEncaixar, tecido.sentidoNoEncaixe, proximoId);
       return { paraEncaixar, enfestoDoEncaixe, fixas: escolha.fixas, foraDoEncaixe: escolha.foraDoEncaixe };
     },
     [pecas, enfesto, tecido, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId],
@@ -5446,6 +5480,7 @@ export default function App(): React.JSX.Element {
         onAlternarDestacarRelacionamento={() => setDestacarRelacionamento((v) => !v)}
         onBarraDeStatus={() => setDialogoDeFerramenta({ tipo: 'barra-de-status' })}
         onOpcoesDoEncaixe={() => setDialogoDeFerramenta({ tipo: 'opcoes-do-encaixe' })}
+        onPropriedadesDeEncaixe={() => setDialogoDeFerramenta({ tipo: 'propriedades-de-encaixe' })}
         onPosicionar={(destino, alvo) => {
           if (!enfesto) {
             avisar('Configure o enfesto primeiro.');
@@ -6366,6 +6401,7 @@ export default function App(): React.JSX.Element {
             { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo de giro (graus): o de Ctrl+← e Ctrl+→', inicial: String(opcoesDoEncaixe.anguloDeGiro).replace('.', ',') },
             { tipo: 'inteiro', id: 'precisao', rotulo: 'Precisão: casas decimais das medidas', inicial: opcoesDoEncaixe.precisao === null ? '' : String(opcoesDoEncaixe.precisao), opcional: true },
             { tipo: 'caixa', id: 'clicar', rotulo: 'Encaixa molde ao clicar: o clique na lista põe na mesa a peça que está fora dela', inicial: opcoesDoEncaixe.encaixaAoClicar },
+            { tipo: 'caixa', id: 'encostar', rotulo: 'Encostar ao soltar: a peça arrastada segue até a vizinha', inicial: opcoesDoEncaixe.encostarAoSoltar },
             { tipo: 'caixa', id: 'verificar', rotulo: 'Verificar sobreposição ao plotar', inicial: opcoesDoEncaixe.verificarAoPlotar },
             {
               tipo: 'escolha',
@@ -6384,7 +6420,7 @@ export default function App(): React.JSX.Element {
             const precisao = valores['precisao'] as number | undefined;
             if (!(angulo > 0 && angulo < 360)) return 'O ângulo de giro vai de 0 a 360 graus.';
             if (precisao !== undefined && (precisao < 0 || precisao > 4)) return 'A precisão vai de 0 a 4 casas.';
-            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico' };
+            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico' };
             setOpcoesDoEncaixe(novas);
             try {
               guardarOpcoesDoEncaixe(window.localStorage, novas);
@@ -6527,6 +6563,56 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'plotar' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'propriedades-de-encaixe' && (
+        <DialogoDeCampos
+          titulo="Propriedades de encaixe"
+          resumo={[['Guardados', conjuntosDePropriedades.map((c) => c.nome).join(', ') || 'nenhum']]}
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'acao',
+              rotulo: 'O que fazer',
+              opcoes: [
+                { valor: 'guardar', rotulo: 'Guardar o giro, a quantidade e o tecido da peça selecionada' },
+                { valor: 'aplicar', rotulo: 'Aplicar um conjunto às peças selecionadas' },
+                { valor: 'todas', rotulo: 'Aplicar um conjunto a todas as peças' },
+                { valor: 'remover', rotulo: 'Remover um conjunto' },
+              ],
+              inicial: 'guardar',
+            },
+            { tipo: 'texto', id: 'nome', rotulo: 'Nome do conjunto', inicial: conjuntosDePropriedades[0]?.nome ?? '' },
+          ]}
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const nome = String(valores['nome']);
+            const acao = valores['acao'];
+            const salvar = (lista: readonly ConjuntoDePropriedades[]): void => {
+              setConjuntosDePropriedades(lista);
+              try {
+                guardarConjuntos(window.localStorage, lista);
+              } catch {
+                // Sem o armazenamento do navegador, vale até fechar.
+              }
+            };
+            if (acao === 'guardar') {
+              const peca = pecas.find((p) => p.id === selecionadoId);
+              if (!peca) return 'Selecione uma peça primeiro.';
+              salvar(comConjunto(conjuntosDePropriedades, { nome, restricao: peca.restricaoDeRotacao, quantidade: peca.quantidade, ...(peca.tecidoDoMolde ? { tecidoDoMolde: peca.tecidoDoMolde } : {}) }));
+              return null;
+            }
+            const conjunto = conjuntosDePropriedades.find((c) => c.nome === nome);
+            if (!conjunto) return `Não há o conjunto “${nome}”.`;
+            if (acao === 'remover') {
+              salvar(conjuntosDePropriedades.filter((c) => c !== conjunto));
+              return null;
+            }
+            const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+            aplicarMudanca(pecas.map((p) => (acao === 'todas' || ids.has(p.id) ? aplicarConjunto(p, conjunto) : p)));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'propriedades-de-encaixe' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (

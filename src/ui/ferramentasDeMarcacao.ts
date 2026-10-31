@@ -27,8 +27,7 @@ import {
   semOsPiques,
   TIPOS_DE_PIQUE,
   tracosDaMarca,
-  tracosDoPique,
-} from '../domain/piques';
+  tracosDoPique, fundirPiques } from '../domain/piques';
 import { definirGraduacaoDoPique, referenciaSugerida, removerGraduacaoDoPique } from '../domain/piquesGraduados';
 import type { CampoDoDialogo, ValoresDoDialogo } from './DialogoDeCampos';
 import type { PreviaDeFerramentaDeMolde, ResultadoDeFerramentaDeMolde } from './ferramentasDeMolde';
@@ -107,7 +106,9 @@ export interface OpcoesDeMarcacao {
     /** O tipo a substituir, ou `TODOS_OS_TIPOS`. */
     readonly de: string;
     readonly onde: 'selecionada' | 'marcadas' | 'todas';
-    readonly acao: 'trocar' | 'marca' | 'remover';
+    readonly acao: 'trocar' | 'marca' | 'remover' | 'fundir';
+    /** Ao fundir: os piques que sobrarem na peça saem. */
+    readonly removerNaoFundidos?: boolean;
     readonly formato: FormatoDePique;
     readonly distanciaMm: number;
     /** Na troca de formato e na remoção: também os piques internos (as marcas com formato) do tipo escolhido. */
@@ -372,9 +373,11 @@ export function dialogoDaMarcacao(
               { valor: 'trocar', rotulo: 'Substituir pelo pique: mesmo lugar, formato novo' },
               { valor: 'marca', rotulo: 'Substituir por marca: o pique do contorno vira um pique interno, à distância dada' },
               { valor: 'remover', rotulo: 'Remover piques selecionados' },
+              { valor: 'fundir', rotulo: 'Fundir pique ao contorno: o recorte entra na forma da peça' },
             ],
             inicial: o.acao,
           },
+          { tipo: 'caixa', id: 'naoFundidos', rotulo: 'Ao fundir: remover piques não fundidos', inicial: o.removerNaoFundidos === true },
           ...camposDoFormato(o.formato, cadastrados),
           { tipo: 'medida', id: 'distancia', rotulo: 'Distância: do pique do contorno ao pique interno que o substitui (mm)', inicial: paraCampo(o.distanciaMm) },
           { tipo: 'caixa', id: 'internos', rotulo: 'Também os piques internos do tipo escolhido (na troca de formato e na remoção)', inicial: o.internos },
@@ -549,7 +552,7 @@ export function lerDialogoDaMarcacao(
     }
     case 'substituir-piques': {
       const distanciaMm = Number(valores.distancia);
-      const acao = valores.acao === 'marca' || valores.acao === 'remover' ? valores.acao : 'trocar';
+      const acao = valores.acao === 'marca' || valores.acao === 'remover' || valores.acao === 'fundir' ? valores.acao : 'trocar';
       if (acao === 'marca' && !(distanciaMm > 0)) throw new Error('A distância do pique interno precisa ser maior que zero.');
       return {
         ...opcoes,
@@ -560,6 +563,7 @@ export function lerDialogoDaMarcacao(
           formato: formatoLido(valores, cadastrados, opcoes.substituir.formato),
           distanciaMm,
           internos: valores.internos === true,
+          ...(valores.naoFundidos === true ? { removerNaoFundidos: true } : {}),
         },
       };
     }
@@ -714,8 +718,8 @@ function paraDentroDoPique(peca: Molde, pique: Pique, distanciaMm: number): Pont
 export function aplicarSubstituir(opcoes: OpcoesDeMarcacao, pecas: readonly Molde[], alvos: readonly string[], novoId: () => string): ResultadoDeFerramentaDeMolde {
   const { de, acao, formato, distanciaMm } = opcoes.substituir;
   // Os internos entram na troca de formato e na remoção; "por marca" é só para os do contorno.
-  const comInternos = opcoes.substituir.internos && acao !== 'marca';
-  if (acao !== 'remover') conferirFormato(formato);
+  const comInternos = opcoes.substituir.internos && acao !== 'marca' && acao !== 'fundir';
+  if (acao !== 'remover' && acao !== 'fundir') conferirFormato(formato);
   if (alvos.length === 0) throw new Error('Não há peça em que substituir: selecione uma, ou marque as peças na lista.');
   let feitos = 0;
   let feitosInternos = 0;
@@ -729,6 +733,12 @@ export function aplicarSubstituir(opcoes: OpcoesDeMarcacao, pecas: readonly Mold
     const interno = (marca: Marca): boolean => comInternos && marca.formato !== undefined && doTipo(marca);
     const internosEscolhidos = peca.marcas.filter(interno).length;
     if (escolhidos.length + internosEscolhidos === 0) return peca;
+    if (acao === 'fundir') {
+      feitos += escolhidos.length;
+      pecasComPique.add(peca.id);
+      const fundida = fundirPiques(peca, doTipo);
+      return opcoes.substituir.removerNaoFundidos ? { ...fundida, piques: [] } : fundida;
+    }
     if (acao === 'trocar') {
       feitos += escolhidos.length;
       feitosInternos += internosEscolhidos;

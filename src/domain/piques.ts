@@ -1,13 +1,4 @@
-import {
-  andarNoContorno,
-  distancia,
-  pontoDentroDoContorno,
-  pontoMaisProximoNoContorno,
-  rotacionar,
-  type Contorno,
-  type Ponto2D,
-  type PosicaoNoContorno,
-} from '../core/geometria';
+import { andarNoContorno, distancia, pontoDentroDoContorno, pontoMaisProximoNoContorno, rotacionar, type Contorno, type Ponto2D, type PosicaoNoContorno } from '../core/geometria';
 import { numeroComVirgula } from '../core/numeros';
 import { contornoDeCorte, inserirPontoNoMolde, type FormatoDePique, type Marca, type Molde, type Pique } from './molde';
 import { definirGraduacaoDoPique, referenciaSugerida } from './piquesGraduados';
@@ -233,6 +224,29 @@ export interface ExtrasDoPique {
 }
 
 /** Põe um pique com formato no contorno, na posição dada. */
+/** "Fundir pique ao contorno" (ADR 0202): o recorte do pique entra no contorno, para dentro da peça, e o pique sai. */
+export function fundirPiques(molde: Molde, escolhido: (pique: Pique) => boolean): Molde {
+  const fundidos = molde.piques.filter(escolhido);
+  if (fundidos.length === 0) return molde;
+  const n = molde.contorno.length;
+  const contorno: Ponto2D[] = [];
+  molde.contorno.forEach((a, i) => {
+    contorno.push(a);
+    const doLado = fundidos.filter((p) => p.indiceAresta % n === i).sort((p, q) => distancia(a, p.posicao) - distancia(a, q.posicao));
+    if (doLado.length === 0) return;
+    const b = molde.contorno[(i + 1) % n]!;
+    const tamanho = distancia(a, b);
+    const u = { x: (b.x - a.x) / tamanho, y: (b.y - a.y) / tamanho };
+    for (const pique of doLado) {
+      const { larguraMm, alturaMm } = pique.formato ?? PIQUE_PADRAO;
+      const m = pique.posicao;
+      const dentro = pontoDentroDoContorno({ x: m.x - u.y * 0.5, y: m.y + u.x * 0.5 }, molde.contorno) ? 1 : -1;
+      contorno.push({ x: m.x - (u.x * larguraMm) / 2, y: m.y - (u.y * larguraMm) / 2 }, { x: m.x - u.y * alturaMm * dentro, y: m.y + u.x * alturaMm * dentro }, { x: m.x + (u.x * larguraMm) / 2, y: m.y + (u.y * larguraMm) / 2 });
+    }
+  });
+  return { ...molde, contorno, piques: molde.piques.filter((p) => !escolhido(p)).map((p) => ({ ...p, indiceAresta: pontoMaisProximoNoContorno(p.posicao, contorno).indiceAresta })) };
+}
+
 export function inserirPique(molde: Molde, posicao: PosicaoNoContorno, formato: FormatoDePique, id: string, extras: ExtrasDoPique = {}): Molde {
   conferirFormato(formato);
   const noVertice = molde.contorno.some((v) => distancia(v, posicao.ponto) <= MESMO_PONTO_MM);
