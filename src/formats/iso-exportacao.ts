@@ -21,8 +21,11 @@ import { textoParaPlotter } from './plt-exportacao';
  * para cortar (G1, na velocidade pedida).
  *
  * Não foi testado numa mesa de corte (não há uma aqui): a saída usa só os comandos básicos da norma (G0, G1, G21, G90,
- * Z, T, M30) e comentários entre parênteses. Os dialetos de cada fabricante (a faca tangencial no eixo C, os comandos
- * próprios do piqueteador) ficam para o pós-processador da mesa. Confira no primeiro corte, numa folha de papel.
+ * Z, T, M30) e comentários entre parênteses. Os comandos próprios de cada fabricante (os do piqueteador, por exemplo)
+ * ficam para o pós-processador da mesa. Confira no primeiro corte, numa folha de papel.
+ *
+ * A faca tangencial (ADR 0148), opcional: o eixo C acompanha o rumo do corte. Nas viradas pequenas a faca gira cortando;
+ * acima do ângulo pedido, ela sobe, gira e desce — girar dentro do tecido rasgaria a ponta.
  */
 
 export interface OpcoesDoIso {
@@ -32,12 +35,27 @@ export interface OpcoesDoIso {
   readonly velocidadeMmMin?: number;
   /** Risca as linhas internas e o fio com a caneta (T3). */
   readonly comCaneta?: boolean;
+  /** A faca tangencial: o eixo C acompanha o rumo do corte. */
+  readonly facaTangencial?: boolean;
+  /** A virada (graus) acima da qual a faca tangencial sobe para girar. */
+  readonly anguloDeLevantarGraus?: number;
 }
 
 export const VELOCIDADE_PADRAO_MM_MIN = 12000;
+export const ANGULO_DE_LEVANTAR_PADRAO = 30;
 const ALTURA_DE_ANDAR = 5;
 
 const n = (v: number): string => (Math.round(v * 100) / 100).toFixed(2);
+
+/** O rumo de `novo` (graus) na volta mais perto de `atual`: a faca não dá a volta inteira ao passar de 180°. */
+export function rumoContinuo(atual: number, novo: number): number {
+  let r = novo;
+  while (r - atual > 180) r -= 360;
+  while (r - atual < -180) r += 360;
+  return r;
+}
+
+const rumo = (a: Ponto2D, b: Ponto2D): number => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
 
 export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): string {
   const todos = pecas.flatMap((p) => [...linhaDeCorteDaPeca(p), ...p.contorno]);
@@ -51,11 +69,30 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
     linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `T${t}`);
     ferramenta = t;
   };
+  /** O corte com a faca tangencial: o C no rumo de cada trecho; nas viradas grandes, sobe, gira e desce. */
+  const corteTangencial = (caminho: readonly Ponto2D[]): void => {
+    const t = caminho.filter((q, i) => i === 0 || Math.hypot(q.x - caminho[i - 1]!.x, q.y - caminho[i - 1]!.y) > 1e-6);
+    if (t.length < 2) return;
+    const limite = opcoes.anguloDeLevantarGraus ?? ANGULO_DE_LEVANTAR_PADRAO;
+    let c = rumo(t[0]!, t[1]!);
+    linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 X${n(t[0]!.x)} Y${n(t[0]!.y)} C${n(c)}`, 'G1 Z0.00');
+    for (let i = 1; i < t.length; i++) {
+      const novo = rumoContinuo(c, rumo(t[i - 1]!, t[i]!));
+      if (Math.abs(novo - c) > limite) linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 C${n(novo)}`, 'G1 Z0.00');
+      c = novo;
+      linhas.push(`G1 X${n(t[i]!.x)} Y${n(t[i]!.y)} C${n(c)}${i === 1 ? ` F${f}` : ''}`);
+    }
+    linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`);
+  };
   /** Uma passada: sobe, anda até o começo, desce e segue os pontos (fechada: volta ao começo); sobe no fim. */
-  const passada = (pontos: readonly Ponto2D[], fechada: boolean): void => {
+  const passada = (pontos: readonly Ponto2D[], fechada: boolean, faca = false): void => {
     if (pontos.length < 2) return;
     const p = pontos.map(naMesa);
     const caminho = fechada ? [...p, p[0]!] : p;
+    if (faca && opcoes.facaTangencial) {
+      corteTangencial(caminho);
+      return;
+    }
     linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, `G0 X${n(caminho[0]!.x)} Y${n(caminho[0]!.y)}`, 'G1 Z0.00');
     caminho.slice(1).forEach((q, i) => linhas.push(i === 0 ? `G1 X${n(q.x)} Y${n(q.y)} F${f}` : `G1 X${n(q.x)} Y${n(q.y)}`));
     linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`);
@@ -84,8 +121,8 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
       for (const pique of peca.piques) passada(corteDoPique(peca, corte, pique), false);
     }
     usar(1);
-    for (const furo of peca.furos) passada(furo, true);
-    passada(corte, true);
+    for (const furo of peca.furos) passada(furo, true, true);
+    passada(corte, true, true);
   }
   linhas.push(`G0 Z${n(ALTURA_DE_ANDAR)}`, 'G0 X0.00 Y0.00', 'M30', '%');
   return linhas.join('\n') + '\n';

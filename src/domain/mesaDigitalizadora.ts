@@ -30,7 +30,7 @@ export interface RegistroDaMesa {
   readonly botao: number;
 }
 
-export type AcaoDoBotao = 'canto' | 'curva' | 'pique' | 'fio' | 'fechar' | 'desfazer';
+export type AcaoDoBotao = 'canto' | 'curva' | 'pique' | 'fio' | 'fechar' | 'desfazer' | 'furo' | 'fechar-furo' | 'marca' | 'linha' | 'fechar-linha';
 
 export const BOTOES_DA_MESA: ReadonlyArray<{ readonly botao: number; readonly acao: AcaoDoBotao; readonly rotulo: string }> = [
   { botao: 1, acao: 'canto', rotulo: 'Ponto de canto do contorno' },
@@ -39,6 +39,11 @@ export const BOTOES_DA_MESA: ReadonlyArray<{ readonly botao: number; readonly ac
   { botao: 4, acao: 'fio', rotulo: 'Fio: o começo e o fim (dois toques)' },
   { botao: 5, acao: 'fechar', rotulo: 'Fechar a peça' },
   { botao: 6, acao: 'desfazer', rotulo: 'Desfazer o último ponto' },
+  { botao: 7, acao: 'furo', rotulo: 'Ponto de furo' },
+  { botao: 8, acao: 'fechar-furo', rotulo: 'Fechar o furo (3 pontos ou mais)' },
+  { botao: 9, acao: 'marca', rotulo: 'Marca (um toque: botão, casa)' },
+  { botao: 10, acao: 'linha', rotulo: 'Ponto de linha interna (botão A)' },
+  { botao: 11, acao: 'fechar-linha', rotulo: 'Terminar a linha interna (botão B; 2 pontos ou mais)' },
 ];
 
 const INTEIRO = /^[+-]?\d+$/;
@@ -77,6 +82,12 @@ export interface PontoNaMesa {
 export interface EstadoDaMesa {
   readonly pontos: readonly PontoNaMesa[];
   readonly fio: readonly Ponto2D[];
+  /** O furo e a linha interna sendo tocados, e os já fechados (ADR 0149). */
+  readonly furoAberto?: readonly Ponto2D[];
+  readonly linhaAberta?: readonly Ponto2D[];
+  readonly furos?: ReadonlyArray<readonly Ponto2D[]>;
+  readonly linhas?: ReadonlyArray<readonly Ponto2D[]>;
+  readonly marcas?: readonly Ponto2D[];
 }
 
 export const MESA_VAZIA: EstadoDaMesa = { pontos: [], fio: [] };
@@ -85,6 +96,9 @@ export interface PecaDaMesa {
   readonly contorno: Ponto2D[];
   readonly linhaDeFio: { readonly inicio: Ponto2D; readonly fim: Ponto2D };
   readonly piques: ReadonlyArray<{ readonly posicao: Ponto2D; readonly indiceAresta: number }>;
+  readonly furos: ReadonlyArray<Ponto2D[]>;
+  readonly linhasInternas: ReadonlyArray<Ponto2D[]>;
+  readonly marcas: readonly Ponto2D[];
 }
 
 /** Os pontos de cada trecho de curva (Catmull-Rom), entre o ponto `i` e o seguinte. */
@@ -133,6 +147,9 @@ export function pecaDosPontos(estado: EstadoDaMesa): PecaDaMesa | { readonly err
     contorno: contorno.map(mover),
     linhaDeFio,
     piques: pts.flatMap((pt, i) => (pt.pique ? [{ posicao: mover(pt.p), indiceAresta: indiceNovo[i]! }] : [])),
+    furos: (estado.furos ?? []).map((f) => f.map(mover)),
+    linhasInternas: (estado.linhas ?? []).map((l) => l.map(mover)),
+    marcas: (estado.marcas ?? []).map(mover),
   };
 }
 
@@ -151,20 +168,49 @@ export function tocar(estado: EstadoDaMesa, registro: RegistroDaMesa, config: Co
     case 'canto':
     case 'curva':
     case 'pique': {
-      const novo = { pontos: [...estado.pontos, { p, curva: acao === 'curva', pique: acao === 'pique' }], fio: estado.fio };
+      const novo = { ...estado, pontos: [...estado.pontos, { p, curva: acao === 'curva', pique: acao === 'pique' }] };
       return { estado: novo, recado: `${novo.pontos.length}º ponto (${acao === 'canto' ? 'canto' : acao === 'curva' ? 'curva' : 'pique'}).` };
     }
     case 'fio': {
       const fio = estado.fio.length >= 2 ? [p] : [...estado.fio, p];
       return { estado: { ...estado, fio }, recado: fio.length === 1 ? 'Começo do fio marcado: toque o fim.' : 'Fio marcado.' };
     }
+    case 'furo': {
+      const furoAberto = [...(estado.furoAberto ?? []), p];
+      return { estado: { ...estado, furoAberto }, recado: `${furoAberto.length}º ponto do furo.` };
+    }
+    case 'fechar-furo': {
+      const aberto = estado.furoAberto ?? [];
+      if (aberto.length < 3) return { estado, recado: `O furo precisa de ao menos 3 pontos (tem ${aberto.length}).` };
+      const furos = [...(estado.furos ?? []), aberto];
+      return { estado: { ...estado, furoAberto: [], furos }, recado: `Furo ${furos.length} fechado.` };
+    }
+    case 'linha': {
+      const linhaAberta = [...(estado.linhaAberta ?? []), p];
+      return { estado: { ...estado, linhaAberta }, recado: `${linhaAberta.length}º ponto da linha interna.` };
+    }
+    case 'fechar-linha': {
+      const aberta = estado.linhaAberta ?? [];
+      if (aberta.length < 2) return { estado, recado: `A linha interna precisa de ao menos 2 pontos (tem ${aberta.length}).` };
+      const linhas = [...(estado.linhas ?? []), aberta];
+      return { estado: { ...estado, linhaAberta: [], linhas }, recado: `Linha interna ${linhas.length} terminada.` };
+    }
+    case 'marca': {
+      const marcas = [...(estado.marcas ?? []), p];
+      return { estado: { ...estado, marcas }, recado: `Marca ${marcas.length} posta.` };
+    }
     case 'desfazer':
+      if ((estado.furoAberto ?? []).length > 0) return { estado: { ...estado, furoAberto: estado.furoAberto!.slice(0, -1) }, recado: 'Último ponto do furo desfeito.' };
+      if ((estado.linhaAberta ?? []).length > 0) return { estado: { ...estado, linhaAberta: estado.linhaAberta!.slice(0, -1) }, recado: 'Último ponto da linha interna desfeito.' };
       if (estado.pontos.length === 0) return { estado, recado: 'Não há ponto para desfazer.' };
       return { estado: { ...estado, pontos: estado.pontos.slice(0, -1) }, recado: `Último ponto desfeito (ficaram ${estado.pontos.length - 1}).` };
     case 'fechar': {
+      if ((estado.furoAberto ?? []).length > 0) return { estado, recado: 'Há um furo aberto: feche-o (botão 8) ou desfaça os pontos dele.' };
+      if ((estado.linhaAberta ?? []).length > 0) return { estado, recado: 'Há uma linha interna aberta: termine-a (botão B) ou desfaça os pontos dela.' };
       const peca = pecaDosPontos(estado);
       if ('erro' in peca) return { estado, recado: peca.erro };
-      return { estado: MESA_VAZIA, recado: `Peça fechada com ${estado.pontos.length} pontos${peca.piques.length > 0 ? ` e ${peca.piques.length} pique(s)` : ''}.`, peca };
+      const extras = [peca.piques.length > 0 ? ` e ${peca.piques.length} pique(s)` : '', peca.furos.length > 0 ? `, ${peca.furos.length} furo(s)` : '', peca.linhasInternas.length > 0 ? `, ${peca.linhasInternas.length} linha(s) interna(s)` : '', peca.marcas.length > 0 ? `, ${peca.marcas.length} marca(s)` : ''];
+      return { estado: MESA_VAZIA, recado: `Peça fechada com ${estado.pontos.length} pontos${extras.join('')}.`, peca };
     }
     default:
       return { estado, recado: `Botão ${registro.botao}: sem uso (veja a tabela dos botões).` };

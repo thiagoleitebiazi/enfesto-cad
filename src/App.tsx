@@ -2114,7 +2114,7 @@ export default function App(): React.JSX.Element {
         const id = proximoId();
         const nome = `Peça da mesa ${jaFeitas + nomes.length + 1}`;
         const molde = criarMolde(
-          { nome, referencia: '', tamanho: '', contorno: peca.contorno, linhaDeFio: peca.linhaDeFio, piques: peca.piques.map((q) => ({ id: proximoId(), posicao: q.posicao, indiceAresta: q.indiceAresta })) },
+          { nome, referencia: '', tamanho: '', contorno: peca.contorno, linhaDeFio: peca.linhaDeFio, piques: peca.piques.map((q) => ({ id: proximoId(), posicao: q.posicao, indiceAresta: q.indiceAresta })), furos: peca.furos, linhasInternas: peca.linhasInternas, marcas: peca.marcas.map((posicao) => ({ id: proximoId(), posicao })) },
           id,
         );
         novasPecas = [...novasPecas, componenteNoProjeto(molde, novasPecas)];
@@ -3301,14 +3301,14 @@ export default function App(): React.JSX.Element {
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
-    async (velocidadeMmMin: number, comCaneta: boolean) => {
+    async (velocidadeMmMin: number, comCaneta: boolean, facaTangencial: boolean) => {
       const api = window.enfestoCad;
       if (!api) {
         window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
         return;
       }
       try {
-        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
+        const texto = gerarIso(pecas, { velocidadeMmMin, comCaneta, facaTangencial, ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm } : {}) });
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
@@ -5503,13 +5503,14 @@ export default function App(): React.JSX.Element {
           campos={[
             { tipo: 'inteiro', id: 'velocidade', rotulo: 'Velocidade de corte (mm/min)', inicial: String(VELOCIDADE_PADRAO_MM_MIN) },
             { tipo: 'caixa', id: 'caneta', rotulo: 'Riscar as linhas internas e o fio com a caneta (T3)', inicial: false },
+            { tipo: 'caixa', id: 'tangencial', rotulo: 'Faca tangencial: o eixo C acompanha o corte (sobe para girar nas viradas acima de 30°)', inicial: false },
           ]}
           nota="O encaixe em G-code (ISO 6983), em mm e coordenadas absolutas: T1 faca (contorno e furos), T2 piqueteador, T3 caneta, T4 furador (marcas). Em cada peça, o de dentro é feito antes do contorno. Não foi testado numa mesa de corte: confira o primeiro corte numa folha de papel."
           rotuloDoBotao="Salvar o ISO"
           onAplicar={(valores) => {
             const velocidade = Number(valores.velocidade);
             if (!(velocidade >= 100)) return 'A velocidade precisa ser de pelo menos 100 mm/min.';
-            void exportarIso(velocidade, valores.caneta === true);
+            void exportarIso(velocidade, valores.caneta === true, valores.tangencial === true);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'corte-iso' ? null : d))}

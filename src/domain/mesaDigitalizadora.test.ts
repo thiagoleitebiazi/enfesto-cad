@@ -93,7 +93,7 @@ describe('a mesa digitalizadora (ADR 0144)', () => {
     t = tocar(t.estado, { x: 0, y: 0, botao: 5 }, CONFIG);
     expect(t.recado).toMatch(/ao menos 3 pontos/);
     expect(t.peca).toBeUndefined();
-    t = tocar(t.estado, { x: 0, y: 0, botao: 9 }, CONFIG);
+    t = tocar(t.estado, { x: 0, y: 0, botao: 15 }, CONFIG);
     expect(t.recado).toMatch(/sem uso/);
     let f = tocar(MESA_VAZIA, { x: 0, y: 0, botao: 4 }, CONFIG);
     expect(f.recado).toMatch(/toque o fim/);
@@ -107,5 +107,50 @@ describe('a mesa digitalizadora (ADR 0144)', () => {
       { x: 0, y: 0, botao: 5 },
     ]);
     expect(emLinha.recados.at(-1)).toMatch(/numa linha/);
+  });
+});
+
+describe('furos, marcas e linhas internas na mesa (ADR 0149)', () => {
+  const contorno: RegistroDaMesa[] = [
+    { x: 0, y: 0, botao: 1 },
+    { x: 2000, y: 0, botao: 1 },
+    { x: 2000, y: 1000, botao: 1 },
+    { x: 0, y: 1000, botao: 1 },
+  ];
+
+  it('o furo, a marca e a linha entram na peça, no mesmo lugar do contorno, e o molde os aceita', () => {
+    const { pecas, recados } = tocarTudo([
+      ...contorno,
+      { x: 500, y: 500, botao: 7 },
+      { x: 700, y: 500, botao: 7 },
+      { x: 700, y: 700, botao: 7 },
+      { x: 0, y: 0, botao: 8 },
+      { x: 1500, y: 500, botao: 9 },
+      { x: 1000, y: 200, botao: 10 },
+      { x: 1000, y: 800, botao: 10 },
+      { x: 0, y: 0, botao: 11 },
+      { x: 0, y: 0, botao: 5 },
+    ]);
+    expect(recados.at(-1)).toBe('Peça fechada com 4 pontos, 1 furo(s), 1 linha(s) interna(s), 1 marca(s).');
+    const p = pecas[0]!;
+    expect(p.furos[0]![0]).toEqual({ x: 50, y: 50 });
+    expect(p.marcas).toEqual([{ x: 50, y: 150 }]);
+    expect(p.linhasInternas[0]).toEqual([
+      { x: 80, y: 100 },
+      { x: 20, y: 100 },
+    ]);
+    const molde = criarMolde({ nome: 'M', referencia: '', tamanho: '', contorno: p.contorno, linhaDeFio: p.linhaDeFio, furos: p.furos, linhasInternas: p.linhasInternas, marcas: p.marcas.map((posicao, i) => ({ id: `m${i}`, posicao })) }, 'm');
+    expect(molde.furos).toHaveLength(1);
+  });
+
+  it('o furo de 2 pontos não fecha; desfazer tira primeiro do que está aberto; a peça não fecha com furo ou linha aberta', () => {
+    const r = tocarTudo([...contorno, { x: 500, y: 500, botao: 7 }, { x: 700, y: 500, botao: 7 }, { x: 0, y: 0, botao: 8 }, { x: 0, y: 0, botao: 5 }]);
+    expect(r.recados.at(-2)).toBe('O furo precisa de ao menos 3 pontos (tem 2).');
+    expect(r.recados.at(-1)).toMatch(/Há um furo aberto/);
+    expect(r.pecas).toEqual([]);
+    const d = tocarTudo([...contorno, { x: 500, y: 500, botao: 10 }, { x: 0, y: 0, botao: 6 }, { x: 0, y: 0, botao: 5 }]);
+    expect(d.estado.pontos).toEqual([]);
+    expect(d.pecas).toHaveLength(1);
+    expect(tocarTudo([...contorno, { x: 1, y: 1, botao: 10 }, { x: 0, y: 0, botao: 5 }]).recados.at(-1)).toMatch(/linha interna aberta/);
   });
 });

@@ -283,7 +283,10 @@ export function PainelDaMesaDigitalizadora(props: PainelDaMesaDigitalizadoraProp
         <section className="estado-da-mesa" aria-label="A peça na mesa">
           <strong>
             Peça na mesa: {estado.pontos.length} ponto(s){curvas > 0 ? `, ${curvas} de curva` : ''}
-            {piques > 0 ? `, ${piques} pique(s)` : ''} · fio {estado.fio.length}/2
+            {piques > 0 ? `, ${piques} pique(s)` : ''}
+            {(estado.furos?.length ?? 0) > 0 ? `, ${estado.furos!.length} furo(s)` : ''}
+            {(estado.linhas?.length ?? 0) > 0 ? `, ${estado.linhas!.length} linha(s)` : ''}
+            {(estado.marcas?.length ?? 0) > 0 ? `, ${estado.marcas!.length} marca(s)` : ''} · fio {estado.fio.length}/2
           </strong>
           {recado && <p role="status">{recado}</p>}
           {criadas.length > 0 && <p className="nota-do-formulario">Peças desta mesa: {criadas.join(', ')}.</p>}
