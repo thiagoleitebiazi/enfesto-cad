@@ -1,3 +1,4 @@
+import { eixoTravado } from '../domain/posicionamento';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { contornoDeCorte, transladarMolde, type Molde, type PontaDaAresta } from '../domain/molde';
 import { pecasDentroDoRetangulo } from '../domain/selecao';
@@ -514,7 +515,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   const [panAtivo, setPanAtivo] = useState(false);
   const ultimaRolagemRef = useRef(-Infinity);
   const espacoPressionadoRef = useRef(false);
-  const arrastoRef = useRef<{ ids: readonly string[]; ultimoMundo: Ponto2D } | null>(null);
+  const arrastoRef = useRef<{ ids: readonly string[]; ultimoMundo: Ponto2D; total: Ponto2D } | null>(null);
   const [deltaDeArrasto, setDeltaDeArrasto] = useState<{ ids: ReadonlySet<string>; delta: Ponto2D } | null>(null);
   // Seleção de vértices nos modos "Mover ponto" e "Modificar": clique simples
   // seleciona só um e já arrasta; Shift+clique acrescenta/remove da seleção sem arrastar;
@@ -837,6 +838,14 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const cantoUtilOposto = mundoParaTela(ponto(util.maxX, util.maxY), transform);
       ctx.fillStyle = COR_MESA;
       ctx.fillRect(cantoUtil.x, cantoUtil.y, cantoUtilOposto.x - cantoUtil.x, cantoUtilOposto.y - cantoUtil.y);
+      // Os textos livres no risco (ADR 0165).
+      ctx.fillStyle = '#7c2d12';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      for (const t of enfesto.textosNoRisco ?? []) {
+        const onde = mundoParaTela(ponto(t.x, t.y), transform);
+        ctx.fillText(t.texto, onde.x, onde.y);
+      }
       // As áreas bloqueadas (ADR 0160): em vermelho, por cima da mesa e por baixo das peças.
       for (const z of enfesto.zonasBloqueadas ?? []) {
         const a = mundoParaTela(ponto(z.minX, z.minY), transform);
@@ -1838,7 +1847,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       const doGrupo = idsSelecionadosEmLote.size > 1 && idsSelecionadosEmLote.has(encontrada.id);
       if (!doGrupo) onSelecionar(encontrada.id);
       const ids = doGrupo ? [...idsSelecionadosEmLote] : [encontrada.id];
-      arrastoRef.current = { ids, ultimoMundo: mundo };
+      arrastoRef.current = { ids, ultimoMundo: mundo, total: { x: 0, y: 0 } };
       setDeltaDeArrasto({ ids: new Set(ids), delta: { x: 0, y: 0 } });
       return;
     }
@@ -1901,7 +1910,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (arrastoRef.current) {
       const deltaPasso = { x: mundo.x - arrastoRef.current.ultimoMundo.x, y: mundo.y - arrastoRef.current.ultimoMundo.y };
       arrastoRef.current.ultimoMundo = mundo;
-      setDeltaDeArrasto((atual) => (atual ? { ids: atual.ids, delta: somar(atual.delta, deltaPasso) } : atual));
+      arrastoRef.current.total = somar(arrastoRef.current.total, deltaPasso);
+      // Com Shift, o arrasto fica reto, no eixo em que a peça mais andou (ADR 0164).
+      const delta = eixoTravado(arrastoRef.current.total, e.shiftKey);
+      setDeltaDeArrasto((atual) => (atual ? { ids: atual.ids, delta } : atual));
     }
   }
 

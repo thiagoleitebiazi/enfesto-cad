@@ -215,3 +215,9 @@ export function posicionarAsQueChegam(
   }
   return postas;
 }
+
+/** O movimento só no eixo em que a peça mais andou (ADR 0164): com Shift, o arrasto fica reto, sem sair da fila. */
+export function eixoTravado(delta: Ponto2D, travar: boolean): Ponto2D {
+  if (!travar) return delta;
+  return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y };
+}

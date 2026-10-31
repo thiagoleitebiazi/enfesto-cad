@@ -41,6 +41,8 @@ export interface OpcoesDoPlt {
   readonly faixa?: number;
   /** As linhas que identificam o risco, escritas logo depois da última peça (ADR 0162). */
   readonly cabecalho?: readonly string[];
+  /** Os textos livres, no lugar deles na mesa (ADR 0165). */
+  readonly textos?: readonly { readonly x: number; readonly y: number; readonly texto: string }[];
 }
 
 const u = (mm: number): number => Math.round(mm * UNIDADES_POR_MM);
@@ -132,6 +134,11 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
     comandos.push(`PU${u(inicio.x)},${u(inicio.y)}`, 'SI0.35,0.5', `LB${textoParaPlotter(`${peca.nome} ${peca.tamanho}`.trim())}${String.fromCharCode(3)}`);
+  }
+  for (const t of opcoes.textos ?? []) {
+    caneta(2);
+    const onde = noPapel(ponto(t.x, t.y));
+    comandos.push(`PU${u(onde.x)},${u(onde.y)}`, 'SI0.25,0.35', `LB${textoParaPlotter(t.texto)}${String.fromCharCode(3)}`);
   }
   if ((opcoes.cabecalho ?? []).length > 0 && pecas.length > 0) {
     caneta(2);

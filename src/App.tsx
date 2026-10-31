@@ -3324,7 +3324,7 @@ export default function App(): React.JSX.Element {
       return;
     }
     try {
-      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
+      const bytes = new TextEncoder().encode(gerarPlt(pecas, { canetas: canetasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }));
       const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {

@@ -255,5 +255,9 @@ Fonte: a apostila unificada de treinamento, comparada com o programa. As ferrame
 | Linhas de referência: enfesto em escada e áreas bloqueadas | ✅ ADR 0160 (no encaixe automático; a busca do planejamento ainda não) |
 | Alinhar moldes no encaixe | ✅ ADR 0161 |
 | A identificação do risco no papel | ✅ ADR 0162 |
-| Texto livre no risco; travar o movimento; cortar a peça no encaixe; sobreposição permitida | ⬜ a fazer |
-| Paleta do usuário; calculadora; teclado virtual | ⬜ a fazer |
+| Calculadora | ✅ a conta nos campos de medida: ADR 0163 |
+| Travar horizontal / vertical | ✅ com Shift no arrasto: ADR 0164 |
+| Texto no risco | ✅ ADR 0165 (na mesa e no PLT) |
+| Cortar o molde e sobreposição permitida | ✅ já cobertos: Cortar (Construção) e a tolerância da validação (ADR 0082) |
+| Molde dobrado só na dobra (F11) | ⬜ a fazer |
+| Paleta do usuário | ⬜ a fazer |

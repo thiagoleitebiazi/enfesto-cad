@@ -3,8 +3,10 @@ import { Sobreposicao } from './Sobreposicao';
 import { DiagramaDeEnfesto } from './DiagramaDeEnfesto';
 import {
   criarConfiguracaoDeEnfesto,
+  lerTextosNoRisco,
   lerZonasBloqueadas,
   textoDasZonas,
+  textoDosTextosNoRisco,
   DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   MARGEM_DE_SEGURANCA_DA_MESA_MM,
   margensDaMesa,
@@ -31,6 +33,7 @@ interface CamposDeFormulario {
   alinhamentoDasBordas: 'alinhado' | 'escalonado';
   sentidoDeAlimentacao: 'unico' | 'alternado';
   zonasBloqueadas: string;
+  textosNoRisco: string;
 }
 
 function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulario {
@@ -48,13 +51,16 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
     zonasBloqueadas: textoDasZonas(config?.zonasBloqueadas ?? []),
+    textosNoRisco: textoDosTextosNoRisco(config?.textosNoRisco ?? []),
   };
 }
 
 function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
   const zonasBloqueadas = lerZonasBloqueadas(c.zonasBloqueadas);
+  const textosNoRisco = lerTextosNoRisco(c.textosNoRisco);
   const base = {
     ...(zonasBloqueadas.length > 0 ? { zonasBloqueadas } : {}),
+    ...(textosNoRisco.length > 0 ? { textosNoRisco } : {}),
     larguraUtilMm: Number.parseFloat(c.larguraUtilMm),
     comprimentoMm: Number.parseFloat(c.comprimentoMm),
     quantidadeDeCamadas: Number.parseInt(c.quantidadeDeCamadas, 10),
@@ -161,6 +167,10 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
         <label>
           Áreas bloqueadas da mesa (enfesto em escada, emenda, defeito): uma por linha, em mm — comprimento de, até, largura de, até
           <textarea rows={2} value={campos.zonasBloqueadas} placeholder="0 800 900 1500" onChange={(e) => alterar({ zonasBloqueadas: e.target.value })} />
+        </label>
+        <label>
+          Textos no risco: um por linha — comprimento, largura (mm) e o texto
+          <textarea rows={2} value={campos.textosNoRisco} placeholder="1200 300 Emenda aqui" onChange={(e) => alterar({ textosNoRisco: e.target.value })} />
         </label>
         <label>
           Margem lateral (mm, a partir de {MARGEM_DE_SEGURANCA_DA_MESA_MM})

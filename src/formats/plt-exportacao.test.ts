@@ -133,3 +133,10 @@ describe('o cabeçalho do risco (ADR 0162)', () => {
     expect(gerarPlt([peca], { larguraDaMesaMm: 1000 })).not.toContain('SI0.25');
   });
 });
+
+describe('os textos no risco (ADR 0165)', () => {
+  it('saem no lugar deles, sem acento', () => {
+    const peca = criarMolde({ nome: 'Q', referencia: '', tamanho: '', contorno: [ponto(0, 0), ponto(100, 0), ponto(100, 100), ponto(0, 100)], linhaDeFio: { inicio: ponto(50, 10), fim: ponto(50, 90) } }, 'q');
+    expect(gerarPlt([peca], { larguraDaMesaMm: 1000, textos: [{ x: 300, y: 1200, texto: 'Emenda aqui é' }] })).toContain('PU48000,28000;SI0.25,0.35;LBEmenda aqui e');
+  });
+});

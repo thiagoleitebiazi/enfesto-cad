@@ -54,6 +54,13 @@ export interface ZonaBloqueada {
   readonly maxY: number;
 }
 
+/** Um texto no risco (ADR 0165): "emenda aqui", "cortar primeiro". No comprimento e na largura da mesa, em mm. */
+export interface TextoNoRisco {
+  readonly x: number;
+  readonly y: number;
+  readonly texto: string;
+}
+
 export interface ConfiguracaoBase {
   readonly larguraUtilMm: number;
   readonly comprimentoMm: number;
@@ -63,6 +70,8 @@ export interface ConfiguracaoBase {
   /** Distância mínima exigida entre os contornos de duas peças quaisquer (seção 6). */
   readonly distanciaMinimaEntrePecasMm: number;
   readonly zonasBloqueadas?: readonly ZonaBloqueada[];
+  /** Os textos livres no risco (ADR 0165). */
+  readonly textosNoRisco?: readonly TextoNoRisco[];
 }
 
 export interface ConfiguracaoPar extends ConfiguracaoBase {
@@ -197,5 +206,21 @@ export function lerZonasBloqueadas(texto: string): ZonaBloqueada[] {
         throw new Error(`Área bloqueada "${l}": use comprimento de, até, largura de, até, em mm (ex.: 0 800 900 1500).`);
       }
       return { minY: n[0]!, maxY: n[1]!, minX: n[2]!, maxX: n[3]! };
+    });
+}
+
+/** Os textos como aparecem no formulário: uma linha por texto, "comprimento largura texto" (mm). */
+export const textoDosTextosNoRisco = (textos: readonly TextoNoRisco[]): string => textos.map((t) => `${t.y} ${t.x} ${t.texto}`).join('\n');
+
+/** Lê os textos do formulário; lança dizendo a linha que não serve. */
+export function lerTextosNoRisco(texto: string): TextoNoRisco[] {
+  return texto
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .map((l) => {
+      const m = /^(\d+(?:[.,]\d+)?)[\s;]+(\d+(?:[.,]\d+)?)[\s;]+(.+)$/.exec(l);
+      if (!m) throw new Error(`Texto no risco "${l}": use comprimento, largura e o texto (ex.: 1200 300 Emenda aqui).`);
+      return { y: Number(m[1]!.replace(',', '.')), x: Number(m[2]!.replace(',', '.')), texto: m[3]! };
     });
 }
