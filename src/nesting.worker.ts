@@ -1,6 +1,4 @@
-import { enfestoComEmendas } from './domain/enfesto';
-import { comFolgaNoEncaixe, comOrientacaoInicial, fecharEncaixe } from './domain/encaixeManual';
-import { prepararDobra } from './domain/pecasNaDobra';
+import { entradaDoEncaixe } from './domain/ocupacaoNoEncaixe';
 import { executarEmFatias, executarNestingPorPontosDeCanto, passosDoNesting, type MetodoDoNesting } from './domain/nesting';
 import type { Molde } from './domain/molde';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
@@ -36,13 +34,14 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar' && mensagem.metodo === 'pontos-de-canto') {
     // De uma vez só (é rápido): o cancelar deste método é a janela fechar o Worker.
     try {
-      const dobra = prepararDobra(mensagem.pecas.map((p) => comFolgaNoEncaixe(comOrientacaoInicial(p))), enfestoComEmendas(mensagem.enfesto), mensagem.tecidoDeSentidoUnico === true);
+      const entrada = entradaDoEncaixe(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+      const { dobra } = entrada;
       const resultado = executarNestingPorPontosDeCanto(dobra.resto, dobra.enfesto, {
         ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
         ...(mensagem.tecidoDeSentidoUnico ? { tecidoDeSentidoUnico: true } : {}),
         aoProgredir: (colocadas, total) => self.postMessage({ tipo: 'progresso', colocadas, total }),
       });
-      self.postMessage({ tipo: 'concluido', resultado: fecharEncaixe(resultado, dobra, mensagem.enfesto) });
+      self.postMessage({ tipo: 'concluido', resultado: entrada.fechar(resultado) });
     } catch (erro) {
       self.postMessage({ tipo: 'erro', mensagem: erro instanceof Error ? erro.message : String(erro) });
     }
@@ -52,7 +51,8 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
   if (mensagem.tipo === 'iniciar') {
     cancelado = false;
     // Em fatias, com uma pausa entre elas: é na pausa que a mensagem "cancelar" chega e muda `cancelado`.
-    const dobra = prepararDobra(mensagem.pecas.map((p) => comFolgaNoEncaixe(comOrientacaoInicial(p))), enfestoComEmendas(mensagem.enfesto), mensagem.tecidoDeSentidoUnico === true);
+    const entrada = entradaDoEncaixe(mensagem.pecas, mensagem.enfesto, mensagem.tecidoDeSentidoUnico === true);
+      const { dobra } = entrada;
     const passos = passosDoNesting(dobra.resto, dobra.enfesto, {
       ...(mensagem.passoMm !== undefined ? { passoMm: mensagem.passoMm } : {}),
       ...(mensagem.limiteDeTempoMs !== undefined ? { limiteDeTempoMs: mensagem.limiteDeTempoMs } : {}),
@@ -66,7 +66,7 @@ self.addEventListener('message', (evento: MessageEvent<MensagemParaWorker>) => {
       },
     });
     void executarEmFatias(passos, () => new Promise((r) => setTimeout(r, 0))).then(
-      (resultado) => self.postMessage({ tipo: 'concluido', resultado: fecharEncaixe(resultado, dobra, mensagem.enfesto) }),
+      (resultado) => self.postMessage({ tipo: 'concluido', resultado: entrada.fechar(resultado) }),
       // Um erro no cálculo vai para a janela, que antes ficava em "Calculando..." para sempre.
       (erro: unknown) => self.postMessage({ tipo: 'erro', mensagem: erro instanceof Error ? erro.message : String(erro) }),
     );

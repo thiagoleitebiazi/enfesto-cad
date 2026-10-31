@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { area, ponto, retanguloEnvolvente } from '../core/geometria';
 import { gerarPlt } from '../formats/plt-exportacao';
 import { aplicarConjunto, comConjunto, conjuntosGuardados, guardarConjuntos, lerQuantidades, textoDasQuantidades } from '../ui/visaoDasPecas';
-import { acaoDaTeclaDoEncaixe, comFolgaNoEncaixe, fecharEncaixe, semFolgaNoEncaixe } from './encaixeManual';
+import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, linhaDeCorteDaPeca, type Molde } from './molde';
 import type { ResultadoDeNesting } from './nesting';
@@ -133,6 +133,23 @@ describe('as propriedades de encaixe guardadas (ADR 0202)', () => {
     expect(r.restricaoDeRotacao.permite180).toBe(true);
     expect(r.quantidade).toBe(2);
     expect(r.tecidoDoMolde).toBe('Forro');
+  });
+});
+
+describe('o grupo e a envolvente na peça (ADR 0208)', () => {
+  it('entra e sai do grupo', () => {
+    const p = comConjuntoRigido(quadrado(), 'Grupo 1');
+    expect(p.conjuntoRigido).toBe('Grupo 1');
+    expect(comConjuntoRigido(p, '').conjuntoRigido).toBeUndefined();
+  });
+
+  it('eliminar tira a envolvente, as margens e o grupo', () => {
+    const r = semEnvolvente(quadrado({ envolvente: { margemMm: 5, tipo: 'contorno' }, margensDoContorno: { 1: 3 }, conjuntoRigido: 'g' }));
+    expect(r.envolvente).toBeUndefined();
+    expect(r.margensDoContorno).toBeUndefined();
+    expect(r.conjuntoRigido).toBeUndefined();
+    const p = quadrado();
+    expect(semEnvolvente(p)).toBe(p);
   });
 });
 

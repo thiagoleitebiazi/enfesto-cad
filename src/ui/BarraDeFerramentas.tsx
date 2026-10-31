@@ -201,6 +201,9 @@ interface BarraDeFerramentasProps {
   readonly onInformacoesDoArquivo?: () => void;
   readonly onUnirEncaixes?: () => void;
   readonly onColarVarios?: () => void;
+  /** Criar e eliminar a envolvente (ADR 0208). */
+  readonly onCriarEnvolvente?: () => void;
+  readonly onEliminarEnvolvente?: () => void;
   /** Trocar o tamanho das peças já encaixadas (ADR 0206). */
   readonly onSubstituirTamanho?: () => void;
   readonly onColarIncrementarGrade?: () => void;
@@ -2476,6 +2479,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       { tipo: 'acao', rotulo: 'Tamanho selecionado fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'tamanho') },
                       { tipo: 'acao', rotulo: 'Todos os moldes fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'todos') },
                       { tipo: 'separador' },
+                      { tipo: 'acao', rotulo: 'Criar envolvente…', onEscolher: props.onCriarEnvolvente ?? (() => undefined) },
+                      { tipo: 'acao', rotulo: 'Eliminar envolvente', onEscolher: props.onEliminarEnvolvente ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Substituir tamanho…', onEscolher: props.onSubstituirTamanho ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Colar vários…', onEscolher: props.onColarVarios ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Colar incrementando a grade', onEscolher: props.onColarIncrementarGrade ?? (() => undefined) },

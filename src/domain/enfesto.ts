@@ -96,6 +96,9 @@ export interface ConfiguracaoBase {
   readonly perdaMm?: number;
   /** A dobra do tecido embaixo, e não em cima (ADR 0195). */
   readonly dobraInferior?: boolean;
+  /** "Usar envolvente de grupo" desligado, e os blocos na vertical, neste encaixe (ADR 0208). */
+  readonly semEnvolvente?: boolean;
+  readonly blocosVerticais?: boolean;
   /** Compactar no fim do encaixe automático (ADR 0195). */
   readonly compactar?: boolean;
   /** Os pontos de emenda do tecido, no comprimento (mm; ADR 0188). */

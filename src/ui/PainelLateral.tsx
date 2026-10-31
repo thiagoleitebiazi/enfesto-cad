@@ -102,6 +102,8 @@ export interface PatchDeMolde {
   readonly meiaCamada?: boolean;
   /** O tecido do molde (ADR 0194). */
   readonly tecidoDoMolde?: string;
+  /** A margem de cada ponto do contorno (ADR 0208). */
+  readonly margensDoContorno?: Readonly<Record<string, number>>;
   /** A folga no encaixe, a quantidade por tamanho e o tamanho do texto (ADR 0202). */
   readonly folgaNoEncaixeMm?: number;
   readonly quantidadePorTamanho?: Readonly<Record<string, number>>;
@@ -375,6 +377,10 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
               if (v >= 0) props.onAlterar({ folgaNoEncaixeMm: v });
             }}
           />
+        </label>
+        <label title="Uma margem só num trecho: o número do ponto em que a aresta começa e a medida, em mm; os números são os do desenho">
+          Margem por ponto do contorno
+          <input key={`margens-${peca.id}`} type="text" defaultValue={textoDasQuantidades(peca.margensDoContorno)} placeholder="1:10 5:20" onBlur={(e) => props.onAlterar({ margensDoContorno: lerQuantidades(e.target.value) })} />
         </label>
         {peca.graduacao && (
           <label title="A quantidade própria de cada tamanho, por cima da quantidade da peça; zero tira o tamanho do encaixe">

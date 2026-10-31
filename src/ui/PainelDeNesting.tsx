@@ -1,3 +1,4 @@
+import { lerBlocos, type ConfiguracaoDeBlocos } from '../domain/ocupacaoNoEncaixe';
 import { TODOS_EM_TRECHOS, tecidosDoModelo } from '../domain/tecidosDoModelo';
 import { useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
@@ -25,6 +26,9 @@ export interface OpcoesAvancadasDeNesting {
   readonly tecido?: string;
   /** As grades de cada tecido, para lembrar na próxima vez. */
   readonly gradesDoModelo?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** Os blocos, e metade dos pacotes virada (ADR 0208). */
+  readonly blocos?: ConfiguracaoDeBlocos;
+  readonly manterOrientacaoDosPacotes?: boolean;
   /** As opções do encaixe avançado (ADR 0195). */
   readonly manterSelecionadas?: boolean;
   readonly somenteNaMesa?: boolean;
@@ -80,6 +84,11 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [somenteNaMesa, setSomenteNaMesa] = useState(false);
   const [usarEspelhamento, setUsarEspelhamento] = useState(false);
   const [compactar, setCompactar] = useState(false);
+  const [emBlocos, setEmBlocos] = useState(false);
+  const [separacaoCompleta, setSeparacaoCompleta] = useState(false);
+  const [blocosEscritos, setBlocosEscritos] = useState('');
+  const [blocosVerticais, setBlocosVerticais] = useState(false);
+  const [manterPacotes, setManterPacotes] = useState(false);
   const [dobraInferior, setDobraInferior] = useState(props.dobraInferior === true);
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
@@ -115,6 +124,8 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(somenteNaMesa ? { somenteNaMesa } : {}),
       ...(usarEspelhamento ? { usarEspelhamento } : {}),
       ...(compactar ? { compactar } : {}),
+      ...(emBlocos ? { blocos: { separacaoCompleta, blocos: lerBlocos(blocosEscritos), vertical: blocosVerticais } } : {}),
+      ...(manterPacotes ? { manterOrientacaoDosPacotes: true } : {}),
       ...(props.temDobra ? { dobraInferior } : {}),
     };
   }
@@ -229,6 +240,36 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                 <input type="checkbox" checked={compactar} onChange={(e) => setCompactar(e.target.checked)} />
                 Compactar
               </label>
+              <label className="opcao-em-linha" title="Intercala a grade: um pacote a 0°, o seguinte a 180°">
+                <input type="checkbox" checked={manterPacotes} onChange={(e) => setManterPacotes(e.target.checked)} />
+                Manter orientação dos pacotes
+              </label>
+              <label className="opcao-em-linha">
+                <input type="checkbox" checked={emBlocos} onChange={(e) => setEmBlocos(e.target.checked)} />
+                Encaixar em blocos
+              </label>
+              {emBlocos && (
+                <fieldset className="grupo-de-opcoes-do-formulario">
+                  <legend>Configuração dos blocos</legend>
+                  <label className="opcao-em-linha" title="Cada tamanho é um bloco, em ordem crescente">
+                    <input type="checkbox" checked={separacaoCompleta} onChange={(e) => setSeparacaoCompleta(e.target.checked)} />
+                    Separação completa dos blocos
+                  </label>
+                  {!separacaoCompleta && (
+                    <label>
+                      Tamanhos de cada bloco, separados por ponto e vírgula
+                      <input type="text" value={blocosEscritos} placeholder="P M; G GG" onChange={(e) => setBlocosEscritos(e.target.value)} />
+                    </label>
+                  )}
+                  <label>
+                    Orientação dos blocos
+                    <select value={blocosVerticais ? 'vertical' : 'horizontal'} onChange={(e) => setBlocosVerticais(e.target.value === 'vertical')}>
+                      <option value="horizontal">Horizontal: um depois do outro no comprimento</option>
+                      <option value="vertical">Vertical: um abaixo do outro na largura</option>
+                    </select>
+                  </label>
+                </fieldset>
+              )}
               {props.temDobra && (
                 <label>
                   Dobra do tecido

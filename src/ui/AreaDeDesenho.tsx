@@ -14,6 +14,7 @@ import {
 } from '../domain/cota';
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos, pontosNaoGraduados } from '../domain/graduacao';
+import { ocupacaoDaPeca } from '../domain/ocupacaoNoEncaixe';
 import { corDoTamanho, TRACOS_DA_COSTURA, type CoresDaArea, type EstiloDaCostura } from './preferencias';
 import { codigoDoPacote, corDoPacote, pacoteDaPeca, pacotesDoEncaixe, rotuloDaPeca, VISAO_PADRAO, type CodigoDosPacotes, type VisaoDasPecas } from './visaoDasPecas';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
@@ -1112,6 +1113,17 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.strokeStyle = estaSelecionada ? COR_CONTORNO_SELECIONADO : COR_CONTORNO;
         ctx.lineWidth = 1;
         ctx.stroke();
+      }
+
+      // O que a peça ocupa no encaixe (ADR 0208).
+      if (peca.envolvente || (peca.margensDoContorno && Object.keys(peca.margensDoContorno).length > 0)) {
+        ctx.beginPath();
+        traçarContorno(ctx, ocupacaoDaPeca(peca), transform);
+        ctx.strokeStyle = COR_GRUPO_DO_ENCAIXE;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       if (mostrarPontosDePique) {

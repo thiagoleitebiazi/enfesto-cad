@@ -375,6 +375,7 @@ import { gerarDxfAstmComRegras } from './formats/dxf-astm';
 import { gerarRul, lerRul } from './formats/rul';
 import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
 import { perimetro } from './core/geometria';
+import { comBlocos } from './domain/ocupacaoNoEncaixe';
 import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
 import {
   aplicarConjunto,
@@ -410,6 +411,8 @@ import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './d
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
+  comConjuntoRigido,
+  semEnvolvente,
   copiasEmSequencia,
   incrementarGrade,
   type DirecaoDoEncaixe,
@@ -699,6 +702,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'envolvente' }
   | { readonly tipo: 'substituir-tamanho' }
   | { readonly tipo: 'cores-da-area' }
   | { readonly tipo: 'propriedades-de-encaixe' }
@@ -1303,10 +1307,15 @@ export default function App(): React.JSX.Element {
   // sempre que o usuário escolhe UMA peça de propósito (clique no canvas ou
   // na lista), para não deixar os dois modos de seleção coexistindo de forma
   // confusa.
-  const selecionarUnico = useCallback((id: string | null) => {
-    setSelecionadoId(id);
-    setIdsSelecionadosEmLote(new Set());
-  }, []);
+  const selecionarUnico = useCallback(
+    (id: string | null) => {
+      setSelecionadoId(id);
+      // A peça de um grupo rígido leva as outras: o grupo anda junto (ADR 0208).
+      const grupo = pecas.find((p) => p.id === id)?.conjuntoRigido;
+      setIdsSelecionadosEmLote(new Set(grupo ? pecas.filter((p) => p.conjuntoRigido === grupo).map((p) => p.id) : []));
+    },
+    [pecas],
+  );
 
   /** Duplo-clique numa peça (lista ou canvas): seleciona e abre o diálogo de Propriedades. */
   const abrirPropriedadesDaPeca = useCallback(
@@ -3323,7 +3332,7 @@ export default function App(): React.JSX.Element {
       if (acao.tipo === 'agrupar' || acao.tipo === 'desagrupar') {
         const grupo = acao.tipo === 'agrupar' ? proximoGrupo(pecas) : '';
         if (ids.size === 0) avisar('Selecione as peças primeiro.');
-        else aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? comGrupoDoEncaixe(p, grupo) : p)));
+        else aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? comConjuntoRigido(p, grupo) : p)));
         return;
       }
       if (acao.tipo === 'mover-com-referencia') {
@@ -3444,10 +3453,16 @@ export default function App(): React.JSX.Element {
       }
       // As peças com linha de simetria entram abertas, inteiras.
       if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
+      if (opcoesAvancadas.blocos) {
+        paraEncaixar = comBlocos(paraEncaixar, opcoesAvancadas.blocos);
+        if (opcoesAvancadas.blocos.vertical) enfestoDoEncaixe = { ...enfestoDoEncaixe, blocosVerticais: true };
+      }
+      if (opcoesDoEncaixe.semEnvolvente) enfestoDoEncaixe = { ...enfestoDoEncaixe, semEnvolvente: true };
+      if (opcoesAvancadas.manterOrientacaoDosPacotes) paraEncaixar = comSentidoAlternado(paraEncaixar, 'por-pacote', proximoId);
       if (sentidoUnicoDoTecido(tecido) && tecido?.sentidoNoEncaixe) paraEncaixar = comSentidoAlternado(paraEncaixar, tecido.sentidoNoEncaixe, proximoId);
       return { paraEncaixar, enfestoDoEncaixe, fixas: escolha.fixas, foraDoEncaixe: escolha.foraDoEncaixe };
     },
-    [pecas, enfesto, tecido, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId],
+    [pecas, enfesto, tecido, registrarEventoEPersistir, idsSelecionadosEmLote, selecionadoId, opcoesDoEncaixe.semEnvolvente],
   );
 
   const calcularNestingAutomatico = useCallback(
@@ -5628,6 +5643,15 @@ export default function App(): React.JSX.Element {
           carregarListaDeProjetos();
           setDialogoDeFerramenta({ tipo: 'substituir-tamanho' });
         }}
+        onCriarEnvolvente={() => {
+          if (selecionadoId || idsSelecionadosEmLote.size > 0) setDialogoDeFerramenta({ tipo: 'envolvente' });
+          else avisar('Selecione as peças primeiro.');
+        }}
+        onEliminarEnvolvente={() => {
+          const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+          if (ids.size === 0) avisar('Selecione as peças primeiro.');
+          else aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? semEnvolvente(p) : p)));
+        }}
         onColarVarios={() => {
           if (clipboard && clipboard.length > 0) setDialogoDeFerramenta({ tipo: 'colar-varios' });
           else avisar('Copie as peças primeiro (Ctrl+C).');
@@ -6491,6 +6515,7 @@ export default function App(): React.JSX.Element {
             { tipo: 'caixa', id: 'encostar', rotulo: 'Encostar ao soltar: a peça arrastada segue até a vizinha', inicial: opcoesDoEncaixe.encostarAoSoltar },
             { tipo: 'caixa', id: 'verificar', rotulo: 'Verificar sobreposição ao plotar', inicial: opcoesDoEncaixe.verificarAoPlotar },
             { tipo: 'caixa', id: 'ordem', rotulo: 'Lista de peças em ordem crescente dos tamanhos', inicial: opcoesDoEncaixe.ordemCrescente === true },
+            { tipo: 'caixa', id: 'envolvente', rotulo: 'Usar envolvente de grupo no encaixe', inicial: !opcoesDoEncaixe.semEnvolvente },
             ...Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => ({ tipo: 'cor' as const, id: `pacote${i}`, rotulo: `Cor do pacote ${i + 1}`, inicial: corDoPacote(i, opcoesDoEncaixe.coresDosPacotes) })),
             {
               tipo: 'escolha',
@@ -6509,7 +6534,7 @@ export default function App(): React.JSX.Element {
             const precisao = valores['precisao'] as number | undefined;
             if (!(angulo > 0 && angulo < 360)) return 'O ângulo de giro vai de 0 a 360 graus.';
             if (precisao !== undefined && (precisao < 0 || precisao > 4)) return 'A precisão vai de 0 a 4 casas.';
-            const novas: OpcoesDoEncaixe = { ...opcoesDoEncaixe, ordemCrescente: valores['ordem'] === true, anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico', coresDosPacotes: Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => String(valores[`pacote${i}`])) };
+            const novas: OpcoesDoEncaixe = { ...opcoesDoEncaixe, ordemCrescente: valores['ordem'] === true, semEnvolvente: valores['envolvente'] !== true, anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico', coresDosPacotes: Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => String(valores[`pacote${i}`])) };
             mudarOpcoesDoEncaixe(novas);
             return null;
           }}
@@ -6776,6 +6801,36 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'substituir-tamanho' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'envolvente' && (
+        <DialogoDeCampos
+          titulo="Configuração envolvente de grupo"
+          campos={[
+            { tipo: 'medida', id: 'margem', rotulo: 'Margem (mm)', inicial: '10' },
+            {
+              tipo: 'escolha',
+              id: 'tipo',
+              rotulo: 'Tipo',
+              opcoes: [
+                { valor: 'contorno', rotulo: 'Contorno: acompanha a forma' },
+                { valor: 'retangular', rotulo: 'Retangular: a caixa em volta' },
+              ],
+              inicial: 'contorno',
+            },
+          ]}
+          nota="Com mais de uma peça selecionada, elas viram um grupo que anda junto na mesa e no encaixe. A envolvente aparece tracejada."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const margemMm = valores['margem'] as number;
+            if (!(margemMm >= 0)) return 'A margem não pode ser negativa.';
+            const ids = idsSelecionadosEmLote.size > 0 ? idsSelecionadosEmLote : new Set(selecionadoId ? [selecionadoId] : []);
+            const grupo = ids.size > 1 ? proximoGrupo(pecas) : '';
+            const envolvente = { margemMm, tipo: valores['tipo'] === 'retangular' ? ('retangular' as const) : ('contorno' as const) };
+            aplicarMudanca(pecas.map((p) => (ids.has(p.id) ? { ...comConjuntoRigido(p, grupo), envolvente } : p)));
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'envolvente' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (

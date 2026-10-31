@@ -437,6 +437,12 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** A margem envolvente da peça no encaixe (ADR 0208). */
+  readonly envolvente?: { readonly margemMm: number; readonly tipo: 'contorno' | 'retangular' };
+  /** A margem de cada ponto do contorno, pelo número dele no desenho (ADR 0208). */
+  readonly margensDoContorno?: Readonly<Record<string, number>>;
+  /** O grupo que anda junto, na mesa e no encaixe (ADR 0208). */
+  readonly conjuntoRigido?: string;
   /** A folga em volta da peça, só no encaixe automático (ADR 0202). */
   readonly folgaNoEncaixeMm?: number;
   /** A quantidade própria de cada tamanho, por cima da quantidade da peça (ADR 0202). */

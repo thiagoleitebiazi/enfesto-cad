@@ -209,7 +209,7 @@ describe('mover com referência', () => {
 describe('agrupar e a dobra por peça', () => {
   it('o próximo grupo é o primeiro número livre', () => {
     expect(proximoGrupo([quadrado('a')])).toBe('Grupo 1');
-    expect(proximoGrupo([{ ...quadrado('a'), grupoDoEncaixe: 'Grupo 1' }, { ...quadrado('b'), grupoDoEncaixe: 'Grupo 3' }])).toBe('Grupo 2');
+    expect(proximoGrupo([{ ...quadrado('a'), conjuntoRigido: 'Grupo 1' }, { ...quadrado('b'), conjuntoRigido: 'Grupo 3' }])).toBe('Grupo 2');
   });
 
   it('F11: a peça marcada segue com as outras, e não na dobra', () => {

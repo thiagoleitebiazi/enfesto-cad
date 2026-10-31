@@ -316,10 +316,23 @@ export function moverComReferencia(pecas: readonly Molde[], ids: ReadonlySet<str
 
 /** O primeiro nome "Grupo N" ainda sem uso no projeto. */
 export function proximoGrupo(pecas: readonly Molde[]): string {
-  const usados = new Set(pecas.map((p) => p.grupoDoEncaixe));
+  const usados = new Set(pecas.map((p) => p.conjuntoRigido));
   let n = 1;
   while (usados.has(`Grupo ${n}`)) n++;
   return `Grupo ${n}`;
+}
+
+/** O grupo que anda junto: nome em branco tira a peça dele. */
+export function comConjuntoRigido(peca: Molde, nome: string): Molde {
+  if (nome !== '') return { ...peca, conjuntoRigido: nome };
+  const { conjuntoRigido, ...resto } = peca;
+  return conjuntoRigido ? resto : peca;
+}
+
+/** "Eliminar envolvente": a peça sem a envolvente, sem as margens e fora do grupo. */
+export function semEnvolvente(peca: Molde): Molde {
+  const { envolvente, margensDoContorno, conjuntoRigido, ...resto } = peca;
+  return envolvente || margensDoContorno || conjuntoRigido ? resto : peca;
 }
 
 /** "Molde dobrado somente na dobra" (F11): ligado (o padrão), a peça de simetria vai na dobra; desligado, vai com as outras. */

@@ -118,6 +118,16 @@ function verticeEm(contorno: Contorno, posicao: Ponto2D): number {
 }
 
 /** Para cada ponto do contorno que é graduado, o ponto graduado dele. */
+const ORDEM_DOS_TAMANHOS = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'EG', 'EGG'];
+
+/** Onde o tamanho cai na ordem: as letras da grade, depois os números; o resto, no fim. */
+export function posicaoDoTamanho(tamanho: string): number {
+  const i = ORDEM_DOS_TAMANHOS.indexOf(tamanho.trim().toUpperCase());
+  if (i >= 0) return i;
+  const n = Number(tamanho);
+  return tamanho.trim() !== '' && Number.isFinite(n) ? ORDEM_DOS_TAMANHOS.length + n : Number.MAX_SAFE_INTEGER;
+}
+
 /** "Ponto não graduado" (ADR 0181): os cantos da peça graduada sem regra, ou com a regra toda em zero. */
 export function pontosNaoGraduados(molde: { readonly contorno: Contorno; readonly graduacao?: Graduacao }): number[] {
   if (!molde.graduacao) return [];
