@@ -328,3 +328,5 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Linhas de referência; verificar dobrados; ½ camada sobreposta | ✅ ADR 0196 |
 | Pontos de emenda automáticos, métodos 1 e 2 | ✅ ADR 0197 |
 | Status do encaixe; perdas; rendimento | ✅ ADR 0198 |
+| Moldes no encaixe; destacar pacotes; destacar relacionamento; barra de status; precisão; ângulo de giro; código dos pacotes | ✅ ADR 0199 |
+| Molde, tamanho e todos na mesa ou fora; encaixa ao clicar; usar; verifica ao plotar; padrões do novo encaixe | ✅ ADR 0200 |

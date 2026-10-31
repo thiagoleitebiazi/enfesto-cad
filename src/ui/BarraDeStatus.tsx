@@ -3,6 +3,7 @@ import { numeroComVirgula } from '../core/numeros';
 import { valorDaReguaEmUnidade, type TransformacaoDeTela, type UnidadeDeRegua } from './transformacaoDeTela';
 import type { ProblemaDeValidacao } from '../domain/validacao';
 import type { EstadoDoSalvamento } from './salvamento';
+import type { CampoDaBarra } from './visaoDasPecas';
 
 interface BarraDeStatusProps {
   readonly cursorMundo: Ponto2D | null;
@@ -16,6 +17,19 @@ interface BarraDeStatusProps {
   readonly pontoReferencia?: Ponto2D | null;
   /** Aproveitamento físico da mesa em %, ou null quando não há enfesto ou peças. */
   readonly aproveitamentoPercentual?: number | null;
+  /** Os outros campos do encaixe, os que a pessoa escolheu (ADR 0199). */
+  readonly campos?: readonly CampoDaBarra[];
+  readonly resumo?: {
+    readonly encaixados: number;
+    readonly comprimentoMm: number;
+    readonly larguraMm: number;
+    readonly areaMm2: number;
+    readonly perimetroMm: number | null;
+    readonly rendimentoConsumoM: number | null;
+    readonly rendimentoPesoKg: number | null;
+  } | null;
+  /** As casas decimais das medidas; ausente, as de sempre (ADR 0199). */
+  readonly precisao?: number | null;
   /** Unidade escolhida no canto das réguas: as medidas da barra seguem a mesma. */
   readonly unidade: UnidadeDeRegua;
   /** O último salvamento; sem nenhum ainda, nada aparece. */
@@ -29,12 +43,24 @@ interface BarraDeStatusProps {
 }
 
 /** Medida em mm escrita na unidade das réguas, com vírgula; em cm, duas casas dão a mesma precisão de 0,1 mm. */
-function medida(mm: number, unidade: UnidadeDeRegua): string {
-  if (unidade === 'pol') return `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'pol'), 3)} pol`;
-  return unidade === 'cm' ? `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'cm'), 2)} cm` : `${numeroComVirgula(mm, 1)} mm`;
+function medidaComCasas(mm: number, unidade: UnidadeDeRegua, casas: number | null | undefined): string {
+  if (unidade === 'pol') return `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'pol'), casas ?? 3)} pol`;
+  return unidade === 'cm' ? `${numeroComVirgula(valorDaReguaEmUnidade(mm, 'cm'), casas ?? 2)} cm` : `${numeroComVirgula(mm, casas ?? 1)} mm`;
 }
 
 export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
+  const medida = (mm: number, unidade: UnidadeDeRegua): string => medidaComCasas(mm, unidade, props.precisao);
+  const r = props.resumo;
+  const textoDoCampo = (c: CampoDaBarra): string | null => {
+    if (!r) return null;
+    if (c === 'encaixados') return `Encaixados: ${r.encaixados}`;
+    if (c === 'comprimento') return `Comprimento: ${medida(r.comprimentoMm, props.unidade)}`;
+    if (c === 'largura') return `Largura: ${medida(r.larguraMm, props.unidade)}`;
+    if (c === 'area') return `Área: ${numeroComVirgula(r.areaMm2 / 1_000_000, 3)} m²`;
+    if (c === 'perimetro') return r.perimetroMm === null ? null : `Perímetro: ${medida(r.perimetroMm, props.unidade)}`;
+    if (c === 'rendimentoConsumo') return r.rendimentoConsumoM === null ? null : `Rendimento: ${numeroComVirgula(r.rendimentoConsumoM, 3)} m/peça`;
+    return r.rendimentoPesoKg === null ? null : `Rendimento: ${numeroComVirgula(r.rendimentoPesoKg, 3)} kg/peça`;
+  };
   const zoomPercentual = Math.round(props.transform.escalaPxPorMm * 100);
   const erros = props.problemas.filter((p) => p.severidade === 'erro').length;
   const avisos = props.problemas.filter((p) => p.severidade === 'aviso').length;
@@ -75,6 +101,10 @@ export function BarraDeStatus(props: BarraDeStatusProps): React.JSX.Element {
         Aproveitamento da mesa:{' '}
         {props.aproveitamentoPercentual != null ? `${numeroComVirgula(props.aproveitamentoPercentual, 1)}%` : '—'}
       </span>
+      {(props.campos ?? []).map((c) => {
+        const texto = textoDoCampo(c);
+        return texto === null ? null : <span key={c}>{texto}</span>;
+      })}
       {props.salvamento &&
         (props.salvamento.ok ? (
           <span className="estado-do-salvamento">Salvo às {props.salvamento.hora}</span>

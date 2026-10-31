@@ -4,7 +4,7 @@ import { areaUtilDaMesa, contornoDaZona, dobraDoEnfesto, enfestoComEmendas, type
 import { espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, transladarMolde, type Molde } from './molde';
 import type { ResultadoDeNesting } from './nesting';
 import { comContasRefeitas, juntarDobra, naPosicaoDaDobra, type DobraPreparada } from './pecasNaDobra';
-import { caixaDe, FOLGA_DO_ENCOSTO_MM, lugarLivre } from './posicionamento';
+import { caixaDe, FOLGA_DO_ENCOSTO_MM, lugarLivre, sugerirPosicaoSemSobreposicao } from './posicionamento';
 
 /**
  * O encaixe à mão pelo teclado (ADR 0180): as teclas da referência para a peça selecionada, e o que cada uma faz.
@@ -181,6 +181,31 @@ export function moverParaForaDoEnfesto(pecas: readonly Molde[], ids: ReadonlySet
     y += c.maxY - c.minY + AFASTAMENTO_FORA_DA_MESA_MM;
     return posta;
   });
+}
+
+export type AlvoDoPosicionar = 'molde' | 'tamanho' | 'todos';
+
+/** As peças do comando: a selecionada, as do tamanho dela, ou todas. */
+export function idsParaPosicionar(pecas: readonly Molde[], selecionadoId: string | null, alvo: AlvoDoPosicionar): string[] {
+  if (alvo === 'todos') return pecas.map((p) => p.id);
+  const peca = pecas.find((p) => p.id === selecionadoId);
+  if (!peca) return [];
+  return alvo === 'molde' ? [peca.id] : pecas.filter((p) => p.tamanho === peca.tamanho).map((p) => p.id);
+}
+
+/** As peças indicadas que estão fora da mesa voltam, cada uma para o primeiro lugar livre. Diz quantas não couberam. */
+export function trazerParaAMesa(pecas: readonly Molde[], ids: readonly string[], enfesto: ConfiguracaoDeEnfesto): { readonly pecas: readonly Molde[]; readonly semLugar: number } {
+  const atual = [...pecas];
+  let semLugar = 0;
+  for (const id of ids) {
+    const i = atual.findIndex((p) => p.id === id);
+    const peca = atual[i];
+    if (!peca || retanguloEnvolvente(linhaDeCorteDaPeca(peca)).minY < enfesto.comprimentoMm) continue;
+    const d = sugerirPosicaoSemSobreposicao(peca, atual.filter((p) => p.id !== id), enfesto);
+    if (d) atual[i] = transladarMolde(peca, d, peca.id);
+    else semLugar++;
+  }
+  return { pecas: atual, semLugar };
 }
 
 /** "Molde original": a peça volta à orientação com que entrou no projeto. O espelho não volta: a peça não guarda se foi espelhada. */

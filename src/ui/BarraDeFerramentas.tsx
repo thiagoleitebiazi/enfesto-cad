@@ -1,3 +1,4 @@
+import type { AlvoDoPosicionar } from '../domain/encaixeManual';
 import { flushSync } from 'react-dom';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ModoDeDesenho } from './AreaDeDesenho';
@@ -139,6 +140,16 @@ interface BarraDeFerramentasProps {
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly onEstiloDaCostura?: (estilo: EstiloDaCostura) => void;
   readonly onCoresDosTamanhos?: () => void;
+  /** "Moldes no encaixe", os destaques, a barra de status e as opções do encaixe (ADR 0199). */
+  readonly onMoldesNoEncaixe?: () => void;
+  readonly destacarPacotes?: boolean;
+  readonly onAlternarDestacarPacotes?: () => void;
+  readonly destacarRelacionamento?: boolean;
+  readonly onAlternarDestacarRelacionamento?: () => void;
+  readonly onBarraDeStatus?: () => void;
+  readonly onOpcoesDoEncaixe?: () => void;
+  /** Mandar as peças para a mesa ou para fora dela (ADR 0200). */
+  readonly onPosicionar?: (destino: 'mesa' | 'fora', alvo: AlvoDoPosicionar) => void;
   /** As cores pelas ferramentas e os pontos de pique (ADR 0193). */
   readonly coresPelasFerramentas?: boolean;
   readonly onAlternarCoresPelasFerramentas?: () => void;
@@ -578,6 +589,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     ...(props.onZoomDeUmElemento
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Zoom de um elemento', titulo: 'Clique numa peça, numa linha ou num furo: a vista enquadra o que foi indicado', onEscolher: props.onZoomDeUmElemento },
+                          { tipo: 'acao' as const, rotulo: 'Moldes no encaixe…', titulo: 'O que aparece em cada peça na tela; não muda o que sai impresso', onEscolher: props.onMoldesNoEncaixe ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Destacar pacotes', marcado: props.destacarPacotes === true, titulo: 'Cada pacote do encaixe numa cor, com o código dele', onEscolher: props.onAlternarDestacarPacotes ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Destacar relacionamento de piques', marcado: props.destacarRelacionamento === true, titulo: 'Marca os pontos de casamento das peças', onEscolher: props.onAlternarDestacarRelacionamento ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Cores pelas ferramentas', marcado: props.coresPelasFerramentas === true, titulo: 'O contorno das peças na cor da caneta do corte (Opções › Ferramentas do plotter)', onEscolher: props.onAlternarCoresPelasFerramentas ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Pontos de pique', marcado: props.mostrarPontosDePique === true, titulo: 'Marca o ponto de cada pique no contorno', onEscolher: props.onAlternarPontosDePique ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Retângulo de organização…', titulo: 'A guia da largura do papel, para arrumar os moldes antes de plotar', onEscolher: props.onRetanguloDeOrganizacao ?? (() => undefined) },
@@ -642,6 +656,12 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               ...(props.onFerramentasDoPlotter
                 ? [
                     { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
+                    ...(props.onOpcoesDoEncaixe
+                      ? [
+                          { tipo: 'acao' as const, rotulo: 'Opções do encaixe…', titulo: 'O ângulo de giro, a precisão, encaixar ao clicar, verificar ao plotar', onEscolher: props.onOpcoesDoEncaixe },
+                          { tipo: 'acao' as const, rotulo: 'Barra de status…', titulo: 'Quais informações do encaixe a barra de status mostra', onEscolher: props.onBarraDeStatus ?? (() => undefined) },
+                        ]
+                      : []),
                     ...(props.onAutoAjusteDeTexto
                       ? [
                           { tipo: 'acao' as const, rotulo: 'Auto ajuste de texto…', titulo: 'O tamanho do nome e do fio de acordo com a peça, e a orientação do texto no plotter', onEscolher: props.onAutoAjusteDeTexto },
@@ -2411,6 +2431,20 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     <Icone nome="sugerir-posicao" />
                     <span>Alinhar peças</span>
                   </button>
+                )}
+                {props.onPosicionar && (
+                  <MenuSuspenso
+                    rotulo="Posicionar"
+                    itens={[
+                      { tipo: 'acao', rotulo: 'Molde selecionado na mesa', onEscolher: () => props.onPosicionar?.('mesa', 'molde') },
+                      { tipo: 'acao', rotulo: 'Tamanho selecionado na mesa', onEscolher: () => props.onPosicionar?.('mesa', 'tamanho') },
+                      { tipo: 'acao', rotulo: 'Todos os moldes na mesa', onEscolher: () => props.onPosicionar?.('mesa', 'todos') },
+                      { tipo: 'separador' },
+                      { tipo: 'acao', rotulo: 'Molde selecionado fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'molde') },
+                      { tipo: 'acao', rotulo: 'Tamanho selecionado fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'tamanho') },
+                      { tipo: 'acao', rotulo: 'Todos os moldes fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'todos') },
+                    ]}
+                  />
                 )}
                 {props.onStatusDoEncaixe && (
                   <button onClick={props.onStatusDoEncaixe} title="Status: o consumo, o aproveitamento e o que está na mesa, por tamanho e por molde">

@@ -367,7 +367,24 @@ import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
 import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
+import { perimetro } from './core/geometria';
 import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
+import {
+  camposDaBarraGuardados,
+  guardarCamposDaBarra,
+  guardarOpcoesDoEncaixe,
+  guardarVisao,
+  opcoesDoEncaixeGuardadas,
+  OPCOES_PADRAO_DO_ENCAIXE,
+  ROTULO_DO_ATRIBUTO,
+  ROTULO_DO_CAMPO_DA_BARRA,
+  VISAO_PADRAO,
+  visaoGuardada,
+  type AtributoDaVisao,
+  type CampoDaBarra,
+  type OpcoesDoEncaixe,
+  type VisaoDasPecas,
+} from './ui/visaoDasPecas';
 import { comEspelhamentoPermitido, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
@@ -378,6 +395,8 @@ import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './d
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
+  idsParaPosicionar,
+  trazerParaAMesa,
   compactarEncaixe,
   comForaDaDobra,
   comMeiaCamada,
@@ -602,6 +621,13 @@ function ehFerramentaDeTrecho(modo: ModoDeDesenho): modo is FerramentaDeTrecho {
 }
 
 /** Diálogo aberto por uma ferramenta de desenho, com o que ele precisa para aplicar. */
+/** "Usar" (ADR 0200): a peça entra no encaixe, ou fica de fora. */
+function comUso(peca: Molde, usar: boolean): Molde {
+  if (!usar) return { ...peca, naoUsar: true };
+  const { naoUsar, ...resto } = peca;
+  return naoUsar ? resto : peca;
+}
+
 /** O tamanho do que vai ser impresso: a mesa até a última peça, ou a maior peça, nos moldes individuais. */
 function tamanhoDoDesenho(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto | null): { readonly larguraMm: number; readonly comprimentoMm: number } {
   if (enfesto) return { larguraMm: enfesto.larguraUtilMm, comprimentoMm: comprimentoDoEncaixeAImprimirMm(pecas, enfesto) };
@@ -630,6 +656,9 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'moldes-no-encaixe' }
+  | { readonly tipo: 'barra-de-status' }
+  | { readonly tipo: 'opcoes-do-encaixe' }
   | { readonly tipo: 'pontos-de-emenda' }
   | { readonly tipo: 'auto-ajuste-de-texto' }
   | { readonly tipo: 'calculadora' }
@@ -748,6 +777,29 @@ export default function App(): React.JSX.Element {
     }
   });
   const [mostrarNaoGraduados, setMostrarNaoGraduados] = useState(false);
+  const [destacarPacotes, setDestacarPacotes] = useState(false);
+  const [destacarRelacionamento, setDestacarRelacionamento] = useState(false);
+  const [visao, setVisao] = useState<VisaoDasPecas>(() => {
+    try {
+      return visaoGuardada(window.localStorage);
+    } catch {
+      return VISAO_PADRAO;
+    }
+  });
+  const [opcoesDoEncaixe, setOpcoesDoEncaixe] = useState<OpcoesDoEncaixe>(() => {
+    try {
+      return opcoesDoEncaixeGuardadas(window.localStorage);
+    } catch {
+      return OPCOES_PADRAO_DO_ENCAIXE;
+    }
+  });
+  const [camposDaBarra, setCamposDaBarra] = useState<readonly CampoDaBarra[]>(() => {
+    try {
+      return camposDaBarraGuardados(window.localStorage);
+    } catch {
+      return [];
+    }
+  });
   const [coresPelasFerramentas, setCoresPelasFerramentas] = useState(false);
   const [mostrarPontosDePique, setMostrarPontosDePique] = useState(false);
   const [estiloDaCostura, setEstiloDaCostura] = useState<EstiloDaCostura>(() => {
@@ -1026,6 +1078,21 @@ export default function App(): React.JSX.Element {
   const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
   const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
+
+  const resumoDaBarra = useMemo(() => {
+    if (!enfesto || camposDaBarra.length === 0) return null;
+    const s = statusDoEncaixe(pecas, enfesto, tecido?.gramaturaGm2);
+    const selecionada = pecas.find((p) => p.id === selecionadoId);
+    return {
+      encaixados: s.encaixados,
+      comprimentoMm: s.comprimentoMm,
+      larguraMm: enfesto.larguraUtilMm,
+      areaMm2: s.areaMm2,
+      perimetroMm: selecionada ? perimetro(selecionada.contorno) : null,
+      rendimentoConsumoM: s.rendimentoConsumoM,
+      rendimentoPesoKg: s.rendimentoPesoKg,
+    };
+  }, [pecas, enfesto, tecido, selecionadoId, camposDaBarra]);
 
   const problemasDeValidacao = useMemo(
     () => validarProjeto(pecas, enfesto, { ...TOLERANCIAS_PADRAO, folgaForaDaPecaMm }, tecido),
@@ -1946,11 +2013,11 @@ export default function App(): React.JSX.Element {
   const alterarPecaSelecionada = useCallback(
     (patch: PatchDeMolde) => {
       if (!selecionadoId) return;
-      const { emPar, grupoDoEncaixe, meiaCamada, ...resto } = patch;
+      const { emPar, grupoDoEncaixe, meiaCamada, usarNoEncaixe, ...resto } = patch;
       aplicarMudanca(
         pecas.map((p) => {
           if (p.id !== selecionadoId) return p;
-          const mudada = comPar(comMeiaCamada({ ...p, ...resto }, meiaCamada ?? p.meiaCamada === true), emPar ?? p.emPar === true);
+          const mudada = comPar(comUso(comMeiaCamada({ ...p, ...resto }, meiaCamada ?? p.meiaCamada === true), usarNoEncaixe ?? !p.naoUsar), emPar ?? p.emPar === true);
           return grupoDoEncaixe === undefined ? mudada : comGrupoDoEncaixe(mudada, grupoDoEncaixe);
         }),
       );
@@ -3198,8 +3265,8 @@ export default function App(): React.JSX.Element {
       const trocar = (nova: Molde): void => aplicarMudanca(pecas.map((p) => (p.id === peca.id ? nova : p)));
       if (acao.tipo === 'girar-livre') girarLivreSelecionada();
       else if (acao.tipo === 'girar-180') girarPecaSelecionada(180);
-      else if (acao.tipo === 'girar-esquerda') girarPecaSelecionada(270);
-      else if (acao.tipo === 'girar-direita') girarPecaSelecionada(90);
+      else if (acao.tipo === 'girar-esquerda') girarPecaSelecionada(360 - opcoesDoEncaixe.anguloDeGiro);
+      else if (acao.tipo === 'girar-direita') girarPecaSelecionada(opcoesDoEncaixe.anguloDeGiro);
       else if (acao.tipo === 'so-na-dobra') {
         trocar(comForaDaDobra(peca, !peca.foraDaDobra));
         avisar(peca.foraDaDobra ? `“${peca.nome}” vai na dobra do tecido.` : `“${peca.nome}” segue com as outras peças, fora da dobra.`);
@@ -3219,7 +3286,7 @@ export default function App(): React.JSX.Element {
         }
       }
     },
-    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, travaDoEixo, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
+    [pecas, selecionadoId, idsSelecionadosEmLote, enfesto, sobreposicaoDeMoldes, travaDoEixo, opcoesDoEncaixe.anguloDeGiro, aplicarMudanca, avisar, girarLivreSelecionada, girarPecaSelecionada, espelharSelecionadaManualmente],
   );
 
   /** Alt + clique numa peça: as do mesmo tamanho ficam selecionadas (ADR 0180). */
@@ -3601,6 +3668,7 @@ export default function App(): React.JSX.Element {
       window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
       return;
     }
+    if (opcoesDoEncaixe.verificarAoPlotar && problemasDeValidacao.some((p) => p.tipo === 'sobreposicao') && !window.confirm('Há moldes sobrepostos no encaixe. Plotar assim mesmo?')) return;
     try {
       const bytes = new TextEncoder().encode(textoDoPlt(partes));
       const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
@@ -3608,7 +3676,7 @@ export default function App(): React.JSX.Element {
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt, opcoesDoEncaixe.verificarAoPlotar, problemasDeValidacao]);
 
   /** "Plotar direto" (ADR 0184): grava o risco na pasta que o programa do plotter vigia. */
   const enviarAoPlotter = useCallback(async () => {
@@ -5361,6 +5429,29 @@ export default function App(): React.JSX.Element {
         onZoomDeUmElemento={() => alternarFerramentaDeVista('zoom-elemento')}
         mostrarNaoGraduados={mostrarNaoGraduados}
         onAlternarNaoGraduados={() => setMostrarNaoGraduados((v) => !v)}
+        onMoldesNoEncaixe={() => setDialogoDeFerramenta({ tipo: 'moldes-no-encaixe' })}
+        destacarPacotes={destacarPacotes}
+        onAlternarDestacarPacotes={() => setDestacarPacotes((v) => !v)}
+        destacarRelacionamento={destacarRelacionamento}
+        onAlternarDestacarRelacionamento={() => setDestacarRelacionamento((v) => !v)}
+        onBarraDeStatus={() => setDialogoDeFerramenta({ tipo: 'barra-de-status' })}
+        onOpcoesDoEncaixe={() => setDialogoDeFerramenta({ tipo: 'opcoes-do-encaixe' })}
+        onPosicionar={(destino, alvo) => {
+          if (!enfesto) {
+            avisar('Configure o enfesto primeiro.');
+            return;
+          }
+          const ids = idsParaPosicionar(pecas, selecionadoId, alvo);
+          if (ids.length === 0) {
+            avisar('Selecione uma peça primeiro.');
+          } else if (destino === 'fora') {
+            aplicarMudanca(moverParaForaDoEnfesto(pecas, new Set(ids), enfesto));
+          } else {
+            const r = trazerParaAMesa(pecas, ids, enfesto);
+            aplicarMudanca([...r.pecas]);
+            if (r.semLugar > 0) avisar(`${r.semLugar} ${r.semLugar === 1 ? 'peça não coube' : 'peças não couberam'} na mesa.`);
+          }
+        }}
         coresPelasFerramentas={coresPelasFerramentas}
         onAlternarCoresPelasFerramentas={() => setCoresPelasFerramentas((v) => !v)}
         mostrarPontosDePique={mostrarPontosDePique}
@@ -6202,6 +6293,81 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'auto-ajuste-de-texto' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'moldes-no-encaixe' && (
+        <DialogoDeCampos
+          titulo="Moldes no encaixe"
+          campos={(Object.keys(ROTULO_DO_ATRIBUTO) as AtributoDaVisao[]).map((a) => ({ tipo: 'caixa' as const, id: a, rotulo: ROTULO_DO_ATRIBUTO[a], inicial: visao[a] }))}
+          nota="Muda o que aparece na tela. A impressão e o plotter seguem como estão. Fica lembrado neste computador."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const nova = Object.fromEntries((Object.keys(ROTULO_DO_ATRIBUTO) as AtributoDaVisao[]).map((a) => [a, valores[a] === true])) as unknown as VisaoDasPecas;
+            setVisao(nova);
+            try {
+              guardarVisao(window.localStorage, nova);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'moldes-no-encaixe' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'barra-de-status' && (
+        <DialogoDeCampos
+          titulo="Barra de status"
+          campos={(Object.keys(ROTULO_DO_CAMPO_DA_BARRA) as CampoDaBarra[]).map((c) => ({ tipo: 'caixa' as const, id: c, rotulo: ROTULO_DO_CAMPO_DA_BARRA[c], inicial: camposDaBarra.includes(c) }))}
+          nota="O que a barra de status mostra, além das posições e do aproveitamento."
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const novos = (Object.keys(ROTULO_DO_CAMPO_DA_BARRA) as CampoDaBarra[]).filter((c) => valores[c] === true);
+            setCamposDaBarra(novos);
+            try {
+              guardarCamposDaBarra(window.localStorage, novos);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'barra-de-status' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'opcoes-do-encaixe' && (
+        <DialogoDeCampos
+          titulo="Opções do encaixe"
+          campos={[
+            { tipo: 'medida', id: 'angulo', rotulo: 'Ângulo de giro (graus): o de Ctrl+← e Ctrl+→', inicial: String(opcoesDoEncaixe.anguloDeGiro).replace('.', ',') },
+            { tipo: 'inteiro', id: 'precisao', rotulo: 'Precisão: casas decimais das medidas', inicial: opcoesDoEncaixe.precisao === null ? '' : String(opcoesDoEncaixe.precisao), opcional: true },
+            { tipo: 'caixa', id: 'clicar', rotulo: 'Encaixa molde ao clicar: o clique na lista põe na mesa a peça que está fora dela', inicial: opcoesDoEncaixe.encaixaAoClicar },
+            { tipo: 'caixa', id: 'verificar', rotulo: 'Verificar sobreposição ao plotar', inicial: opcoesDoEncaixe.verificarAoPlotar },
+            {
+              tipo: 'escolha',
+              id: 'codigo',
+              rotulo: 'Código dos pacotes',
+              opcoes: [
+                { valor: 'alfanumerico', rotulo: 'Alfanumérico: A, B, C' },
+                { valor: 'numerico', rotulo: 'Numérico: 1, 2, 3' },
+              ],
+              inicial: opcoesDoEncaixe.codigoDosPacotes,
+            },
+          ]}
+          rotuloDoBotao="Aplicar"
+          onAplicar={(valores) => {
+            const angulo = valores['angulo'] as number;
+            const precisao = valores['precisao'] as number | undefined;
+            if (!(angulo > 0 && angulo < 360)) return 'O ângulo de giro vai de 0 a 360 graus.';
+            if (precisao !== undefined && (precisao < 0 || precisao > 4)) return 'A precisão vai de 0 a 4 casas.';
+            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico' };
+            setOpcoesDoEncaixe(novas);
+            try {
+              guardarOpcoesDoEncaixe(window.localStorage, novas);
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'opcoes-do-encaixe' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (
@@ -7499,7 +7665,14 @@ export default function App(): React.JSX.Element {
             pecas={pecas}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
-            onSelecionar={selecionarUnico}
+            onSelecionar={(id) => {
+              selecionarUnico(id);
+              // "Encaixa molde ao clicar" (ADR 0200): a peça de fora vai para a mesa.
+              if (id && enfesto && opcoesDoEncaixe.encaixaAoClicar) {
+                const r = trazerParaAMesa(pecas, [id], enfesto);
+                if (r.pecas.some((p, i) => p !== pecas[i])) aplicarMudanca([...r.pecas]);
+              }
+            }}
             onAlternarSelecaoEmLote={alternarSelecaoEmLote}
             onAbrirPropriedades={abrirPropriedadesDaPeca}
           />
@@ -7562,6 +7735,10 @@ export default function App(): React.JSX.Element {
             coresDosTamanhos={coresDosTamanhos}
             mostrarNaoGraduados={mostrarNaoGraduados}
             corDoContorno={coresPelasFerramentas ? corDaCaneta(ferramentasDoPlotter.corte ?? 1) : null}
+            visao={visao}
+            destacarPacotes={destacarPacotes}
+            codigoDosPacotes={opcoesDoEncaixe.codigoDosPacotes}
+            destacarRelacionamento={destacarRelacionamento}
             mostrarPontosDePique={mostrarPontosDePique}
             onGuardarVista={guardarVista}
             mostrarGrade={mostrarGrade}
@@ -7695,6 +7872,9 @@ export default function App(): React.JSX.Element {
         problemas={problemasDeValidacao}
         onAlternarValidacao={() => setMostrarValidacao((v) => !v)}
         aproveitamentoPercentual={aproveitamentoAtualDaMesa}
+        campos={camposDaBarra}
+        resumo={resumoDaBarra}
+        precisao={opcoesDoEncaixe.precisao}
         unidade={unidadeDaRegua}
         salvamento={salvamento}
         fila={{

@@ -44,7 +44,7 @@ const estaNaMesa = (peca: Molde, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimen
 export function separarParaOEncaixe(pecas: readonly Molde[], escolha: EscolhaDoEncaixe, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'>): PecasDoEncaixe {
   const fixas = pecas.filter((p) => escolha.idsFixos?.has(p.id));
   const resto = pecas.filter((p) => !escolha.idsFixos?.has(p.id));
-  const entra = (p: Molde): boolean => (escolha.tecido === undefined || tecidoDaPeca(p) === escolha.tecido) && (!escolha.somenteNaMesa || estaNaMesa(p, enfesto));
+  const entra = (p: Molde): boolean => !p.naoUsar && (escolha.tecido === undefined || tecidoDaPeca(p) === escolha.tecido) && (!escolha.somenteNaMesa || estaNaMesa(p, enfesto));
   return { paraEncaixar: resto.filter(entra), fixas, foraDoEncaixe: resto.filter((p) => !entra(p)) };
 }
 

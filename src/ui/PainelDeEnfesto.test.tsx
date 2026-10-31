@@ -72,3 +72,18 @@ describe('a padronagem, a cor do tecido e as emendas (ADR 0187 e 0188)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/imagem/);
   });
 });
+
+describe('o padrão do enfesto (ADR 0200)', () => {
+  it('o enfesto novo começa do padrão guardado; o que já existe, não', () => {
+    window.localStorage.removeItem('enfesto-cad:padrao-do-enfesto');
+    render(<PainelDeEnfesto configAtual={enfesto(8, 9)} onSalvar={vi.fn()} onFechar={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Usar como padrão' }));
+    cleanup();
+    render(<PainelDeEnfesto configAtual={null} onSalvar={vi.fn()} onFechar={vi.fn()} />);
+    expect(campo('Margem lateral')).toHaveValue(8);
+    cleanup();
+    render(<PainelDeEnfesto configAtual={enfesto(10, 9)} onSalvar={vi.fn()} onFechar={vi.fn()} />);
+    expect(campo('Margem lateral')).toHaveValue(10);
+    window.localStorage.removeItem('enfesto-cad:padrao-do-enfesto');
+  });
+});

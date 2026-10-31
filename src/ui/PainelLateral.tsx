@@ -101,6 +101,9 @@ export interface PatchDeMolde {
   readonly meiaCamada?: boolean;
   /** O tecido do molde (ADR 0194). */
   readonly tecidoDoMolde?: string;
+  /** A descrição, e se a peça entra no encaixe (ADR 0199, 0200). */
+  readonly descricao?: string;
+  readonly usarNoEncaixe?: boolean;
   /** O fio (ADR 0190) e as linhas do desenho (ADR 0192). */
   readonly linhaDeFio?: Molde['linhaDeFio'];
   readonly linhaDoDesenho?: Exclude<Molde['linhaDoDesenho'], undefined>;
@@ -347,6 +350,14 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
           </label>
         </fieldset>
 
+        <label>
+          Descrição
+          <input type="text" value={peca.descricao ?? ''} onChange={(e) => props.onAlterar({ descricao: e.target.value })} />
+        </label>
+        <label className="opcao-em-linha" title="Desligado, a peça fica fora do encaixe, sem sair do projeto">
+          <input type="checkbox" checked={!peca.naoUsar} onChange={(e) => props.onAlterar({ usarNoEncaixe: e.target.checked })} />
+          Usar no encaixe
+        </label>
         <label title="O tecido em que a peça é cortada: o encaixe pode gerar um tecido por vez">
           Tecido do molde
           <input list="tecidos-do-molde" value={peca.tecidoDoMolde ?? ''} placeholder="Principal" onChange={(e) => props.onAlterar({ tecidoDoMolde: e.target.value })} />

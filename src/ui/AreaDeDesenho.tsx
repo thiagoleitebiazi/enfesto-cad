@@ -15,6 +15,7 @@ import {
 import { cercaEntre, pecasAlvoDaCerca, pontosMoveisNaCerca, type Cerca, type OpcoesDeMoverCerca } from '../domain/cerca';
 import { contornosDosTamanhos, pontosNaoGraduados } from '../domain/graduacao';
 import { corDoTamanho, TRACOS_DA_COSTURA, type EstiloDaCostura } from './preferencias';
+import { codigoDoPacote, corDoPacote, pacoteDaPeca, pacotesDoEncaixe, rotuloDaPeca, VISAO_PADRAO, type CodigoDosPacotes, type VisaoDasPecas } from './visaoDasPecas';
 import { tracosDaMarca, tracosDoPique, tracosNaLinhaDeCorte } from '../domain/piques';
 import { desenharLinhasInternas } from './desenhoDasLinhasInternas';
 import { desenharPiquesDosTamanhos } from './desenhoDosTamanhos';
@@ -392,6 +393,11 @@ interface AreaDeDesenhoProps {
   /** O traço da costura, e as cores dos tamanhos na área de trabalho (ADR 0182). */
   readonly estiloDaCostura?: EstiloDaCostura;
   readonly coresDosTamanhos?: Readonly<Record<string, string>>;
+  /** O que aparece nas peças, e os destaques (ADR 0199). */
+  readonly visao?: VisaoDasPecas;
+  readonly destacarPacotes?: boolean;
+  readonly codigoDosPacotes?: CodigoDosPacotes;
+  readonly destacarRelacionamento?: boolean;
   /** A cor do contorno pela caneta do corte, e os pontos de pique à vista (ADR 0193). */
   readonly corDoContorno?: string | null;
   readonly mostrarPontosDePique?: boolean;
@@ -498,6 +504,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     coresDosTamanhos = SEM_CORES_ESCOLHIDAS,
     mostrarNaoGraduados = false,
     corDoContorno = null,
+    visao = VISAO_PADRAO,
+    destacarPacotes = false,
+    codigoDosPacotes = 'alfanumerico',
+    destacarRelacionamento = false,
     mostrarPontosDePique = false,
     onGuardarVista,
     mostrarGrade,
@@ -1035,6 +1045,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.setLineDash([]);
     }
 
+    const pacotes = destacarPacotes ? pacotesDoEncaixe(pecas) : [];
     for (const pecaOriginal of pecas) {
       // Enquanto uma peça está sendo arrastada, desenha-se a versão já
       // deslocada (prévia em tempo real) sem tocar no estado real ainda —
@@ -1060,7 +1071,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       for (const furo of peca.furos) {
         traçarContorno(ctx, furo, transform);
       }
-      ctx.fillStyle = peca.cor ?? enfesto?.corDoTecido ?? COR_TECIDO;
+      const indiceDoPacote = pacotes.indexOf(pacoteDaPeca(peca));
+      ctx.fillStyle = indiceDoPacote >= 0 ? corDoPacote(indiceDoPacote) : visao.preencher ? (peca.cor ?? enfesto?.corDoTecido ?? COR_TECIDO) : 'transparent';
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
@@ -1071,7 +1083,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.setLineDash([]);
 
       // Peça graduada: os outros tamanhos, em linha fina, em volta do base.
-      if (peca.graduacao) {
+      if (peca.graduacao && visao.graduacao) {
         const { base, tamanhos } = peca.graduacao;
         ctx.lineWidth = 1;
         contornosDosTamanhos(peca.graduacao, peca.contorno).forEach((contorno, t) => {
@@ -1111,9 +1123,9 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
 
       // As linhas internas: as que fazem parte do molde, cheias; os elementos (só de construção), claros e pontilhados.
-      desenharLinhasInternas(ctx, peca, transform, COR_CONTORNO);
+      if (visao.linhas) desenharLinhasInternas(ctx, peca, transform, COR_CONTORNO);
 
-      if (peca.margemDeCosturaMm > 0) {
+      if (peca.margemDeCosturaMm > 0 && visao.costura) {
         ctx.beginPath();
         traçarContorno(ctx, contornoDeCorte(peca), transform);
         ctx.strokeStyle = COR_LINHA_DE_CORTE;
@@ -1136,7 +1148,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         }
       };
 
-      for (const pique of peca.piques) {
+      for (const pique of visao.piques ? peca.piques : []) {
         // O pique pelo formato dele; na peça com margem de costura, também como ele vai para a linha de corte.
         ctx.strokeStyle = COR_PIQUE;
         ctx.lineWidth = 2;
@@ -1202,6 +1214,13 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 2;
           ctx.stroke();
+          if (destacarRelacionamento) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+            ctx.strokeStyle = COR_PONTO_NAO_GRADUADO;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
           ctx.font = 'bold 11px sans-serif';
           ctx.textAlign = 'center';
           desenharRotuloComFundo(ctx, grupo === '' ? 'casamento' : grupo, p.x, p.y - 12, grupo === '' ? COR_PONTO_DE_CASAMENTO : COR_PONTO_DE_CASAMENTO_DO_GRUPO);
@@ -1218,8 +1237,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       // Linha de fio na cor da peça: seta nas duas pontas quando a peça pode
       // girar 180° (fio sem sentido, convenção de modelagem) e numa ponta só
       // quando não pode (fio com sentido).
-      desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, corDaPeca);
-      if (peca.restricaoDeRotacao.permite180) {
+      if (visao.fio) desenharSeta(ctx, peca.linhaDeFio.inicio, peca.linhaDeFio.fim, corDaPeca);
+      if (visao.fio && peca.restricaoDeRotacao.permite180) {
         desenharSeta(ctx, peca.linhaDeFio.fim, peca.linhaDeFio.inicio, corDaPeca);
       }
 
@@ -1235,7 +1254,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.rotate(anguloDoFio);
       ctx.textAlign = 'center';
       ctx.font = 'bold 12px sans-serif';
-      desenharRotuloComFundo(ctx, peca.meiaCamada ? `${peca.nome} (½ camada)` : peca.nome, 0, -7, corDaPeca);
+      const rotulo = rotuloDaPeca(peca, visao, indiceDoPacote >= 0 ? codigoDoPacote(indiceDoPacote, codigoDosPacotes) : null);
+      if (rotulo !== '') desenharRotuloComFundo(ctx, rotulo, 0, -7, corDaPeca);
       ctx.restore();
 
       // Textos da peça: centrados no ponto em que foram postos, na altura pedida.
@@ -1272,7 +1292,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fillStyle = corDaPeca;
       const totalDeVertices = peca.contorno.length;
       let ultimoNumerado: Ponto2D | null = null;
-      for (let i = 0; i < totalDeVertices; i++) {
+      for (let i = 0; visao.numeros && i < totalDeVertices; i++) {
         const atual = peca.contorno[i]!;
         const anterior = peca.contorno[(i - 1 + totalDeVertices) % totalDeVertices]!;
         const proximo = peca.contorno[(i + 1) % totalDeVertices]!;
@@ -1748,6 +1768,10 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    visao,
+    destacarPacotes,
+    codigoDosPacotes,
+    destacarRelacionamento,
     corDoContorno,
     mostrarPontosDePique,
     imagemDaPadronagem,

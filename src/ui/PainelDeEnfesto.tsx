@@ -44,6 +44,16 @@ interface CamposDeFormulario {
 }
 
 const TAMANHO_MAXIMO_DO_PADRAO = 2_000_000;
+const CHAVE_DO_PADRAO_DO_ENFESTO = 'enfesto-cad:padrao-do-enfesto';
+
+/** "Ao criar novo encaixe" (ADR 0200): o que a mesa nova já traz. */
+function padraoGuardado(): Partial<CamposDeFormulario> {
+  try {
+    return JSON.parse(window.localStorage.getItem(CHAVE_DO_PADRAO_DO_ENFESTO) ?? '{}') as Partial<CamposDeFormulario>;
+  } catch {
+    return {};
+  }
+}
 
 function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulario {
   // As margens que valem: o projeto de antes, gravado com margem zero, já mostra a de segurança.
@@ -110,7 +120,7 @@ function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
 }
 
 export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element {
-  const [campos, setCampos] = useState<CamposDeFormulario>(() => camposIniciais(props.configAtual));
+  const [campos, setCampos] = useState<CamposDeFormulario>(() => ({ ...camposIniciais(props.configAtual), ...(props.configAtual ? {} : padraoGuardado()) }));
   const [erro, setErro] = useState<string | null>(null);
   const [erroDoPadrao, setErroDoPadrao] = useState<string | null>(null);
   const [preview, setPreview] = useState<ConfiguracaoDeEnfesto | null>(null);
@@ -331,6 +341,20 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
           <div className="acoes-da-sobreposicao">
             <button type="button" onClick={props.onFechar}>
               Cancelar
+            </button>
+            <button
+              type="button"
+              title="A largura, o comprimento, o tipo, as margens e a distância viram o começo de todo enfesto novo, neste computador"
+              onClick={() => {
+                const { tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm } = campos;
+                try {
+                  window.localStorage.setItem(CHAVE_DO_PADRAO_DO_ENFESTO, JSON.stringify({ tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm }));
+                } catch {
+                  // Sem o armazenamento do navegador, não há o que guardar.
+                }
+              }}
+            >
+              Usar como padrão
             </button>
             <button type="button" onClick={salvar} className="botao-primario">
               Salvar enfesto

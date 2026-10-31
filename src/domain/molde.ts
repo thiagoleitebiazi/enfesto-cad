@@ -437,6 +437,10 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** A descrição da peça, que pode aparecer nela (ADR 0199). */
+  readonly descricao?: string;
+  /** "Usar" desligado: a peça fica fora do encaixe (ADR 0200). */
+  readonly naoUsar?: true;
   /** O tecido do molde (ADR 0194): "Principal" ausente; "Forro", "Entretela", "Contraste"... */
   readonly tecidoDoMolde?: string;
   /** A cor, o estilo e o peso das linhas internas no desenho (ADR 0192). */
