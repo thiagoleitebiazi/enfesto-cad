@@ -211,6 +211,7 @@ export type FerramentaDeVista = 'mao' | 'zoom-janela' | 'zoom-elemento';
 const COR_PONTO_NAO_GRADUADO = '#c92a2a';
 const COR_PONTO_DE_PIQUE = '#2b8a3e';
 const SEM_CORES_ESCOLHIDAS: Readonly<Record<string, string>> = {};
+const SEM_CORES_DE_PACOTE: readonly string[] = [];
 
 const MODOS_DE_EDICAO_DE_VERTICE: ReadonlySet<ModoDeDesenho> = new Set([
   'mover-ponto',
@@ -399,6 +400,7 @@ interface AreaDeDesenhoProps {
   readonly visao?: VisaoDasPecas;
   readonly destacarPacotes?: boolean;
   readonly codigoDosPacotes?: CodigoDosPacotes;
+  readonly coresDosPacotes?: readonly string[];
   readonly destacarRelacionamento?: boolean;
   /** A cor do contorno pela caneta do corte, e os pontos de pique à vista (ADR 0193). */
   readonly corDoContorno?: string | null;
@@ -510,6 +512,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     coresDaArea = null,
     destacarPacotes = false,
     codigoDosPacotes = 'alfanumerico',
+    coresDosPacotes = SEM_CORES_DE_PACOTE,
     destacarRelacionamento = false,
     mostrarPontosDePique = false,
     onGuardarVista,
@@ -1075,7 +1078,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         traçarContorno(ctx, furo, transform);
       }
       const indiceDoPacote = pacotes.indexOf(pacoteDaPeca(peca));
-      ctx.fillStyle = indiceDoPacote >= 0 ? corDoPacote(indiceDoPacote) : visao.preencher ? (peca.cor ?? enfesto?.corDoTecido ?? COR_TECIDO) : 'transparent';
+      ctx.fillStyle = indiceDoPacote >= 0 ? corDoPacote(indiceDoPacote, coresDosPacotes) : visao.preencher ? (peca.cor ?? enfesto?.corDoTecido ?? COR_TECIDO) : 'transparent';
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
@@ -1771,6 +1774,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     cerca,
     opcoesDaCerca,
     mostrarGrade,
+    coresDosPacotes,
     coresDaArea,
     visao,
     destacarPacotes,

@@ -367,6 +367,7 @@ import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjet
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
 import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala, type FatoresDaImpressao } from './formats/escalaDaImpressao';
+import { metodoSugerido } from './domain/metodoDeEnfesto';
 import { gerarSvgDoEncaixe, gerarXmlDoEncaixe } from './formats/dados-exportacao';
 import { hpglDoIso } from './formats/iso-importacao';
 import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
@@ -376,6 +377,8 @@ import {
   aplicarConjunto,
   camposDaBarraGuardados,
   comConjunto,
+  corDoPacote,
+  QUANTAS_CORES_DE_PACOTE,
   conjuntosGuardados,
   guardarCamposDaBarra,
   guardarConjuntos,
@@ -5426,6 +5429,8 @@ export default function App(): React.JSX.Element {
         onDefinirCanetasDoPlotter={definirCanetasDoPlotter}
         onAbrirAtalhos={() => setPainelDeAjuda('atalhos')}
         onAbrirSobre={() => setPainelDeAjuda('sobre')}
+        onAbrirManual={() => setPainelDeAjuda('manual')}
+        onAbrirNovidades={() => setPainelDeAjuda('novidades')}
         mostrarListaDePecas={mostrarListaDePecas}
         onAlternarListaDePecas={() => setMostrarListaDePecas((v) => !v)}
         mostrarBarraDeVisualizacao={mostrarBarraDeVisualizacao}
@@ -5686,6 +5691,10 @@ export default function App(): React.JSX.Element {
       )}
       {painelAberto === 'enfesto' && (
         <PainelDeEnfesto
+          sugestao={(() => {
+            const s = metodoSugerido(pecas, tecido);
+            return { tipo: ROTULO_DO_TIPO[s.tipo], motivo: s.motivo };
+          })()}
           configAtual={enfesto}
           onFechar={() => setPainelAberto(null)}
           onSalvar={(c) => {
@@ -6430,6 +6439,7 @@ export default function App(): React.JSX.Element {
             { tipo: 'caixa', id: 'clicar', rotulo: 'Encaixa molde ao clicar: o clique na lista põe na mesa a peça que está fora dela', inicial: opcoesDoEncaixe.encaixaAoClicar },
             { tipo: 'caixa', id: 'encostar', rotulo: 'Encostar ao soltar: a peça arrastada segue até a vizinha', inicial: opcoesDoEncaixe.encostarAoSoltar },
             { tipo: 'caixa', id: 'verificar', rotulo: 'Verificar sobreposição ao plotar', inicial: opcoesDoEncaixe.verificarAoPlotar },
+            ...Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => ({ tipo: 'cor' as const, id: `pacote${i}`, rotulo: `Cor do pacote ${i + 1}`, inicial: corDoPacote(i, opcoesDoEncaixe.coresDosPacotes) })),
             {
               tipo: 'escolha',
               id: 'codigo',
@@ -6447,7 +6457,7 @@ export default function App(): React.JSX.Element {
             const precisao = valores['precisao'] as number | undefined;
             if (!(angulo > 0 && angulo < 360)) return 'O ângulo de giro vai de 0 a 360 graus.';
             if (precisao !== undefined && (precisao < 0 || precisao > 4)) return 'A precisão vai de 0 a 4 casas.';
-            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico' };
+            const novas: OpcoesDoEncaixe = { anguloDeGiro: angulo, precisao: precisao ?? null, encaixaAoClicar: valores['clicar'] === true, encostarAoSoltar: valores['encostar'] === true, verificarAoPlotar: valores['verificar'] === true, codigoDosPacotes: valores['codigo'] === 'numerico' ? 'numerico' : 'alfanumerico', coresDosPacotes: Array.from({ length: QUANTAS_CORES_DE_PACOTE }, (_, i) => String(valores[`pacote${i}`])) };
             setOpcoesDoEncaixe(novas);
             try {
               guardarOpcoesDoEncaixe(window.localStorage, novas);
@@ -7083,6 +7093,9 @@ export default function App(): React.JSX.Element {
                 { valor: 'horizontal', rotulo: 'Só na horizontal' },
                 { valor: 'vertical', rotulo: 'Só na vertical' },
                 { valor: 'centralizado', rotulo: 'Centralizado: no meio do desenho' },
+                { valor: 'simetrico', rotulo: 'Simétrico, nos dois sentidos' },
+                { valor: 'simetrico-horizontal', rotulo: 'Simétrico, na horizontal' },
+                { valor: 'simetrico-vertical', rotulo: 'Simétrico, na vertical' },
               ],
               inicial: relacaoDoPontoDeCasamento,
             },
@@ -8049,6 +8062,7 @@ export default function App(): React.JSX.Element {
             coresDaArea={corDaAreaNoEsquema(esquemasDaArea)}
             destacarPacotes={destacarPacotes}
             codigoDosPacotes={opcoesDoEncaixe.codigoDosPacotes}
+            coresDosPacotes={opcoesDoEncaixe.coresDosPacotes ?? []}
             destacarRelacionamento={destacarRelacionamento}
             mostrarPontosDePique={mostrarPontosDePique}
             onGuardarVista={guardarVista}

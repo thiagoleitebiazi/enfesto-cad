@@ -84,7 +84,10 @@ export function codigoDoPacote(indice: number, modo: CodigoDosPacotes): string {
   return codigo;
 }
 
-export const corDoPacote = (indice: number): string => CORES_DOS_PACOTES[indice % CORES_DOS_PACOTES.length]!;
+/** A cor do pacote: a escolhida para a posição dele, ou a da paleta. */
+export const corDoPacote = (indice: number, escolhidas: readonly string[] = []): string => escolhidas[indice] ?? CORES_DOS_PACOTES[indice % CORES_DOS_PACOTES.length]!;
+
+export const QUANTAS_CORES_DE_PACOTE = CORES_DOS_PACOTES.length;
 
 export interface OpcoesDoEncaixe {
   /** O giro de Ctrl+setas (graus). */
@@ -97,6 +100,7 @@ export interface OpcoesDoEncaixe {
   readonly encostarAoSoltar: boolean;
   readonly verificarAoPlotar: boolean;
   readonly codigoDosPacotes: CodigoDosPacotes;
+  readonly coresDosPacotes?: readonly string[];
 }
 
 export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, encostarAoSoltar: false, verificarAoPlotar: true, codigoDosPacotes: 'alfanumerico' };

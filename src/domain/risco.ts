@@ -342,10 +342,12 @@ function porNaOrdem(
         const alvo = casar ? alvoDoCasamento(o, casar, fasesDosGrupos) : null;
         if (casar && alvo) {
           // Com casamento: só as posições em que o ponto da peça cai na fase; sem encostar (andaria para fora dela).
-          const rapportX = o.relacao === 'horizontal' ? undefined : casar.rapportLarguraMm;
-          const rapportY = o.relacao === 'vertical' ? undefined : casar.rapportComprimentoMm;
-          const faseX = alvo.fase.x + (o.relacao === 'centralizado' ? (rapportX ?? 0) / 2 : 0);
-          const faseY = alvo.fase.y + (o.relacao === 'centralizado' ? (rapportY ?? 0) / 2 : 0);
+          const rapportX = o.relacao === 'horizontal' || o.relacao === 'simetrico-horizontal' ? undefined : casar.rapportLarguraMm;
+          const rapportY = o.relacao === 'vertical' || o.relacao === 'simetrico-vertical' ? undefined : casar.rapportComprimentoMm;
+          // No simétrico, o ponto cai na fase vista do outro lado do desenho (ADR 0204).
+          const simetrico = o.relacao === 'simetrico' || o.relacao === 'simetrico-horizontal' || o.relacao === 'simetrico-vertical';
+          const faseX = (simetrico ? -alvo.fase.x : alvo.fase.x) + (o.relacao === 'centralizado' ? (rapportX ?? 0) / 2 : 0);
+          const faseY = (simetrico ? -alvo.fase.y : alvo.fase.y) + (o.relacao === 'centralizado' ? (rapportY ?? 0) / 2 : 0);
           let x = naFase(p.x, alvo.ref.x, rapportX, faseX);
           if (x + largura > opcoes.larguraMm + 1e-9) x = naFase(0, alvo.ref.x, rapportX, faseX);
           if (x + largura > opcoes.larguraMm + 1e-9) continue;

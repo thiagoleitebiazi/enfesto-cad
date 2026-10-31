@@ -188,7 +188,7 @@ function textoComAngulo(texto: TextoDaPeca, f: (graus: number) => number): Texto
 
 /** Marca de referência/alinhamento (ex.: ponto de casa de botão, marca de dobra). Com formato, é um pique interno. */
 /** "Relacionamento de piques" (ADR 0191): em que sentido o ponto de casamento casa; ausente, nos dois. */
-export type RelacaoDoCasamento = 'horizontal' | 'vertical' | 'centralizado';
+export type RelacaoDoCasamento = 'horizontal' | 'vertical' | 'centralizado' | 'simetrico' | 'simetrico-horizontal' | 'simetrico-vertical';
 
 export interface Marca {
   readonly id: string;

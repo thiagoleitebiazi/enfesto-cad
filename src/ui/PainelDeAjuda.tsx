@@ -1,8 +1,9 @@
+import { MANUAL_DO_PROGRAMA, NOVIDADES_DO_PROGRAMA } from './manualDoPrograma';
 import { Sobreposicao } from './Sobreposicao';
 import { description, version } from '../../package.json';
 import { ehMac } from './rodaDoMouse';
 
-export type ConteudoDaAjuda = 'atalhos' | 'sobre';
+export type ConteudoDaAjuda = 'atalhos' | 'sobre' | 'manual' | 'novidades';
 
 interface PainelDeAjudaProps {
   readonly conteudo: ConteudoDaAjuda;
@@ -117,6 +118,35 @@ export function PainelDeAjuda(props: PainelDeAjudaProps): React.JSX.Element {
           {noMac && <TabelaDeAtalhos titulo="No Mac" linhas={NO_MAC} />}
           <TabelaDeAtalhos titulo="Mouse" linhas={noMac ? GESTOS_DO_MOUSE.filter(([tecla]) => tecla !== 'Roda') : GESTOS_DO_MOUSE} />
           {noMac && <TabelaDeAtalhos titulo="Trackpad" linhas={GESTOS_DO_TRACKPAD} />}
+        </div>
+      </Sobreposicao>
+    );
+  }
+  if (props.conteudo === 'manual') {
+    return (
+      <Sobreposicao titulo="Manual" onFechar={props.onFechar}>
+        <div className="painel-de-ajuda">
+          {MANUAL_DO_PROGRAMA.map((s) => (
+            <section key={s.titulo} aria-label={s.titulo}>
+              <h3>{s.titulo}</h3>
+              {s.passos.map((p) => (
+                <p key={p}>{p}</p>
+              ))}
+            </section>
+          ))}
+        </div>
+      </Sobreposicao>
+    );
+  }
+  if (props.conteudo === 'novidades') {
+    return (
+      <Sobreposicao titulo="O que há de novo" onFechar={props.onFechar}>
+        <div className="painel-de-ajuda">
+          <ul>
+            {NOVIDADES_DO_PROGRAMA.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
         </div>
       </Sobreposicao>
     );

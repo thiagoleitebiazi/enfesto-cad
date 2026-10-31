@@ -309,7 +309,7 @@ Cada nome do manual e da apostila foi conferido contra o código. Vários itens 
 | Criar molde por intersecção: detectar graduações, piques, linhas; compor contornos; quebrar linhas | ✅ ADR 0190 |
 | Definir sentido do fio: posicionar, usar ângulo, por seleção | ✅ ADR 0190 |
 | Inverter costura; manter diferença | ✅ ADR 0190 |
-| Relacionamento piques | 🟡 ADR 0191 (sem os modos simétricos: o manual só lista os nomes) |
+| Relacionamento piques | ✅ ADR 0191 e 0204 (o como é leitura minha) |
 | Auto ajuste de texto; estilos de linha no plotter; calculadora; cor, estilo e peso da linha | ✅ ADR 0192 |
 | Mostrar conforme definição das ferramentas; ponto de pique | ✅ ADR 0193 (só o contorno; ponto de cor fixa) |
 | Níveis de impressão | ⬜ não feito: é do plotter Mutoh; as canetas por elemento (ADR 0174) cobrem a escolha da caneta |
@@ -334,3 +334,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Fundir pique; margem por peça; usar distância; sentido por tamanho e por pacote; quantidade por tamanho; tamanho do texto; propriedades de encaixe; SNAP | ✅ ADR 0202 |
 | Envolvente de grupo; margem por lado; retangular; Substituir tamanho no encaixe | ⬜ não feito: ver ADR 0202 |
 | Captura em lote; rastreabilidade; previsão de compra; catálogo; modelo virtual; recorte para a loja; miniatura; esquemas de cores próprios | ✅ ADR 0203 |
+| Cores dos pacotes; manual e novidades; sugestão do método de enfesto | ✅ ADR 0204 |

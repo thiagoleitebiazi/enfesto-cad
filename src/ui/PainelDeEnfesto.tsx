@@ -18,6 +18,8 @@ interface PainelDeEnfestoProps {
   readonly configAtual: ConfiguracaoDeEnfesto | null;
   readonly onSalvar: (config: ConfiguracaoDeEnfesto) => void;
   readonly onFechar: () => void;
+  /** O método que combina com as peças e o tecido (ADR 0204). */
+  readonly sugestao?: { readonly tipo: string; readonly motivo: string };
 }
 
 interface CamposDeFormulario {
@@ -217,6 +219,11 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
             onChange={(e) => alterar({ quantidadeDeCamadas: e.target.value })}
           />
         </label>
+        {props.sugestao && (
+          <p className="nota-do-formulario">
+            Sugestão: {props.sugestao.tipo}, porque {props.sugestao.motivo}.
+          </p>
+        )}
         <label>
           Áreas bloqueadas da mesa (enfesto em escada, emenda, defeito): uma por linha, em mm — comprimento de, até, largura de, até
           <textarea rows={2} value={campos.zonasBloqueadas} placeholder="0 800 900 1500" onChange={(e) => alterar({ zonasBloqueadas: e.target.value })} />
@@ -346,9 +353,9 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
               type="button"
               title="A largura, o comprimento, o tipo, as margens e a distância viram o começo de todo enfesto novo, neste computador"
               onClick={() => {
-                const { tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm } = campos;
+                const { tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm, linhas } = campos;
                 try {
-                  window.localStorage.setItem(CHAVE_DO_PADRAO_DO_ENFESTO, JSON.stringify({ tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm }));
+                  window.localStorage.setItem(CHAVE_DO_PADRAO_DO_ENFESTO, JSON.stringify({ tipo, larguraUtilMm, comprimentoMm, margemLateralMm, margemDeExtremidadeMm, distanciaMinimaEntrePecasMm, linhas }));
                 } catch {
                   // Sem o armazenamento do navegador, não há o que guardar.
                 }

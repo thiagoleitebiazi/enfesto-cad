@@ -58,6 +58,9 @@ interface BarraDeFerramentasProps {
   readonly onDefinirCanetasDoPlotter: (canetas: 1 | 2) => void;
   readonly onAbrirAtalhos: () => void;
   readonly onAbrirSobre: () => void;
+  /** O manual e as novidades (ADR 0204). */
+  readonly onAbrirManual?: () => void;
+  readonly onAbrirNovidades?: () => void;
   readonly mostrarListaDePecas: boolean;
   readonly onAlternarListaDePecas: () => void;
   readonly mostrarBarraDeVisualizacao: boolean;
@@ -744,6 +747,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             rotulo="Ajuda"
             itens={[
               { tipo: 'acao', rotulo: 'Atalhos de teclado', atalho: 'F1', onEscolher: props.onAbrirAtalhos },
+              ...(props.onAbrirManual ? [{ tipo: 'acao' as const, rotulo: 'Manual', onEscolher: props.onAbrirManual }] : []),
+              ...(props.onAbrirNovidades ? [{ tipo: 'acao' as const, rotulo: 'O que há de novo', onEscolher: props.onAbrirNovidades }] : []),
               { tipo: 'acao', rotulo: 'Sobre o Enfesto CAD', onEscolher: props.onAbrirSobre },
             ]}
           />
