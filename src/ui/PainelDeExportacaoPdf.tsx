@@ -107,6 +107,8 @@ export function PainelDeExportacaoPdf(props: PainelDeExportacaoPdfProps): React.
           <select value={proporcao} onChange={(e) => setProporcao(e.target.value as ProporcaoDaImpressao)}>
             <option value="real">Escala real (1:1)</option>
             <option value="folha">Do tamanho da folha</option>
+            <option value="largura">Ajustar à largura da folha</option>
+            <option value="comprimento">Ajustar ao comprimento da folha</option>
             <option value="porcentagem">Por porcentagem</option>
             <option value="fatores">Fatores de escala X e Y</option>
           </select>

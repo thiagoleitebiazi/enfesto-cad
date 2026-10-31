@@ -83,6 +83,9 @@ export interface OpcoesDoPlt {
   readonly ajusteDeTexto?: AjusteDeTexto;
   /** O traço da linha de costura; ausente, cheia (ADR 0192). */
   readonly estiloDaCostura?: 'tracejada' | 'pontilhada';
+  /** Espelhar o risco no comprimento, e a observação que sai no cabeçalho (ADR 0201). */
+  readonly espelhar?: boolean;
+  readonly observacao?: string;
   /** As linhas de referência: a linha e o nome (ADR 0196). */
   readonly linhas?: readonly { readonly de: Ponto2D; readonly ate: Ponto2D; readonly nome: string }[];
   /** Os pontos de emenda: uma linha na largura toda e a palavra, em cada um (ADR 0188). */
@@ -129,9 +132,10 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   const altura = todos.reduce((maior, p) => Math.max(maior, p.x), opcoes.larguraDaMesaMm ?? 0);
   const xInicial = opcoes.xInicialMm ?? 0;
   const baseDaFaixa = opcoes.larguraDoPapelMm !== undefined ? (Math.max(1, opcoes.faixa ?? 1) - 1) * opcoes.larguraDoPapelMm : 0;
+  const fimDoEspelho = opcoes.espelhar ? todos.reduce((maior, p) => Math.max(maior, p.y), opcoes.comprimentoDaMesaMm ?? 0) : null;
   const noPapel = (p: Ponto2D): Ponto2D => {
     const q = mundoParaDxf(p, altura);
-    return ponto(q.x - xInicial, q.y - baseDaFaixa);
+    return ponto((fimDoEspelho === null ? q.x : fimDoEspelho - q.x) - xInicial, q.y - baseDaFaixa);
   };
   const comandos: string[] = ['IN', 'SP1', `DT${String.fromCharCode(3)}`];
   if (xInicial > 0 || opcoes.larguraDoPapelMm !== undefined) {
@@ -234,11 +238,12 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     const onde = noPapel(ponto(t.x, t.y));
     rotulo(onde, t.texto, 0.25, 0.35);
   }
-  if ((opcoes.cabecalho ?? []).length > 0 && pecas.length > 0) {
+  const cabecalho = [...(opcoes.cabecalho ?? []), ...(opcoes.observacao ? [opcoes.observacao] : [])];
+  if (cabecalho.length > 0 && pecas.length > 0) {
     caneta(2);
     // Depois da última peça sempre há papel: a largura da mesa pode não ter folga, o comprimento tem.
     const fim = retanguloEnvolvente(pecas.flatMap((p) => linhaDeCorteDaPeca(p))).maxY;
-    opcoes.cabecalho!.forEach((texto, i) => {
+    cabecalho.forEach((texto, i) => {
       const onde = noPapel(ponto(10 + i * 8, fim + 20));
       rotulo(onde, texto, 0.25, 0.35);
     });

@@ -330,3 +330,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Status do encaixe; perdas; rendimento | ✅ ADR 0198 |
 | Moldes no encaixe; destacar pacotes; destacar relacionamento; barra de status; precisão; ângulo de giro; código dos pacotes | ✅ ADR 0199 |
 | Molde, tamanho e todos na mesa ou fora; encaixa ao clicar; usar; verifica ao plotar; padrões do novo encaixe | ✅ ADR 0200 |
+| Informações do arquivo; unir; SVG no lugar do metafile; XML; importar ISO; colar vários; colar incrementar grade; plotar com fatores, espelho e limites; imprimir ajustado | ✅ ADR 0201 |

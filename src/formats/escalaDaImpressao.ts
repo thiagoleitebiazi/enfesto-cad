@@ -6,7 +6,7 @@ import { dimensionarMolde, transladarMolde, type Molde } from '../domain/molde';
  * vertical são os da folha, como na tela: a horizontal é o comprimento da mesa, o y do mundo.
  */
 
-export type ProporcaoDaImpressao = 'real' | 'folha' | 'porcentagem' | 'fatores';
+export type ProporcaoDaImpressao = 'real' | 'folha' | 'largura' | 'comprimento' | 'porcentagem' | 'fatores';
 
 export interface EscalaDaImpressao {
   readonly proporcao: ProporcaoDaImpressao;
@@ -25,6 +25,14 @@ export interface FatoresDaImpressao {
 export function fatoresDaImpressao(e: EscalaDaImpressao, desenho: { readonly larguraMm: number; readonly comprimentoMm: number }, folha: { readonly largura: number; readonly altura: number }): FatoresDaImpressao {
   if (e.proporcao === 'porcentagem') return { horizontal: e.porcentagem / 100, vertical: e.porcentagem / 100 };
   if (e.proporcao === 'fatores') return { horizontal: e.fatorXPorcento / 100, vertical: e.fatorYPorcento / 100 };
+  if (e.proporcao === 'largura') {
+    const f = folha.altura / desenho.larguraMm;
+    return { horizontal: f, vertical: f };
+  }
+  if (e.proporcao === 'comprimento') {
+    const f = folha.largura / desenho.comprimentoMm;
+    return { horizontal: f, vertical: f };
+  }
   if (e.proporcao === 'folha') {
     const f = Math.min(folha.largura / desenho.comprimentoMm, folha.altura / desenho.larguraMm);
     return { horizontal: f, vertical: f };

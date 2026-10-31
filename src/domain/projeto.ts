@@ -84,6 +84,8 @@ export interface Projeto {
   readonly varianteDe?: string;
   /** Quem fez o modelo (aba Modelo > Autor). Ausente enquanto não for informado. */
   readonly autor?: string;
+  /** "Informações" do arquivo (ADR 0201): o cliente, a descrição e as palavras chave. */
+  readonly informacoes?: InformacoesDoArquivo;
   /**
    * Fotos e desenhos do modelo (aba Modelo > Imagens). Ficam no projeto, e não
    * no estado de cada versão, para o histórico não repetir a imagem a cada evento.
@@ -244,6 +246,21 @@ export function definirFichaTecnica(projeto: Projeto, ficha: FichaTecnica, agora
 }
 
 /** "Autor": guarda no projeto o nome de quem fez o modelo; vazio, tira o autor. */
+export interface InformacoesDoArquivo {
+  readonly cliente?: string;
+  readonly descricao?: string;
+  readonly palavrasChave?: string;
+}
+
+/** Guarda as informações do arquivo; o que fica em branco sai. */
+export function definirInformacoes(projeto: Projeto, informacoes: { readonly cliente: string; readonly descricao: string; readonly palavrasChave: string }, agoraIso: string): Projeto {
+  const limpas = Object.fromEntries(Object.entries(informacoes).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v !== '')) as InformacoesDoArquivo;
+  const copia: { -readonly [K in keyof Projeto]: Projeto[K] } = { ...projeto, modificadoEmIso: agoraIso };
+  if (Object.keys(limpas).length > 0) copia.informacoes = limpas;
+  else delete copia.informacoes;
+  return copia;
+}
+
 export function definirAutor(projeto: Projeto, autor: string, agoraIso: string): Projeto {
   const limpo = autor.trim();
   if (limpo.length > TAMANHO_MAXIMO_DO_AUTOR) throw new Error(`O nome do autor pode ter até ${TAMANHO_MAXIMO_DO_AUTOR} caracteres.`);
@@ -361,7 +378,7 @@ export function filtrarProjetos(
   return projetos.filter((p) => {
     if (status !== 'todos' && p.status !== status) return false;
     if (termo === '') return true;
-    const camposDeBusca = [p.nome, p.codigo, p.estadoAtual.tecido?.nome ?? '', p.estadoAtual.tecido?.referencia ?? ''];
+    const camposDeBusca = [p.informacoes?.cliente ?? '', p.informacoes?.descricao ?? '', p.informacoes?.palavrasChave ?? '', p.nome, p.codigo, p.estadoAtual.tecido?.nome ?? '', p.estadoAtual.tecido?.referencia ?? ''];
     return camposDeBusca.some((campo) => campo.toLowerCase().includes(termo));
   });
 }

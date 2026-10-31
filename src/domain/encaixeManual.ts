@@ -208,6 +208,25 @@ export function trazerParaAMesa(pecas: readonly Molde[], ids: readonly string[],
   return { pecas: atual, semLugar };
 }
 
+const FOLGA_ENTRE_AS_COPIAS_MM = 10;
+
+/** "Colar vários": as cópias, uma depois da outra, na direção pedida, a partir do que foi copiado. */
+export function copiasEmSequencia(base: readonly Molde[], copias: number, direcao: DirecaoDoEncaixe, novoId: () => string): Molde[] {
+  if (base.length === 0) return [];
+  const c = retanguloEnvolvente(base.flatMap((p) => [...linhaDeCorteDaPeca(p)]));
+  const v = VETOR_DA_DIRECAO[direcao];
+  const passoX = (c.maxX - c.minX + FOLGA_ENTRE_AS_COPIAS_MM) * v.x;
+  const passoY = (c.maxY - c.minY + FOLGA_ENTRE_AS_COPIAS_MM) * v.y;
+  return Array.from({ length: copias }, (_, k) => base.map((p) => transladarMolde(p, { x: passoX * (k + 1), y: passoY * (k + 1) }, novoId()))).flat();
+}
+
+/** "Colar incrementar grade": a peça igual (nome e tamanho) ganha na quantidade; a que não há entra como está. */
+export function incrementarGrade(pecas: readonly Molde[], copiadas: readonly Molde[]): Molde[] {
+  const igual = (a: Molde, b: Molde): boolean => a.nome === b.nome && a.tamanho === b.tamanho;
+  const novas = copiadas.filter((c) => !pecas.some((p) => igual(p, c)));
+  return [...pecas.map((p) => ({ ...p, quantidade: p.quantidade + copiadas.filter((c) => igual(p, c)).reduce((s, c) => s + c.quantidade, 0) })), ...novas];
+}
+
 /** "Molde original": a peça volta à orientação com que entrou no projeto. O espelho não volta: a peça não guarda se foi espelhada. */
 export function voltarAoOriginal(peca: Molde): Molde {
   return peca.anguloDeRotacaoGraus === 0 ? peca : rotacionarMolde(peca, -peca.anguloDeRotacaoGraus);

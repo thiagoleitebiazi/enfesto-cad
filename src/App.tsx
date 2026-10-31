@@ -161,7 +161,8 @@ import {
   textoPerto,
 } from './domain/anotacoes';
 import { conferirOpcoesDaPecaDerivada, OPCOES_PADRAO_DA_PECA_DERIVADA, pedeOTrecho, type OpcoesDaPecaDerivada, type TipoDePecaDerivada } from './domain/pecasDerivadas';
-import { definirAutor, definirElasticidadeDaRecomendacao, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
+import {
+  definirInformacoes, definirAutor, definirElasticidadeDaRecomendacao, definirFichaTecnica, definirImpressaoDigital, definirInspiracao, definirMontagem3d, definirRegrasDeCaimento } from './domain/projeto';
 import { lerImpressaoDigital, type ImpressaoDigital } from './domain/impressaoDigital';
 import { gerarPdfParaImpressaoDigital } from './formats/impressao-exportacao';
 import { lerPainelDeInspiracao, type PainelDeInspiracao as PainelDeInspiracaoDoModelo } from './domain/inspiracao';
@@ -365,7 +366,9 @@ import { pecasDoPlt } from './formats/plt-importacao';
 import { cifrarProjeto, decifrarProjeto, ehProjetoCifrado, nomeDoArquivoDoProjeto, projetoDoArquivo, textoDoProjeto } from './domain/projetoEmArquivo';
 import { gerarDxfAstm } from './formats/dxf-astm';
 import { moldesParaPlotar, moldeVizinho, organizarPecas, retanguloDoElemento } from './domain/plotarMoldes';
-import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala } from './formats/escalaDaImpressao';
+import { ESCALA_REAL, fatoresDaImpressao, pecasNaEscala, type FatoresDaImpressao } from './formats/escalaDaImpressao';
+import { gerarSvgDoEncaixe, gerarXmlDoEncaixe } from './formats/dados-exportacao';
+import { hpglDoIso } from './formats/iso-importacao';
 import { emendasAutomaticas, emendasPorEspaco, statusDoEncaixe } from './domain/statusDoEncaixe';
 import { perimetro } from './core/geometria';
 import { PainelDeStatusDoEncaixe } from './ui/PainelDeStatusDoEncaixe';
@@ -395,6 +398,9 @@ import { comCosturaInvertida, modificarComModo, type ModoDeModificar } from './d
 import { MEDIDA_MAXIMA_DO_PIQUE_MM, MEDIDA_MINIMA_DO_PIQUE_MM } from './domain/piques';
 import {
   acaoDaTeclaDoEncaixe,
+  copiasEmSequencia,
+  incrementarGrade,
+  type DirecaoDoEncaixe,
   idsParaPosicionar,
   trazerParaAMesa,
   compactarEncaixe,
@@ -656,6 +662,11 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'mover-com-referencia' }
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
+  | { readonly tipo: 'exportar-dados' }
+  | { readonly tipo: 'informacoes-do-arquivo' }
+  | { readonly tipo: 'unir-encaixes' }
+  | { readonly tipo: 'colar-varios' }
+  | { readonly tipo: 'plotar' }
   | { readonly tipo: 'moldes-no-encaixe' }
   | { readonly tipo: 'barra-de-status' }
   | { readonly tipo: 'opcoes-do-encaixe' }
@@ -3658,11 +3669,11 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}) => gerarPlt(pecas, { ...(enfesto?.linhasDeReferencia ? { linhas: enfesto.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfesto)[0], ate: segmentoDaLinha(l, enfesto)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
+    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecas, fatores), { ...(enfesto?.linhasDeReferencia ? { linhas: enfesto.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfesto)[0], ate: segmentoDaLinha(l, enfesto)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfesto?.emendasMm ? { emendas: enfesto.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(enfesto?.textosNoRisco ? { textos: enfesto.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, larguraMm: enfesto?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm, comprimentoDaMesaMm: enfesto.comprimentoMm } : {}), ...partes }),
     [pecas, enfesto, canetasDoPlotter, ferramentasDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
-  const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}) => {
+  const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => {
     const api = window.enfestoCad;
     if (!api) {
       window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
@@ -3670,8 +3681,8 @@ export default function App(): React.JSX.Element {
     }
     if (opcoesDoEncaixe.verificarAoPlotar && problemasDeValidacao.some((p) => p.tipo === 'sobreposicao') && !window.confirm('Há moldes sobrepostos no encaixe. Plotar assim mesmo?')) return;
     try {
-      const bytes = new TextEncoder().encode(textoDoPlt(partes));
-      const caminhoSalvo = await api.salvarArquivo(Object.keys(partes).length > 0 ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+      const bytes = new TextEncoder().encode(textoDoPlt(partes, fatores));
+      const caminhoSalvo = await api.salvarArquivo(partes.xInicialMm !== undefined || partes.faixa !== undefined ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
       if (caminhoSalvo) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `PLT (plotter) salvo em ${caminhoSalvo}`);
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
@@ -4528,13 +4539,13 @@ export default function App(): React.JSX.Element {
   }, [enfesto, acrescentarPecasImportadas]);
 
   // O PLT (ADR 0157): as peças deduzidas das linhas do arquivo entram como as do DXF.
-  const importarPltHandler = useCallback(() => {
+  const importarTracos = useCallback((tipo: 'plt' | 'iso') => {
     const api = window.enfestoCad;
     if (!api) return;
-    void api.abrirArquivoTexto('plt').then((arquivo) => {
+    void api.abrirArquivoTexto(tipo).then((arquivo) => {
       if (!arquivo) return;
       const nomeDoArquivo = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
-      const { pecas: lidas, avisos } = pecasDoPlt(arquivo.conteudo);
+      const { pecas: lidas, avisos } = pecasDoPlt(tipo === 'iso' ? hpglDoIso(arquivo.conteudo) : arquivo.conteudo);
       if (lidas.length === 0) {
         setMensagensImportacao(avisos);
         return;
@@ -4714,7 +4725,7 @@ export default function App(): React.JSX.Element {
       const teclaDoEncaixe = modo === 'selecionar' ? acaoDaTeclaDoEncaixe(e) : null;
       if (teclaDoEncaixe) {
         e.preventDefault();
-        if (teclaDoEncaixe.tipo === 'plotar') void exportarPlt();
+        if (teclaDoEncaixe.tipo === 'plotar') setDialogoDeFerramenta({ tipo: 'plotar' });
         else if (teclaDoEncaixe.tipo === 'localizar') abrirBiblioteca();
         else if (teclaDoEncaixe.tipo === 'verificar') setMostrarValidacao(true);
         else if (teclaDoEncaixe.tipo === 'medir') entrarModoDeMedida('medir-distancia');
@@ -4861,7 +4872,6 @@ export default function App(): React.JSX.Element {
       aplicarMudanca,
       ferramentaDeVista,
       executarTeclaDoEncaixe,
-      exportarPlt,
       entrarModoDeMedida,
       usarFerramentaDeMolde,
       usarFerramentaDeAnotacao,
@@ -5504,7 +5514,23 @@ export default function App(): React.JSX.Element {
         onEscolherPastaDoPlotter={() => void acessoAPasta('plotter')?.escolher()}
         onRetanguloDeOrganizacao={() => setDialogoDeFerramenta({ tipo: 'retangulo-de-organizacao' })}
         onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
-        onImportarPlt={importarPltHandler}
+        onImportarPlt={() => importarTracos('plt')}
+        onImportarIso={() => importarTracos('iso')}
+        onExportarDados={() => setDialogoDeFerramenta({ tipo: 'exportar-dados' })}
+        onInformacoesDoArquivo={() => setDialogoDeFerramenta({ tipo: 'informacoes-do-arquivo' })}
+        onUnirEncaixes={() => {
+          carregarListaDeProjetos();
+          setDialogoDeFerramenta({ tipo: 'unir-encaixes' });
+        }}
+        onColarVarios={() => {
+          if (clipboard && clipboard.length > 0) setDialogoDeFerramenta({ tipo: 'colar-varios' });
+          else avisar('Copie as peças primeiro (Ctrl+C).');
+        }}
+        onColarIncrementarGrade={() => {
+          if (clipboard && clipboard.length > 0) aplicarMudanca(incrementarGrade(pecas, clipboard));
+          else avisar('Copie as peças primeiro (Ctrl+C).');
+        }}
+        onPlotar={() => setDialogoDeFerramenta({ tipo: 'plotar' })}
         onExportarProjeto={() => setDialogoDeFerramenta({ tipo: 'exportar-projeto' })}
         onImportarProjeto={importarProjetoHandler}
         onExportarIso={() => setDialogoDeFerramenta({ tipo: 'corte-iso' })}
@@ -6368,6 +6394,139 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'opcoes-do-encaixe' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'exportar-dados' && (
+        <DialogoDeCampos
+          titulo="Exportar"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'formato',
+              rotulo: 'Formato',
+              opcoes: [
+                { valor: 'svg', rotulo: 'SVG: imagem vetorial, para programas de desenho' },
+                { valor: 'xml', rotulo: 'XML: arquivo de dados, com cada peça e o lugar dela' },
+              ],
+              inicial: 'svg',
+            },
+          ]}
+          rotuloDoBotao="Exportar"
+          onAplicar={(valores) => {
+            const xml = valores['formato'] === 'xml';
+            const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas, enfesto }) : gerarSvgDoEncaixe(pecas, enfesto);
+            void salvarTexto(xml ? 'encaixe.xml' : 'encaixe.svg', conteudo);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'exportar-dados' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'informacoes-do-arquivo' && (
+        <DialogoDeCampos
+          titulo="Informações do arquivo"
+          resumo={[
+            ['Projeto', `${projetoAtual.nome} (${projetoAtual.codigo})`],
+            ['Autor', projetoAtual.autor ?? '—'],
+            ['Criado em', new Date(projetoAtual.criadoEmIso).toLocaleString('pt-BR')],
+            ['Alterado em', new Date(projetoAtual.modificadoEmIso).toLocaleString('pt-BR')],
+          ]}
+          campos={[
+            { tipo: 'texto', id: 'cliente', rotulo: 'Cliente', inicial: projetoAtual.informacoes?.cliente ?? '', opcional: true },
+            { tipo: 'texto', id: 'descricao', rotulo: 'Descrição', inicial: projetoAtual.informacoes?.descricao ?? '', opcional: true },
+            { tipo: 'texto', id: 'palavras', rotulo: 'Palavras chave', inicial: projetoAtual.informacoes?.palavrasChave ?? '', opcional: true },
+          ]}
+          nota="A busca da biblioteca acha o projeto por estas informações."
+          rotuloDoBotao="Guardar"
+          onAplicar={(valores) => {
+            const atualizado = definirInformacoes(projetoAtual, { cliente: String(valores['cliente'] ?? ''), descricao: String(valores['descricao'] ?? ''), palavrasChave: String(valores['palavras'] ?? '') }, new Date().toISOString());
+            setProjetoAtual(atualizado);
+            persistirProjeto(atualizado);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'informacoes-do-arquivo' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'unir-encaixes' && (
+        <DialogoDeCampos
+          titulo="Unir encaixes"
+          campos={[
+            {
+              tipo: 'escolha',
+              id: 'projeto',
+              rotulo: 'O projeto de onde vêm as peças',
+              opcoes: projetos.filter((p) => p.id !== projetoAtual.id).map((p) => ({ valor: p.id, rotulo: `${p.nome} (${p.codigo})` })),
+              inicial: projetos.find((p) => p.id !== projetoAtual.id)?.id ?? '',
+            },
+          ]}
+          nota="As peças entram neste projeto, onde couberem. O outro projeto não muda."
+          rotuloDoBotao="Unir"
+          onAplicar={(valores) => {
+            const outro = projetos.find((p) => p.id === valores['projeto']);
+            if (!outro) return 'Escolha um projeto.';
+            const chegando = outro.estadoAtual.pecas.map((p) => transladarMolde(p, { x: 0, y: 0 }, proximoId()));
+            aplicarMudanca([...pecas, ...posicionarAsQueChegam(chegando, pecas, enfesto)]);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'unir-encaixes' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'colar-varios' && (
+        <DialogoDeCampos
+          titulo="Colar vários"
+          campos={[
+            { tipo: 'inteiro', id: 'copias', rotulo: 'Número de cópias', inicial: '2' },
+            {
+              tipo: 'escolha',
+              id: 'direcao',
+              rotulo: 'Direção',
+              opcoes: [
+                { valor: 'direita', rotulo: 'Direita' },
+                { valor: 'esquerda', rotulo: 'Esquerda' },
+                { valor: 'cima', rotulo: 'Cima' },
+                { valor: 'baixo', rotulo: 'Baixo' },
+              ],
+              inicial: 'direita',
+            },
+            { tipo: 'caixa', id: 'automatica', rotulo: 'Posição automática: cada cópia no primeiro lugar livre', inicial: false },
+          ]}
+          rotuloDoBotao="Colar"
+          onAplicar={(valores) => {
+            const copias = valores['copias'] as number;
+            if (!(copias >= 1 && copias <= 200)) return 'As cópias vão de 1 a 200.';
+            const novas = copiasEmSequencia(clipboard ?? [], copias, valores['direcao'] as DirecaoDoEncaixe, proximoId);
+            aplicarMudanca([...pecas, ...(valores['automatica'] === true ? posicionarAsQueChegam(novas, pecas, enfesto) : novas)]);
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'colar-varios' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'plotar' && (
+        <DialogoDeCampos
+          titulo="Plotar"
+          campos={[
+            { tipo: 'medida', id: 'fatorX', rotulo: 'Fator X (%)', inicial: '100' },
+            { tipo: 'medida', id: 'fatorY', rotulo: 'Fator Y (%)', inicial: '100' },
+            { tipo: 'caixa', id: 'espelhar', rotulo: 'Espelhar', inicial: false },
+            { tipo: 'caixa', id: 'limites', rotulo: 'Limites do tecido', inicial: false },
+            { tipo: 'texto', id: 'observacao', rotulo: 'Observação', inicial: '', opcional: true },
+          ]}
+          nota="Fora de 100%, o risco não serve para cortar."
+          rotuloDoBotao="Plotar"
+          onAplicar={(valores) => {
+            const fatores = { horizontal: (valores['fatorX'] as number) / 100, vertical: (valores['fatorY'] as number) / 100 };
+            if (!(fatores.horizontal > 0 && fatores.vertical > 0)) return 'Os fatores precisam ser maiores que zero.';
+            const observacao = String(valores['observacao'] ?? '').trim();
+            void exportarPlt(
+              {
+                ...(valores['espelhar'] === true ? { espelhar: true } : {}),
+                ...(observacao !== '' ? { observacao } : {}),
+                ...(valores['limites'] === true && enfesto ? { larguraDaMesaMm: enfesto.larguraUtilMm * fatores.vertical, comprimentoDaMesaMm: enfesto.comprimentoMm * fatores.horizontal } : {}),
+              },
+              fatores,
+            );
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'plotar' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'status-do-encaixe' && enfesto && (

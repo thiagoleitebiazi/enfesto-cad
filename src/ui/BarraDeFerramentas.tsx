@@ -183,6 +183,14 @@ interface BarraDeFerramentasProps {
   readonly onAlinharPecas?: () => void;
   /** Importa peças de um PLT (ADR 0157). */
   readonly onImportarPlt?: () => void;
+  /** O menu Arquivo do manual do encaixe (ADR 0201). */
+  readonly onImportarIso?: () => void;
+  readonly onExportarDados?: () => void;
+  readonly onInformacoesDoArquivo?: () => void;
+  readonly onUnirEncaixes?: () => void;
+  readonly onColarVarios?: () => void;
+  readonly onColarIncrementarGrade?: () => void;
+  readonly onPlotar?: () => void;
   /** O projeto num arquivo (ADR 0156). */
   readonly onExportarProjeto?: () => void;
   readonly onImportarProjeto?: () => void;
@@ -826,6 +834,9 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   onClick={props.onImportarPdf}
                 />
                 {props.onImportarPlt && <Ferramenta tamanho="grande" rotulo={['Importar', 'PLT']} icone="importar" dica="Importar peças de um arquivo PLT (HPGL): as linhas fechadas viram peças, com os furos, as linhas e os piques; confira o fio" onClick={props.onImportarPlt} />}
+                {props.onImportarIso && <Ferramenta tamanho="grande" rotulo={['Importar', 'ISO']} icone="importar" dica="Importar ISO: lê de volta um arquivo de corte (G-code), e cada contorno vira uma peça" onClick={props.onImportarIso} />}
+                {props.onUnirEncaixes && <Ferramenta tamanho="grande" rotulo={['Unir', 'encaixes']} icone="importar" dica="Unir: traz para este projeto as peças de outro projeto da biblioteca" onClick={props.onUnirEncaixes} />}
+                {props.onInformacoesDoArquivo && <Ferramenta tamanho="grande" rotulo="Informações" icone="importar" dica="Informações: o cliente, a descrição, as palavras chave e as datas do arquivo" onClick={props.onInformacoesDoArquivo} />}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Exportar', 'DXF']}
@@ -880,6 +891,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     onClick={props.onExportarPltPorPartes}
                   />
                 )}
+                {props.onExportarDados && <Ferramenta tamanho="grande" rotulo={['Exportar', 'SVG ou XML']} icone="exportar" dica="Exportar: o encaixe como imagem vetorial (SVG) ou como arquivo de dados (XML)" falta={props.podeExportarPdf ? null : SEM_PECAS} onClick={props.onExportarDados} />}
                 <Ferramenta
                   tamanho="grande"
                   rotulo={['Exportar', 'ISO (corte)']}
@@ -2443,6 +2455,11 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       { tipo: 'acao', rotulo: 'Molde selecionado fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'molde') },
                       { tipo: 'acao', rotulo: 'Tamanho selecionado fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'tamanho') },
                       { tipo: 'acao', rotulo: 'Todos os moldes fora da mesa', onEscolher: () => props.onPosicionar?.('fora', 'todos') },
+                      { tipo: 'separador' },
+                      { tipo: 'acao', rotulo: 'Colar vários…', onEscolher: props.onColarVarios ?? (() => undefined) },
+                      { tipo: 'acao', rotulo: 'Colar incrementando a grade', onEscolher: props.onColarIncrementarGrade ?? (() => undefined) },
+                      { tipo: 'separador' },
+                      { tipo: 'acao', rotulo: 'Plotar…', onEscolher: props.onPlotar ?? (() => undefined) },
                     ]}
                   />
                 )}
