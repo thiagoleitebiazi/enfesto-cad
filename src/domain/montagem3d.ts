@@ -273,7 +273,55 @@ export function corMaisEscura(hex: string, fator = 0.72): string {
 /** A configuração de partida de uma instância, pelo nome da peça. */
 export function configuracaoSugerida(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
   const c = configuracaoPeloNome(instancia, largura);
-  return c.posicao === 'fora' ? c : { ...c, girarGraus: giroPelaForma(instancia, c.girarGraus, c.posicao) };
+  if (c.posicao === 'fora') return c;
+  const pronta = { ...c, girarGraus: giroPelaForma(instancia, c.girarGraus, c.posicao) };
+  return pronta.posicao.startsWith('perna-') ? { ...pronta, posicao: pernaPeloGancho(instancia, pronta) } : pronta;
+}
+
+/** A que distância abaixo da ponta se mede o recuo do contorno (mm). */
+const RECUO_DO_GANCHO_MM = 100;
+
+/**
+ * Qual perna a peça veste, pela forma: o gancho aponta para o meio do corpo. Na frente da perna direita, ele fica à direita
+ * da face (o meio do corpo é +x); nas costas, à esquerda. O molde pode vir de uma perna ou da outra: pela cópia só, a peça ia
+ * para a perna errada, de avesso, e a calça não fechava.
+ */
+function pernaPeloGancho(instancia: InstanciaDaPeca, config: ConfiguracaoDaInstancia): PosicaoNoCorpo {
+  const { u, v } = coordenadasDaFace(instancia, config.girarGraus, contornoComoPontos(instancia.contorno));
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (let i = 0; i < v.length; i++) {
+    vMin = Math.min(vMin, v[i]!);
+    vMax = Math.max(vMax, v[i]!);
+  }
+  /** Na metade de cima, o ponto mais saliente de um lado e quanto o contorno recua logo abaixo dele. */
+  const recuo = (lado: 1 | -1): number => {
+    let extremo = -Infinity;
+    let altura = vMax;
+    for (let i = 0; i < v.length; i++) {
+      if (v[i]! >= vMin + 0.5 * (vMax - vMin) && lado * u[i]! > extremo) {
+        extremo = lado * u[i]!;
+        altura = v[i]!;
+      }
+    }
+    const abaixo = altura - RECUO_DO_GANCHO_MM;
+    let contorno = -Infinity;
+    for (let i = 0; i < v.length; i++) {
+      const j = (i + 1) % v.length;
+      const [v0, v1] = [v[i]!, v[j]!];
+      if ((v0 - abaixo) * (v1 - abaixo) > 0 || v0 === v1) continue;
+      contorno = Math.max(contorno, lado * (u[i]! + ((u[j]! - u[i]!) * (abaixo - v0)) / (v1 - v0)));
+    }
+    return contorno === -Infinity ? 0 : extremo - contorno;
+  };
+  // O quadril desce devagar; o gancho é uma ponta, e o contorno volta logo abaixo dele.
+  const direita = recuo(1);
+  const esquerda = recuo(-1);
+  const costas = config.posicao.endsWith('-costas');
+  const direitaDoCorpo = direita >= esquerda !== costas;
+  // Sem gancho nenhum (a perna reta), fica como a cópia mandou.
+  if (Math.abs(direita - esquerda) < 8) return config.posicao;
+  return `perna-${direitaDoCorpo ? 'direita' : 'esquerda'}-${costas ? 'costas' : 'frente'}` as PosicaoNoCorpo;
 }
 
 function configuracaoPeloNome(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
@@ -837,6 +885,9 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
     readonly noAlto: boolean;
     /** Mais em pé que deitado, e fora da faixa de cima da peça (onde fica a cava): uma lateral, o embaixo do braço. */
     readonly lateral: boolean;
+    /** Em qual perna a peça está, e a altura média do lado (mm). */
+    readonly perna: 'direita' | 'esquerda' | null;
+    readonly altura: number;
   }
   const candidatos: Candidato[] = [];
   for (const inst of instancias) {
@@ -862,7 +913,9 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
       const subida = Math.abs(arrumado[13]! - arrumado[1]!);
       const avanco = Math.hypot(arrumado[12]! - arrumado[0]!, arrumado[14]! - arrumado[2]!);
       const naFaixaDeCima = yLado > yMax - (yMax - yMin) * 0.25;
-      candidatos.push({ inst, lado, arrumado, noAlto: deCima && subida < avanco && naFaixaDeCima, lateral: subida >= avanco && !naFaixaDeCima });
+      const perna = config.posicao.startsWith('perna-direita') ? 'direita' : config.posicao.startsWith('perna-esquerda') ? 'esquerda' : null;
+      // Na calça, o alto da peça não tem cava: é o gancho, que fecha de uma perna para a outra.
+      candidatos.push({ inst, lado, arrumado, noAlto: deCima && subida < avanco && naFaixaDeCima, lateral: subida >= avanco && (!naFaixaDeCima || perna !== null), perna, altura: yLado });
     }
   }
   const usados = new Set<string>();
@@ -878,6 +931,9 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
       const maior = Math.max(a.lado.comprimento, b.lado.comprimento);
       if (Math.abs(a.lado.comprimento - b.lado.comprimento) > Math.max(4, maior * 0.03)) continue;
       const c = compararTrechos(a.arrumado, b.arrumado);
+      // Abaixo do gancho, cada perna fecha sozinha: a entreperna de trás de uma fica perto da de trás da outra, mas não se costura nela.
+      const pernasDiferentes = a.perna !== null && b.perna !== null && a.perna !== b.perna && Math.max(a.altura, b.altura) < corpo.niveis.gancho;
+      if (pernasDiferentes) continue;
       if (a.lateral && b.lateral && ladoALado(c.distancias, maior)) pares.push({ a, b, invertida: c.invertida, nota: c.media });
       else if (a.noAlto && b.noAlto && a.inst.chave !== b.inst.chave && c.mediaSemZ < 60) pares.push({ a, b, invertida: c.invertida, nota: 100 + c.mediaSemZ });
     }

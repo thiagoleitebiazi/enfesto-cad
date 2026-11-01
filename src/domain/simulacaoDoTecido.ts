@@ -1,5 +1,6 @@
 import type { CorpoDoManequim } from './manequim';
-import { corpoDoManequim, distanciaAoCorpo } from './manequim';
+import { lerCampo } from './corpoHumano';
+import { corpoDoManequim, distanciaAoCorpo, grade } from './manequim';
 import type { MalhaDaPeca } from './malhaDaPeca';
 import { trechoDaBorda } from './malhaDaPeca';
 import type { ConfiguracaoDaInstancia, Costura3D, InstanciaDaPeca, Tecido3D } from './montagem3d';
@@ -510,6 +511,8 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
     // Chegou: os corpos do caminho (e as grades deles) não servem mais.
     if (k === lista.length - 1) sim.corposDoCaminho = [];
   }
+  const campo = grade(sim.corpoAgora);
+  const leitura = new Float64Array(4);
   for (let s = 0; s < subpassos; s++) {
     const costurando = sim.tempo < TEMPO_DA_COSTURA_S;
     if (!costurando && sim.tempo - dt < TEMPO_DA_COSTURA_S) {
@@ -582,18 +585,18 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       let px = x[3 * i]!;
       let py = x[3 * i + 1]!;
       let pz = x[3 * i + 2]!;
-      const c = distanciaAoCorpo(sim.corpoAgora, px, py, pz);
+      lerCampo(campo, px, py, pz, leitura);
       // A peça de cima guarda o dobro: fica por cima da de baixo, que encosta no corpo.
       const espessura = par.espessura * (1 + sim.camada[i]!);
       let nx = 0;
       let ny = 0;
       let nz = 0;
       let fundo = 0;
-      if (c.d < espessura) {
-        fundo = espessura - c.d;
-        nx = c.nx;
-        ny = c.ny;
-        nz = c.nz;
+      if (leitura[0]! < espessura) {
+        fundo = espessura - leitura[0]!;
+        nx = leitura[1]!;
+        ny = leitura[2]!;
+        nz = leitura[3]!;
       } else if (py < par.espessura) {
         fundo = par.espessura - py;
         ny = 1;
@@ -625,11 +628,11 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         // Empurrado para fora de um pedaço do corpo, o ponto pode ter entrado no outro (na axila, entre as pernas):
         // confere de novo, até três vezes.
         for (let volta = 0; volta < 3; volta++) {
-          const c2 = distanciaAoCorpo(sim.corpoAgora, px, py, pz);
-          if (c2.d >= espessura) break;
-          px += c2.nx * (espessura - c2.d);
-          py += c2.ny * (espessura - c2.d);
-          pz += c2.nz * (espessura - c2.d);
+          lerCampo(campo, px, py, pz, leitura);
+          if (leitura[0]! >= espessura) break;
+          px += leitura[1]! * (espessura - leitura[0]!);
+          py += leitura[2]! * (espessura - leitura[0]!);
+          pz += leitura[3]! * (espessura - leitura[0]!);
         }
         x[3 * i] = px;
         x[3 * i + 1] = py;

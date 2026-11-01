@@ -400,6 +400,9 @@ function campoDe(corpo: CorpoDoManequim): CampoDoCorpo {
 
 const leitura = new Float64Array(4);
 
+/** A leitura sem criar objeto nenhum, para a simulação, que pergunta milhões de vezes: a grade do corpo de agora. */
+export const grade = (corpo: CorpoDoManequim): CampoDoCorpo => campoDe(corpo);
+
 /** A distância do ponto à superfície do corpo, com a normal para fora: negativa dentro do corpo. */
 export function distanciaAoCorpo(corpo: CorpoDoManequim, x: number, y: number, z: number): { d: number; nx: number; ny: number; nz: number } {
   lerCampo(campoDe(corpo), x, y, z, leitura);

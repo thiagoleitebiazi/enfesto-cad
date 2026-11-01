@@ -20,6 +20,8 @@ Com o corpo e a luz novos (ADR 0228, 0229), o que denunciava o 3D era o tecido: 
 
 **7. A malha padrão é a fina (12 mm),** onde as dobras cabem; há uma de 8 mm para as dobras pequenas. Durante a simulação, a imagem é desenhada no máximo seis vezes por segundo: ela custa mais que um passo da física.
 
+**8. A calça fecha.** A perna da peça vem da forma dela: o gancho é a ponta de onde o contorno recua logo abaixo, e ele aponta para o meio do corpo. Pela cópia só, um molde desenhado para a outra perna ia ao avesso. Na sugestão de costuras, abaixo do gancho cada perna fecha sozinha (a entreperna de trás de uma ficava perto da de trás da outra), e o alto da peça da perna entra, porque ali não há cava: é o gancho, que fecha de uma perna para a outra.
+
 **A trama** é uma escolha da aba Tecido (plana, sarja, malha, cetim, felpa e linho), que vem do tecido pronto e não muda a física.
 
 ## O que não foi feito

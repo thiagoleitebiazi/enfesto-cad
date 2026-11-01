@@ -348,6 +348,51 @@ describe('o vestido evasê e o caimento (ADR 0230)', () => {
   });
 });
 
+describe('a calça: a perna pelo gancho (ADR 0230)', () => {
+  /** A perna de uma calça em pé, com o gancho para a esquerda da face (`lado` = 1) ou para a direita (`lado` = −1). */
+  const perna = (id: string, nome: string, gancho: number, lado: 1 | -1): Molde => {
+    const naFace: [number, number][] = [
+      [-95, 0], [95, 0], [140, -180], [95, -1000], [-95, -1000], [-100 - gancho * 0.2, -300], [-100 - gancho, -255], [-92 - gancho * 0.3, -190],
+    ];
+    const pontos = naFace.map(([x, y]) => ponto(-y, lado * x + 300));
+    return { ...criarMolde({ nome, referencia: 'CALCA', tamanho: 'M', quantidade: 2, contorno: lado > 0 ? pontos : [...pontos].reverse(), linhaDeFio: { inicio: ponto(100, 300), fim: ponto(900, 300) } }, id), emPar: true as const };
+  };
+
+  for (const lado of [1, -1] as const) {
+    it(`o molde com o gancho ${lado > 0 ? 'à esquerda' : 'à direita'} da face: cada cópia vai para a perna em que ele aponta para o meio do corpo`, () => {
+      const instancias = instanciasDasPecas([perna('f', 'Frente da calca', 45, lado), perna('c', 'Costas da calca', 95, lado)]);
+      const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+      expect(Object.values(configuracoes).map((c) => c.posicao).sort()).toEqual(['perna-direita-costas', 'perna-direita-frente', 'perna-esquerda-costas', 'perna-esquerda-frente']);
+      // Arrumada, a ponta do gancho fica do lado do meio do corpo, nas quatro peças.
+      for (const inst of instancias) {
+        const config = configuracoes[inst.chave]!;
+        const contorno = new Float64Array(inst.contorno.length * 2);
+        inst.contorno.forEach((p, i) => contorno.set([p.x, p.y], 2 * i));
+        const pos = posicoesDeArrumacao(FEMININO, inst, config, contorno)!;
+        const face = coordenadasDaFace(inst, config.girarGraus, contorno);
+        expect(face.u.length).toBe(8);
+        // A ponta do gancho: o sexto ponto do desenho da peça, contado do lado de onde o contorno começa.
+        const k = lado > 0 ? 6 : 1;
+        const noCorpo = config.posicao.includes('direita') ? pos[3 * k]! > FEMININO.pernas.direita.inicio.x : pos[3 * k]! < FEMININO.pernas.esquerda.inicio.x;
+        expect(noCorpo).toBe(true);
+      }
+    });
+  }
+
+  it('a calça fecha e fica na cintura: as laterais, as entrepernas e os ganchos são sugeridos', () => {
+    const instancias = instanciasDasPecas([perna('f', 'Frente da calca', 45, 1), perna('c', 'Costas da calca', 95, 1)]);
+    const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+    const montagem: Montagem3D = { ...MONTAGEM_VAZIA, pecas: configuracoes };
+    let n = 0;
+    const costuras = sugerirCosturas(FEMININO, instancias, montagem, () => `k${++n}`);
+    expect(costuras.length).toBeGreaterThanOrEqual(6);
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas: malhasDasInstancias(instancias, configuracoes, 30, costuras), costuras, tecido: TECIDOS_PRONTOS.malha.tecido });
+    for (let t = 0; t < 5 * 60 && !(t > 60 && assentou(sim)); t++) avancar(sim, 1 / 60, 8);
+    expect(alturasDoTecido(sim).caidas).toEqual([]);
+    expect(alturasDoTecido(sim).ate).toBeGreaterThan(FEMININO.niveis.quadril);
+  }, 60000);
+});
+
 describe('a regata: os ombros', () => {
   const instancias = instanciasDasPecas([pecaDeRegata('f', 'Frente da regata', 80), pecaDeRegata('c', 'Costas da regata', 25)]);
   const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);

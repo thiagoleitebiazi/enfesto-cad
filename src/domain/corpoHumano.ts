@@ -468,8 +468,8 @@ function acertarVolta(v: Float64Array, t: Uint32Array, pedida: number, nos: read
 
 /** Os dois pontos da ponta do peito na malha (as pontas dos ossos do peito, no esqueleto dela). */
 const PONTAS_DO_PEITO = [8451, 1779] as const;
-const RAIO_DO_PEITO_MM = 32;
-const VOLTAS_DE_ALISAR = 14;
+const RAIO_DO_PEITO_MM = 42;
+const VOLTAS_DE_ALISAR = 18;
 
 /** O peito fica liso, como num manequim de vitrine: a roupa é o assunto, e o bico marcaria o tecido justo. */
 function alisarOPeito(v: Float64Array, t: Uint32Array): void {
@@ -757,7 +757,10 @@ export function lerCampo(c: CampoDoCorpo, x: number, y: number, z: number, s: Fl
     gz = 1;
   }
   // Fora da grade, a distância até ela soma à da borda.
-  const fora = Math.hypot(x - Math.max(c.ox, Math.min(c.ox + (c.nx - 1) * c.passo, x)), y - Math.max(c.oy, Math.min(c.oy + (c.ny - 1) * c.passo, y)), z - Math.max(c.oz, Math.min(c.oz + (c.nz - 1) * c.passo, z)));
+  let fora = 0;
+  if (x < c.ox || y < c.oy || z < c.oz || x > c.ox + (c.nx - 1) * c.passo || y > c.oy + (c.ny - 1) * c.passo || z > c.oz + (c.nz - 1) * c.passo) {
+    fora = Math.hypot(x - Math.max(c.ox, Math.min(c.ox + (c.nx - 1) * c.passo, x)), y - Math.max(c.oy, Math.min(c.oy + (c.ny - 1) * c.passo, y)), z - Math.max(c.oz, Math.min(c.oz + (c.nz - 1) * c.passo, z)));
+  }
   s[0] = y0 + (y1 - y0) * e + fora;
   s[1] = gx;
   s[2] = gy;
