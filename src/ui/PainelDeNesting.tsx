@@ -1,3 +1,4 @@
+import { camadasDosBlocos } from '../domain/enfestoEmEscada';
 import { lerBlocos, type ConfiguracaoDeBlocos } from '../domain/ocupacaoNoEncaixe';
 import { TODOS_EM_TRECHOS, tecidosDoModelo } from '../domain/tecidosDoModelo';
 import { useState } from 'react';
@@ -128,7 +129,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(somenteNaMesa ? { somenteNaMesa } : {}),
       ...(usarEspelhamento ? { usarEspelhamento } : {}),
       ...(compactar ? { compactar } : {}),
-      ...(emBlocos ? { blocos: { separacaoCompleta, blocos: lerBlocos(blocosEscritos), vertical: blocosVerticais && !props.temDobra } } : {}),
+      ...(emBlocos ? { blocos: { separacaoCompleta, blocos: lerBlocos(blocosEscritos), camadas: camadasDosBlocos(blocosEscritos), vertical: blocosVerticais && !props.temDobra } } : {}),
       ...(manterPacotes ? { manterOrientacaoDosPacotes: true } : {}),
       ...(props.temDobra ? { dobraInferior } : {}),
     };
@@ -261,8 +262,8 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                   </label>
                   {!separacaoCompleta && (
                     <label>
-                      Tamanhos de cada bloco, separados por ponto e vírgula
-                      <input type="text" value={blocosEscritos} placeholder="P M; G GG" onChange={(e) => setBlocosEscritos(e.target.value)} />
+                      Tamanhos de cada bloco, separados por ponto e vírgula. Para enfesto em escada, ponha as camadas do bloco: P M x40; G GG x20
+                      <input type="text" value={blocosEscritos} placeholder="P M x40; G GG x20" onChange={(e) => setBlocosEscritos(e.target.value)} />
                     </label>
                   )}
                   {!separacaoCompleta && tamanhosDoProjeto.length > 0 && <p className="nota-do-formulario">Tamanhos deste projeto: {tamanhosDoProjeto.join(', ')}</p>}

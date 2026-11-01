@@ -193,6 +193,8 @@ export interface ConfiguracaoDeBlocos {
   readonly separacaoCompleta: boolean;
   /** Os tamanhos de cada bloco. */
   readonly blocos: readonly (readonly string[])[];
+  /** As camadas de cada bloco, para o enfesto em escada (ADR 0224). */
+  readonly camadas?: readonly (number | null)[];
   readonly vertical: boolean;
 }
 
@@ -213,11 +215,11 @@ export function comBlocos(pecas: readonly Molde[], c: ConfiguracaoDeBlocos): Mol
   return [...nosBlocos, ...resto];
 }
 
-/** Os blocos no campo do formulário: um por linha ou separados por ";", com os tamanhos separados por espaço. */
+/** Os blocos no campo do formulário: um por linha ou separados por ";", com os tamanhos separados por espaço (e "x40" dá as camadas, ADR 0224). */
 export function lerBlocos(texto: string): string[][] {
   return texto
     .split(/[;\n]/)
-    .map((l) => l.trim().split(/[\s,]+/).filter((t) => t !== ''))
+    .map((l) => l.trim().split(/[\s,]+/).filter((t) => t !== '' && !/^x\d+$/i.test(t)))
     .filter((g) => g.length > 0);
 }
 

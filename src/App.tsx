@@ -380,6 +380,7 @@ import { csvDaEnfestadeira } from './formats/fichaDaEnfestadeira';
 import { PainelDeColaboracao, type ApiDaColaboracao } from './ui/PainelDeColaboracao';
 import type { ProjetoCompartilhado } from './domain/colaboracao';
 import { arquivoDoRisco, estadosDosRiscos } from './domain/encaixeDoRisco';
+import { blocosEmEscada } from './domain/enfestoEmEscada';
 import { calibracaoGuardada, paginaDeTesteDoPlotter, testeDaMesaDeCorte, type Calibracao } from './formats/testeDoEquipamento';
 import { PainelDoTesteDoEquipamento } from './ui/PainelDoTesteDoEquipamento';
 import { modeloDoPlano } from './domain/modeloDoPlano';
@@ -3657,8 +3658,14 @@ export default function App(): React.JSX.Element {
       // As peças com linha de simetria entram abertas, inteiras.
       if (opcoesAvancadas.abrirSimetrias) paraEncaixar = abrirSimetrias(paraEncaixar, proximoId);
       if (opcoesAvancadas.blocos) {
-        paraEncaixar = comBlocos(paraEncaixar, opcoesAvancadas.blocos);
+        // Na mesa de lado os blocos perdem o nome: a escada só vale na horizontal.
+        const escada = opcoesAvancadas.blocos.vertical ? null : blocosEmEscada(opcoesAvancadas.blocos.blocos, opcoesAvancadas.blocos.camadas ?? []);
+        paraEncaixar = comBlocos(paraEncaixar, escada ? { ...opcoesAvancadas.blocos, blocos: escada.blocos } : opcoesAvancadas.blocos);
         if (opcoesAvancadas.blocos.vertical) enfestoDoEncaixe = { ...enfestoDoEncaixe, blocosVerticais: true };
+        if (escada?.camadasPorBloco) {
+          enfestoDoEncaixe = { ...enfestoDoEncaixe, camadasPorBloco: escada.camadasPorBloco };
+          setEnfesto(enfestoDoEncaixe);
+        }
       }
       if (opcoesDoEncaixe.semEnvolvente) enfestoDoEncaixe = { ...enfestoDoEncaixe, semEnvolvente: true };
       if (opcoesAvancadas.manterOrientacaoDosPacotes) paraEncaixar = comSentidoAlternado(paraEncaixar, 'por-pacote', proximoId);

@@ -364,3 +364,11 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Provar outro tamanho no provador; consumo por molde; sequência de enfestos; descrição técnica preliminar | ✅ ADR 0223 |
 | Editar a imagem gerada; descrição técnica feita por IA | ⬜ depende do serviço de IA |
 | Integração com a máquina de corte da própria marca | ⬜ protocolo fechado |
+
+## Décima segunda rodada: as aulas em vídeo (2026-11-01)
+
+As transcrições não puderam ser lidas: o YouTube recusa a leitura automática. Foram usados os títulos de 184 aulas públicas e as descrições de 36. Quase tudo já existia (gradação tangente, múltiplas pences, fechar pence com pivô, as ferramentas de costura).
+
+| Item | Situação |
+|---|---|
+| Enfesto em escada: camadas por bloco, degraus, consumo e ficha | ✅ ADR 0224 |

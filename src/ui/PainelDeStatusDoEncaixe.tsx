@@ -24,8 +24,25 @@ export function PainelDeStatusDoEncaixe(props: PainelDeStatusDoEncaixeProps): Re
         <dd>{metros(s.comprimentoMm)}</dd>
         <dt>Consumo com as perdas</dt>
         <dd>{metros(s.consumoMm)}</dd>
-        <dt>Consumo no enfesto ({props.camadas} camadas)</dt>
-        <dd>{metros(s.consumoMm * props.camadas)}</dd>
+        {s.escada ? (
+          <>
+            <dt>Consumo no enfesto em escada</dt>
+            <dd>{metros(s.escada.consumoTotalMm)}</dd>
+            {s.escada.degraus.map((d, i) => (
+              <div key={i}>
+                <dt>Degrau {i + 1}</dt>
+                <dd>
+                  {d.camadas} camadas de {metros(d.comprimentoMm)}
+                </dd>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <dt>Consumo no enfesto ({props.camadas} camadas)</dt>
+            <dd>{metros(s.consumoMm * props.camadas)}</dd>
+          </>
+        )}
         <dt>Aproveitamento</dt>
         <dd>{numeroComVirgula(s.aproveitamentoPercentual, 1)}%</dd>
         <dt>Rendimento consumo</dt>

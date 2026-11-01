@@ -103,6 +103,8 @@ export interface ConfiguracaoBase {
   readonly perdaMm?: number;
   /** A dobra do tecido embaixo, e não em cima (ADR 0195). */
   readonly dobraInferior?: boolean;
+  /** O enfesto em escada: as camadas de cada bloco do encaixe, pelo nome dele (ADR 0224). */
+  readonly camadasPorBloco?: Readonly<Record<string, number>>;
   /** O que muda em cada tecido, além da largura (ADR 0221). */
   readonly ajustesPorTecido?: Readonly<Record<string, AjusteDoTecido>>;
   /** Formas que o encaixe tem de contornar, neste cálculo: as peças mantidas no lugar (ADR 0221). */

@@ -12,12 +12,13 @@ import { enfestoDoTecido, pecasDoRisco, pecasDoTecido, tecidosDoModelo } from '.
  */
 export function csvDaEnfestadeira(modelo: { readonly nome: string; readonly codigo: string }, pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): string {
   const celula = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const linhas = tecidosDoModelo(pecas).map((tecido) => {
+  const linhas = tecidosDoModelo(pecas).flatMap((tecido) => {
     const mesa = enfestoDoTecido(enfesto, tecido);
     const noRisco = pecasDoRisco(pecasDoTecido(pecas, tecido), mesa);
-    const { consumoMm } = statusDoEncaixe(noRisco, mesa);
-    const total = (consumoMm * mesa.quantidadeDeCamadas) / 1000;
-    return [modelo.nome, modelo.codigo, tecido, ROTULO_DO_TIPO[mesa.tipo], numeroComVirgula(mesa.larguraUtilMm, 1), numeroComVirgula(consumoMm, 1), String(mesa.quantidadeDeCamadas), numeroComVirgula(total, 2), (mesa.emendasMm ?? []).join(' ')];
+    const { consumoMm, escada } = statusDoEncaixe(noRisco, mesa);
+    // No enfesto em escada, cada degrau é uma programação da máquina (ADR 0224).
+    const degraus = escada?.degraus ?? [{ comprimentoMm: consumoMm, camadas: mesa.quantidadeDeCamadas }];
+    return degraus.map((d) => [modelo.nome, modelo.codigo, tecido, ROTULO_DO_TIPO[mesa.tipo], numeroComVirgula(mesa.larguraUtilMm, 1), numeroComVirgula(d.comprimentoMm, 1), String(d.camadas), numeroComVirgula((d.comprimentoMm * d.camadas) / 1000, 2), (mesa.emendasMm ?? []).join(' ')]);
   });
   const cabecalho = ['Modelo', 'Código', 'Tecido', 'Enfesto', 'Largura (mm)', 'Comprimento por camada (mm)', 'Camadas', 'Total (m)', 'Emendas (mm)'];
   return String.fromCharCode(0xfeff) + [cabecalho, ...linhas].map((l) => l.map(celula).join(';')).join('\r\n') + '\r\n';

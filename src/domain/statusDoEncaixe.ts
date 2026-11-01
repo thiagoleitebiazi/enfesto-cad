@@ -1,3 +1,5 @@
+import { consumoDaEscadaMm, degrausDaEscada, type DegrauDaEscada } from './enfestoEmEscada';
+import { blocosNaMesa } from './gruposDoEncaixe';
 import { area, retanguloEnvolvente } from '../core/geometria';
 import type { ConfiguracaoDeEnfesto, ReferenciaDaLinha } from './enfesto';
 import { linhaDeCorteDaPeca, type Molde } from './molde';
@@ -33,6 +35,8 @@ export interface StatusDoEncaixe {
   readonly aproveitamentoPercentual: number;
   readonly porTamanho: readonly LinhaDoTamanho[];
   readonly porMolde: readonly LinhaDoMolde[];
+  /** O enfesto em escada, quando os blocos têm camadas próprias (ADR 0224). */
+  readonly escada?: { readonly degraus: readonly DegrauDaEscada[]; readonly consumoTotalMm: number };
   /** Metros de tecido por peça pronta; `null` sem nenhuma peça completa. */
   readonly rendimentoConsumoM: number | null;
   /** Quilos de tecido por peça pronta, com a gramatura; `null` sem ela. */
@@ -76,7 +80,13 @@ export function statusDoEncaixe(pecas: readonly Molde[], enfesto: ConfiguracaoDe
     }),
     rendimentoConsumoM: completos > 0 ? consumoMm / 1000 / completos : null,
     rendimentoPesoKg: completos > 0 && gramaturaGm2 ? (areaDoConsumoM2 * gramaturaGm2) / 1000 / completos : null,
+    ...(enfesto.camadasPorBloco && Object.keys(enfesto.camadasPorBloco).length > 0 && naMesa.length > 0 ? { escada: escadaDoEncaixe(naMesa, enfesto.camadasPorBloco, enfesto.quantidadeDeCamadas) } : {}),
   };
+}
+
+function escadaDoEncaixe(pecas: readonly Molde[], camadasPorBloco: Readonly<Record<string, number>>, camadasPadrao: number): NonNullable<StatusDoEncaixe['escada']> {
+  const degraus = degrausDaEscada(blocosNaMesa(pecas), camadasPorBloco, camadasPadrao);
+  return { degraus, consumoTotalMm: consumoDaEscadaMm(degraus) };
 }
 
 export interface OpcoesDaEmenda {
