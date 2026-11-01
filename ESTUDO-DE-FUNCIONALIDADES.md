@@ -353,3 +353,4 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Nuvem: projeto compartilhado, várias pessoas, comentários, aprovação | 🟡 ADR 0214: servidor da própria empresa, sem a nuvem da referência |
 | Validação com 34 arquivos ASTM/AAMA públicos e 2 DMPL de verdade; abertura correta das portas LPT e COM | ✅ ADR 0215 |
 | Teste do equipamento: página de medidas, correção pela trena, teste da mesa de corte | ✅ ADR 0217; falta rodar na máquina |
+| Laboratório de validação: plotter virtual, leitores de terceiros, contraste de todo texto, todos os botões | ✅ ADR 0216 |

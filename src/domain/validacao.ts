@@ -26,6 +26,9 @@ import { blocosNaMesa, blocosQueSeMisturam, grupoDaPeca } from './gruposDoEncaix
  * Tolerâncias são parâmetros explícitos, nunca hardcoded sem como ajustar.
  */
 
+/** Bem abaixo do que a máquina corta: uma peça girada mede 2,99999 mm onde o encaixe deixou 3 mm, e isso não é erro. */
+const FOLGA_DE_ARREDONDAMENTO_MM = 0.001;
+
 export type TipoDeProblema =
   | 'contorno-invalido'
   | 'sobreposicao'
@@ -215,7 +218,7 @@ function validarSobreposicaoEEspacamento(
       }
       if (distanciaMinimaMm > 0) {
         const d = seTocam ? 0 : distanciaEntreContornos(a.contorno, b.contorno);
-        if (d < distanciaMinimaMm) {
+        if (d < distanciaMinimaMm - FOLGA_DE_ARREDONDAMENTO_MM) {
           problemas.push({
             tipo: 'espacamento-insuficiente',
             severidade: 'erro',

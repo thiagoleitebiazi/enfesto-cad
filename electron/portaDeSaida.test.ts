@@ -39,6 +39,13 @@ describe('o destino escrito pelo usuário (ADR 0210)', () => {
   });
 });
 
+describe('fora do Windows (ADR 0216)', () => {
+  it('impressora compartilhada e portas locais são recusadas, sem criar arquivo nenhum', async () => {
+    await expect(enviarAPorta(lerPortaDeSaida('\\\\SERVIDOR\\PLOTTER')!, 'IN;', 'darwin')).rejects.toThrow('precisa estar na rede');
+    await expect(enviarAPorta(lerPortaDeSaida('COM1')!, 'IN;', 'darwin')).rejects.toThrow('precisa estar na rede');
+  });
+});
+
 describe.runIf(process.platform === 'win32')('as portas do Windows (ADR 0215)', () => {
   it('um dispositivo do Windows recebe os bytes, aberto como já existente', async () => {
     // Uma porta de verdade pede um equipamento; o "pipe" é um dispositivo que se comporta igual: só abre se já existir.

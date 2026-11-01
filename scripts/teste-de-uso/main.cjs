@@ -32,6 +32,8 @@ const NO_MAC = process.platform === 'darwin';
 const TECLA_DE_COMANDO = NO_MAC ? 'meta' : 'control';
 
 fs.mkdirSync(SAIDA, { recursive: true });
+// Um arquivo de outra rodada passaria por este: a conferência lê a pasta.
+for (const nome of fs.readdirSync(SAIDA)) if (/\.(pdf|plt|dxf|iso|html|csv|xlsx)$/i.test(nome)) fs.rmSync(path.join(SAIDA, nome));
 const REGISTRO = path.join(SAIDA, 'uso.txt');
 fs.writeFileSync(REGISTRO, '');
 const log = (texto) => {
@@ -383,8 +385,11 @@ async function principal() {
   conferir('o DXF foi gravado: R12, em mm, com as 3 peças', dxf.startsWith('0\r\nSECTION') && dxf.includes('AC1009') && dxf.includes('$INSUNITS\r\n70\r\n4') && contornosNoDxf === 3, `${JSON.stringify(dxfs)} ${contornosNoDxf} contorno(s)`);
 
   // 3c. Exportar o PLT para o plotter (ADR 0101): HPGL, começando pelo IN e com um nome (LB) por peça.
+  // Aqui há peças sobrepostas (a vista e o forro do passo 2b): o programa pergunta antes de plotar, e a resposta é sim.
+  await js(`(() => { window.__confirmar = window.confirm; window.confirm = () => true; })()`);
   await botao('Exportar PLT');
   await espera(1500);
+  await js(`(() => { window.confirm = window.__confirmar; })()`);
   const plts = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.plt'));
   const plt = plts[0] ? fs.readFileSync(path.join(SAIDA, plts[0]), 'latin1') : '';
   const nomesNoPlt = plt.split(';LB').length - 1;

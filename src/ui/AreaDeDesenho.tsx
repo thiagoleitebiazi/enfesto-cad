@@ -552,6 +552,14 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   }, [fonteDaPadronagem]);
   const imagemDaPadronagem = padronagemCarregada && padronagemCarregada.fonte === fonteDaPadronagem ? padronagemCarregada.imagem : null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // O React ouve a roda como passiva: segurar o evento tem de ser aqui, ou a pinça do trackpad dá zoom na página inteira.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const segurar = (e: WheelEvent): void => e.preventDefault();
+    canvas.addEventListener('wheel', segurar, { passive: false });
+    return () => canvas.removeEventListener('wheel', segurar);
+  }, []);
   const reguaHorizontalRef = useRef<HTMLCanvasElement | null>(null);
   const reguaVerticalRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -2225,7 +2233,6 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
   }
 
   function aoRolarMouse(e: React.WheelEvent<HTMLCanvasElement>): void {
-    e.preventDefault();
     // A roda do mouse, a pinça e os dois dedos do trackpad (ver `gestoDaRoda`).
     const gesto = gestoDaRoda(e, NO_MAC);
     const nova =

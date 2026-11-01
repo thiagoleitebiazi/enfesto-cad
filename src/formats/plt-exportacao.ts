@@ -243,36 +243,46 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     } else if (peca.alturaDoTextoMm) rotulo(inicio, nomeDaPeca, (peca.alturaDoTextoMm * 0.7) / 10, peca.alturaDoTextoMm / 10);
     else rotulo(inicio, nomeDaPeca, 0.35, 0.5);
   };
+  /** O que não é de nenhuma peça: as linhas, as emendas, os textos e o cabeçalho. */
+  const desenharORestante = (): void => {
+    for (const l of opcoes.linhas ?? []) {
+      caneta(2);
+      linha([l.de, l.ate], false);
+      rotulo(noPapel(ponto(l.de.x + 2, l.de.y + 2)), l.nome, 0.25, 0.35);
+    }
+    for (const e of opcoes.emendas ?? []) {
+      caneta(2);
+      linha([ponto(0, e), ponto(opcoes.larguraDaMesaMm ?? altura, e)], false);
+      rotulo(noPapel(ponto(-8, e)), 'EMENDA', 0.25, 0.35);
+    }
+    for (const t of opcoes.textos ?? []) {
+      caneta(2);
+      const onde = noPapel(ponto(t.x, t.y));
+      rotulo(onde, t.texto, 0.25, 0.35);
+    }
+    const cabecalho = [...(opcoes.cabecalho ?? []), ...(opcoes.observacao ? [opcoes.observacao] : [])];
+    if (cabecalho.length > 0 && pecas.length > 0) {
+      caneta(2);
+      // Depois da última peça sempre há papel: a largura da mesa pode não ter folga, o comprimento tem.
+      const fim = retanguloEnvolvente(pecas.flatMap((p) => linhaDeCorteDaPeca(p))).maxY;
+      cabecalho.forEach((texto, i) => {
+        const onde = noPapel(ponto(10 + i * 8, fim + 20));
+        rotulo(onde, texto, 0.25, 0.35);
+      });
+    }
+  };
   const { niveis } = opcoes;
   if (niveis) {
     const nivelDe = (e: ElementoDoPlotter): number => niveis[e] ?? 1;
     const usados = [...new Set((Object.keys(ROTULO_DO_ELEMENTO) as ElementoDoPlotter[]).map(nivelDe))].sort((a, b) => a - b);
-    for (const nivel of usados) for (const peca of pecas) desenharPeca(peca, (e) => nivelDe(e) === nivel);
-  } else for (const peca of pecas) desenharPeca(peca, () => true);
-  for (const l of opcoes.linhas ?? []) {
-    caneta(2);
-    linha([l.de, l.ate], false);
-    rotulo(noPapel(ponto(l.de.x + 2, l.de.y + 2)), l.nome, 0.25, 0.35);
-  }
-  for (const e of opcoes.emendas ?? []) {
-    caneta(2);
-    linha([ponto(0, e), ponto(opcoes.larguraDaMesaMm ?? altura, e)], false);
-    rotulo(noPapel(ponto(-8, e)), 'EMENDA', 0.25, 0.35);
-  }
-  for (const t of opcoes.textos ?? []) {
-    caneta(2);
-    const onde = noPapel(ponto(t.x, t.y));
-    rotulo(onde, t.texto, 0.25, 0.35);
-  }
-  const cabecalho = [...(opcoes.cabecalho ?? []), ...(opcoes.observacao ? [opcoes.observacao] : [])];
-  if (cabecalho.length > 0 && pecas.length > 0) {
-    caneta(2);
-    // Depois da última peça sempre há papel: a largura da mesa pode não ter folga, o comprimento tem.
-    const fim = retanguloEnvolvente(pecas.flatMap((p) => linhaDeCorteDaPeca(p))).maxY;
-    cabecalho.forEach((texto, i) => {
-      const onde = noPapel(ponto(10 + i * 8, fim + 20));
-      rotulo(onde, texto, 0.25, 0.35);
-    });
+    for (const nivel of usados) {
+      for (const peca of pecas) desenharPeca(peca, (e) => nivelDe(e) === nivel);
+      // O restante sai com os nomes das peças: o cabeçalho depois do corte seria tinta em papel já cortado (ADR 0216).
+      if (nivel === nivelDe('textos')) desenharORestante();
+    }
+  } else {
+    for (const peca of pecas) desenharPeca(peca, () => true);
+    desenharORestante();
   }
   comandos.push('PU0,0', 'SP0');
   return comandos.join(';') + ';\n';

@@ -31,6 +31,8 @@
   --marca-800: #1b3866;
   --marca-700: #26497f;
   --marca-texto: #e8eef8;
+  /* O azul da marca como texto, em cima das superfícies: no tema escuro ele clareia. */
+  --marca-como-texto: var(--marca-800);
   --marca-texto-suave: #b4c3da;
   --destaque: #f28c28;
 
@@ -634,8 +636,8 @@ input[type='radio'] {
 
 .ribbon-aba-ativa,
 .ribbon-aba-ativa:hover {
-  background: #fff;
-  color: var(--marca-800);
+  background: var(--cinza-0);
+  color: var(--marca-como-texto);
   font-weight: 700;
   box-shadow: inset 0 3px 0 var(--destaque);
   z-index: 1;
@@ -650,7 +652,7 @@ input[type='radio'] {
 
 .ribbon-aba-arquivo.ribbon-aba-ativa,
 .ribbon-aba-arquivo.ribbon-aba-ativa:hover {
-  background: #fff;
+  background: var(--cinza-0);
   color: var(--azul-700);
   box-shadow: inset 0 3px 0 var(--azul-600);
 }
@@ -708,7 +710,7 @@ input[type='radio'] {
   align-items: stretch;
   justify-content: space-between;
   padding: 0 4px;
-  background: #fff;
+  background: var(--cinza-0);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -808,18 +810,18 @@ input[type='radio'] {
 }
 
 .grupo-de-ferramentas button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--cor-do-grupo) 9%, #fff);
+  background: color-mix(in srgb, var(--cor-do-grupo) 9%, var(--cinza-0));
   border-color: color-mix(in srgb, var(--cor-do-grupo) 35%, #fff);
 }
 
 .grupo-de-ferramentas button:active:not(:disabled) {
-  background: color-mix(in srgb, var(--cor-do-grupo) 16%, #fff);
+  background: color-mix(in srgb, var(--cor-do-grupo) 16%, var(--cinza-0));
 }
 
 /* Ferramenta ativa: fundo claro e borda na cor do grupo, como um botão de alternância de fita. */
 .grupo-de-ferramentas button.item-selecionado,
 .grupo-de-ferramentas button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--cor-do-grupo) 14%, #fff);
+  background: color-mix(in srgb, var(--cor-do-grupo) 14%, var(--cinza-0));
   border-color: color-mix(in srgb, var(--cor-do-grupo) 55%, #fff);
   color: var(--cinza-900);
 }
@@ -855,7 +857,7 @@ input[type='radio'] {
   height: 34px;
   padding: 5px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--cor-do-grupo) 12%, #fff);
+  background: color-mix(in srgb, var(--cor-do-grupo) 12%, var(--cinza-0));
 }
 
 .grupo-de-ferramentas button.botao-grande:disabled .icone-de-ferramenta,
@@ -934,12 +936,12 @@ input[type='radio'] {
   align-items: center;
   gap: 2px;
   padding: 2px 8px;
-  background: #fff;
+  background: var(--cinza-0);
   border-top: 1px solid var(--cor-borda);
 }
 
 .barra-de-visualizacao button {
-  color: var(--marca-700);
+  color: var(--marca-como-texto);
 }
 
 .barra-de-visualizacao button[aria-pressed='true'] {
@@ -980,12 +982,12 @@ input[type='radio'] {
   max-width: 45%;
   padding: 5px 16px 6px;
   margin-bottom: -1px;
-  background: #fff;
+  background: var(--cinza-0);
   border: 1px solid var(--cor-borda);
-  border-bottom-color: #fff;
+  border-bottom-color: var(--cinza-0);
   border-radius: 4px 4px 0 0;
   box-shadow: inset 0 3px 0 var(--azul-600);
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1036,10 +1038,10 @@ input[type='radio'] {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
   margin: 0;
   padding: 9px 12px;
-  background: #fff;
+  background: var(--cinza-0);
   border-bottom: 1px solid var(--cor-borda);
   box-shadow: inset 3px 0 0 var(--azul-600);
 }
@@ -1077,7 +1079,7 @@ input[type='radio'] {
   gap: 6px;
   margin: 6px 8px 0;
   padding: 6px 6px 6px 8px;
-  background: #fff;
+  background: var(--cinza-0);
   border: 1px solid var(--cinza-200);
   border-radius: var(--raio-md);
   box-shadow: var(--sombra-leve);
@@ -3043,7 +3045,7 @@ input[type='radio'] {
   margin: 0;
   font-size: 13px;
   font-weight: 700;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .execucao-do-plano .nota-do-formulario {
@@ -3136,7 +3138,7 @@ input[type='radio'] {
 .painel-da-sala-de-corte h4 {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .indicadores-da-sala-de-corte {
@@ -3163,7 +3165,7 @@ input[type='radio'] {
   margin: 2px 0 0;
   font-size: 15px;
   font-weight: 700;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .sugestoes-da-sala-de-corte {
@@ -3518,7 +3520,7 @@ input[type='radio'] {
 .painel-da-ficha-tecnica h4 {
   margin: 8px 0 0;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .cabecalho-da-ficha {
@@ -3534,7 +3536,7 @@ input[type='radio'] {
 
 .cabecalho-da-ficha strong {
   font-size: 15px;
-  color: var(--marca-900);
+  color: var(--marca-como-texto);
 }
 
 .situacao-da-execucao.situacao-ficha-rascunho {
@@ -3644,7 +3646,7 @@ input[type='radio'] {
 .estampa-por-peca h4 {
   margin: 0 0 6px;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 @media (max-width: 760px) {
@@ -4124,7 +4126,7 @@ input[type='radio'] {
 .secao-do-provador h4 {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .cartao-da-peca-3d {
@@ -4327,7 +4329,7 @@ input[type='radio'] {
 .painel-da-recomendacao h4 {
   margin: 0;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .cabecalho-da-recomendacao {
@@ -4559,7 +4561,7 @@ input[type='radio'] {
 
 .tabela-do-guia td {
   font-weight: 600;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 @media (max-width: 760px) {
@@ -4971,7 +4973,7 @@ rect.destaque-do-desenho,
   border: 1px solid var(--cinza-200);
   border-left: 4px solid var(--grupo-4);
   border-radius: var(--raio-md);
-  background: #fff;
+  background: var(--cinza-0);
   text-align: left;
   cursor: pointer;
 }
@@ -5001,7 +5003,7 @@ rect.destaque-do-desenho,
 .conteudo-da-colecao h4 {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--marca-800);
+  color: var(--marca-como-texto);
 }
 
 .resumo-do-mix {
@@ -5036,7 +5038,7 @@ rect.destaque-do-desenho,
   border: 1px solid var(--cinza-200);
   border-top: 4px solid var(--cor-da-etapa);
   border-radius: var(--raio-md);
-  background: #fff;
+  background: var(--cinza-0);
   text-align: left;
   cursor: pointer;
   box-shadow: var(--sombra-leve);
@@ -5101,7 +5103,7 @@ rect.destaque-do-desenho,
 .situacao-da-execucao[class*='situacao-etapa-'] {
   border-color: var(--cor-da-etapa);
   color: var(--cor-da-etapa);
-  background: #fff;
+  background: var(--cinza-0);
   font-weight: 600;
 }
 
@@ -5147,7 +5149,7 @@ rect.destaque-do-desenho,
   padding: 6px;
   border: 1px solid var(--cinza-200);
   border-radius: var(--raio-sm);
-  background: #fff;
+  background: var(--cinza-0);
   font-size: 12px;
 }
 
@@ -5838,6 +5840,26 @@ rect.destaque-do-desenho,
   --cinza-800: #e6e9ed;
   --cinza-900: #f6f7f9;
   --cor-fundo-app: #14171c;
+  --marca-como-texto: #a9c6f5;
+  /* Os tons claros de azul são fundo (a linha selecionada, o realce): no escuro, viram azuis fechados. */
+  --azul-50: #1d2c44;
+  --azul-100: #233656;
+  --azul-200: #2d4670;
+  --azul-300: #4a6ea8;
+  --azul-600: #3f7fd0;
+  --azul-700: #3572c2;
+  --sucesso-texto: #8fdcaa;
+  --sucesso-fundo: #17301f;
+  --sucesso-borda: #2f6a44;
+  --aviso-texto: #f2d27a;
+  --aviso-fundo: #33290f;
+  --aviso-borda: #7a6220;
+  --erro-texto: #f5a3a3;
+  --erro-fundo: #3a1a1a;
+  --erro-borda: #8a3a3a;
+  --info-texto: #a9c6f5;
+  --info-fundo: #1b2a42;
+  --info-borda: #3f6296;
 }
 :root[data-esquema='alto-contraste'] {
   --cinza-300: #6b7280;

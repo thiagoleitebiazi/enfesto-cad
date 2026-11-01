@@ -25,6 +25,15 @@ describe('os níveis de impressão (ADR 0210)', () => {
     expect(canetas.lastIndexOf('SP7')).toBeLessThan(canetas.indexOf('SP6'));
   });
 
+  it('o cabeçalho, as emendas e as linhas saem com os nomes: nada de tinta depois do corte', () => {
+    const c = gerarPlt([peca('a')], { ferramentas: { corte: 5 }, niveis: { corte: 2 }, cabecalho: ['Risco de teste'], emendas: [50], linhas: [{ de: ponto(0, 10), ate: ponto(100, 10), nome: 'Referencia' }] }).split(';');
+    const corte = c.indexOf('SP5');
+    for (const texto of ['LBRisco de teste\x03', 'LBEMENDA\x03', 'LBReferencia\x03']) {
+      expect(c.indexOf(texto), texto).toBeGreaterThanOrEqual(0);
+      expect(c.indexOf(texto), texto).toBeLessThan(corte);
+    }
+  });
+
   it('o elemento sem nível é do nível 1', () => {
     const c = comandos([peca('a')], { corte: 2 });
     expect(c.indexOf('SP5')).toBeGreaterThan(c.indexOf('SP7'));

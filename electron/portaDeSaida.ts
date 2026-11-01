@@ -72,9 +72,11 @@ function motivoDaFalha(porta: Extract<PortaDeSaida, { tipo: 'caminho' }>, erro: 
   return erro instanceof Error ? erro : new Error(String(erro));
 }
 
-export async function enviarAPorta(porta: PortaDeSaida, texto: string): Promise<void> {
+export async function enviarAPorta(porta: PortaDeSaida, texto: string, plataforma: string = process.platform): Promise<void> {
   const dados = Buffer.from(texto, 'latin1');
   if (porta.tipo === 'rede') return enviarPelaRede(porta.host, porta.porta, dados);
+  // Fora do Windows, este caminho seria um arquivo comum, criado na pasta do programa.
+  if (plataforma !== 'win32') throw new Error('Neste computador, o plotter precisa estar na rede: escreva o endereço dele.');
   if (porta.baud !== undefined) await configurarSerial(porta.caminho, porta.baud);
   try {
     // A porta do Windows (LPT, COM) só abre como algo que já existe: 'r+' é isso. 'w' pede para criar, e ela recusa.

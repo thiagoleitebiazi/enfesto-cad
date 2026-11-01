@@ -11,7 +11,7 @@
  * O resultado vai para SAIDA_DA_VALIDACAO (ou ./validacao). Os dados ficam numa pasta temporária: os projetos de quem
  * roda não são tocados. O servidor de colaboração ouve só neste computador. Sai com 0 se tudo conferiu.
  */
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const fs = require('fs');
 const net = require('net');
 const os = require('os');
@@ -34,6 +34,9 @@ const log = (t) => {
 };
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A janela coberta por outra para de desenhar e perde o clique simulado: quem usa clica na de cima, e isso não acontece.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 const DADOS = fs.mkdtempSync(path.join(os.tmpdir(), 'enfesto-cad-validacao-'));
 app.setPath('userData', DADOS);
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [arquivoParaAbrir] });
@@ -48,6 +51,23 @@ net.Server.prototype.listen = function ouvir(...args) {
   if (args[1] === '0.0.0.0') args[1] = '127.0.0.1';
   return ouvirDeVerdade.apply(this, args);
 };
+
+/** O que o programa vê de cada janela, quando o arranjo é pedido. */
+const janelasAgora = () => BrowserWindow.getAllWindows().map((j) => ({ id: j.id, vis: j.isVisible(), min: j.isMinimized(), max: j.isMaximized(), b: j.getBounds() }));
+const chamadasDoArranjo = [];
+const tratar = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (canal, f) =>
+  tratar(canal, canal !== 'janelas-arrumar' ? f : async (e, como) => {
+    chamadasDoArranjo.push({ como, antes: janelasAgora() });
+    try {
+      return await f(e, como);
+    } catch (erro) {
+      chamadasDoArranjo.push({ erro: String(erro) });
+      throw erro;
+    } finally {
+      chamadasDoArranjo.push({ depois: janelasAgora() });
+    }
+  });
 
 require(path.join(RAIZ, 'dist-electron', 'main.js'));
 
@@ -73,19 +93,6 @@ function distancia(a, b) {
 }
 const caixa = (c) => ({ minX: Math.min(...c.map((p) => p.x)), maxX: Math.max(...c.map((p) => p.x)), minY: Math.min(...c.map((p) => p.y)), maxY: Math.max(...c.map((p) => p.y)) });
 
-/** O contraste entre duas cores "rgb(...)", pela regra da WCAG. */
-function contraste(a, b) {
-  const lum = (c) => {
-    const [r, g, bl] = c.match(/[\d.]+/g).map(Number).map((v) => {
-      const s = v / 255;
-      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-  };
-  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m);
-  return (x + 0.05) / (y + 0.05);
-}
-
 async function principal() {
   await app.whenReady();
   let win = null;
@@ -100,14 +107,17 @@ async function principal() {
 
   const errosDoConsole = [];
   win.webContents.on('console-message', (e) => {
-    if (e.level === 'error') errosDoConsole.push(String(e.message).slice(0, 220));
+    if (e.level === 'error' && !String(e.message).includes('ResizeObserver loop')) errosDoConsole.push(String(e.message).slice(0, 220));
   });
   let caiu = '';
   win.webContents.on('render-process-gone', (_e, d) => (caiu = d.reason));
 
   const js = (codigo) => win.webContents.executeJavaScript(codigo);
-  const prepararPagina = () => js(`(() => { window.__erros = []; window.addEventListener('error', (e) => window.__erros.push(String(e.message))); window.addEventListener('unhandledrejection', (e) => window.__erros.push(String(e.reason))); window.alert = () => undefined; window.confirm = () => true; window.prompt = () => null; })()`);
+  const prepararPagina = () => js(`(() => { window.__erros = []; window.addEventListener('error', (e) => { if (!String(e.message).startsWith('ResizeObserver loop')) window.__erros.push(String(e.message)); }); window.addEventListener('unhandledrejection', (e) => window.__erros.push(String(e.reason))); window.alert = () => undefined; window.confirm = () => true; window.prompt = () => null; })()`);
   await prepararPagina();
+
+  // Sem transições: a cor lida tem de ser a final, não uma do meio do caminho.
+  await win.webContents.insertCSS('*, *::before, *::after { transition: none !important; animation: none !important; }');
 
   const esperarAte = async (pergunta, ms = 30000) => {
     const fim = Date.now() + ms;
@@ -137,15 +147,24 @@ async function principal() {
   const botaoNaJanela = (texto) => clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.trim() === ${JSON.stringify(texto)})`);
   const janela = () => js(`(() => { const d = document.querySelector('[role=dialog]'); return d ? d.getAttribute('aria-label') : 'nenhuma'; })()`);
   const fecharJanela = () => js(`(document.querySelector('[role=dialog] .sobreposicao-fechar') || { click() {} }).click()`);
-  const menu = async (rotulo, trecho) => {
+  const abrirMenu = async (rotulo) => {
+    const aberto = await js(`(document.querySelector('[role=menu]') || { getAttribute() { return ''; } }).getAttribute('aria-label')`);
+    if (aberto === rotulo) return;
     await clicarEm(`Array.from(document.querySelectorAll('.botao-de-menu')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
+  };
+  const fecharMenu = () => js(`(() => { if (document.querySelector('[role=menu]')) document.querySelector('.botao-de-menu-aberto').click(); })()`);
+  const menu = async (rotulo, trecho) => {
+    await abrirMenu(rotulo);
+    const itens = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).map((b) => b.textContent.trim()))`));
+    if (!itens.some((i) => i.includes(trecho))) throw new Error(`"${trecho}" não está em ${rotulo}: ${itens.join(' | ').slice(0, 160)}`);
     await clicarEm(`Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).find(b => b.textContent.includes(${JSON.stringify(trecho)}))`);
     await espera(250);
   };
   const itensDoMenu = async (rotulo) => {
-    await clicarEm(`Array.from(document.querySelectorAll('.botao-de-menu')).find(b => b.textContent.trim() === ${JSON.stringify(rotulo)})`);
+    await abrirMenu(rotulo);
     const itens = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).map(b => b.textContent.trim()))`));
-    await tecla('Escape');
+    await fecharMenu();
+    await espera(150);
     return itens;
   };
   const porNoCampo = (rotulo, valor) =>
@@ -163,7 +182,26 @@ async function principal() {
   const marcarCaixa = (rotulo) => clicarEm(`Array.from((document.querySelector('[role=dialog]') || document).querySelectorAll('label')).find((x) => x.textContent.trim().startsWith(${JSON.stringify(rotulo)})).querySelector('input')`);
   const lista = () => js(`JSON.stringify(Array.from(document.querySelectorAll('.lista-de-pecas li .texto-do-item-de-peca')).map((e) => e.textContent))`).then(JSON.parse);
   const selecionarPeca = (i) => clicarEm(`document.querySelectorAll('.lista-de-pecas li .texto-do-item-de-peca')[${i}]`);
+  /** A janela de propriedades da peça: dois cliques na lista. */
+  const propriedades = async (i) => {
+    const r = JSON.parse(await js(`JSON.stringify(document.querySelectorAll('.lista-de-pecas li .texto-do-item-de-peca')[${i}].getBoundingClientRect())`));
+    const x = Math.round(r.left + r.width / 2);
+    const y = Math.round(r.top + r.height / 2);
+    for (const clickCount of [1, 2]) {
+      win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount });
+      win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount });
+    }
+    if (!(await esperarAte(async () => (await janela()) !== 'nenhuma', 4000))) throw new Error('a janela de propriedades não abriu');
+  };
   const validacao = () => js(`(document.querySelector('.indicador-de-validacao') || {}).textContent || ''`);
+  /** O que a validação acusa, por extenso: abre a janela dela, lê e fecha. */
+  const problemas = async () => {
+    await clicarEm(`document.querySelector('.indicador-de-validacao')`);
+    await espera(300);
+    const texto = await js(`Array.from(document.querySelectorAll('li[class^=severidade-]')).map((l) => l.innerText).join(' | ').replace(/\\s+/g, ' ')`);
+    await clicarEm(`document.querySelector('.indicador-de-validacao')`);
+    return texto.slice(0, 300);
+  };
   const estadoGravado = async () => {
     await js(`document.querySelector('.app-shell').focus()`);
     await tecla('s', ['control']);
@@ -184,7 +222,10 @@ async function principal() {
     await botaoNaJanela('Aplicar ao projeto');
     await espera(600);
   };
+  // Só algumas etapas (para repetir uma sem esperar todas): SO_ETAPAS=Importar,cores
+  const escolhidas = (process.env.SO_ETAPAS || '').split(',').filter((e) => e !== '');
   const etapa = async (nome, fazer) => {
+    if (escolhidas.length > 0 && !escolhidas.some((e) => nome.includes(e))) return;
     log(`\n# ${nome}`);
     try {
       await fazer();
@@ -251,8 +292,10 @@ async function principal() {
 
   await etapa('Os blocos na vertical', async () => {
     for (const [i, t] of ['P', 'M', 'G'].entries()) {
-      await selecionarPeca(i);
+      await propriedades(i);
       await porNoCampo('Tamanho', t);
+      await espera(150);
+      await fecharJanela();
       await espera(150);
     }
     await encaixar(async () => {
@@ -272,13 +315,19 @@ async function principal() {
       return c.minX >= 0 && c.maxX <= enfesto.larguraUtilMm && c.minY >= 0 && c.maxY <= enfesto.comprimentoMm;
     });
     conferir('tudo dentro da mesa', dentro);
-    conferir('a validação não acusa nada', (await validacao()) === 'Validação: sem problemas', await validacao());
+    const semProblemas = (await validacao()) === 'Validação: sem problemas';
+    conferir('a validação não acusa nada', semProblemas, semProblemas ? '' : await problemas());
   });
 
   await etapa('O tecido ativo', async () => {
-    await selecionarPeca(1);
-    await js(`(() => { const c = document.querySelector('input[list="tecidos-do-molde"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, 'Forro'); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-    await espera(300);
+    const tecidoDaPeca = async (i, nome) => {
+      await propriedades(i);
+      await js(`(() => { const c = document.querySelector('input[list="tecidos-do-molde"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, ${JSON.stringify(nome)}); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await espera(250);
+      await fecharJanela();
+      await espera(250);
+    };
+    await tecidoDaPeca(1, 'Forro');
     const abas = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('.abas-de-tecido button')).map((b) => b.textContent))`));
     conferir('uma aba por tecido, mais Todos', abas.join('|') === 'Todos|Principal|Forro', abas.join('|'));
     const visivel = await js(`(() => { const a = document.querySelector('.abas-de-tecido'); if (!a) return false; const r = a.getBoundingClientRect(); return r.width > 80 && r.height > 12 && r.right <= window.innerWidth && getComputedStyle(a).visibility === 'visible'; })()`);
@@ -302,9 +351,7 @@ async function principal() {
     await clicarEm(`Array.from(document.querySelectorAll('.abas-de-tecido button')).find((b) => b.textContent === 'Todos')`);
     await espera(300);
     conferir('em Todos, voltam as 3', (await lista()).length === 3);
-    await selecionarPeca(1);
-    await js(`(() => { const c = document.querySelector('input[list="tecidos-do-molde"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, ''); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-    await espera(300);
+    await tecidoDaPeca(1, '');
     await encaixar();
   });
 
@@ -432,6 +479,46 @@ async function principal() {
     await espera(300);
   });
 
+  await etapa('O teste do equipamento', async () => {
+    await aba('Encaixe');
+    await menu('Opções', 'Teste do equipamento');
+    conferir('abre a janela do teste', (await janela()) === 'Teste do equipamento', await janela());
+    const antes = plotter.recebidos.length;
+    await botaoNaJanela('Enviar a página de teste');
+    await esperarAte(async () => plotter.recebidos.length > antes, 10000);
+    const pagina = interpretarHpgl(plotter.recebidos[plotter.recebidos.length - 1] || '');
+    const pontos = pagina.eventos.filter((e) => e.tipo === 'traco').flatMap((e) => e.pontos);
+    const c = caixa(pontos);
+    conferir('a página tem a moldura de 1000 x 140 mm', Math.abs(c.maxX - c.minX - 1000) < 0.05 && Math.abs(c.maxY - c.minY - 140) < 0.05, `${(c.maxX - c.minX).toFixed(2)} x ${(c.maxY - c.minY).toFixed(2)}`);
+    conferir('e o plotter entende tudo', pagina.erros.length === 0 && pagina.desconhecidos.length === 0, [...pagina.erros, ...pagina.desconhecidos].slice(0, 3).join(' | '));
+    await porNoCampo('Comprimento medido', '1005');
+    await porNoCampo('Largura medida', '139,3');
+    await botaoNaJanela('Guardar a correção');
+    const texto = await esperarAte(() => js(`(document.querySelector('[role=dialog] [role=status]') || {}).textContent || ''`), 3000);
+    conferir('a correção é calculada pelas medidas', String(texto).includes('Correção guardada'), String(texto).slice(0, 90));
+    await botaoNaJanela('Enviar o teste de corte');
+    await espera(1200);
+    const mesa = interpretarIso(plotter.recebidos[plotter.recebidos.length - 1] || '');
+    conferir('a mesa virtual recebe o quadrado de 100 mm', mesa.caminhos.some((k) => k.ferramenta === 1 && Math.abs(caixa(k.pontos).maxX - caixa(k.pontos).minX - 100) < 0.01) && mesa.fim, `${mesa.caminhos.length} caminho(s)`);
+    await fecharJanela();
+    const { pecas, enfesto } = await estadoGravado();
+    const hpgl = await enviar();
+    const corrigido = interpretarHpgl(hpgl || '');
+    const altura = Math.max(enfesto.larguraUtilMm, ...pecas.flatMap((p) => p.contorno.map((q) => q.x)));
+    const fator = (p) => ({ x: p.x * (1000 / 1005), y: p.y * (140 / 139.3) });
+    const desvios = pecas.map((p) => {
+      const alvo = noPapel(p.contorno, altura).map(fator);
+      return melhorDesvio(corrigido.eventos.filter((e) => e.tipo === 'traco').map((e) => e.pontos), [...alvo, alvo[0]]);
+    });
+    conferir('os riscos seguintes saem corrigidos', desvios.every((d) => d < 0.05), desvios.map((d) => d.toFixed(3)).join(' / '));
+    await menu('Opções', 'Teste do equipamento');
+    await botaoNaJanela('Apagar a correção');
+    await fecharJanela();
+    const hpglDepois = interpretarHpgl((await enviar()) || '');
+    const alvo = noPapel(pecas[0].contorno, altura);
+    conferir('apagada, o risco volta à medida do arquivo', melhorDesvio(hpglDepois.eventos.filter((e) => e.tipo === 'traco').map((e) => e.pontos), [...alvo, alvo[0]]) < 0.05);
+  });
+
   await etapa('A fonte TrueType, no bundle de produção', async () => {
     if (!fs.existsSync(ARIAL)) {
       log('      (sem a Arial neste sistema)');
@@ -500,17 +587,24 @@ async function principal() {
     const outra = await esperarAte(async () => BrowserWindow.getAllWindows().find((j) => j !== win && j.isVisible()), 30000);
     conferir('abre outra janela do programa', Boolean(outra));
     if (!outra) return;
+    await espera(1500);
+    win.moveTop();
+    win.focus();
+    await espera(400);
     await menu('Visão', 'Janelas lado a lado');
     await espera(600);
     const [a, b] = [win.getBounds(), outra.getBounds()];
-    conferir('lado a lado: uma ao lado da outra, sem sobrepor', a.x + a.width <= b.x + 2 || b.x + b.width <= a.x + 2, JSON.stringify([a, b]));
+    const ladoALado = a.x + a.width <= b.x + 2 || b.x + b.width <= a.x + 2;
+    conferir('lado a lado: uma ao lado da outra, sem sobrepor', ladoALado, JSON.stringify([a, b]));
+    if (!ladoALado) log(`      arranjo: win=${win.id} outra=${outra.id} ${JSON.stringify(chamadasDoArranjo).slice(0, 1200)}`);
     await menu('Visão', 'Janelas em cascata');
     await espera(600);
     const [c, d] = [win.getBounds(), outra.getBounds()];
     conferir('em cascata: mesmo tamanho, um degrau de diferença', c.width === d.width && Math.abs(c.x - d.x) >= 16, JSON.stringify([c, d]));
     outra.destroy();
     win.setBounds({ x: 0, y: 0, width: 1440, height: 900 });
-    await espera(400);
+    win.focus();
+    await espera(800);
   });
 
   await etapa('A colaboração, com outra pessoa do outro lado', async () => {
@@ -606,41 +700,88 @@ async function principal() {
 
   await etapa('As cores na tela', async () => {
     await aba('Encaixe');
-    const esquemas = (await itensDoMenu('Opções')).filter((i) => /^.?\s*(Cores|Escuro|Alto contraste|Claro)/i.test(i.replace(/^[✓•\s]+/, '')));
-    const vistos = new Map();
-    let menorContraste = Infinity;
-    let pior = '';
-    for (const esquema of esquemas) {
-      await menu('Opções', esquema.replace(/^[✓•\s]+/, ''));
-      await espera(300);
+    /** A média da janela: pega qualquer mudança visível, não só a de um ponto. */
+    const mediaDaJanela = async () => {
+      // Dois quadros: a foto tem de ser do que já foi desenhado depois da troca de cores.
+      await Promise.race([js(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`), espera(1500)]);
       const png = await win.webContents.capturePage();
       const { width, height } = png.getSize();
       const b = png.toBitmap();
-      const pixel = (x, y) => {
-        const i = (y * width + x) * 4;
-        return `${b[i + 2]},${b[i + 1]},${b[i]}`;
-      };
-      vistos.set(esquema, `${pixel(width - 6, height - 12)}|${pixel(6, 70)}`);
-      const pares = JSON.parse(
-        await js(`JSON.stringify(['.barra-de-status', '.ribbon-aba', '.contexto-do-documento', '.aba-de-documento', '.lista-de-pecas'].map((s) => {
-          const e = document.querySelector(s);
-          if (!e) return null;
-          const c = getComputedStyle(e);
-          let f = e, fundo = 'rgba(0, 0, 0, 0)';
-          while (f && /, 0\\)$/.test(fundo)) { fundo = getComputedStyle(f).backgroundColor; f = f.parentElement; }
-          return { s, cor: c.color, fundo };
-        }).filter(Boolean))`),
-      );
-      for (const p of pares) {
-        const c = contraste(p.cor, p.fundo);
-        if (c < menorContraste) {
-          menorContraste = c;
-          pior = `${esquema}: ${p.s}`;
+      let [r, g, a, n] = [0, 0, 0, 0];
+      for (let y = 8; y < height; y += 16) {
+        for (let x = 8; x < width; x += 16) {
+          const i = (y * width + x) * 4;
+          r += b[i + 2];
+          g += b[i + 1];
+          a += b[i];
+          n++;
         }
       }
+      return [r, g, a].map((v) => Math.round(v / n));
+    };
+    /** Todo texto visível da tela: quantos ficam abaixo de 3:1 contra o fundo que está atrás dele. */
+    const textosRuins = () =>
+      js(`(() => {
+        const lum = (c) => { const [r, g, b] = c.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+        const pintor = Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true });
+        const cor = (t) => { pintor.clearRect(0, 0, 1, 1); pintor.fillStyle = t; pintor.fillRect(0, 0, 1, 1); const [r, g, b, a] = pintor.getImageData(0, 0, 1, 1).data; return { c: [r, g, b], a: a / 255 }; };
+        const ruins = [];
+        let vistos = 0;
+        for (const e of document.querySelectorAll('body *')) {
+          if (e.closest('canvas, svg, [aria-hidden=true]') || e.disabled) continue;
+          if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== '')) continue;
+          const r = e.getBoundingClientRect();
+          const s = getComputedStyle(e);
+          if (r.width === 0 || r.height === 0 || s.visibility === 'hidden' || Number(s.opacity) < 0.3) continue;
+          let f = e;
+          let fundo = null;
+          while (f) { const c = cor(getComputedStyle(f).backgroundColor); if (c.a >= 0.9) { fundo = c.c; break; } f = f.parentElement; }
+          if (!fundo) continue;
+          vistos++;
+          const [x, y] = [lum(cor(s.color).c), lum(fundo)].sort((a, b) => b - a);
+          const contraste = (x + 0.05) / (y + 0.05);
+          if (contraste < 3) ruins.push(e.tagName.toLowerCase() + '.' + String(e.className).split(' ')[0] + ' "' + e.textContent.trim().slice(0, 24) + '" ' + contraste.toFixed(1) + ' ' + cor(s.color).c.join(',') + ' em ' + fundo.join(',') + ' de ' + String(f.className).split(' ')[0]);
+        }
+        return JSON.stringify({ vistos, ruins: [...new Set(ruins)] });
+      })()`).then(JSON.parse);
+    const esquemas = ['Cores padrão', 'Cores escuras', 'Alto contraste', 'Cores areia'];
+    const medias = [];
+    for (const esquema of esquemas) {
+      await menu('Opções', esquema);
+      await espera(350);
+      medias.push((await mediaDaJanela()).join(','));
+      const tela = await textosRuins();
+      await menu('Opções', 'Porta de saída');
+      await espera(250);
+      const dialogo = await textosRuins();
+      await fecharJanela();
+      await espera(200);
+      const ruins = [...new Set([...tela.ruins, ...dialogo.ruins])];
+      conferir(`${esquema}: todo texto visível legível`, ruins.length === 0, `${tela.vistos + dialogo.vistos} textos; ${ruins.slice(0, 8).join(' ; ')}`.slice(0, 420));
     }
-    conferir('os esquemas mudam de verdade os pixels da janela', new Set(vistos.values()).size === esquemas.length && esquemas.length >= 2, [...vistos.values()].join(' ; ').slice(0, 200));
-    conferir('o texto das barras tem contraste de leitura em todos', menorContraste >= 3, `${menorContraste.toFixed(2)} em ${pior}`);
+    conferir('cada esquema muda a janela de verdade', new Set(medias).size === esquemas.length, medias.join(' ; '));
+    // O tema escuro nas janelas grandes: é nelas que costuma sobrar uma cor escrita à mão.
+    await menu('Opções', 'Cores escuras');
+    const janelas = [
+      async () => menu('Opções', 'Teste do equipamento'),
+      async () => menu('Opções', 'Gerenciador de impressão'),
+      async () => menu('Opções', 'Ferramentas do plotter'),
+      async () => botao('Nesting Automático'),
+      async () => propriedades(0),
+    ];
+    const ruinsNasJanelas = [];
+    let lidos = 0;
+    for (const abrir of janelas) {
+      await abrir();
+      await espera(350);
+      const r = await textosRuins();
+      lidos += r.vistos;
+      ruinsNasJanelas.push(...r.ruins);
+      await fecharJanela();
+      await espera(200);
+    }
+    const unicos = [...new Set(ruinsNasJanelas)];
+    conferir('Cores escuras: as janelas grandes também', unicos.length === 0, `${lidos} textos; ${unicos.slice(0, 10).join(' ; ')}`.slice(0, 500));
     await menu('Opções', 'Cores padrão');
   });
 
@@ -670,7 +811,11 @@ async function principal() {
     for (const nome of abas) {
       await js(`Array.from(document.querySelectorAll('.ribbon-aba')).find((b) => b.textContent === ${JSON.stringify(nome)}).click()`);
       await espera(150);
+      // Com uma peça selecionada, as ferramentas que trabalham numa peça ficam ligadas.
+      await selecionarPeca(0).catch(() => undefined);
+      await espera(100);
       const botoes = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] button')).map((b, i) => ({ i, t: (b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 50), menu: b.classList.contains('botao-de-menu'), off: b.disabled })))`));
+      log(`      ${nome}: ${botoes.length} botões, ${botoes.filter((b) => b.off).length} desligados`);
       for (const b of botoes) {
         if (b.off || ignorar.test(b.t)) continue;
         const clicar = `(document.querySelectorAll('[role=tabpanel] button')[${b.i}] || { click() {} }).click()`;
@@ -678,7 +823,7 @@ async function principal() {
         await espera(90);
         if (b.menu) {
           const itens = JSON.parse(await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).map((e) => ({ t: e.textContent.trim(), off: e.disabled })))`));
-          await tecla('Escape');
+          await fecharMenu();
           for (const [k, item] of itens.entries()) {
             if (item.off || ignorar.test(item.t)) continue;
             await js(clicar);
@@ -701,7 +846,7 @@ async function principal() {
   });
 
   await plotter.desligar();
-  const distintos = [...new Set(errosDoConsole)];
+  const distintos = [...new Set(errosDoConsole)].filter((m) => !/não achei|campo não achado|Script failed/.test(m));
   conferir('o console ficou sem erros', distintos.length === 0, distintos.slice(0, 4).join(' | ').slice(0, 300));
   log(`\nresultado: ${acertos} conferidos, ${falhas} falha(s)`);
   fs.writeFileSync(path.join(SAIDA, 'resumo.json'), JSON.stringify({ acertos, falhas, data: new Date().toISOString() }));

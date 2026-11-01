@@ -1103,7 +1103,9 @@ ipcMain.handle('fonte-escolher', async () => {
 ipcMain.handle('fonte-esquecer', () => unlink(arquivoDaFonte()).catch(() => undefined));
 
 // As janelas (ADR 0211): outra janela do programa, e as visíveis arrumadas na tela da primeira.
-ipcMain.handle('janelas-arrumar', (_evento, como: unknown) => {
+const ESPERA_PARA_SAIR_DO_MAXIMIZADO_MS = 200;
+
+ipcMain.handle('janelas-arrumar', async (_evento, como: unknown) => {
   if (como === 'nova') {
     criarJanelaPrincipal();
     return;
@@ -1113,9 +1115,17 @@ ipcMain.handle('janelas-arrumar', (_evento, como: unknown) => {
   if (!primeira) return;
   const area = screen.getDisplayMatching(primeira.getBounds()).workArea;
   const lugares = como === 'lado-a-lado' ? ladoALado(janelas.length, area) : emCascata(janelas.length, area);
+  // O Windows termina de sair do maximizado depois de voltar da chamada: mudar o lugar antes disso é ignorado.
+  if (janelas.some((j) => j.isMaximized())) {
+    janelas.forEach((j) => j.unmaximize());
+    await new Promise((resolver) => setTimeout(resolver, ESPERA_PARA_SAIR_DO_MAXIMIZADO_MS));
+  }
   janelas.forEach((janela, i) => {
-    if (janela.isMaximized()) janela.unmaximize();
-    janela.setBounds(lugares[i]!);
+    const lugar = lugares[i]!;
+    // Em telas de 1280, duas janelas lado a lado têm menos que o mínimo de uma: o mínimo cede, ou elas se sobrepõem.
+    const [larguraMinima = 0, alturaMinima = 0] = janela.getMinimumSize();
+    janela.setMinimumSize(Math.min(larguraMinima, lugar.width), Math.min(alturaMinima, lugar.height));
+    janela.setBounds(lugar);
   });
 });
 

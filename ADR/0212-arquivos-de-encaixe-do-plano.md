@@ -6,6 +6,6 @@ O manual da referência cria, na ordem de corte, um arquivo de encaixe por risco
 
 O risco digitado à mão não tem peças no lugar. Nele, as peças ficam fora da mesa, na grade certa, esperando o encaixe. O mesmo vale para o plano guardado antes de o deslocamento ser registrado.
 
-**Limites:** cada clique cria projetos novos: não atualiza os da vez anterior. O projeto criado não guarda de que plano veio. A peça em par que também foi espelhada à vontade no risco não é separada da cópia do par.
+**Limites:** o plano calcula o risco sem a margem de segurança, na largura toda do tecido: o risco que enche a largura ganha até 8 mm de mesa no projeto. Cada clique cria projetos novos: não atualiza os da vez anterior. O projeto criado não guarda de que plano veio. A peça em par que também foi espelhada à vontade no risco não é separada da cópia do par.
 
 Conferência: testes unitários, `npx eslint` e `npx tsc -b --noEmit`. O programa não foi aberto (pedido do usuário: só testes unitários).
