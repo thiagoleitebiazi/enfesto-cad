@@ -64,6 +64,8 @@ export interface MaterialDoEstudio {
   readonly espelhada?: boolean;
   /** A borda da peça: a costura, a barra e o pesponto. */
   readonly mapa?: MapaDaPeca;
+  /** A distância entre as rugas finas (mm): o pano firme faz rugas mais largas. */
+  readonly rugaMm?: number;
 }
 
 export interface LoteDoEstudio {
@@ -71,6 +73,11 @@ export interface LoteDoEstudio {
   readonly normais: Float32Array;
   /** As coordenadas da face (mm), u e v seguidos. */
   readonly uv?: Float32Array;
+  /**
+   * O aperto do pano em cada ponto (ADR 0232): dois números, a força vezes o cosseno e o seno do dobro do ângulo do aperto
+   * na face. O dobro porque o aperto não tem sentido: 0° e 180° são o mesmo, e a média entre pontos vizinhos precisa saber.
+   */
+  readonly rugas?: Float32Array;
   readonly indices: Uint32Array;
   readonly material: MaterialDoEstudio;
   /** A cor de cada triângulo (r, g, b seguidos), no lugar da do material: o mapa de tensão, que não leva brilho. */
@@ -446,6 +453,7 @@ interface CenaAchatada {
   readonly P: Float32Array;
   readonly N: Float32Array;
   readonly UV: Float32Array;
+  readonly RUGAS: Float32Array;
   readonly I: Uint32Array;
   readonly loteDoTriangulo: Uint16Array;
   /** A direção do fio em cada triângulo (a de u), só onde há coordenadas da face. */
@@ -465,6 +473,7 @@ function achatar(lotes: readonly LoteDoEstudio[]): CenaAchatada {
   const P = new Float32Array(nv * 3);
   const N = new Float32Array(nv * 3);
   const UV = new Float32Array(nv * 2);
+  const RUGAS = new Float32Array(nv * 2);
   const I = new Uint32Array(nt * 3);
   const loteDoTriangulo = new Uint16Array(nt);
   const T = new Float32Array(nt * 3);
@@ -475,6 +484,7 @@ function achatar(lotes: readonly LoteDoEstudio[]): CenaAchatada {
     P.set(l.posicoes, dv * 3);
     N.set(l.normais, dv * 3);
     if (l.uv) UV.set(l.uv, dv * 2);
+    if (l.rugas) RUGAS.set(l.rugas, dv * 2);
     const n = l.indices.length / 3;
     for (let t = 0; t < n; t++) {
       const a = l.indices[3 * t]! + dv;
@@ -511,7 +521,7 @@ function achatar(lotes: readonly LoteDoEstudio[]): CenaAchatada {
     dv += l.posicoes.length / 3;
     dt += n;
   });
-  return { P, N, UV, I, loteDoTriangulo, T, cores };
+  return { P, N, UV, RUGAS, I, loteDoTriangulo, T, cores };
 }
 
 /** Marca em `alvo` os triângulos dados, do ponto de vista dado. `atras`: só o que fica atrás destas profundidades. */
@@ -810,7 +820,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
   const cx = W / 2;
   const cy = H / 2;
   const c = achatar(lotes);
-  const { P, N, UV, I, T, loteDoTriangulo } = c;
+  const { P, N, UV, RUGAS, I, T, loteDoTriangulo } = c;
   const nv = P.length / 3;
   const { posicao: O, frente: F, direita: R, alto: U } = v;
 
@@ -999,6 +1009,36 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
         ar *= micro[2]!;
         ag *= micro[2]!;
         ab *= micro[2]!;
+      }
+      if (m.rugaMm) {
+        const rc = q0 * RUGAS[2 * a]! + q1 * RUGAS[2 * b]! + q2 * RUGAS[2 * e]!;
+        const rs = q0 * RUGAS[2 * a + 1]! + q1 * RUGAS[2 * b + 1]! + q2 * RUGAS[2 * e + 1]!;
+        const forca = Math.sqrt(rc * rc + rs * rs);
+        if (forca > 0.03) {
+          // As rugas correm atravessadas ao aperto: a onda anda na direção dele, torta pelo ruído, com a altura variando.
+          const ang = 0.5 * Math.atan2(rs, rc);
+          const cosA = Math.cos(ang);
+          const senA = Math.sin(ang);
+          // Uma onda só viraria um tecido canelado: a segunda, torta de outro jeito, quebra a regularidade, e as manchas de
+          // ruído deixam trechos lisos entre as rugas.
+          const onda = (DOIS_PI / (1.7 * m.rugaMm)) * (u * cosA + va * senA) + 11 * ruido(u / 52, va / 52) + 3.5 * ruido(u / 15, va / 15);
+          const altura = forca * misturaSuave(0.42, 0.72, ruido(u / 64 + 9, va / 64 + 3));
+          const inclinacao = 0.3 * altura * (Math.cos(onda) + 0.5 * Math.cos(1.87 * onda + 4 * ruido(u / 21 + 5, va / 21)));
+          const bx = ny * tz - nz * ty;
+          const by = nz * tx - nx * tz;
+          const bz = nx * ty - ny * tx;
+          nx -= inclinacao * (cosA * tx + senA * bx);
+          ny -= inclinacao * (cosA * ty + senA * by);
+          nz -= inclinacao * (cosA * tz + senA * bz);
+          const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          nx /= l;
+          ny /= l;
+          nz /= l;
+          const vale = 1 - 0.1 * altura * (0.5 + 0.5 * Math.sin(onda));
+          ar *= vale;
+          ag *= vale;
+          ab *= vale;
+        }
       }
       if (m.mapa) {
         lerMapa(m.mapa, u, va, borda);

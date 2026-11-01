@@ -33,6 +33,8 @@ export interface TecidoParaOEstudio {
   readonly brilho?: number;
   readonly transparencia?: number;
   readonly trama?: TramaDoTecido;
+  /** A distância entre as rugas finas (mm); ausente, sem rugas. */
+  readonly rugaMm?: number;
   /** Os zíperes: os pontos da costura (nos números da simulação) e o comprimento (mm), do alto para baixo (ADR 0132). */
   readonly ziperes?: readonly { readonly pontos: ArrayLike<number>; readonly comprimentoMm: number }[];
 }
@@ -89,6 +91,58 @@ export function mapaDaPeca(contorno: ArrayLike<number>, costurado: ArrayLike<num
     andado += l;
   }
   return { ou, ov, passo, largura, altura, distancia, caminho, costurado: marca };
+}
+
+/** O aperto (a fração) em que a ruga começa e em que chega à força toda; a física deixa o pano encolher até 14%. */
+const APERTO_DA_PRIMEIRA_RUGA = 0.05;
+const APERTO_DA_RUGA_MAIS_FORTE = 0.13;
+
+/**
+ * O aperto em cada ponto da peça (ADR 0232): de cada triângulo, a direção em que ele está mais encolhido em relação ao molde
+ * (o menor autovalor da deformação na face), somada nos cantos. A malha de 12 mm não tem pontos para mostrar um vinco de
+ * 1 cm: quem guarda essa folga é o aperto, e é ele que vira as rugas do desenho.
+ */
+export function rugasDaPeca(posicoes: ArrayLike<number>, uv: ArrayLike<number>, indices: ArrayLike<number>): Float32Array {
+  const pontos = posicoes.length / 3;
+  const soma = new Float32Array(pontos * 2);
+  const peso = new Float32Array(pontos);
+  for (let k = 0; k < indices.length; k += 3) {
+    const [a, b, c] = [indices[k]!, indices[k + 1]!, indices[k + 2]!];
+    const du1 = uv[2 * b]! - uv[2 * a]!;
+    const dv1 = uv[2 * b + 1]! - uv[2 * a + 1]!;
+    const du2 = uv[2 * c]! - uv[2 * a]!;
+    const dv2 = uv[2 * c + 1]! - uv[2 * a + 1]!;
+    const det = du1 * dv2 - du2 * dv1;
+    if (Math.abs(det) < 1e-9) continue;
+    // A deformação: de quanto andar na face para quanto se anda no espaço, nas duas direções da face.
+    const e1 = [posicoes[3 * b]! - posicoes[3 * a]!, posicoes[3 * b + 1]! - posicoes[3 * a + 1]!, posicoes[3 * b + 2]! - posicoes[3 * a + 2]!] as const;
+    const e2 = [posicoes[3 * c]! - posicoes[3 * a]!, posicoes[3 * c + 1]! - posicoes[3 * a + 1]!, posicoes[3 * c + 2]! - posicoes[3 * a + 2]!] as const;
+    const fu = [(e1[0] * dv2 - e2[0] * dv1) / det, (e1[1] * dv2 - e2[1] * dv1) / det, (e1[2] * dv2 - e2[2] * dv1) / det] as const;
+    const fv = [(e2[0] * du1 - e1[0] * du2) / det, (e2[1] * du1 - e1[1] * du2) / det, (e2[2] * du1 - e1[2] * du2) / det] as const;
+    const gaa = fu[0] * fu[0] + fu[1] * fu[1] + fu[2] * fu[2];
+    const gbb = fv[0] * fv[0] + fv[1] * fv[1] + fv[2] * fv[2];
+    const gab = fu[0] * fv[0] + fu[1] * fv[1] + fu[2] * fv[2];
+    const meia = (gaa + gbb) / 2;
+    const raio = Math.hypot((gaa - gbb) / 2, gab);
+    const menor = Math.sqrt(Math.max(0, meia - raio));
+    const forca = Math.min(1, Math.max(0, (1 - menor - APERTO_DA_PRIMEIRA_RUGA) / (APERTO_DA_RUGA_MAIS_FORTE - APERTO_DA_PRIMEIRA_RUGA)));
+    if (forca <= 0) continue;
+    // O ângulo do menor autovalor, em dobro: o oposto do do maior.
+    const c2 = raio > 1e-12 ? -((gaa - gbb) / 2) / raio : 0;
+    const s2 = raio > 1e-12 ? -gab / raio : 0;
+    for (const v of [a, b, c]) {
+      soma[2 * v] = soma[2 * v]! + forca * c2;
+      soma[2 * v + 1] = soma[2 * v + 1]! + forca * s2;
+      peso[v] = peso[v]! + 1;
+    }
+  }
+  for (let i = 0; i < pontos; i++) {
+    if (peso[i]! > 0) {
+      soma[2 * i] = soma[2 * i]! / peso[i]!;
+      soma[2 * i + 1] = soma[2 * i + 1]! / peso[i]!;
+    }
+  }
+  return soma;
 }
 
 /** As normais de toda a roupa, com os dois lados de cada costura na mesma direção. */
@@ -258,6 +312,7 @@ export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstu
       ...(t.trama && !t.tensoes ? { trama: t.trama } : {}),
       ...(peca.estampa && !t.tensoes ? { estampa: peca.estampa } : {}),
       ...(peca.mapa && !t.tensoes ? { mapa: peca.mapa } : {}),
+      ...(t.rugaMm && !t.tensoes ? { rugaMm: t.rugaMm } : {}),
     };
     if (t.tensoes) {
       const coresDosTriangulos = new Uint8Array(peca.quantidade * 3);
@@ -265,8 +320,8 @@ export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstu
       lotes.push({ posicoes, normais: normaisDaPeca, uv, indices, material, coresDosTriangulos });
       continue;
     }
-    const m = refinar({ posicoes, normais: normaisDaPeca, uv, indices }, refino);
-    lotes.push({ posicoes: m.posicoes, normais: m.normais, ...(m.uv ? { uv: m.uv } : {}), indices: m.indices, material });
+    const m = refinar({ posicoes, normais: normaisDaPeca, uv, ...(t.rugaMm ? { rugas: rugasDaPeca(posicoes, uv, indices) } : {}), indices }, refino);
+    lotes.push({ posicoes: m.posicoes, normais: m.normais, ...(m.uv ? { uv: m.uv } : {}), ...(m.rugas ? { rugas: m.rugas } : {}), indices: m.indices, material });
   }
   const X = t.x;
   for (const ziper of t.ziperes ?? []) {

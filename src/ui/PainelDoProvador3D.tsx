@@ -47,6 +47,7 @@ import {
   type Tecido3D,
   COR_DE_PARTIDA,
   corpoDaMontagem,
+  distanciaDasRugas,
   ROTULO_DA_TRAMA,
   tramaDoTecido,
   type TramaDoTecido,
@@ -282,7 +283,7 @@ export function PainelDoProvador3D(props: {
   const [varianteId, setVarianteId] = useState('');
   const varianteAtual = variantesDeCor.find((v) => v.id === varianteId) ?? null;
 
-  /** Os lotes da cena de agora para o estúdio; `refino`: quantas vezes o tecido e o corpo são subdivididos. */
+  /** Os lotes da cena de agora para o estúdio; `refino`: 0 na imagem rápida (como vem da física, sem rugas), 1 na final. */
   const lotesDaCena = useCallback(
     (variante: VarianteDeCor | null, refino: number): LoteDoEstudio[] => {
       const m = obterMontada();
@@ -311,6 +312,7 @@ export function PainelDoProvador3D(props: {
         botoes: m.botoes,
         costuras: { a: m.sim.costuraA, b1: m.sim.costuraB1, b2: m.sim.costuraB2 },
         trama: tramaDoTecido(montagem.tecido),
+        ...(refino > 0 ? { rugaMm: distanciaDasRugas(montagem.tecido) } : {}),
         ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}),
         ...(montagem.tecido.brilho ? { brilho: montagem.tecido.brilho } : {}),
         ...(montagem.tecido.transparencia ? { transparencia: montagem.tecido.transparencia } : {}),
@@ -323,7 +325,7 @@ export function PainelDoProvador3D(props: {
       const emCaminho = m.sim.tempo > 0 && m.sim.corpoAgora !== m.corpo;
       const corpoVisto = emCaminho ? malhaDoCorpo(m.sim.corpoAgora) : null;
       const loteVisto = corpoVisto ? loteDoCorpo(corpoVisto.vertices, corpoVisto.triangulos, COR_DO_CORPO, refino) : m.lotesDoCorpo[refino];
-      return [loteVisto, ...lotesDoTecido(tecido, modo === 'tensao' ? 0 : refino + 1)];
+      return [loteVisto, ...lotesDoTecido(tecido, 2 * refino)];
     },
     [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido, instancias, imagensProntas, modo, pixelsDaImagem, desenhoDaFicha],
   );
@@ -396,7 +398,7 @@ export function PainelDoProvador3D(props: {
     [obterMontada, lotesDaCena, pintarPorCima],
   );
 
-  const desenhar = useCallback((): void => {
+  const desenhar = useCallback((comFinal = true): void => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
@@ -407,7 +409,7 @@ export function PainelDoProvador3D(props: {
     finalRef.current?.cancelar();
     finalRef.current = null;
     clearTimeout(relogioDoFinalRef.current);
-    if (!desenharRapido(canvas, camera, 'estudio')) return;
+    if (!desenharRapido(canvas, camera, 'estudio') || !comFinal) return;
     // Parado o movimento, a imagem final toma o lugar da rápida.
     relogioDoFinalRef.current = setTimeout(() => {
       const pedido = desenharFinal(canvas, camera, 'estudio', varianteAtual, QUALIDADE_FINAL);
@@ -441,7 +443,7 @@ export function PainelDoProvador3D(props: {
         quadro = requestAnimationFrame(() => {
           quadro = 0;
           ultimoDesenho = performance.now();
-          desenhar();
+          desenhar(false);
         });
       }
     };

@@ -1421,13 +1421,14 @@ async function principal() {
   await espera(300);
   await js(`(() => { const c = document.querySelector('[role=dialog] input[aria-label^="Zíper da costura"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(c, '18'); c.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   await espera(600);
-  // A fita do zíper (#2f2f33) contada no desenho, em cada vista: a lateral aparece em alguma delas (o braço cobre uma).
+  // A fita do zíper contada no desenho, em cada vista (a lateral aparece em alguma delas): escura e sem cor. Com a luz do estúdio
+  // ela não tem mais um tom só. A espera deixa a imagem final chegar.
   const pixelsDaFita = () =>
-    js(`(() => { const c = document.querySelector('[role=dialog] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 47) < 10 && Math.abs(d[i + 1] - 47) < 10 && Math.abs(d[i + 2] - 51) < 10) n++; return n; })()`);
+    js(`(() => { const c = document.querySelector('[role=dialog] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) { const a = Math.max(d[i], d[i + 1], d[i + 2]); const b = Math.min(d[i], d[i + 1], d[i + 2]); if (a < 105 && a - b < 26) n++; } return n; })()`);
   const fitaPorVista = {};
   for (const vista of ['Frente', 'Lado', 'Costas']) {
     await botaoNaJanela(vista);
-    await espera(700);
+    await espera(4000);
     fitaPorVista[vista] = await pixelsDaFita();
     if (fitaPorVista[vista] === Math.max(...Object.values(fitaPorVista))) await foto('35c-ziper-na-lateral.png');
   }
@@ -1467,8 +1468,11 @@ async function principal() {
   await espera(300);
   for (const f of fs.readdirSync(SAIDA).filter((n) => n.startsWith('provador-3d-') && !n.includes('frente-lado-costas'))) fs.unlinkSync(path.join(SAIDA, f));
   await botaoNaJanela('Salvar esta vista (PNG)');
-  await espera(3000);
-  const pngAlta = fs.readdirSync(SAIDA).find((n) => n.startsWith('provador-3d-') && n.endsWith('.png') && !n.includes('frente-lado-costas'));
+  // A imagem final grande é calculada ponto a ponto: leva uns segundos, mais sem placa de vídeo.
+  const achaPngAlta = () => fs.readdirSync(SAIDA).find((n) => n.startsWith('provador-3d-') && n.endsWith('.png') && !n.includes('frente-lado-costas'));
+  for (let i = 0; i < 120 && !achaPngAlta(); i++) await espera(500);
+  await espera(300);
+  const pngAlta = achaPngAlta();
   const alta = pngAlta ? fs.readFileSync(path.join(SAIDA, pngAlta)) : null;
   await botaoNaJanela('Gravar o giro (vídeo WebM)');
   let webm = null;

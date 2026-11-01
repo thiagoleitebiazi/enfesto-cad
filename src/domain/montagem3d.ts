@@ -161,6 +161,9 @@ export const TRAMA_DO_PRESET: Readonly<Record<PresetDeTecido, TramaDoTecido>> = 
 
 export const tramaDoTecido = (t: Tecido3D): TramaDoTecido => t.trama ?? TRAMA_DO_PRESET[t.preset];
 
+/** A distância entre as rugas finas (mm): de 9 no pano mole a 34 no mais firme (ADR 0232). */
+export const distanciaDasRugas = (t: Tecido3D): number => 9 + 0.25 * t.rigidez;
+
 export const ROTULO_DA_TRAMA: Readonly<Record<TramaDoTecido, string>> = {
   plana: 'Plana (tricoline, popeline)',
   sarja: 'Sarja (jeans, gabardine)',

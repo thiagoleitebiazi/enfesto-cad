@@ -22,6 +22,7 @@ import {
   eixosDaFace,
   pontosCosturadosDaPecaDeCima,
   pontosNaPecaDeBaixo,
+  distanciaDasRugas,
   tramaDoTecido,
   type Montagem3D,
   type Tecido3D,
@@ -340,6 +341,10 @@ describe('o vestido evasê e o caimento (ADR 0230)', () => {
     expect(tramaDoTecido(lida.tecido)).toBe('linho');
     expect(tramaDoTecido(TECIDOS_PRONTOS.jeans.tecido)).toBe('sarja');
     expect(tramaDoTecido(TECIDOS_PRONTOS.seda.tecido)).toBe('cetim');
+  });
+
+  it('as rugas finas ficam mais largas no pano mais firme', () => {
+    expect(distanciaDasRugas(TECIDOS_PRONTOS.jeans.tecido)).toBeGreaterThan(distanciaDasRugas(TECIDOS_PRONTOS.seda.tecido));
   });
 });
 

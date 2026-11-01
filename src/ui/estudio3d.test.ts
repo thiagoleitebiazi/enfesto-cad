@@ -177,6 +177,20 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     expect(mudou).toBeGreaterThan(100);
   });
 
+  it('o pano apertado enruga no desenho; sem aperto, nada muda', () => {
+    const lote = esfera(TECIDO, 0, 300);
+    const pontos = lote.posicoes.length / 3;
+    const rugas = new Float32Array(pontos * 2);
+    for (let i = 0; i < pontos; i++) rugas[2 * i] = 1;
+    const liso = render([lote], QUALIDADE_FINAL);
+    const semAperto = render([{ ...lote, rugas: new Float32Array(pontos * 2), material: { ...TECIDO, rugaMm: 12 } }], QUALIDADE_FINAL);
+    const apertado = render([{ ...lote, rugas, material: { ...TECIDO, rugaMm: 12 } }], QUALIDADE_FINAL);
+    expect(semAperto).toEqual(liso);
+    let diferenca = 0;
+    for (let i = 0; i < liso.length; i += 4) diferenca += Math.abs(liso[i]! - apertado[i]!);
+    expect(diferenca).toBeGreaterThan(300);
+  });
+
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {
     const lotes = [esfera(TECIDO)];
     expect(render(lotes, QUALIDADE_FINAL)).toEqual(render(lotes, QUALIDADE_FINAL));

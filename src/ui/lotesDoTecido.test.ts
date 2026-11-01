@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
+import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, rugasDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
 import { normaisSuaves, refinar } from './malhasDoEstudio';
 
 /** Duas peças de um triângulo cada, que se tocam na costura. */
@@ -65,6 +65,47 @@ describe('a roupa em lotes', () => {
     expect(lote!.coresDosTriangulos).toBeDefined();
     expect(lote!.material.trama).toBeUndefined();
     expect(lote!.material.brilho).toBeUndefined();
+  });
+});
+
+describe('as rugas finas (ADR 0232)', () => {
+  const UV = Float32Array.of(0, 0, 100, 0, 0, 100);
+  const TRI = Uint32Array.of(0, 1, 2);
+  const com = (ku: number, kv: number) => rugasDaPeca(Float32Array.of(0, 0, 0, 100 * ku, 0, 0, 0, 100 * kv, 0), UV, TRI);
+
+  it('o pano sem aperto, ou esticado, não enruga; o aperto pequeno também não', () => {
+    expect(Array.from(com(1, 1))).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(Array.from(com(1.1, 1.1))).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(Array.from(com(0.97, 1))).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
+  it('o aperto em u dá o ângulo 0; em v, 90°: no dobro do ângulo, um é o oposto do outro', () => {
+    const emU = com(0.9, 1);
+    const emV = com(1, 0.9);
+    expect(emU[0]!).toBeGreaterThan(0.3);
+    expect(emU[1]!).toBeCloseTo(0, 5);
+    expect(emV[0]!).toBeLessThan(-0.3);
+    expect(emV[0]!).toBeCloseTo(-emU[0]!, 5);
+  });
+
+  it('o aperto a 45°: o seno do dobro do ângulo aparece', () => {
+    // Encolhe a diagonal (1, 1) em 12%: as posições são o molde com a compressão só nessa direção.
+    const k = 0.88;
+    const leva = (u: number, v: number): [number, number] => {
+      const d = (u + v) / 2;
+      return [u + d * (k - 1), v + d * (k - 1)];
+    };
+    const [a, b] = [leva(100, 0), leva(0, 100)];
+    const r = rugasDaPeca(Float32Array.of(0, 0, 0, a[0], a[1], 0, b[0], b[1], 0), UV, TRI);
+    expect(r[1]!).toBeGreaterThan(0.3);
+    expect(Math.abs(r[0]!)).toBeLessThan(0.05);
+  });
+
+  it('as rugas passam pelo refino, e só vão para o desenho com a distância entre elas', () => {
+    const lote = lotesDoTecido({ ...DUAS_PECAS, rugaMm: 12 }, 1)[0]!;
+    expect(lote.rugas!.length / 2).toBe(lote.posicoes.length / 3);
+    expect(lote.material.rugaMm).toBe(12);
+    expect(lotesDoTecido(DUAS_PECAS, 1)[0]!.rugas).toBeUndefined();
   });
 });
 

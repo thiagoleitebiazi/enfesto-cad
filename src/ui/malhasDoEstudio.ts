@@ -37,6 +37,7 @@ export interface MalhaRefinada {
   readonly posicoes: Float32Array;
   readonly normais: Float32Array;
   readonly uv?: Float32Array;
+  readonly rugas?: Float32Array;
   readonly indices: Uint32Array;
 }
 
@@ -47,12 +48,13 @@ export interface MalhaRefinada {
 export function refinar(m: MalhaRefinada, vezes: number): MalhaRefinada {
   let atual = m;
   for (let volta = 0; volta < vezes; volta++) {
-    const { posicoes: P, normais: N, uv: UV, indices: I } = atual;
+    const { posicoes: P, normais: N, uv: UV, rugas: RUGAS, indices: I } = atual;
     const nv = P.length / 3;
     const meios = new Map<number, number>();
     const px: number[] = [];
     const nx: number[] = [];
     const uvx: number[] = [];
+    const rugasx: number[] = [];
     const meio = (a: number, b: number): number => {
       const [i, j] = a < b ? [a, b] : [b, a];
       const chave = i * nv + j;
@@ -74,6 +76,7 @@ export function refinar(m: MalhaRefinada, vezes: number): MalhaRefinada {
       const l = Math.hypot(ax, ay, az) || 1;
       nx.push(ax / l, ay / l, az / l);
       if (UV) uvx.push((UV[2 * i]! + UV[2 * j]!) / 2, (UV[2 * i + 1]! + UV[2 * j + 1]!) / 2);
+      if (RUGAS) rugasx.push((RUGAS[2 * i]! + RUGAS[2 * j]!) / 2, (RUGAS[2 * i + 1]! + RUGAS[2 * j + 1]!) / 2);
       return novo;
     };
     const novos = new Uint32Array(I.length * 4);
@@ -108,7 +111,12 @@ export function refinar(m: MalhaRefinada, vezes: number): MalhaRefinada {
       uv.set(UV);
       uv.set(uvx, UV.length);
     }
-    atual = uv ? { posicoes, normais, uv, indices: novos } : { posicoes, normais, indices: novos };
+    const rugas = RUGAS ? new Float32Array(RUGAS.length + rugasx.length) : undefined;
+    if (rugas && RUGAS) {
+      rugas.set(RUGAS);
+      rugas.set(rugasx, RUGAS.length);
+    }
+    atual = { posicoes, normais, ...(uv ? { uv } : {}), ...(rugas ? { rugas } : {}), indices: novos };
   }
   return atual;
 }
