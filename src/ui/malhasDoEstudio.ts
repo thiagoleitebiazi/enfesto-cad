@@ -121,9 +121,17 @@ export function refinar(m: MalhaRefinada, vezes: number): MalhaRefinada {
   return atual;
 }
 
+/**
+ * Quanto o corpo desenhado fica para dentro do corpo em que o tecido bate (mm). O pano guarda 3 mm dele, mas a grade da colisão
+ * é de 8 mm, e numa ponta o corpo furava o pano em pontinhos claros. Não se nota no contorno.
+ */
+const RECUO_DO_CORPO_MM = 1.5;
+
 /** O corpo: os pontos, as normais suaves e o acabamento de manequim de vitrine. */
 export function loteDoCorpo(vertices: ArrayLike<number>, triangulos: ArrayLike<number>, cor: readonly [number, number, number], refino: number): LoteDoEstudio {
   const material: MaterialDoEstudio = { acabamento: 'corpo', cor };
-  const m = refinar({ posicoes: Float32Array.from(vertices), normais: normaisSuaves(vertices, triangulos), indices: Uint32Array.from(triangulos) }, refino);
+  const normais = normaisSuaves(vertices, triangulos);
+  const posicoes = Float32Array.from(vertices, (v, i) => v - RECUO_DO_CORPO_MM * normais[i]!);
+  const m = refinar({ posicoes, normais, indices: Uint32Array.from(triangulos) }, refino);
   return { posicoes: m.posicoes, normais: m.normais, indices: m.indices, material };
 }

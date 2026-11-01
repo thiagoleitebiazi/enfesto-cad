@@ -105,11 +105,24 @@ export interface QualidadeDoEstudio {
 }
 
 export const QUALIDADE_RAPIDA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 512, amostrasDeSombra: 4, amostrasDeOclusao: 0 };
-export const QUALIDADE_FINAL: QualidadeDoEstudio = { superamostragem: 2, sombraPx: 1536, amostrasDeSombra: 12, amostrasDeOclusao: 10 };
+export const QUALIDADE_FINAL: QualidadeDoEstudio = { superamostragem: 3, sombraPx: 2048, amostrasDeSombra: 9, amostrasDeOclusao: 8 };
+
+/** As linhas da imagem que um trabalhador calcula: `de` incluída, `ate` não. */
+export interface FaixaDaImagem {
+  readonly de: number;
+  readonly ate: number;
+}
+
+/** As faixas em que a imagem se divide entre os trabalhadores (ADR 0233). */
+export function faixasDaImagem(altura: number, partes: number): FaixaDaImagem[] {
+  const n = Math.max(1, Math.min(partes, altura));
+  return Array.from({ length: n }, (_, k) => ({ de: Math.round((altura * k) / n), ate: Math.round((altura * (k + 1)) / n) }));
+}
 
 export type FundoDoEstudio = 'estudio' | 'branco';
 
-const TAMANHO_DA_LUZ = 0.13;
+/** A largura da luz principal vista de quem recebe (em radianos): uma caixa de luz grande, que não faz sombra de borda dura. */
+const TAMANHO_DA_LUZ = 0.42;
 const OFUSCADO = 1e-6;
 const DOIS_PI = 2 * Math.PI;
 const AUREO = 2.399963229728653;
@@ -202,9 +215,13 @@ const LUZ_DA_TRAMA: Readonly<Record<TramaDoTecido, LuzDaTrama>> = {
   linho: { penugem: 0.2, larguraDaPenugem: 0.4, anisotropia: 0, translucidez: 0.2, passo: 1 },
 };
 
-const enfraquece = (passo: number, pe: number): number => {
-  const k = 1 - pe / (0.7 * passo);
-  return k > 0 ? k : 0;
+/**
+ * A força da trama pelo tamanho do pixel na peça (mm). Ela só aparece com folga: um desenho de quase o tamanho do pixel vira
+ * ondas na imagem (o moiré), que parecem falta de resolução. Abaixo de um quarto do passo, inteira; de metade para cima, nada.
+ */
+export const enfraquece = (passo: number, pe: number): number => {
+  const k = 2 - (4 * pe) / passo;
+  return k >= 1 ? 1 : k > 0 ? k : 0;
 };
 
 /** A trama: quanto ela inclina a normal na direção u e v, e quanto clareia ou escurece o fio. */
@@ -664,8 +681,16 @@ function mapaDeSombra(c: CenaAchatada, luz: LuzDoEstudio, lado: number, alturaDa
   return { lado, d, ux, uy, uz, vx, vy, vz, lx: luz.x, ly: luz.y, lz: luz.z, centroU, centroV, porMm };
 }
 
+/** A folga da sombra (mm): o que está mais perto que isto de quem recebe não faz sombra nele. */
+const FOLGA_DA_SOMBRA_MM = 2.2;
+/**
+ * No pano, a folga é maior: ele fica a 3 mm do corpo, e na ponta do busto essa distância some. O corpo, por baixo, fazia uma
+ * mancha escura no tecido que o cobre. O que o pano faz em si mesmo a essa distância a oclusão já escurece.
+ */
+const FOLGA_DA_SOMBRA_NO_PANO_MM = 7;
+
 /** Quanto da luz chega ao ponto (0 a 1): a penumbra cresce com a distância de quem faz a sombra, como numa luz grande. */
-function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: number, amostras: number): number {
+function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: number, amostras: number, folga = FOLGA_DA_SOMBRA_MM): number {
   const s = (x * m.ux + y * m.uy + z * m.uz - m.centroU) * m.porMm + m.lado / 2;
   const t = (x * m.vx + y * m.vy + z * m.vz - m.centroV) * m.porMm + m.lado / 2;
   const h = x * m.lx + y * m.ly + z * m.lz;
@@ -675,8 +700,7 @@ function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: num
     const j = b | 0;
     return i < 0 || j < 0 || i >= lado || j >= lado ? -1e9 : d[j * lado + i]!;
   };
-  const folga = 2.2;
-  const procura = 26 * (lado / 1024);
+  const procura = 44 * (lado / 1024);
   let soma = 0;
   let achados = 0;
   const giros = Math.max(4, amostras >> 1);
@@ -690,7 +714,7 @@ function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: num
     }
   }
   if (achados === 0) return 1;
-  const meia = Math.max(1.1, Math.min(48 * (lado / 1024), (soma / achados) * TAMANHO_DA_LUZ * m.porMm));
+  const meia = Math.max(1.1, Math.min(70 * (lado / 1024), (soma / achados) * TAMANHO_DA_LUZ * m.porMm));
   let passa = 0;
   for (let k = 0; k < amostras; k++) {
     const a = giro + 1.7 + k * AUREO;
@@ -811,18 +835,40 @@ const FUNDO_DO_CHAO = [0.86, 0.862, 0.868];
  */
 export const opacidadeDoTecido = (transparencia: number): number => 1 - 0.85 * transparencia ** 1.6;
 
-/** Calcula a imagem, em RGBA, com `v.largura` × `v.altura` pixels. */
-export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstudio[], q: QualidadeDoEstudio, fundo: FundoDoEstudio = 'estudio'): Uint8ClampedArray {
+/** O raio da oclusão (mm), o maior: a faixa precisa enxergar isso além das suas linhas, ou as emendas apareceriam. */
+const RAIO_DA_OCLUSAO_MM = 90;
+const MAIOR_MARGEM_DA_FAIXA = 220;
+
+/**
+ * Calcula a imagem, em RGBA, com `v.largura` × `v.altura` pixels; com `faixa`, só aquelas linhas (e o que volta tem só
+ * elas). Cada faixa dá exatamente os mesmos pixels da imagem inteira: o ruído é pela posição na imagem, e a margem deixa a
+ * oclusão ver as linhas vizinhas.
+ */
+export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstudio[], q: QualidadeDoEstudio, fundo: FundoDoEstudio = 'estudio', faixa?: FaixaDaImagem): Uint8ClampedArray {
   const ss = Math.max(1, Math.round(q.superamostragem));
-  const W = v.largura * ss;
-  const H = v.altura * ss;
-  const foco = v.foco * ss;
-  const cx = W / 2;
-  const cy = H / 2;
   const c = achatar(lotes);
   const { P, N, UV, RUGAS, I, T, loteDoTriangulo } = c;
   const nv = P.length / 3;
   const { posicao: O, frente: F, direita: R, alto: U } = v;
+  // As linhas calculadas: as da faixa mais a margem.
+  let topo = 0;
+  let baixo = v.altura;
+  if (faixa) {
+    let zMin = Infinity;
+    for (let i = 0; i < nv; i++) {
+      const z = (P[3 * i]! - O.x) * F.x + (P[3 * i + 1]! - O.y) * F.y + (P[3 * i + 2]! - O.z) * F.z;
+      if (z >= 10 && z < zMin) zMin = z;
+    }
+    const margem = Math.min(MAIOR_MARGEM_DA_FAIXA, Math.ceil((RAIO_DA_OCLUSAO_MM * v.foco) / zMin) + 2);
+    topo = Math.max(0, faixa.de - margem);
+    baixo = Math.min(v.altura, faixa.ate + margem);
+  }
+  const W = v.largura * ss;
+  const H = (baixo - topo) * ss;
+  const foco = v.foco * ss;
+  const cx = W / 2;
+  const cy = (v.altura / 2 - topo) * ss;
+  const linhaDaFaixa = topo * ss;
 
   // A projeção de todos os pontos.
   const sx = new Float32Array(nv);
@@ -939,12 +985,15 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
     vy /= dist;
     vz /= dist;
 
-    // De que lado do pano se está: pela ordem dos cantos na tela, porque na borda de uma dobra a normal suave engana.
+    // De que lado do pano se está: pela normal suave. Só perto da borda de uma dobra, onde ela engana, pela ordem dos cantos
+    // na tela. Ao contrário não dá: numa curva forte (a ponta do busto) o refino vira triângulos pequenos sobre si mesmos,
+    // e eles sairiam como uma mancha do avesso.
+    const olhar = nx * vx + ny * vy + nz * vz;
     const ex1 = sx[b]! - sx[a]!;
     const ey1 = sy[b]! - sy[a]!;
     const ex2 = sx[e]! - sx[a]!;
     const ey2 = sy[e]! - sy[a]!;
-    const deFrente = ex1 * ey2 - ex2 * ey1 <= 0;
+    const deFrente = Math.abs(olhar) > 0.25 ? olhar > 0 : ex1 * ey2 - ex2 * ey1 <= 0;
     if (!deFrente) {
       nx = -nx;
       ny = -ny;
@@ -957,6 +1006,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
     let ab = albedos[lote]![2];
     let especular = 0.04;
     const pe = dist / foco;
+    const peDoPixel = dist / v.foco;
     let u = 0;
     let va = 0;
     let tx = 0;
@@ -993,7 +1043,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
         ab = ab * k + auxiliar[2]!;
       }
       if (m.trama) {
-        trama(m.trama, u, va, pe, micro);
+        trama(m.trama, u, va, peDoPixel, micro);
         const bx = ny * tz - nz * ty;
         const by = nz * tx - nx * tz;
         const bz = nx * ty - ny * tx;
@@ -1068,12 +1118,12 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
             inclina(((d - LARGURA_DA_BARRA) / 2.4) * 0.4 * Math.exp(-((dl / 2.4) ** 2)));
             if (daFace) {
               const larguraDaLinha = 0.42;
-              if (pe < 0.45) {
+              if (peDoPixel < 0.45) {
                 const fase = (borda[1]! / PASSO_DO_PONTO) % 1;
                 if (dl < larguraDaLinha && fase < LINHA_DO_PONTO) luzDaBorda *= 1.28;
               } else {
                 // De longe, a linha vira a média dela com o pano em volta.
-                luzDaBorda *= 1 + 0.2 * Math.min(1, (2 * larguraDaLinha) / pe) * LINHA_DO_PONTO * Math.exp(-((dl / Math.max(0.5, pe)) ** 2));
+                luzDaBorda *= 1 + 0.2 * Math.min(1, (2 * larguraDaLinha) / peDoPixel) * LINHA_DO_PONTO * Math.exp(-((dl / Math.max(0.5, peDoPixel)) ** 2));
               }
             }
           }
@@ -1094,9 +1144,9 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
       }
     } else if (m.acabamento === 'ziper') {
       // A fita fosca dos lados e os dentes de metal no meio, um de cada lado a cada 2,4 mm.
-      const dente = Math.abs(u) < 2.6 && (pe > 1.4 || Math.floor(va / 2.4) % 2 === 0);
+      const dente = Math.abs(u) < 2.6 && (peDoPixel > 1.4 || Math.floor(va / 2.4) % 2 === 0);
       if (dente) {
-        const f = pe > 1.4 ? 0.45 : 0.72;
+        const f = peDoPixel > 1.4 ? 0.45 : 0.72;
         ar = f;
         ag = f;
         ab = f * 0.98;
@@ -1121,9 +1171,9 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
     const envolve = ehCorpo ? 0.1 : 0.14;
 
     // A sombra: o ponto saindo um pouco do pano, para o próprio pano não se sombrear.
-    const ruidoDoPonto = (52.9829189 * ((0.06711056 * xp + 0.00583715 * yp) % 1)) % 1;
+    const ruidoDoPonto = (52.9829189 * ((0.06711056 * xp + 0.00583715 * (yp + linhaDaFaixa)) % 1)) % 1;
     const giro = ruidoDoPonto * DOIS_PI;
-    const sombraKey = luzQueChega(sombra, px + nx * 3, py + ny * 3, pz + nz * 3, giro, q.amostrasDeSombra);
+    const sombraKey = luzQueChega(sombra, px + nx * 3, py + ny * 3, pz + nz * 3, giro, q.amostrasDeSombra, tecido ? FOLGA_DA_SOMBRA_NO_PANO_MM : FOLGA_DA_SOMBRA_MM);
 
     let ao = 1;
     if (comOclusao && nOclusao > 0) {
@@ -1223,14 +1273,14 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
   };
 
   // O fundo, por pixel da imagem final: a parede ao longe e o chão, onde a sombra cai.
-  const saida = new Uint8ClampedArray(v.largura * v.altura * 4);
-  const fundoR = new Float32Array(v.largura * v.altura);
-  const fundoG = new Float32Array(v.largura * v.altura);
-  const fundoB = new Float32Array(v.largura * v.altura);
+  const linhas = baixo - topo;
+  const fundoR = new Float32Array(v.largura * linhas);
+  const fundoG = new Float32Array(v.largura * linhas);
+  const fundoB = new Float32Array(v.largura * linhas);
   const branco = fundo === 'branco';
   const raioDoPalco = v.alturaDaCena * 1.35;
   const raioDoFim = v.alturaDaCena * 2.8;
-  for (let y = 0; y < v.altura; y++) {
+  for (let y = topo; y < baixo; y++) {
     for (let x = 0; x < v.largura; x++) {
       const kx = (x + 0.5 - v.largura / 2) / v.foco;
       const ky = -(y + 0.5 - v.altura / 2) / v.foco;
@@ -1255,7 +1305,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
         g = (chaoG + (g - chaoG) * m) * (1 + (claridade - 1) * (1 - m));
         b = (chaoB + (b - chaoB) * m) * (1 + (claridade - 1) * (1 - m));
       }
-      const i = y * v.largura + x;
+      const i = (y - topo) * v.largura + x;
       fundoR[i] = r;
       fundoG[i] = g;
       fundoB[i] = b;
@@ -1263,19 +1313,19 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
   }
 
   // Cada ponto da imagem, somado no pixel dela.
-  const somaR = new Float32Array(v.largura * v.altura);
-  const somaG = new Float32Array(v.largura * v.altura);
-  const somaB = new Float32Array(v.largura * v.altura);
-  const conta = new Uint16Array(v.largura * v.altura);
-  const emSaida = (): void => {
-    mapaDeTons(cor);
-  };
+  const somaR = new Float32Array(v.largura * linhas);
+  const somaG = new Float32Array(v.largura * linhas);
+  const somaB = new Float32Array(v.largura * linhas);
+  const conta = new Uint16Array(v.largura * linhas);
   const compor = (vista: Vista, i: number, x: number, y: number, r: number, g: number, b: number): readonly [number, number, number] => {
     const opacidade = sombrear(vista, i, x, y, false);
-    emSaida();
+    mapaDeTons(cor);
     return [r + (cor[0]! - r) * opacidade, g + (cor[1]! - g) * opacidade, b + (cor[2]! - b) * opacidade];
   };
-  for (let y = 0; y < H; y++) {
+  // Só as linhas da faixa são sombreadas: a margem serviu para a oclusão olhar além delas.
+  const primeira = (faixa ? faixa.de - topo : 0) * ss;
+  const ultima = (faixa ? faixa.ate - topo : linhas) * ss;
+  for (let y = primeira; y < ultima; y++) {
     const yo = (y / ss) | 0;
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
@@ -1288,7 +1338,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
       let b: number;
       if (temOpaca) {
         sombrear(opaca, i, x, y, true);
-        emSaida();
+        mapaDeTons(cor);
         r = cor[0]!;
         g = cor[1]!;
         b = cor[2]!;
@@ -1306,16 +1356,23 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
       conta[oi] = conta[oi]! + 1;
     }
   }
+  const de = faixa ? faixa.de : 0;
+  const ate = faixa ? faixa.ate : v.altura;
+  const saida = new Uint8ClampedArray(v.largura * (ate - de) * 4);
   const porPixel = ss * ss;
   // Um grão fino (±½ nível) tira as faixas do degradê do fundo.
-  for (let i = 0; i < v.largura * v.altura; i++) {
-    const n = conta[i]!;
-    const grao = branco ? 0 : tabelaDoRuido[i & 0xffff]! - 0.5;
-    const resto = (porPixel - n) / porPixel;
-    saida[4 * i] = somaR[i]! / porPixel + fundoR[i]! * 255 * resto + grao;
-    saida[4 * i + 1] = somaG[i]! / porPixel + fundoG[i]! * 255 * resto + grao;
-    saida[4 * i + 2] = somaB[i]! / porPixel + fundoB[i]! * 255 * resto + grao;
-    saida[4 * i + 3] = 255;
+  for (let y = de; y < ate; y++) {
+    for (let x = 0; x < v.largura; x++) {
+      const i = (y - topo) * v.largura + x;
+      const s = (y - de) * v.largura + x;
+      const n = conta[i]!;
+      const grao = branco ? 0 : tabelaDoRuido[(y * v.largura + x) & 0xffff]! - 0.5;
+      const resto = (porPixel - n) / porPixel;
+      saida[4 * s] = somaR[i]! / porPixel + fundoR[i]! * 255 * resto + grao;
+      saida[4 * s + 1] = somaG[i]! / porPixel + fundoG[i]! * 255 * resto + grao;
+      saida[4 * s + 2] = somaB[i]! / porPixel + fundoB[i]! * 255 * resto + grao;
+      saida[4 * s + 3] = 255;
+    }
   }
   return saida;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, rugasDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
-import { normaisSuaves, refinar } from './malhasDoEstudio';
+import { loteDoCorpo, normaisSuaves, refinar } from './malhasDoEstudio';
 
 /** Duas peças de um triângulo cada, que se tocam na costura. */
 const DUAS_PECAS: TecidoParaOEstudio = {
@@ -35,6 +35,16 @@ describe('as malhas para o estúdio (ADR 0228)', () => {
     // O meio da aresta 0-1 saiu do plano, para o lado de onde as normais apontam.
     const z = Array.from(m.posicoes).filter((_, i) => i % 3 === 2);
     expect(Math.max(...z.map(Math.abs))).toBeGreaterThan(1);
+  });
+});
+
+describe('o corpo para o desenho', () => {
+  it('fica um pouco para dentro do corpo da colisão, ao longo da normal: o pano não é furado por ele', () => {
+    const v = Float32Array.of(0, 0, 0, 100, 0, 0, 0, 100, 0);
+    const lote = loteDoCorpo(v, Uint32Array.of(0, 1, 2), [200, 200, 200], 0);
+    // O triângulo olha para +z: recuar é ir para −z.
+    expect(lote.posicoes[2]).toBeCloseTo(-1.5, 5);
+    expect(lote.posicoes[0]).toBeCloseTo(0, 5);
   });
 });
 

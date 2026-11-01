@@ -120,13 +120,20 @@ interface Montada {
 }
 
 const TEMPO_MAXIMO_S = 10;
-/** Quantos pontos tem a imagem rápida (a que acompanha o arrasto e a simulação), no máximo. */
-const PONTOS_DA_IMAGEM_RAPIDA = 260_000;
+/** Quantos pontos tem a imagem rápida (a que acompanha o arrasto e a simulação), para começar, e os limites. */
+const PONTOS_DA_IMAGEM_RAPIDA = 420_000;
+const MENOS_PONTOS_NA_RAPIDA = 120_000;
+const MAIS_PONTOS_NA_RAPIDA = 2_400_000;
+/** O tempo de uma imagem rápida (ms): acima, ela perde pontos; abaixo, ganha. */
+const IMAGEM_RAPIDA_DEMORADA_MS = 70;
+const IMAGEM_RAPIDA_FOLGADA_MS = 35;
 const INTERVALO_DE_DESENHO_NA_SIMULACAO_MS = 160;
+/** Mais perto que isto (em alturas do corpo), a imagem final divide a malha do corpo mais uma vez. */
+const DISTANCIA_DO_CORPO_MAIS_FINO = 1.4;
 /** Quanto a tela fica parada antes de a imagem final ser calculada (ms). */
 const ESPERA_DA_IMAGEM_FINAL_MS = 180;
 /** A qualidade da imagem salva: nas muito grandes, os pontos a mais já vêm do tamanho. */
-const qualidadeDaImagem = (fator: number): QualidadeDoEstudio => ({ ...QUALIDADE_FINAL, sombraPx: 2048, superamostragem: fator >= 3 ? 1 : 2 });
+const qualidadeDaImagem = (fator: number): QualidadeDoEstudio => ({ ...QUALIDADE_FINAL, sombraPx: 3072, superamostragem: fator >= 4 ? 2 : 3 });
 const VISTAS: ReadonlyArray<readonly [string, number]> = [
   ['Frente', 0],
   ['Lado', -Math.PI / 2],
@@ -167,7 +174,9 @@ export function PainelDoProvador3D(props: {
   const [estado, setEstado] = useState<EstadoDaSimulacao>({ fase: 'arrumado', tempo: 0 });
   const [mensagem, setMensagem] = useState<string | null>(null);
   // A resolução das imagens salvas (1, 2 ou 4 vezes 600 × 900) e o giro em vídeo sendo gravado (ADR 0139).
-  const [fatorDaImagem, setFatorDaImagem] = useState(1);
+  const [fatorDaImagem, setFatorDaImagem] = useState(2);
+  /** A vista ampliada: sem as abas e a linha de estado, o desenho toma a janela toda. */
+  const [ampliada, setAmpliada] = useState(false);
   const [gravandoGiro, setGravandoGiro] = useState(false);
   // O desenho no corpo (ADR 0134): os pontos clicados no tronco, a folga e o nome do pré-molde.
   const [pontosDoDesenho, setPontosDoDesenho] = useState<readonly Ponto3D[]>([]);
@@ -182,6 +191,8 @@ export function PainelDoProvador3D(props: {
   /** O cancelamento do cálculo final em andamento, e o relógio que espera a tela parar para pedir outro. */
   const finalRef = useRef<{ cancelar: () => void } | null>(null);
   const relogioDoFinalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Quantos pontos tem a imagem rápida: acompanha o que este computador aguenta (ADR 0233). */
+  const pontosDaRapidaRef = useRef(PONTOS_DA_IMAGEM_RAPIDA);
 
   // A montagem mudada vai para o projeto meio segundo depois da última mudança (e ao fechar).
   const { onGuardar } = props;
@@ -285,7 +296,7 @@ export function PainelDoProvador3D(props: {
 
   /** Os lotes da cena de agora para o estúdio; `refino`: 0 na imagem rápida (como vem da física, sem rugas), 1 na final. */
   const lotesDaCena = useCallback(
-    (variante: VarianteDeCor | null, refino: number): LoteDoEstudio[] => {
+    (variante: VarianteDeCor | null, refino: number, refinoDoCorpo: number = refino): LoteDoEstudio[] => {
       const m = obterMontada();
       const pecas: PecaParaOEstudio[] = m.sim.pecas.map((p) => {
         const config = montagem.pecas[p.chave]!;
@@ -320,11 +331,11 @@ export function PainelDoProvador3D(props: {
           .filter((c) => c.ziperMm)
           .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
-      m.lotesDoCorpo[refino] ??= loteDoCorpo(m.malhaDoCorpo.vertices, m.malhaDoCorpo.triangulos, COR_DO_CORPO, refino);
+      m.lotesDoCorpo[refinoDoCorpo] ??= loteDoCorpo(m.malhaDoCorpo.vertices, m.malhaDoCorpo.triangulos, COR_DO_CORPO, refinoDoCorpo);
       // Com a simulação andando, o corpo vai da pose de vestir para a pedida junto com a roupa.
       const emCaminho = m.sim.tempo > 0 && m.sim.corpoAgora !== m.corpo;
       const corpoVisto = emCaminho ? malhaDoCorpo(m.sim.corpoAgora) : null;
-      const loteVisto = corpoVisto ? loteDoCorpo(corpoVisto.vertices, corpoVisto.triangulos, COR_DO_CORPO, refino) : m.lotesDoCorpo[refino];
+      const loteVisto = corpoVisto ? loteDoCorpo(corpoVisto.vertices, corpoVisto.triangulos, COR_DO_CORPO, refinoDoCorpo) : m.lotesDoCorpo[refinoDoCorpo];
       return [loteVisto, ...lotesDoTecido(tecido, 2 * refino)];
     },
     [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido, instancias, imagensProntas, modo, pixelsDaImagem, desenhoDaFicha],
@@ -357,10 +368,14 @@ export function PainelDoProvador3D(props: {
       const ctx = canvas.getContext('2d');
       if (!ctx) return false;
       const alturaDaCena = obterMontada().corpo.alturaMm;
-      const fator = Math.min(1, Math.sqrt(PONTOS_DA_IMAGEM_RAPIDA / Math.max(1, canvas.width * canvas.height)));
+      const fator = Math.min(1, Math.sqrt(pontosDaRapidaRef.current / Math.max(1, canvas.width * canvas.height)));
+      const inicio = performance.now();
       const largura = Math.max(1, Math.round(canvas.width * fator));
       const altura = Math.max(1, Math.round(canvas.height * fator));
       const rgba = renderizarEstudio(vistaDaProjecao(projecao(cam, largura, altura), alturaDaCena), lotesDaCena(variante, 0), QUALIDADE_RAPIDA, fundo);
+      const gasto = performance.now() - inicio;
+      const pontos = pontosDaRapidaRef.current * (gasto > IMAGEM_RAPIDA_DEMORADA_MS ? 0.8 : gasto < IMAGEM_RAPIDA_FOLGADA_MS ? 1.2 : 1);
+      pontosDaRapidaRef.current = Math.max(MENOS_PONTOS_NA_RAPIDA, Math.min(MAIS_PONTOS_NA_RAPIDA, pontos));
       const imagem = new ImageData(new Uint8ClampedArray(rgba), largura, altura);
       if (largura === canvas.width && altura === canvas.height) ctx.putImageData(imagem, 0, 0);
       else {
@@ -383,7 +398,9 @@ export function PainelDoProvador3D(props: {
     (canvas: HTMLCanvasElement, cam: Camera3D, fundo: FundoDoEstudio, variante: VarianteDeCor | null, qualidade: QualidadeDoEstudio): { pronta: Promise<boolean>; cancelar: () => void } => {
       const alturaDaCena = obterMontada().corpo.alturaMm;
       const proj = projecao(cam, canvas.width, canvas.height);
-      const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotesDaCena(variante, 1), qualidade, fundo);
+      // De perto, a malha do corpo apareceria no contorno: mais uma divisão.
+      const refinoDoCorpo = cam.distancia < DISTANCIA_DO_CORPO_MAIS_FINO * alturaDaCena ? 2 : 1;
+      const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotesDaCena(variante, 1, refinoDoCorpo), qualidade, fundo);
       return {
         cancelar: pedido.cancelar,
         pronta: pedido.pronta.then((rgba) => {
@@ -427,6 +444,18 @@ export function PainelDoProvador3D(props: {
 
   useEffect(() => {
     desenhar();
+  }, [desenhar, ampliada]);
+
+  // A área do desenho mudou de tamanho (a janela, a vista ampliada): a imagem é refeita nos pontos dela, em vez de esticada.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof ResizeObserver === 'undefined') return;
+    const observador = new ResizeObserver(() => {
+      const dpr = window.devicePixelRatio || 1;
+      if (Math.abs(canvas.width - canvas.clientWidth * dpr) > 1 || Math.abs(canvas.height - canvas.clientHeight * dpr) > 1) desenhar();
+    });
+    observador.observe(canvas);
+    return () => observador.disconnect();
   }, [desenhar]);
 
   // A simulação: alguns passos de cada vez (até 14 ms), por um relógio próprio — o desenho espera a tela (que o
@@ -630,7 +659,7 @@ export function PainelDoProvador3D(props: {
 
   return (
     <Sobreposicao titulo="Provador 3D" onFechar={fechar}>
-      <div className="painel-do-provador">
+      <div className={`painel-do-provador${ampliada ? ' vista-ampliada' : ''}`}>
         <div className="vista-do-provador">
           <div className="barra-do-provador" role="toolbar" aria-label="Simulação">
             <button type="button" className="botao-primario" disabled={colocadas.length === 0} onClick={() => setSimulando((s) => !s)}>
@@ -645,6 +674,9 @@ export function PainelDoProvador3D(props: {
                 {nome}
               </button>
             ))}
+            <button type="button" aria-pressed={ampliada} onClick={() => setAmpliada((a) => !a)}>
+              {ampliada ? 'Mostrar as abas' : 'Ampliar a vista'}
+            </button>
             <label className="opcao-do-provador">
               <input type="checkbox" checked={modo === 'tensao'} onChange={(e) => setModo(e.target.checked ? 'tensao' : 'cor')} />
               Mapa de tensão

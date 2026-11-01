@@ -468,8 +468,12 @@ function acertarVolta(v: Float64Array, t: Uint32Array, pedida: number, nos: read
 
 /** Os dois pontos da ponta do peito na malha (as pontas dos ossos do peito, no esqueleto dela). */
 const PONTAS_DO_PEITO = [8451, 1779] as const;
-const RAIO_DO_PEITO_MM = 42;
-const VOLTAS_DE_ALISAR = 18;
+/**
+ * O alisamento tem de ser largo e sumir aos poucos: um círculo pequeno tirava o bico, mas deixava uma ponta aguda em volta
+ * dele, e o pano armava sobre ela uma tenda que saía como uma mancha escura.
+ */
+const RAIO_DO_PEITO_MM = 75;
+const VOLTAS_DE_ALISAR = 40;
 
 /** O peito fica liso, como num manequim de vitrine: a roupa é o assunto, e o bico marcaria o tecido justo. */
 function alisarOPeito(v: Float64Array, t: Uint32Array): void {
@@ -477,7 +481,7 @@ function alisarOPeito(v: Float64Array, t: Uint32Array): void {
   for (const ponta of PONTAS_DO_PEITO) {
     for (let i = 0; i < PONTOS_DO_CORPO; i++) {
       const d = Math.hypot(v[3 * i]! - v[3 * ponta]!, v[3 * i + 1]! - v[3 * ponta + 1]!, v[3 * i + 2]! - v[3 * ponta + 2]!) / RAIO_DO_PEITO_MM;
-      if (d < 1) pesoDoPonto.set(i, 1 - d * d);
+      if (d < 1) pesoDoPonto.set(i, Math.max(pesoDoPonto.get(i) ?? 0, (1 - d * d) ** 2));
     }
   }
   const vizinhos = new Map<number, Set<number>>();

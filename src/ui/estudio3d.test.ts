@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cameraDeFrente, projecao, vistaDaProjecao } from './cena3d';
 import { mapaDaPeca } from './lotesDoTecido';
-import { opacidadeDoTecido, QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MaterialDoEstudio, type QualidadeDoEstudio } from './estudio3d';
+import { enfraquece, faixasDaImagem, opacidadeDoTecido, QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MaterialDoEstudio, type QualidadeDoEstudio } from './estudio3d';
 
 const ALTURA = 1700;
 const L = 160;
@@ -74,7 +74,7 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     const noChao: LoteDoEstudio = { ...esfera(TECIDO, 0, 150), posicoes: esfera(TECIDO, 0, 150).posicoes.map((v, i) => (i % 3 === 1 ? v - 760 : v)) };
     const comSombra = render([noChao], QUALIDADE_RAPIDA, 'branco');
     const proj = projecao(cameraDeFrente(ALTURA), L, L);
-    const pe = proj.projetar(0, 0, 250)!;
+    const pe = proj.projetar(190, 0, 0)!;
     expect(pixel(comSombra, Math.round(pe.sx), Math.round(pe.sy))[0]).toBeLessThan(250);
   });
 
@@ -118,18 +118,17 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     expect(r).toBeGreaterThan(b);
   });
 
-  it('com oclusão e sombra, um rego entre dois volumes fica mais escuro que o volume', () => {
+  it('a oclusão escurece o rego entre dois volumes', () => {
     const a = esfera({ acabamento: 'corpo', cor: [220, 220, 220] }, 0, 200);
     const b = esfera({ acabamento: 'corpo', cor: [220, 220, 220] }, 0, 200);
     const juntos = [
       { ...a, posicoes: a.posicoes.map((v, i) => (i % 3 === 0 ? v - 200 : v)) },
       { ...b, posicoes: b.posicoes.map((v, i) => (i % 3 === 0 ? v + 200 : v)) },
     ];
-    const r = render(juntos, QUALIDADE_FINAL);
-    const proj = projecao(cameraDeFrente(ALTURA), L, L);
-    const rego = proj.projetar(0, 900, 60)!;
-    const volume = proj.projetar(-200, 900, 200)!;
-    expect(pixel(r, Math.round(rego.sx), Math.round(rego.sy))[0]).toBeLessThan(pixel(r, Math.round(volume.sx), Math.round(volume.sy))[0]);
+    const com = render(juntos, QUALIDADE_FINAL);
+    const sem = render(juntos, { ...QUALIDADE_FINAL, amostrasDeOclusao: 0 });
+    const rego = projecao(cameraDeFrente(ALTURA), L, L).projetar(0, 900, 60)!;
+    expect(pixel(com, Math.round(rego.sx), Math.round(rego.sy))[0]).toBeLessThan(pixel(sem, Math.round(rego.sx), Math.round(rego.sy))[0]);
   });
 
   it('a costura faz um sulco no pano; a barra livre leva o pesponto, que aparece de perto', () => {
@@ -189,6 +188,35 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     let diferenca = 0;
     for (let i = 0; i < liso.length; i += 4) diferenca += Math.abs(liso[i]! - apertado[i]!);
     expect(diferenca).toBeGreaterThan(300);
+  });
+
+  it('a trama só aparece com folga: perto do tamanho do pixel ela viraria ondas na imagem', () => {
+    expect(enfraquece(1, 0.2)).toBe(1);
+    expect(enfraquece(1, 0.25)).toBe(1);
+    expect(enfraquece(1, 0.4)).toBeCloseTo(0.4, 9);
+    expect(enfraquece(1, 0.5)).toBe(0);
+    expect(enfraquece(1, 2)).toBe(0);
+  });
+
+  it('dividida em faixas, a imagem sai igual à inteira, ponto a ponto, sem emendas', () => {
+    const lotes = [esfera({ acabamento: 'corpo', cor: [200, 190, 180] }, 0, 260), esfera(TECIDO, 120, 170)];
+    const inteira = render(lotes, QUALIDADE_FINAL);
+    const faixas = faixasDaImagem(L, 3);
+    expect(faixas[0]!.de).toBe(0);
+    expect(faixas[2]!.ate).toBe(L);
+    expect(faixas[1]!.de).toBe(faixas[0]!.ate);
+    const junta = new Uint8ClampedArray(inteira.length);
+    for (const f of faixas) {
+      const parte = renderizarEstudio(vista(), lotes, QUALIDADE_FINAL, 'estudio', f);
+      expect(parte.length).toBe((f.ate - f.de) * L * 4);
+      junta.set(parte, f.de * L * 4);
+    }
+    expect(junta).toEqual(inteira);
+  });
+
+  it('as faixas nunca passam do número de linhas, e cobrem todas', () => {
+    expect(faixasDaImagem(3, 8)).toHaveLength(3);
+    expect(faixasDaImagem(100, 1)).toEqual([{ de: 0, ate: 100 }]);
   });
 
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {

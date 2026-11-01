@@ -4005,15 +4005,30 @@ input[type='radio'] {
 
 /* O provador 3D (ADR 0111): o manequim num fundo de estúdio à esquerda; os controles em abas à direita. */
 .sobreposicao-painel:has(.painel-do-provador) {
-  width: min(1280px, 97vw);
-  max-width: 97vw;
+  width: 98vw;
+  max-width: 98vw;
+  max-height: 98vh;
 }
 
 .painel-do-provador {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.05fr);
+  grid-template-columns: minmax(340px, 1.3fr) minmax(340px, 1fr);
   gap: 14px;
   min-width: 0;
+}
+
+/* A vista ampliada: o desenho toma a janela toda, para ver a roupa nos pontos que a tela tem. */
+.painel-do-provador.vista-ampliada {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.vista-ampliada .controles-do-provador,
+.vista-ampliada .status-do-provador {
+  display: none;
+}
+
+.vista-ampliada .canvas-do-provador {
+  height: max(320px, calc(98vh - 150px));
 }
 
 .vista-do-provador {
@@ -4047,8 +4062,7 @@ input[type='radio'] {
 
 .canvas-do-provador {
   width: 100%;
-  height: min(58vh, 560px);
-  min-height: 300px;
+  height: max(320px, calc(98vh - 240px));
   border: 1px solid var(--marca-800);
   border-radius: var(--raio-md);
   background: radial-gradient(ellipse at 50% 35%, #ffffff 0%, #e9edf3 55%, #c9d1dc 100%);
@@ -4113,7 +4127,7 @@ input[type='radio'] {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  max-height: min(70vh, 640px);
+  max-height: calc(98vh - 130px);
   overflow-y: auto;
 }
 

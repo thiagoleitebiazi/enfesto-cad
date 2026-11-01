@@ -11,6 +11,16 @@ describe('a câmera do provador', () => {
     expect(proj.projetar(camera.alvo.x, camera.alvo.y + 100, camera.alvo.z)!.sy).toBeLessThan(alvo.sy);
   });
 
+  it('de frente, o corpo aproveita a imagem: mais de 90% da altura dela, com a cabeça e os pés dentro', () => {
+    const altura = 1700;
+    const p = projecao(cameraDeFrente(altura), 800, 600);
+    const topo = p.projetar(0, altura, 0)!;
+    const pes = p.projetar(0, 0, 0)!;
+    expect(pes.sy - topo.sy).toBeGreaterThan(0.9 * 600);
+    expect(topo.sy).toBeGreaterThan(0);
+    expect(pes.sy).toBeLessThan(600);
+  });
+
   it('a vista para o estúdio leva a câmera e as direções, sem a função de projetar (ela vai para o Worker)', () => {
     const proj = projecao(cameraDeFrente(1700), 800, 600);
     const v = vistaDaProjecao(proj, 1700);

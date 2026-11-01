@@ -45,12 +45,24 @@ function abrir(opcoes: { readonly pecas?: readonly Molde[]; readonly montagem?: 
       onFechar={() => {}}
     />,
   );
-  return { onGuardar, onSalvarArquivo, ultima: (): Montagem3D => onGuardar.mock.calls.at(-1)![0] as Montagem3D };
+  return { container: document.body, onGuardar, onSalvarArquivo, ultima: (): Montagem3D => onGuardar.mock.calls.at(-1)![0] as Montagem3D };
 }
 
 const aba = (nome: RegExp | string) => fireEvent.click(screen.getByRole('tab', { name: nome }));
 
 describe('PainelDoProvador3D', () => {
+  it('ampliar a vista esconde as abas e a linha de estado; as imagens salvas partem da resolução alta', () => {
+    const { container } = abrir();
+    const painel = (): Element => document.querySelector('.painel-do-provador') ?? container;
+    expect(painel()).not.toHaveClass('vista-ampliada');
+    fireEvent.click(screen.getByRole('button', { name: 'Ampliar a vista' }));
+    expect(painel()).toHaveClass('vista-ampliada');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar as abas' }));
+    expect(painel()).not.toHaveClass('vista-ampliada');
+    aba('Imagem');
+    expect(screen.getByLabelText('Resolução da imagem')).toHaveValue('2');
+  });
+
   it('as peças vão ao corpo pelo nome (a frente, as costas; o retalho fica fora), e a escolha é guardada no projeto', async () => {
     const { onGuardar, ultima } = abrir();
     expect(screen.getByLabelText('Onde vai Frente da saia')).toHaveValue('frente');

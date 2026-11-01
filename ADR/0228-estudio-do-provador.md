@@ -15,7 +15,7 @@ O provador pintava triângulos chapados, de trás para a frente, num canvas 2D (
 - **A cor:** o mapa de tons neutro do Khronos, feito para produto: a cor escolhida continua sendo ela, e só o que passa do branco é comprimido.
 - **O fundo branco** das imagens salvas é branco de verdade (255), só com a sombra.
 
-**Duas qualidades.** A rápida acompanha o arrasto e a simulação: menos pontos e sem oclusão. Parada a tela, a final (o dobro de pontos por lado) é calculada num Worker (`estudio3d.worker.ts`, `ui/imagemDoEstudio.ts`) e toma o lugar da rápida, sem travar a janela. As imagens salvas usam a final.
+**Duas qualidades.** A rápida acompanha o arrasto e a simulação: menos pontos e sem oclusão. Parada a tela, a final (três vezes mais pontos por lado, ADR 0233) é calculada em Workers (`estudio3d.worker.ts`, `ui/imagemDoEstudio.ts`) e toma o lugar da rápida, sem travar a janela. As imagens salvas usam a final.
 
 **As malhas** (`ui/malhasDoEstudio.ts`, `ui/lotesDoTecido.ts`): cada triângulo vira quatro pela tesselação de Phong, o que tira as facetas sem abrir frestas. Os dois lados de uma costura dividem a normal. O botão e o zíper viram geometria, com a fita, os dentes de metal e o disco com rebaixo.
 
