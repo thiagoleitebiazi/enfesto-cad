@@ -96,6 +96,8 @@ export interface OpcoesDoPlt {
   readonly cabecalho?: readonly string[];
   /** A caneta de cada elemento (ADR 0174): a aba Ferramentas do manual da referência. Quem não está aqui usa a regra de `canetas`. */
   readonly ferramentas?: Readonly<Partial<Record<ElementoDoPlotter, number>>>;
+  /** A correção da máquina, pelas medidas do teste do equipamento (ADR 0217): vale em tudo o que sai no papel. */
+  readonly calibracao?: { readonly horizontal: number; readonly vertical: number };
   /** Os textos desenhados com a fonte TrueType (ADR 0211): vale mais que o letreiro e que o texto em traços. */
   readonly tracosDaFonte?: (texto: string, alturaMm: number) => Ponto2D[][];
   /** Os níveis de impressão (ADR 0210): sai o nível menor em todas as peças, depois o seguinte. Quem não está aqui é do nível 1. */
@@ -139,7 +141,7 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
   const fimDoEspelho = opcoes.espelhar ? todos.reduce((maior, p) => Math.max(maior, p.y), opcoes.comprimentoDaMesaMm ?? 0) : null;
   const noPapel = (p: Ponto2D): Ponto2D => {
     const q = mundoParaDxf(p, altura);
-    return ponto((fimDoEspelho === null ? q.x : fimDoEspelho - q.x) - xInicial, q.y - baseDaFaixa);
+    return ponto(((fimDoEspelho === null ? q.x : fimDoEspelho - q.x) - xInicial) * (opcoes.calibracao?.horizontal ?? 1), (q.y - baseDaFaixa) * (opcoes.calibracao?.vertical ?? 1));
   };
   const comandos: string[] = ['IN', 'SP1', `DT${String.fromCharCode(3)}`];
   if (xInicial > 0 || opcoes.larguraDoPapelMm !== undefined) {

@@ -182,6 +182,8 @@ interface BarraDeFerramentasProps {
   readonly portaDeSaida?: string;
   readonly onPortaDeSaida?: () => void;
   readonly onGerenciadorDeImpressao?: () => void;
+  /** O teste na máquina de verdade (ADR 0217). */
+  readonly onTesteDoEquipamento?: () => void;
   readonly onEscolherPastaDoPlotter?: () => void;
   readonly onRetanguloDeOrganizacao?: () => void;
   /** O fio por seleção e inverter a costura (ADR 0190). */
@@ -725,6 +727,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                           { tipo: 'acao' as const, rotulo: props.portaDeSaida ? `Enviar ao plotter (${props.portaDeSaida})` : 'Enviar ao plotter (pasta)', titulo: props.portaDeSaida ? 'Põe o risco na fila do gerenciador de impressão' : 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
                           { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde o plotter está: na rede, compartilhado ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Gerenciador de impressão…', titulo: 'Os riscos que vão para o plotter, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Teste do equipamento…', titulo: 'Uma página de medidas conhecidas para o plotter ou a mesa de corte: mede com a trena e o programa corrige', onEscolher: props.onTesteDoEquipamento ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Escolher a pasta do plotter…', onEscolher: props.onEscolherPastaDoPlotter ?? (() => undefined) },
                         ]
                       : []),

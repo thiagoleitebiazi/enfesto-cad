@@ -377,6 +377,8 @@ import { TecladoVirtual } from './ui/TecladoVirtual';
 import { PainelDeColaboracao, type ApiDaColaboracao } from './ui/PainelDeColaboracao';
 import type { ProjetoCompartilhado } from './domain/colaboracao';
 import { estadosDosRiscos } from './domain/encaixeDoRisco';
+import { calibracaoGuardada, paginaDeTesteDoPlotter, testeDaMesaDeCorte, type Calibracao } from './formats/testeDoEquipamento';
+import { PainelDoTesteDoEquipamento } from './ui/PainelDoTesteDoEquipamento';
 import { modeloDoPlano } from './domain/modeloDoPlano';
 import type { FonteDoPlotter } from './formats/fonteTrueType';
 import { ehArquivoAstm, lerAstm, moldesDoAstm } from './formats/astm-importacao';
@@ -715,6 +717,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'largura-do-tecido' }
   | { readonly tipo: 'porta-de-saida' }
   | { readonly tipo: 'gerenciador-de-impressao' }
+  | { readonly tipo: 'teste-do-equipamento' }
   | { readonly tipo: 'substituir-tamanho' }
   | { readonly tipo: 'cores-da-area' }
   | { readonly tipo: 'propriedades-de-encaixe' }
@@ -954,6 +957,14 @@ export default function App(): React.JSX.Element {
     window.addEventListener('keydown', ouvir, true);
     return () => window.removeEventListener('keydown', ouvir, true);
   }, [usarFonte]);
+  // A correção da máquina (ADR 0217): do computador, como as canetas.
+  const [calibracaoDoPlotter, setCalibracaoDoPlotter] = useState<Calibracao | null>(() => {
+    try {
+      return calibracaoGuardada(window.localStorage.getItem('enfesto-cad:calibracao-do-plotter'));
+    } catch {
+      return null;
+    }
+  });
   const [filaDeImpressao, setFilaDeImpressao] = useState<FilaDeImpressao>(FILA_DE_IMPRESSAO_VAZIA);
   const filaDeImpressaoRef = useRef(filaDeImpressao);
   const esvaziandoRef = useRef(false);
@@ -3886,8 +3897,8 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
-    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, fonteDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
+    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(calibracaoDoPlotter ? { calibracao: calibracaoDoPlotter } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
+    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, fonteDoPlotter, calibracaoDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
 
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => {
@@ -3907,11 +3918,11 @@ export default function App(): React.JSX.Element {
   }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt, opcoesDoEncaixe.verificarAoPlotar, problemasDeValidacao]);
 
   /** "Plotar direto" (ADR 0184): grava o risco na pasta que o programa do plotter vigia. */
-  const enviarAoPlotter = useCallback(async () => {
-    const nome = `${projetoAtual.codigo || 'risco'}-${Date.now()}.plt`.replace(/[^\w.-]+/g, '_');
+  const enviarTextoAoPlotter = useCallback(async (prefixo: string, gerar: () => string) => {
+    const nome = `${prefixo}-${Date.now()}.plt`.replace(/[^\w.-]+/g, '_');
     // Com a porta de saída, o risco vai direto: entra na fila do gerenciador de impressão (ADR 0210).
     if (portaDeSaida !== '') {
-      mudarFilaDeImpressao(comTrabalho(filaDeImpressaoRef.current, { id: proximoId(), nome, destino: portaDeSaida, texto: textoDoPlt() }));
+      mudarFilaDeImpressao(comTrabalho(filaDeImpressaoRef.current, { id: proximoId(), nome, destino: portaDeSaida, texto: gerar() }));
       esvaziarFilaDeImpressao();
       avisar(`Risco na fila de impressão: ${nome}.`);
       return;
@@ -3920,12 +3931,14 @@ export default function App(): React.JSX.Element {
     if (!pasta) return;
     try {
       if (!(await pasta.onde()) && !(await pasta.escolher())) return;
-      await pasta.gravar('para-plotar', nome, textoDoPlt());
+      await pasta.gravar('para-plotar', nome, gerar());
       avisar(`Risco enviado à pasta do plotter: ${nome}.`);
     } catch (e) {
       avisar(`Falha ao enviar ao plotter: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [projetoAtual.codigo, textoDoPlt, avisar, portaDeSaida, mudarFilaDeImpressao, esvaziarFilaDeImpressao]);
+  }, [avisar, portaDeSaida, mudarFilaDeImpressao, esvaziarFilaDeImpressao]);
+
+  const enviarAoPlotter = useCallback(() => enviarTextoAoPlotter(projetoAtual.codigo || 'risco', textoDoPlt), [enviarTextoAoPlotter, projetoAtual.codigo, textoDoPlt]);
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
@@ -4860,11 +4873,11 @@ export default function App(): React.JSX.Element {
   const plotarMoldes = useCallback(
     async (opcoes: Parameters<typeof moldesParaPlotar>[1]) => {
       const lista = moldesParaPlotar(pecas, opcoes, proximoId);
-      const plt = gerarPlt(lista, { textoComoLinha, ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
+      const plt = gerarPlt(lista, { textoComoLinha, ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(calibracaoDoPlotter ? { calibracao: calibracaoDoPlotter } : {}), canetas: canetasDoPlotter, larguraDaMesaMm: opcoes.larguraDoPapelMm, cabecalho: [`${projetoAtual.nome} (${projetoAtual.codigo}) - moldes`] });
       const caminho = await salvarTexto('moldes.plt', plt);
       if (caminho) registrarEventoEPersistir('exportacao-de-pdf', { pecas, tecido, enfesto }, `Moldes (PLT) salvos em ${caminho}: ${lista.length} peça(s)`);
     },
-    [pecas, tecido, enfesto, canetasDoPlotter, fonteDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
+    [pecas, tecido, enfesto, canetasDoPlotter, fonteDoPlotter, calibracaoDoPlotter, textoComoLinha, projetoAtual.nome, projetoAtual.codigo, salvarTexto, registrarEventoEPersistir],
   );
 
   // O projeto num arquivo (ADR 0156): sai como está agora; entra na biblioteca e abre, sem trocar o que há nela.
@@ -5795,6 +5808,7 @@ export default function App(): React.JSX.Element {
         portaDeSaida={portaDeSaida}
         onPortaDeSaida={() => setDialogoDeFerramenta({ tipo: 'porta-de-saida' })}
         onGerenciadorDeImpressao={() => setDialogoDeFerramenta({ tipo: 'gerenciador-de-impressao' })}
+        onTesteDoEquipamento={() => setDialogoDeFerramenta({ tipo: 'teste-do-equipamento' })}
         onEscolherPastaDoPlotter={() => void acessoAPasta('plotter')?.escolher()}
         onRetanguloDeOrganizacao={() => setDialogoDeFerramenta({ tipo: 'retangulo-de-organizacao' })}
         onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
@@ -7010,6 +7024,27 @@ export default function App(): React.JSX.Element {
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'porta-de-saida' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'teste-do-equipamento' && (
+        <PainelDoTesteDoEquipamento
+          destino={portaDeSaida}
+          calibracao={calibracaoDoPlotter}
+          agoraIso={() => new Date().toISOString()}
+          onEnviarAoPlotter={(comprimentoMm) =>
+            void enviarTextoAoPlotter('teste-do-plotter', () => paginaDeTesteDoPlotter(comprimentoMm, new Date().toISOString(), { canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, textoComoLinha, ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}) }))
+          }
+          onEnviarAMesa={() => void enviarTextoAoPlotter('teste-da-mesa', testeDaMesaDeCorte)}
+          onCalibracao={(calibracao) => {
+            setCalibracaoDoPlotter(calibracao);
+            try {
+              if (calibracao) window.localStorage.setItem('enfesto-cad:calibracao-do-plotter', JSON.stringify(calibracao));
+              else window.localStorage.removeItem('enfesto-cad:calibracao-do-plotter');
+            } catch {
+              // Sem o armazenamento do navegador, vale até fechar.
+            }
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'teste-do-equipamento' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'gerenciador-de-impressao' && (

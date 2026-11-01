@@ -168,7 +168,7 @@ async function principal() {
   const naAbertura = JSON.parse(
     await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] [aria-label="Importação e exportação"] button')).map(b => b.textContent.replace(/\\s+/g, ' ').trim()))`),
   );
-  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Importar PLT|Exportar DXF|Exportar ASTM|Exportar PDF|Exportar PLT|Plotar moldes|PLT por partes|Exportar ISO (corte)', naAbertura.join(', '));
+  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Importar PLT|Importar ISO|Unir encaixes|Informações|Exportar DXF|Exportar ASTM|Exportar PDF|Exportar PLT|Plotar moldes|PLT por partes|Exportar SVG ou XML|Exportar ISO (corte)', naAbertura.join(', '));
 
   // 1. Importar o DXF de teste: direto, com o nome do arquivo e o fio na horizontal.
   await aba('Início');
@@ -1618,7 +1618,12 @@ async function principal() {
   conferir('a paleta do modelo, pela cor da imagem', naPaleta === 1, `${naPaleta} cor(es)`);
   await foto('38-painel-de-inspiracao.png');
   await parteDaJanela('Criar com IA');
-  await espera(800);
+  // A resposta vem do processo principal, que pergunta ao cofre do sistema: espera ela, e não um tempo fixo.
+  for (let i = 0; i < 50; i++) {
+    const texto = await js(`((document.querySelector('[role=dialog] .cartao-do-servico strong') || {}).textContent || '')`);
+    if (texto !== '' && !texto.startsWith('Conferindo')) break;
+    await espera(200);
+  }
   const servicoAntes = await js(`((document.querySelector('[role=dialog] .cartao-do-servico strong') || {}).textContent || '')`);
   const gerarDesligado = await js(`(Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.startsWith('Gerar')) || {}).disabled === true`);
   conferir('sem chave: a IA não configurada, e o Gerar desligado', servicoAntes === 'IA não configurada' && gerarDesligado, servicoAntes);
