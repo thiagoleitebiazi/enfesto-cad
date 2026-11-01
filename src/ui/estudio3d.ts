@@ -35,6 +35,22 @@ export interface EstampaDoEstudio {
   readonly alturaMm: number;
 }
 
+/**
+ * A borda da peça vista de dentro dela (ADR 0231): numa grade pela face, a distância de cada ponto ao contorno, o caminho
+ * andado no contorno até o ponto mais perto (é por ele que o pesponto se tracejaria) e se aquele trecho é costurado. Com
+ * isso a costura e o pesponto saem ponto a ponto, com a mesma nitidez em qualquer zoom e sem depender da malha.
+ */
+export interface MapaDaPeca {
+  readonly ou: number;
+  readonly ov: number;
+  readonly passo: number;
+  readonly largura: number;
+  readonly altura: number;
+  readonly distancia: Float32Array;
+  readonly caminho: Float32Array;
+  readonly costurado: Uint8Array;
+}
+
 export interface MaterialDoEstudio {
   readonly acabamento: 'corpo' | 'tecido' | 'ziper' | 'botao';
   readonly cor: Rgb;
@@ -46,6 +62,8 @@ export interface MaterialDoEstudio {
   readonly estampa?: EstampaDoEstudio;
   /** A peça espelhada (a do par): a face dela fica do outro lado dos triângulos. */
   readonly espelhada?: boolean;
+  /** A borda da peça: a costura, a barra e o pesponto. */
+  readonly mapa?: MapaDaPeca;
 }
 
 export interface LoteDoEstudio {
@@ -247,6 +265,43 @@ function trama(tipo: TramaDoTecido, u: number, v: number, pe: number, saida: Flo
   saida[0] = mu;
   saida[1] = mv;
   saida[2] = fator;
+}
+
+/** O alcance da borda (mm): a barra dobrada e o que há nela cabem aí. */
+export const ALCANCE_DA_BORDA = 26;
+/** A largura da barra (mm): a linha do pesponto corre a esta distância da borda livre. */
+const LARGURA_DA_BARRA = 15;
+/** O passo do ponto da máquina (mm) e a parte dele em que a linha aparece. */
+const PASSO_DO_PONTO = 2.8;
+const LINHA_DO_PONTO = 0.74;
+
+/**
+ * Lê a borda em (u, v): a distância em `saida[0]`, o caminho em `saida[1]`, se é costura em `saida[2]` e, nos dois
+ * últimos, a direção para a borda na face.
+ */
+function lerMapa(m: MapaDaPeca, u: number, v: number, saida: Float64Array): void {
+  const q = (u - m.ou) / m.passo;
+  const r = (v - m.ov) / m.passo;
+  const i = q | 0;
+  const j = r | 0;
+  saida[0] = Infinity;
+  if (q < 0 || r < 0 || i >= m.largura - 1 || j >= m.altura - 1) return;
+  const L = m.largura;
+  const g = j * L + i;
+  const D = m.distancia;
+  const a = D[g]!;
+  const b = D[g + 1]!;
+  const c = D[g + L]!;
+  const e = D[g + L + 1]!;
+  if (a === Infinity || b === Infinity || c === Infinity || e === Infinity) return;
+  const fx = q - i;
+  const fy = r - j;
+  saida[0] = a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy;
+  const perto = g + (fx > 0.5 ? 1 : 0) + (fy > 0.5 ? L : 0);
+  saida[1] = m.caminho[perto]!;
+  saida[2] = m.costurado[perto]!;
+  saida[3] = ((b - a) * (1 - fy) + (e - c) * fy) / m.passo;
+  saida[4] = ((c - a) * (1 - fx) + (e - b) * fx) / m.passo;
 }
 
 // ---- As cores
@@ -804,6 +859,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
   const cor = new Float64Array(3);
   const auxiliar = new Float64Array(4);
   const micro = new Float64Array(3);
+  const borda = new Float64Array(5);
   const zBuf = opaca.inversoZ;
   const nOclusao = q.amostrasDeOclusao;
 
@@ -943,6 +999,52 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
         ar *= micro[2]!;
         ag *= micro[2]!;
         ab *= micro[2]!;
+      }
+      if (m.mapa) {
+        lerMapa(m.mapa, u, va, borda);
+        const d = borda[0]!;
+        if (d < ALCANCE_DA_BORDA) {
+          // A direção em que o pano sobe, na face, levada para o espaço: é para ela que a normal se inclina.
+          const bx = ny * tz - nz * ty;
+          const by = nz * tx - nx * tz;
+          const bz = nx * ty - ny * tx;
+          const inclina = (k: number): void => {
+            nx -= k * (borda[3]! * tx + borda[4]! * bx);
+            ny -= k * (borda[3]! * ty + borda[4]! * by);
+            nz -= k * (borda[3]! * tz + borda[4]! * bz);
+          };
+          let luzDaBorda = 1;
+          if (borda[2]! > 0) {
+            // A costura: o sulco, onde os dois panos se juntam, e o franzido leve dos lados dele.
+            const sulco = Math.exp(-((d / 1.7) ** 2));
+            luzDaBorda *= 1 - 0.5 * sulco;
+            inclina(0.55 * sulco);
+            inclina(-0.1 * Math.exp(-(((d - 5) / 3) ** 2)) * Math.sin(borda[1]! * 0.9));
+          } else {
+            // A borda livre: a beirada dobrada e, a uma barra dela, o pesponto, com o pano um pouco afundado nas duas linhas.
+            luzDaBorda *= 1 - 0.3 * Math.exp(-((d / 0.9) ** 2));
+            const dl = Math.abs(d - LARGURA_DA_BARRA);
+            luzDaBorda *= 1 - 0.3 * Math.exp(-((dl / 1.1) ** 2));
+            inclina(((d - LARGURA_DA_BARRA) / 2.4) * 0.4 * Math.exp(-((dl / 2.4) ** 2)));
+            if (daFace) {
+              const larguraDaLinha = 0.42;
+              if (pe < 0.45) {
+                const fase = (borda[1]! / PASSO_DO_PONTO) % 1;
+                if (dl < larguraDaLinha && fase < LINHA_DO_PONTO) luzDaBorda *= 1.28;
+              } else {
+                // De longe, a linha vira a média dela com o pano em volta.
+                luzDaBorda *= 1 + 0.2 * Math.min(1, (2 * larguraDaLinha) / pe) * LINHA_DO_PONTO * Math.exp(-((dl / Math.max(0.5, pe)) ** 2));
+              }
+            }
+          }
+          const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          nx /= l;
+          ny /= l;
+          nz /= l;
+          ar *= luzDaBorda;
+          ag *= luzDaBorda;
+          ab *= luzDaBorda;
+        }
       }
       // O avesso do pano é um pouco mais apagado que a face.
       if (!daFace) {

@@ -25,6 +25,7 @@ import {
   corMaisEscura,
   configuracoesDasInstancias,
   coordenadasDaFace,
+  trechoDoContorno,
   giroPelaForma,
   instanciasDasPecas,
   ladosDoContorno,
@@ -54,6 +55,7 @@ import { corNaVariante, type VarianteDeCor } from '../domain/desenhoTecnico';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, ligarAutoColisao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
 import {
   cameraDeFrente,
+  cameraMovida,
   corDaTensao,
   corRgb,
   COR_DO_CORPO,
@@ -64,15 +66,31 @@ import {
   type Camera3D,
   type Projecao,
 } from './cena3d';
-import { QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type QualidadeDoEstudio } from './estudio3d';
+import { QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MapaDaPeca, type QualidadeDoEstudio } from './estudio3d';
 import { imagemDoEstudio } from './imagemDoEstudio';
 import { loteDoCorpo } from './malhasDoEstudio';
-import { lotesDoTecido, type PecaParaOEstudio, type TecidoParaOEstudio } from './lotesDoTecido';
+import { lotesDoTecido, mapaDaPeca, type PecaParaOEstudio, type TecidoParaOEstudio } from './lotesDoTecido';
 import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
 import { ROTULO_DA_POSE, type PoseDoManequim, type Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
 
 type AbaDoProvador = 'pecas' | 'costuras' | 'manequim' | 'tecido' | 'imagem' | 'desenho';
+
+/** A borda de uma peça pela face dela, com os lados do contorno que têm costura marcados. */
+function mapaDaInstancia(inst: InstanciaDaPeca, girarGraus: number, costuras: readonly Costura3D[]): MapaDaPeca {
+  const pontos = new Float64Array(inst.contorno.length * 2);
+  inst.contorno.forEach((p, i) => pontos.set([p.x, p.y], 2 * i));
+  const face = coordenadasDaFace(inst, girarGraus, pontos);
+  const contorno = new Float64Array(face.u.length * 2);
+  for (let i = 0; i < face.u.length; i++) contorno.set([face.u[i]!, face.v[i]!], 2 * i);
+  const costurado = new Uint8Array(inst.contorno.length);
+  for (const c of costuras) {
+    for (const lado of [c.a, c.b]) {
+      if (lado.chave === inst.chave) for (const i of trechoDoContorno(inst.contorno.length, lado.de, lado.ate)) costurado[i] = 1;
+    }
+  }
+  return mapaDaPeca(contorno, costurado);
+}
 
 interface EstadoDaSimulacao {
   readonly fase: 'arrumado' | 'costurando' | 'caindo' | 'assentou' | 'parado';
@@ -94,6 +112,8 @@ interface Montada {
   readonly malhaDoCorpo: MalhaDoCorpo;
   /** O corpo pronto para o estúdio, por refino (feito uma vez). */
   readonly lotesDoCorpo: (LoteDoEstudio | undefined)[];
+  /** A borda de cada peça: a costura, a barra e o pesponto (ADR 0231). */
+  readonly mapas: ReadonlyMap<string, MapaDaPeca>;
   readonly botoes: ReturnType<typeof botoesDaSimulacao>;
   readonly uvs: ReadonlyMap<string, Float64Array>;
 }
@@ -155,7 +175,7 @@ export function PainelDoProvador3D(props: {
   const [imagensProntas, setImagensProntas] = useState<ReadonlyMap<string, HTMLImageElement>>(new Map());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const montadaRef = useRef<Montada | null>(null);
-  const arrastoRef = useRef<{ x: number; y: number; camera: Camera3D } | null>(null);
+  const arrastoRef = useRef<{ x: number; y: number; camera: Camera3D; mover: boolean } | null>(null);
   /** Os pixels de cada imagem de estampa, reduzida (feita uma vez). */
   const pixelsDasImagensRef = useRef(new Map<string, { largura: number; altura: number; rgba: Uint8ClampedArray }>());
   /** O cancelamento do cálculo final em andamento, e o relógio que espera a tela parar para pedir outro. */
@@ -221,8 +241,10 @@ export function PainelDoProvador3D(props: {
     const sim = montarSimulacao({ corpo, instancias, configuracoes: montagem.pecas, malhas, costuras: costurasValidas, tecido: montagem.tecido });
     ligarAutoColisao(sim, montagem.autoColisao !== false);
     const uvs = new Map<string, Float64Array>();
+    const mapas = new Map<string, MapaDaPeca>();
     for (const p of sim.pecas) {
       const inst = instancias.find((i) => i.chave === p.chave)!;
+      mapas.set(p.chave, mapaDaInstancia(inst, montagem.pecas[p.chave]!.girarGraus, costurasValidas));
       const face = coordenadasDaFace(inst, montagem.pecas[p.chave]!.girarGraus, p.malha.pontos);
       const uv = new Float64Array(face.u.length * 2);
       for (let i = 0; i < face.u.length; i++) {
@@ -231,7 +253,7 @@ export function PainelDoProvador3D(props: {
       }
       uvs.set(p.chave, uv);
     }
-    montadaRef.current = { chave: chaveDaFisica, sim, corpo, malhaDoCorpo: malhaDoCorpo(corpo), lotesDoCorpo: [], botoes: botoesDaSimulacao(sim, instancias), uvs };
+    montadaRef.current = { chave: chaveDaFisica, sim, corpo, malhaDoCorpo: malhaDoCorpo(corpo), lotesDoCorpo: [], mapas, botoes: botoesDaSimulacao(sim, instancias), uvs };
     return montadaRef.current;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a chave da física resume a montagem que importa aqui
   }, [chaveDaFisica]);
@@ -278,6 +300,7 @@ export function PainelDoProvador3D(props: {
           uv: m.uvs.get(p.chave)!,
           cor: corRgb(desenhoDaFicha ? corNaVariante(config.cor, desenhoDaFicha, variante, COR_DE_PARTIDA) : config.cor),
           espelhada: inst.espelhada,
+          ...(m.mapas.has(p.chave) ? { mapa: m.mapas.get(p.chave)! } : {}),
         };
         return e && pixels ? { ...base, estampa: { ...pixels, larguraMm: e.larguraMm, modo: e.modo, alturaMm: e.alturaMm } } : base;
       });
@@ -335,7 +358,7 @@ export function PainelDoProvador3D(props: {
       const fator = Math.min(1, Math.sqrt(PONTOS_DA_IMAGEM_RAPIDA / Math.max(1, canvas.width * canvas.height)));
       const largura = Math.max(1, Math.round(canvas.width * fator));
       const altura = Math.max(1, Math.round(canvas.height * fator));
-      const rgba = renderizarEstudio(vistaDaProjecao(projecao(cam, largura, altura, alturaDaCena), alturaDaCena), lotesDaCena(variante, 0), QUALIDADE_RAPIDA, fundo);
+      const rgba = renderizarEstudio(vistaDaProjecao(projecao(cam, largura, altura), alturaDaCena), lotesDaCena(variante, 0), QUALIDADE_RAPIDA, fundo);
       const imagem = new ImageData(new Uint8ClampedArray(rgba), largura, altura);
       if (largura === canvas.width && altura === canvas.height) ctx.putImageData(imagem, 0, 0);
       else {
@@ -347,7 +370,7 @@ export function PainelDoProvador3D(props: {
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(menor, 0, 0, canvas.width, canvas.height);
       }
-      pintarPorCima(ctx, projecao(cam, canvas.width, canvas.height, alturaDaCena));
+      pintarPorCima(ctx, projecao(cam, canvas.width, canvas.height));
       return true;
     },
     [obterMontada, lotesDaCena, pintarPorCima, varianteAtual],
@@ -357,7 +380,7 @@ export function PainelDoProvador3D(props: {
   const desenharFinal = useCallback(
     (canvas: HTMLCanvasElement, cam: Camera3D, fundo: FundoDoEstudio, variante: VarianteDeCor | null, qualidade: QualidadeDoEstudio): { pronta: Promise<boolean>; cancelar: () => void } => {
       const alturaDaCena = obterMontada().corpo.alturaMm;
-      const proj = projecao(cam, canvas.width, canvas.height, alturaDaCena);
+      const proj = projecao(cam, canvas.width, canvas.height);
       const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotesDaCena(variante, 1), qualidade, fundo);
       return {
         cancelar: pedido.cancelar,
@@ -628,14 +651,15 @@ export function PainelDoProvador3D(props: {
           <canvas
             ref={canvasRef}
             className="canvas-do-provador"
-            aria-label="O manequim com as peças em 3D (arraste para girar, a roda aproxima)"
+            aria-label="O manequim com as peças em 3D (arraste para girar, a roda aproxima, Shift e arrastar move a vista)"
+            title="Arraste para girar. A roda aproxima. Shift e arrastar (ou o botão direito) move a vista."
             onPointerDown={(e) => {
               if (aba === 'desenho') {
                 // Desenhando no corpo: o clique põe um ponto no tronco (não gira a vista).
                 const canvas = e.currentTarget;
                 const r = canvas.getBoundingClientRect();
                 const m = obterMontada();
-                const proj = projecao(camera, canvas.width, canvas.height, m.corpo.alturaMm);
+                const proj = projecao(camera, canvas.width, canvas.height);
                 const p = pontoDoCorpoNaTela(proj, m.malhaDoCorpo, ((e.clientX - r.left) * canvas.width) / Math.max(1, r.width), ((e.clientY - r.top) * canvas.height) / Math.max(1, r.height));
                 if (!p || !pontoNoTronco(m.corpo, p)) {
                   setMensagem('Clique no tronco do manequim (não na cabeça, nos braços ou nas pernas). Para girar, saia da aba "Desenhar no corpo".');
@@ -645,18 +669,27 @@ export function PainelDoProvador3D(props: {
                 setPontosDoDesenho((lista) => [...lista, p]);
                 return;
               }
-              arrastoRef.current = { x: e.clientX, y: e.clientY, camera };
+              // Com Shift, ou pelo botão do meio ou o direito, a vista anda em vez de girar: é como se chega à barra de perto.
+              arrastoRef.current = { x: e.clientX, y: e.clientY, camera, mover: e.shiftKey || e.button !== 0 };
               e.currentTarget.setPointerCapture?.(e.pointerId);
             }}
             onPointerMove={(e) => {
               const a = arrastoRef.current;
               if (!a) return;
+              if (a.mover) {
+                const c = e.currentTarget;
+                const r = c.getBoundingClientRect();
+                const k = c.width / Math.max(1, r.width);
+                setCamera(cameraMovida(a.camera, projecao(a.camera, c.width, c.height), (e.clientX - a.x) * k, (e.clientY - a.y) * k));
+                return;
+              }
               setCamera({ ...a.camera, guinada: a.camera.guinada - (e.clientX - a.x) * 0.01, arfagem: Math.max(-1.2, Math.min(1.2, a.camera.arfagem + (e.clientY - a.y) * 0.01)) });
             }}
             onPointerUp={() => {
               arrastoRef.current = null;
             }}
-            onWheel={(e) => setCamera((c) => ({ ...c, distancia: Math.max(600, Math.min(12000, c.distancia * (e.deltaY > 0 ? 1.1 : 1 / 1.1))) }))}
+            onContextMenu={(e) => e.preventDefault()}
+            onWheel={(e) => setCamera((c) => ({ ...c, distancia: Math.max(250, Math.min(12000, c.distancia * (e.deltaY > 0 ? 1.1 : 1 / 1.1))) }))}
           />
           <p className={`status-do-provador status-${estado.fase}`} role="status">
             {statusDaSimulacao()}

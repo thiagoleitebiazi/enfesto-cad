@@ -45,7 +45,7 @@ describe('o desenho no corpo vira o pré-molde (ADR 0134)', () => {
   });
 
   it('o clique na tela acha o ponto do corpo debaixo dele, o mais perto da câmera (na frente)', () => {
-    const proj = projecao(cameraDeFrente(corpo.alturaMm), 800, 1000, corpo.alturaMm);
+    const proj = projecao(cameraDeFrente(corpo.alturaMm), 800, 1000);
     const alvo = noTronco(corpo.niveis.cintura, 0);
     const naTela = proj.projetar(alvo.x, alvo.y, alvo.z)!;
     const achado = pontoDoCorpoNaTela(proj, malhaDoCorpo(corpo), naTela.sx, naTela.sy)!;

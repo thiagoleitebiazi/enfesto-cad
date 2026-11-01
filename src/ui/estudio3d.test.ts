@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cameraDeFrente, projecao, vistaDaProjecao } from './cena3d';
+import { mapaDaPeca } from './lotesDoTecido';
 import { opacidadeDoTecido, QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MaterialDoEstudio, type QualidadeDoEstudio } from './estudio3d';
 
 const ALTURA = 1700;
@@ -31,7 +32,7 @@ function esfera(material: MaterialDoEstudio, cz = 0, raio = 300, extra: Partial<
   return { posicoes: Float32Array.from(p), normais: Float32Array.from(n), uv: Float32Array.from(uv), indices: Uint32Array.from(t), material, ...extra };
 }
 
-const vista = (largura = L, altura = L) => vistaDaProjecao(projecao(cameraDeFrente(ALTURA), largura, altura, ALTURA), ALTURA);
+const vista = (largura = L, altura = L) => vistaDaProjecao(projecao(cameraDeFrente(ALTURA), largura, altura), ALTURA);
 const render = (lotes: readonly LoteDoEstudio[], q: QualidadeDoEstudio = QUALIDADE_RAPIDA, fundo: FundoDoEstudio = 'estudio') => renderizarEstudio(vista(), lotes, q, fundo);
 const pixel = (rgba: Uint8ClampedArray, x: number, y: number): [number, number, number] => [rgba[4 * (y * L + x)]!, rgba[4 * (y * L + x) + 1]!, rgba[4 * (y * L + x) + 2]!];
 /** O ponto mais claro no meio da imagem, onde só há a esfera. */
@@ -72,7 +73,7 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     // Com um corpo que toca o chão, ele deixa uma sombra de contato em volta.
     const noChao: LoteDoEstudio = { ...esfera(TECIDO, 0, 150), posicoes: esfera(TECIDO, 0, 150).posicoes.map((v, i) => (i % 3 === 1 ? v - 760 : v)) };
     const comSombra = render([noChao], QUALIDADE_RAPIDA, 'branco');
-    const proj = projecao(cameraDeFrente(ALTURA), L, L, ALTURA);
+    const proj = projecao(cameraDeFrente(ALTURA), L, L);
     const pe = proj.projetar(0, 0, 250)!;
     expect(pixel(comSombra, Math.round(pe.sx), Math.round(pe.sy))[0]).toBeLessThan(250);
   });
@@ -125,10 +126,55 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
       { ...b, posicoes: b.posicoes.map((v, i) => (i % 3 === 0 ? v + 200 : v)) },
     ];
     const r = render(juntos, QUALIDADE_FINAL);
-    const proj = projecao(cameraDeFrente(ALTURA), L, L, ALTURA);
+    const proj = projecao(cameraDeFrente(ALTURA), L, L);
     const rego = proj.projetar(0, 900, 60)!;
     const volume = proj.projetar(-200, 900, 200)!;
     expect(pixel(r, Math.round(rego.sx), Math.round(rego.sy))[0]).toBeLessThan(pixel(r, Math.round(volume.sx), Math.round(volume.sy))[0]);
+  });
+
+  it('a costura faz um sulco no pano; a barra livre leva o pesponto, que aparece de perto', () => {
+    // Um pano de 400 mm em pé, de frente para a câmera, que enche a imagem. O contorno é o retângulo dele.
+    const pano = (material: MaterialDoEstudio): LoteDoEstudio => {
+      const p: number[] = [];
+      const uv: number[] = [];
+      const t: number[] = [];
+      const N = 40;
+      for (let j = 0; j <= N; j++) {
+        for (let i = 0; i <= N; i++) {
+          p.push(-200 + 10 * i, 700 + 10 * j, 100);
+          uv.push(-200 + 10 * i, 700 + 10 * j);
+        }
+      }
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          const a = j * (N + 1) + i;
+          t.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+        }
+      }
+      return { posicoes: Float32Array.from(p), normais: new Float32Array(p.length).map((_, i) => (i % 3 === 2 ? 1 : 0)), uv: Float32Array.from(uv), indices: Uint32Array.from(t), material };
+    };
+    const contorno = [-200, 700, 200, 700, 200, 1100, -200, 1100];
+    // O lado de baixo livre (o primeiro) e o da direita costurado (o segundo).
+    const mapa = mapaDaPeca(contorno, [0, 1, 0, 0]);
+    const camera = { ...cameraDeFrente(ALTURA), arfagem: 0, distancia: 600, alvo: { x: 170, y: 760, z: 100 } };
+    const LADO = 320;
+    const proj = projecao(camera, LADO, LADO);
+    const imagem = (m: MaterialDoEstudio): Uint8ClampedArray => renderizarEstudio(vistaDaProjecao(proj, ALTURA), [pano(m)], QUALIDADE_FINAL);
+    const ponto = (x: number, y: number): number => {
+      const q = proj.projetar(x, y, 100)!;
+      return Math.round(q.sy) * LADO + Math.round(q.sx);
+    };
+    const base = { acabamento: 'tecido', cor: [170, 150, 110] } as const;
+    const liso = imagem(base);
+    const com = imagem({ ...base, mapa });
+    const media = (r: Uint8ClampedArray, x: number, y: number): number => r[4 * ponto(x, y)]!;
+    // Na costura, um sulco escuro; longe das bordas, nada muda.
+    expect(media(com, 198.5, 800)).toBeLessThan(media(liso, 198.5, 800) - 8);
+    expect(Math.abs(media(com, 100, 800) - media(liso, 100, 800))).toBeLessThan(4);
+    // A borda livre: a linha do pesponto, a 15 mm dela, muda o pano ali.
+    let mudou = 0;
+    for (let x = 60; x < 170; x += 2) mudou += Math.abs(media(com, x, 715) - media(liso, x, 715));
+    expect(mudou).toBeGreaterThan(100);
   });
 
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {

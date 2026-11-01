@@ -1,5 +1,5 @@
 import { corDaTensao } from './cena3d';
-import type { EstampaDoEstudio, LoteDoEstudio, MaterialDoEstudio, TramaDoTecido } from './estudio3d';
+import { ALCANCE_DA_BORDA, type EstampaDoEstudio, type LoteDoEstudio, type MapaDaPeca, type MaterialDoEstudio, type TramaDoTecido } from './estudio3d';
 import { normaisSuaves, refinar } from './malhasDoEstudio';
 
 /** A roupa em lotes para o estúdio (ADR 0228): as peças, os zíperes e os botões, em geometria de verdade. */
@@ -15,6 +15,8 @@ export interface PecaParaOEstudio {
   readonly cor: readonly [number, number, number];
   readonly espelhada: boolean;
   readonly estampa?: EstampaDoEstudio;
+  /** A borda da peça: a costura, a barra e o pesponto (ADR 0231). */
+  readonly mapa?: MapaDaPeca;
 }
 
 export interface TecidoParaOEstudio {
@@ -33,6 +35,60 @@ export interface TecidoParaOEstudio {
   readonly trama?: TramaDoTecido;
   /** Os zíperes: os pontos da costura (nos números da simulação) e o comprimento (mm), do alto para baixo (ADR 0132). */
   readonly ziperes?: readonly { readonly pontos: ArrayLike<number>; readonly comprimentoMm: number }[];
+}
+
+const PASSO_DO_MAPA_MM = 2;
+
+/**
+ * A grade da borda de uma peça (ADR 0231). `contorno`: os pontos na face (u, v seguidos), fechado; `costurado`: 1 em cada
+ * lado do contorno que tem costura (o lado `i` vai do ponto `i` ao seguinte).
+ */
+export function mapaDaPeca(contorno: ArrayLike<number>, costurado: ArrayLike<number>): MapaDaPeca {
+  const n = contorno.length / 2;
+  let [minU, minV, maxU, maxV] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i++) {
+    minU = Math.min(minU, contorno[2 * i]!);
+    maxU = Math.max(maxU, contorno[2 * i]!);
+    minV = Math.min(minV, contorno[2 * i + 1]!);
+    maxV = Math.max(maxV, contorno[2 * i + 1]!);
+  }
+  const passo = PASSO_DO_MAPA_MM;
+  const ou = minU - 2 * passo;
+  const ov = minV - 2 * passo;
+  const largura = Math.ceil((maxU - minU) / passo) + 5;
+  const altura = Math.ceil((maxV - minV) / passo) + 5;
+  const distancia = new Float32Array(largura * altura).fill(Infinity);
+  const caminho = new Float32Array(largura * altura);
+  const marca = new Uint8Array(largura * altura);
+  let andado = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const [u0, v0, u1, v1] = [contorno[2 * i]!, contorno[2 * i + 1]!, contorno[2 * j]!, contorno[2 * j + 1]!];
+    const du = u1 - u0;
+    const dv = v1 - v0;
+    const l2 = du * du + dv * dv;
+    const l = Math.sqrt(l2);
+    const a0 = Math.max(0, Math.floor((Math.min(u0, u1) - ALCANCE_DA_BORDA - ou) / passo));
+    const a1 = Math.min(largura - 1, Math.ceil((Math.max(u0, u1) + ALCANCE_DA_BORDA - ou) / passo));
+    const b0 = Math.max(0, Math.floor((Math.min(v0, v1) - ALCANCE_DA_BORDA - ov) / passo));
+    const b1 = Math.min(altura - 1, Math.ceil((Math.max(v0, v1) + ALCANCE_DA_BORDA - ov) / passo));
+    for (let b = b0; b <= b1; b++) {
+      for (let a = a0; a <= a1; a++) {
+        const pu = ou + a * passo - u0;
+        const pv = ov + b * passo - v0;
+        const t = l2 > 0 ? Math.min(1, Math.max(0, (pu * du + pv * dv) / l2)) : 0;
+        const d = Math.hypot(pu - t * du, pv - t * dv);
+        const g = b * largura + a;
+        if (d < distancia[g]!) {
+          distancia[g] = d;
+          caminho[g] = andado + t * l;
+          marca[g] = costurado[i]! ? 1 : 0;
+        }
+      }
+    }
+    andado += l;
+  }
+  return { ou, ov, passo, largura, altura, distancia, caminho, costurado: marca };
 }
 
 /** As normais de toda a roupa, com os dois lados de cada costura na mesma direção. */
@@ -201,6 +257,7 @@ export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstu
       ...(transparencia > 0 ? { transparencia } : {}),
       ...(t.trama && !t.tensoes ? { trama: t.trama } : {}),
       ...(peca.estampa && !t.tensoes ? { estampa: peca.estampa } : {}),
+      ...(peca.mapa && !t.tensoes ? { mapa: peca.mapa } : {}),
     };
     if (t.tensoes) {
       const coresDosTriangulos = new Uint8Array(peca.quantidade * 3);

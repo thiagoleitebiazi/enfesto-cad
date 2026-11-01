@@ -746,6 +746,13 @@ export function ladosDoContorno(contorno: Contorno): LadoDoContorno[] {
   return lados;
 }
 
+/** Os lados do contorno (de `n` pontos) no trecho de `de` a `ate`, no sentido do contorno. */
+export function trechoDoContorno(n: number, de: number, ate: number): number[] {
+  const lados: number[] = [];
+  for (let i = de; i !== ate && lados.length < n; i = (i + 1) % n) lados.push(i);
+  return lados;
+}
+
 /** O comprimento do trecho do contorno de `de` a `ate` (no sentido do contorno). */
 export function comprimentoDoTrecho(contorno: Contorno, de: number, ate: number): number {
   const n = contorno.length;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loteDoBotao, loteDoZiper, lotesDoTecido, type TecidoParaOEstudio } from './lotesDoTecido';
+import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
 import { normaisSuaves, refinar } from './malhasDoEstudio';
 
 /** Duas peças de um triângulo cada, que se tocam na costura. */
@@ -65,6 +65,37 @@ describe('a roupa em lotes', () => {
     expect(lote!.coresDosTriangulos).toBeDefined();
     expect(lote!.material.trama).toBeUndefined();
     expect(lote!.material.brilho).toBeUndefined();
+  });
+});
+
+describe('a borda da peça (ADR 0231)', () => {
+  const CONTORNO = [0, 0, 300, 0, 300, 200, 0, 200];
+
+  it('a distância ao contorno, o caminho andado e quais lados são costura', () => {
+    const m = mapaDaPeca(CONTORNO, [0, 1, 0, 0]);
+    const ler = (u: number, v: number) => {
+      const g = Math.round((v - m.ov) / m.passo) * m.largura + Math.round((u - m.ou) / m.passo);
+      return { d: m.distancia[g]!, caminho: m.caminho[g]!, costura: m.costurado[g]! };
+    };
+    expect(ler(100, 10).d).toBeCloseTo(10, 0);
+    expect(ler(100, 10).caminho).toBeCloseTo(100, -1);
+    expect(ler(100, 10).costura).toBe(0);
+    expect(ler(290, 100).costura).toBe(1);
+    // O caminho continua de um lado para o outro.
+    expect(ler(290, 100).caminho).toBeCloseTo(400, -1);
+  });
+
+  it('o miolo da peça, longe de tudo, fica de fora', () => {
+    const m = mapaDaPeca([0, 0, 600, 0, 600, 600, 0, 600], [0, 0, 0, 0]);
+    const g = Math.round((300 - m.ov) / m.passo) * m.largura + Math.round((300 - m.ou) / m.passo);
+    expect(m.distancia[g]).toBe(Infinity);
+  });
+
+  it('o mapa vai para o material da peça; no mapa de tensão, não', () => {
+    const mapa = mapaDaPeca(CONTORNO, [0, 0, 0, 0]);
+    const com = { ...DUAS_PECAS, pecas: DUAS_PECAS.pecas.map((p) => ({ ...p, mapa })) };
+    expect(lotesDoTecido(com, 0)[0]!.material.mapa).toBe(mapa);
+    expect(lotesDoTecido({ ...com, tensoes: Float32Array.of(0, 0) }, 0)[0]!.material.mapa).toBeUndefined();
   });
 });
 

@@ -12,8 +12,24 @@ export interface Camera3D {
   readonly alvo: Ponto3D;
 }
 
+/** A distância da vista inteira do corpo, em alturas do corpo. */
+const DISTANCIA_DE_FRENTE = 2.6;
+
 export function cameraDeFrente(alturaMm: number): Camera3D {
-  return { guinada: 0, arfagem: 0.08, distancia: alturaMm * 2.6, alvo: { x: 0, y: alturaMm * 0.52, z: 0 } };
+  return { guinada: 0, arfagem: 0.08, distancia: alturaMm * DISTANCIA_DE_FRENTE, alvo: { x: 0, y: alturaMm * 0.52, z: 0 } };
+}
+
+/** A câmera com o alvo levado `dx`, `dy` pixels na imagem: o que está na tela acompanha o arrasto. */
+export function cameraMovida(camera: Camera3D, proj: Projecao, dx: number, dy: number): Camera3D {
+  const k = camera.distancia / proj.foco;
+  return {
+    ...camera,
+    alvo: {
+      x: camera.alvo.x + k * (-dx * proj.direita.x + dy * proj.alto.x),
+      y: camera.alvo.y + k * (-dx * proj.direita.y + dy * proj.alto.y),
+      z: camera.alvo.z + k * (-dx * proj.direita.z + dy * proj.alto.z),
+    },
+  };
 }
 
 export interface Projecao {
@@ -34,7 +50,7 @@ export interface Projecao {
   readonly alto: Ponto3D;
 }
 
-export function projecao(camera: Camera3D, largura: number, altura: number, alturaDoCorpoMm: number): Projecao {
+export function projecao(camera: Camera3D, largura: number, altura: number): Projecao {
   const cp = Math.cos(camera.arfagem);
   const posicao = {
     x: camera.alvo.x + camera.distancia * Math.sin(camera.guinada) * cp,
@@ -60,7 +76,8 @@ export function projecao(camera: Camera3D, largura: number, altura: number, altu
   const ux = ry * fz - rz * fy;
   const uy = rz * fx - rx * fz;
   const uz = rx * fy - ry * fx;
-  const foco = (altura / 1.15) * (camera.distancia / Math.max(1, alturaDoCorpoMm));
+  // O foco não acompanha a distância: chegar perto aumenta o que se vê (ADR 0231).
+  const foco = (altura / 1.15) * DISTANCIA_DE_FRENTE;
   const cx = largura / 2;
   const cy = altura / 2;
   const luzBruta = { x: 0.35 * rx + 0.6 * ux - 0.7 * fx, y: 0.35 * ry + 0.6 * uy - 0.7 * fy, z: 0.35 * rz + 0.6 * uz - 0.7 * fz };
