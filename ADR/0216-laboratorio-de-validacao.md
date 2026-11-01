@@ -28,7 +28,7 @@ Os ajustes no teste de uso (`scripts/teste-de-uso`): a lista de botões da tela 
 - O servidor de colaboração entre dois computadores: só neste, com outro cliente do outro lado.
 - A IA: só com um serviço de mentira, até haver a chave.
 - As leituras minhas do manual (Discreto, Proporcional, relacionamento, transpasse, sugestão do método): só com quem tem o programa de referência.
-- "Lado a lado" falhou de vez em quando numa tela de 1280: nas rodadas completas, as duas janelas ficaram onde estavam em 3 de 9. A causa não foi confirmada. O laboratório registra o que o programa vê em cada arranjo, para a próxima vez que acontecer.
+- "Lado a lado" falhou de vez em quando numa tela de 1280, em 3 de 9 rodadas completas. As janelas saíam do maximizado, mas o lugar pedido não ficava. Não foi possível repetir a falha de propósito, em 80 tentativas, então a causa exata segue sem prova. A correção não depende dela: agora o programa confere onde cada janela ficou e repete até ela ir para o lugar. Se o Windows não deixar, o programa avisa.
 - O contraste mede a cor, não a composição: a tela segue sem ser vista por uma pessoa.
 
 Conferência: `npm run validar` e o teste de uso completo, em dados descartáveis, mais os testes unitários, `npx eslint` e `npx tsc -b --noEmit`.

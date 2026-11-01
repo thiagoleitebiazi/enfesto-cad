@@ -587,16 +587,27 @@ async function principal() {
     const outra = await esperarAte(async () => BrowserWindow.getAllWindows().find((j) => j !== win && j.isVisible()), 30000);
     conferir('abre outra janela do programa', Boolean(outra));
     if (!outra) return;
-    await espera(1500);
-    win.moveTop();
-    win.focus();
-    await espera(400);
-    await menu('Visão', 'Janelas lado a lado');
-    await espera(600);
-    const [a, b] = [win.getBounds(), outra.getBounds()];
-    const ladoALado = a.x + a.width <= b.x + 2 || b.x + b.width <= a.x + 2;
-    conferir('lado a lado: uma ao lado da outra, sem sobrepor', ladoALado, JSON.stringify([a, b]));
-    if (!ladoALado) log(`      arranjo: win=${win.id} outra=${outra.id} ${JSON.stringify(chamadasDoArranjo).slice(0, 1200)}`);
+    const voltas = 8;
+    let erradas = 0;
+    let primeira = '';
+    for (let volta = 0; volta < voltas; volta++) {
+      if (volta > 0) {
+        win.maximize();
+        outra.maximize();
+        await espera(350);
+        win.moveTop();
+        win.focus();
+        await espera(200);
+      }
+      const chamadas = chamadasDoArranjo.length;
+      await menu('Visão', 'Janelas lado a lado');
+      await espera(900);
+      const [a, b] = [win.getBounds(), outra.getBounds()];
+      if (a.x + a.width <= b.x + 2 || b.x + b.width <= a.x + 2) continue;
+      erradas++;
+      if (!primeira) primeira = JSON.stringify({ volta, chamou: chamadasDoArranjo.length > chamadas, a, b, ultimas: chamadasDoArranjo.slice(-3) });
+    }
+    conferir(`lado a lado, saindo do maximizado, ${voltas} vezes`, erradas === 0, `${erradas} errada(s) ${primeira}`.slice(0, 700));
     await menu('Visão', 'Janelas em cascata');
     await espera(600);
     const [c, d] = [win.getBounds(), outra.getBounds()];

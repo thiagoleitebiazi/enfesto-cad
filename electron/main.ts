@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Server } from 'node:http';
-import { emCascata, ladoALado } from './arrumarJanelas';
+import { emCascata, ladoALado, porNoLugar } from './arrumarJanelas';
 import { pedirAoServidor, urlDoServidorValida } from './conexaoDeColaboracao';
 import { criarServidorDeColaboracao } from './servidorDeColaboracao';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
@@ -1103,30 +1103,19 @@ ipcMain.handle('fonte-escolher', async () => {
 ipcMain.handle('fonte-esquecer', () => unlink(arquivoDaFonte()).catch(() => undefined));
 
 // As janelas (ADR 0211): outra janela do programa, e as visíveis arrumadas na tela da primeira.
-const ESPERA_PARA_SAIR_DO_MAXIMIZADO_MS = 200;
-
 ipcMain.handle('janelas-arrumar', async (_evento, como: unknown) => {
   if (como === 'nova') {
     criarJanelaPrincipal();
-    return;
+    return true;
   }
   const janelas = BrowserWindow.getAllWindows().filter((j) => j.isVisible() && !j.isMinimized());
   const primeira = janelas[0];
-  if (!primeira) return;
+  if (!primeira) return true;
   const area = screen.getDisplayMatching(primeira.getBounds()).workArea;
   const lugares = como === 'lado-a-lado' ? ladoALado(janelas.length, area) : emCascata(janelas.length, area);
-  // O Windows termina de sair do maximizado depois de voltar da chamada: mudar o lugar antes disso é ignorado.
-  if (janelas.some((j) => j.isMaximized())) {
-    janelas.forEach((j) => j.unmaximize());
-    await new Promise((resolver) => setTimeout(resolver, ESPERA_PARA_SAIR_DO_MAXIMIZADO_MS));
-  }
-  janelas.forEach((janela, i) => {
-    const lugar = lugares[i]!;
-    // Em telas de 1280, duas janelas lado a lado têm menos que o mínimo de uma: o mínimo cede, ou elas se sobrepõem.
-    const [larguraMinima = 0, alturaMinima = 0] = janela.getMinimumSize();
-    janela.setMinimumSize(Math.min(larguraMinima, lugar.width), Math.min(alturaMinima, lugar.height));
-    janela.setBounds(lugar);
-  });
+  const esperar = (ms: number): Promise<void> => new Promise((resolver) => setTimeout(resolver, ms));
+  const colocadas = await Promise.all(janelas.map((janela, i) => porNoLugar(janela, lugares[i]!, esperar)));
+  return colocadas.every((c) => c);
 });
 
 ipcMain.handle('saida-enviar', async (_evento, p: { destino?: unknown; texto?: unknown }) => {

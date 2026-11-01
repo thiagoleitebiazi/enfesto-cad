@@ -5803,7 +5803,11 @@ export default function App(): React.JSX.Element {
         }}
         mostrarTeclado={mostrarTeclado}
         onAlternarTeclado={() => setMostrarTeclado((v) => !v)}
-        onJanelas={(como) => void window.enfestoCad?.arrumarJanelas(como)}
+        onJanelas={(como) =>
+          void window.enfestoCad?.arrumarJanelas(como).then((arrumou) => {
+            if (!arrumou) avisar('O Windows não deixou arrumar as janelas: tente de novo.');
+          })
+        }
         {...(apiDaColaboracao ? { onAbrirColaboracao: () => setMostrarColaboracao(true) } : {})}
         portaDeSaida={portaDeSaida}
         onPortaDeSaida={() => setDialogoDeFerramenta({ tipo: 'porta-de-saida' })}

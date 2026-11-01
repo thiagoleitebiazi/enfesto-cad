@@ -29,3 +29,45 @@ export function ladoALado(quantas: number, area: Retangulo): Retangulo[] {
     return { x: area.x + (i % colunas) * largura, y: area.y + linha * altura, width: largura, height: altura };
   });
 }
+
+export interface JanelaArrumavel {
+  isDestroyed(): boolean;
+  isMaximized(): boolean;
+  unmaximize(): void;
+  getBounds(): Retangulo;
+  setBounds(lugar: Retangulo): void;
+  getMinimumSize(): number[];
+  setMinimumSize(largura: number, altura: number): void;
+}
+
+const TENTATIVAS_DO_ARRANJO = 8;
+const ESPERA_DO_ARRANJO_MS = 150;
+/** A escala da tela arredonda o tamanho: alguns pixels de diferença não são erro. */
+const FOLGA_DO_ARRANJO_PX = 8;
+
+function estaNoLugar(janela: JanelaArrumavel, lugar: Retangulo): boolean {
+  const b = janela.getBounds();
+  return !janela.isMaximized() && [b.x - lugar.x, b.y - lugar.y, b.width - lugar.width, b.height - lugar.height].every((d) => Math.abs(d) <= FOLGA_DO_ARRANJO_PX);
+}
+
+/**
+ * Põe a janela no lugar e confere. O Windows pode ignorar o pedido, quando a janela ainda está saindo do maximizado: só
+ * o lugar em que ela ficou diz se deu certo. Devolve `false` se ela não foi para lá depois de todas as tentativas.
+ */
+export async function porNoLugar(janela: JanelaArrumavel, lugar: Retangulo, esperar: (ms: number) => Promise<void>): Promise<boolean> {
+  // Em telas de 1280, duas janelas lado a lado têm menos que o mínimo de uma: o mínimo cede, ou elas se sobrepõem.
+  const [larguraMinima = 0, alturaMinima = 0] = janela.getMinimumSize();
+  janela.setMinimumSize(Math.min(larguraMinima, lugar.width), Math.min(alturaMinima, lugar.height));
+  for (let i = 0; i < TENTATIVAS_DO_ARRANJO; i++) {
+    if (janela.isDestroyed()) return true;
+    if (janela.isMaximized()) {
+      janela.unmaximize();
+      await esperar(ESPERA_DO_ARRANJO_MS);
+      if (janela.isDestroyed()) return true;
+    }
+    janela.setBounds(lugar);
+    await esperar(ESPERA_DO_ARRANJO_MS);
+    if (janela.isDestroyed() || estaNoLugar(janela, lugar)) return true;
+  }
+  return false;
+}

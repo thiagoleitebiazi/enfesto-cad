@@ -148,8 +148,8 @@ const api = {
     await ipcRenderer.invoke('fonte-esquecer');
   },
   /** Abrir outra janela do programa, ou arrumar as que estão abertas (ADR 0211). */
-  async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<void> {
-    await ipcRenderer.invoke('janelas-arrumar', como);
+  async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<boolean> {
+    return ipcRenderer.invoke('janelas-arrumar', como) as Promise<boolean>;
   },
   /** O risco direto para o plotter (ADR 0210): o destino é o texto da porta de saída. */
   async enviarAPorta(destino: string, texto: string): Promise<{ readonly ok: boolean; readonly erro?: string }> {
