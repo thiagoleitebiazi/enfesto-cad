@@ -663,7 +663,9 @@ describe('o tecido sobre o próprio tecido (ADR 0146)', () => {
     const com = cair(true);
     const raio = autoColisaoDaSimulacao(com).raio;
     expect(raio).toBeGreaterThan(10);
-    expect(maiorAutoPenetracao(com)).toBeLessThan(0.3 * raio);
+    // A conta é caótica: 1e-10 mm de arredondamento leva este valor de 19% a 36% do raio, e o Mac dá outro número que o
+    // Windows. Sem a colisão ele fica em 95% a 98%: o limite separa os dois casos sem depender da máquina.
+    expect(maiorAutoPenetracao(com)).toBeLessThan(0.5 * raio);
     expect(assentou(com)).toBe(true);
     expect(maiorAutoPenetracao(cair(false))).toBeGreaterThan(0.8 * raio);
   }, 60000);
