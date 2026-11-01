@@ -1432,6 +1432,29 @@ async function principal() {
     fitaPorVista[vista] = await pixelsDaFita();
     if (fitaPorVista[vista] === Math.max(...Object.values(fitaPorVista))) await foto('35c-ziper-na-lateral.png');
   }
+  // Quanto a imagem leva para ficar nítida, no programa de verdade (ADR 0233): a rápida logo depois do clique, com a foto dela;
+  // a do meio nos pixels da tela; e a final. Foi só numa foto como esta que apareceu o mosaico que as contas não mostravam.
+  await botaoNaJanela('Frente');
+  const inicioDaImagem = Date.now();
+  await espera(120);
+  await foto('35c2-imagem-rapida.png');
+  let imagemDoMeio = null;
+  let imagemFinal = null;
+  for (let i = 0; i < 700 && imagemFinal === null; i++) {
+    const q = await js(`document.querySelector('[role=dialog] canvas').dataset.qualidade || ''`);
+    if (q !== 'rapida' && imagemDoMeio === null) {
+      imagemDoMeio = Date.now() - inicioDaImagem;
+      await foto('35c3-imagem-do-meio.png');
+    }
+    if (q === 'final') imagemFinal = Date.now() - inicioDaImagem;
+    else await espera(50);
+  }
+  const areaDaImagem = JSON.parse(await js(`(() => { const c = document.querySelector('[role=dialog] canvas'); return JSON.stringify({ largura: c.width, altura: c.height }); })()`));
+  conferir(
+    'a imagem fica nítida sozinha: a do meio em até 6 s, a final em até 30 s, nos pixels da tela',
+    imagemDoMeio !== null && imagemDoMeio < 6000 && imagemFinal !== null && imagemFinal < 30000 && areaDaImagem.largura > 400,
+    `do meio em ${imagemDoMeio} ms, final em ${imagemFinal} ms, área de ${areaDaImagem.largura} × ${areaDaImagem.altura}`,
+  );
   const comZiper = await js(`((document.querySelector('[role=dialog] .status-do-provador') || {}).textContent || '')`);
   conferir(
     'o zíper de 18 cm na lateral da saia aparece no desenho, e a saia continua assentada',
@@ -1462,7 +1485,7 @@ async function principal() {
   await espera(500);
   const pngs = tresVistas();
   const png = pngs[0] ? fs.readFileSync(path.join(SAIDA, pngs[0])) : null;
-  conferir('a imagem das três vistas foi gravada (PNG, 3600 de largura)', !!png && png.length > 20000 && png.subarray(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1800, `${JSON.stringify(pngs)} ${png ? png.length : 0} bytes`);
+  conferir('a imagem das três vistas foi gravada (PNG, 3600 de largura)', !!png && png.length > 20000 && png.subarray(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 3600, `${JSON.stringify(pngs)} ${png ? png.length : 0} bytes`);
   // A resolução muito alta e o giro em vídeo (ADR 0139): esta vista em 4× (2880 × 3840) e uma volta inteira em WebM.
   await noCampo('Resolução da imagem', '4');
   await espera(300);

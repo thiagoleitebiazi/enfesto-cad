@@ -67,7 +67,7 @@ import {
   type Camera3D,
   type Projecao,
 } from './cena3d';
-import { QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MapaDaPeca, type QualidadeDoEstudio } from './estudio3d';
+import { QUALIDADE_FINAL, QUALIDADE_MEDIA, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MapaDaPeca, type QualidadeDoEstudio } from './estudio3d';
 import { imagemDoEstudio } from './imagemDoEstudio';
 import { loteDoCorpo } from './malhasDoEstudio';
 import { lotesDoTecido, mapaDaPeca, type PecaParaOEstudio, type TecidoParaOEstudio } from './lotesDoTecido';
@@ -121,17 +121,17 @@ interface Montada {
 
 const TEMPO_MAXIMO_S = 10;
 /** Quantos pontos tem a imagem rápida (a que acompanha o arrasto e a simulação), para começar, e os limites. */
-const PONTOS_DA_IMAGEM_RAPIDA = 420_000;
-const MENOS_PONTOS_NA_RAPIDA = 120_000;
+const PONTOS_DA_IMAGEM_RAPIDA = 500_000;
+const MENOS_PONTOS_NA_RAPIDA = 300_000;
 const MAIS_PONTOS_NA_RAPIDA = 2_400_000;
-/** O tempo de uma imagem rápida (ms): acima, ela perde pontos; abaixo, ganha. */
-const IMAGEM_RAPIDA_DEMORADA_MS = 70;
-const IMAGEM_RAPIDA_FOLGADA_MS = 35;
+/** O tempo de uma imagem rápida (ms): acima, ela perde pontos; abaixo, ganha. Abaixo do mínimo ela viraria um mosaico. */
+const IMAGEM_RAPIDA_DEMORADA_MS = 150;
+const IMAGEM_RAPIDA_FOLGADA_MS = 75;
 const INTERVALO_DE_DESENHO_NA_SIMULACAO_MS = 160;
 /** Mais perto que isto (em alturas do corpo), a imagem final divide a malha do corpo mais uma vez. */
 const DISTANCIA_DO_CORPO_MAIS_FINO = 1.4;
 /** Quanto a tela fica parada antes de a imagem final ser calculada (ms). */
-const ESPERA_DA_IMAGEM_FINAL_MS = 180;
+const ESPERA_DA_IMAGEM_FINAL_MS = 120;
 /** A qualidade da imagem salva: nas muito grandes, os pontos a mais já vêm do tamanho. */
 const qualidadeDaImagem = (fator: number): QualidadeDoEstudio => ({ ...QUALIDADE_FINAL, sombraPx: 3072, superamostragem: fator >= 4 ? 2 : 3 });
 const VISTAS: ReadonlyArray<readonly [string, number]> = [
@@ -191,6 +191,8 @@ export function PainelDoProvador3D(props: {
   /** O cancelamento do cálculo final em andamento, e o relógio que espera a tela parar para pedir outro. */
   const finalRef = useRef<{ cancelar: () => void } | null>(null);
   const relogioDoFinalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** Os lotes refinados da última imagem final, e de que cena eles são. */
+  const lotesFinaisRef = useRef<{ readonly fonte: unknown; readonly tempo: number; readonly variante: VarianteDeCor | null; readonly refinoDoCorpo: number; readonly lotes: LoteDoEstudio[] } | null>(null);
   /** Quantos pontos tem a imagem rápida: acompanha o que este computador aguenta (ADR 0233). */
   const pontosDaRapidaRef = useRef(PONTOS_DA_IMAGEM_RAPIDA);
 
@@ -400,7 +402,13 @@ export function PainelDoProvador3D(props: {
       const proj = projecao(cam, canvas.width, canvas.height);
       // De perto, a malha do corpo apareceria no contorno: mais uma divisão.
       const refinoDoCorpo = cam.distancia < DISTANCIA_DO_CORPO_MAIS_FINO * alturaDaCena ? 2 : 1;
-      const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotesDaCena(variante, 1, refinoDoCorpo), qualidade, fundo);
+      // Só a câmera mudou: a malha refinada é a mesma, e fazê-la de novo custaria mais que a imagem do meio.
+      const m = obterMontada();
+      const guardados = lotesFinaisRef.current;
+      const servem = guardados !== null && guardados.fonte === lotesDaCena && guardados.tempo === m.sim.tempo && guardados.variante === variante && guardados.refinoDoCorpo === refinoDoCorpo;
+      const lotes = servem ? guardados.lotes : lotesDaCena(variante, 1, refinoDoCorpo);
+      lotesFinaisRef.current = { fonte: lotesDaCena, tempo: m.sim.tempo, variante, refinoDoCorpo, lotes };
+      const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotes, qualidade, fundo);
       return {
         cancelar: pedido.cancelar,
         pronta: pedido.pronta.then((rgba) => {
@@ -426,11 +434,23 @@ export function PainelDoProvador3D(props: {
     finalRef.current?.cancelar();
     finalRef.current = null;
     clearTimeout(relogioDoFinalRef.current);
-    if (!desenharRapido(canvas, camera, 'estudio') || !comFinal) return;
-    // Parado o movimento, a imagem final toma o lugar da rápida.
+    if (!desenharRapido(canvas, camera, 'estudio')) return;
+    // Qual imagem está na tela, para quem precisa saber se ela já é a final (o teste de uso).
+    canvas.dataset['qualidade'] = 'rapida';
+    if (!comFinal) return;
+    // Parado o movimento, a imagem do meio toma o lugar da rápida, nos pixels da tela, e a final, o lugar dela.
     relogioDoFinalRef.current = setTimeout(() => {
-      const pedido = desenharFinal(canvas, camera, 'estudio', varianteAtual, QUALIDADE_FINAL);
-      finalRef.current = pedido;
+      const media = desenharFinal(canvas, camera, 'estudio', varianteAtual, QUALIDADE_MEDIA);
+      finalRef.current = media;
+      void media.pronta.then((pronta) => {
+        if (!pronta || finalRef.current !== media) return;
+        canvas.dataset['qualidade'] = 'media';
+        const final = desenharFinal(canvas, camera, 'estudio', varianteAtual, QUALIDADE_FINAL);
+        finalRef.current = final;
+        void final.pronta.then((ok) => {
+          if (ok && finalRef.current === final) canvas.dataset['qualidade'] = 'final';
+        });
+      });
     }, ESPERA_DA_IMAGEM_FINAL_MS);
   }, [desenharRapido, desenharFinal, camera, varianteAtual]);
 

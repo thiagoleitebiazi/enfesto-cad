@@ -105,6 +105,8 @@ export interface QualidadeDoEstudio {
 }
 
 export const QUALIDADE_RAPIDA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 512, amostrasDeSombra: 4, amostrasDeOclusao: 0 };
+/** A etapa do meio: um ponto por pixel, nos pixels que a tela tem. Chega em menos de um segundo, enquanto a final é calculada. */
+export const QUALIDADE_MEDIA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 1536, amostrasDeSombra: 9, amostrasDeOclusao: 8 };
 export const QUALIDADE_FINAL: QualidadeDoEstudio = { superamostragem: 3, sombraPx: 2048, amostrasDeSombra: 9, amostrasDeOclusao: 8 };
 
 /** As linhas da imagem que um trabalhador calcula: `de` incluída, `ate` não. */
@@ -835,6 +837,7 @@ const FUNDO_DO_CHAO = [0.86, 0.862, 0.868];
  */
 export const opacidadeDoTecido = (transparencia: number): number => 1 - 0.85 * transparencia ** 1.6;
 
+const PASSO_DO_FUNDO = 4;
 /** O raio da oclusão (mm), o maior: a faixa precisa enxergar isso além das suas linhas, ou as emendas apareceriam. */
 const RAIO_DA_OCLUSAO_MM = 90;
 const MAIOR_MARGEM_DA_FAIXA = 220;
@@ -1172,7 +1175,9 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
 
     // A sombra: o ponto saindo um pouco do pano, para o próprio pano não se sombrear.
     const ruidoDoPonto = (52.9829189 * ((0.06711056 * xp + 0.00583715 * (yp + linhaDaFaixa)) % 1)) % 1;
-    const giro = ruidoDoPonto * DOIS_PI;
+    // Na imagem rápida, com poucas amostras, o ruído viraria um pontilhado, e ela ainda é ampliada na tela: sem ele, a sombra
+    // fica um pouco em degraus, mas limpa.
+    const giro = q.amostrasDeSombra <= 4 ? 0 : ruidoDoPonto * DOIS_PI;
     const sombraKey = luzQueChega(sombra, px + nx * 3, py + ny * 3, pz + nz * 3, giro, q.amostrasDeSombra, tecido ? FOLGA_DA_SOMBRA_NO_PANO_MM : FOLGA_DA_SOMBRA_MM);
 
     let ao = 1;
@@ -1280,35 +1285,63 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
   const branco = fundo === 'branco';
   const raioDoPalco = v.alturaDaCena * 1.35;
   const raioDoFim = v.alturaDaCena * 2.8;
+  const corDoFundo = (x: number, y: number, s: Float64Array): void => {
+    const kx = (x + 0.5 - v.largura / 2) / v.foco;
+    const ky = -(y + 0.5 - v.altura / 2) / v.foco;
+    const dx = F.x + kx * R.x + ky * U.x;
+    const dy = F.y + kx * R.y + ky * U.y;
+    const dz = F.z + kx * R.z + ky * U.z;
+    const alto = 0.5 + (0.5 * (y + 0.5 - v.altura)) / -v.altura;
+    let r = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[0]! + (FUNDO_DA_PAREDE_ALTO[0]! - FUNDO_DA_PAREDE_BAIXO[0]!) * alto;
+    let g = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[1]! + (FUNDO_DA_PAREDE_ALTO[1]! - FUNDO_DA_PAREDE_BAIXO[1]!) * alto;
+    let b = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[2]! + (FUNDO_DA_PAREDE_ALTO[2]! - FUNDO_DA_PAREDE_BAIXO[2]!) * alto;
+    if (dy < -1e-6) {
+      const t = -O.y / dy;
+      const hx = O.x + dx * t;
+      const hz = O.z + dz * t;
+      const dist = Math.hypot(hx, hz);
+      const m = misturaSuave(raioDoPalco, raioDoFim, dist);
+      const claridade = lerChao(chao, hx, hz);
+      const chaoR = branco ? 1 : FUNDO_DO_CHAO[0]!;
+      const chaoG = branco ? 1 : FUNDO_DO_CHAO[1]!;
+      const chaoB = branco ? 1 : FUNDO_DO_CHAO[2]!;
+      r = (chaoR + (r - chaoR) * m) * (1 + (claridade - 1) * (1 - m));
+      g = (chaoG + (g - chaoG) * m) * (1 + (claridade - 1) * (1 - m));
+      b = (chaoB + (b - chaoB) * m) * (1 + (claridade - 1) * (1 - m));
+    }
+    s[0] = r;
+    s[1] = g;
+    s[2] = b;
+  };
+  // O fundo é liso: basta calculá-lo numa grade de 4 em 4 pixels, presa à imagem inteira, e ir de um nó ao outro.
+  const colunasDoFundo = Math.floor((v.largura - 1) / PASSO_DO_FUNDO) + 2;
+  const linhaInicial = Math.floor(topo / PASSO_DO_FUNDO);
+  const linhasDoFundo = Math.floor((baixo - 1) / PASSO_DO_FUNDO) - linhaInicial + 2;
+  const nos = new Float32Array(colunasDoFundo * linhasDoFundo * 3);
+  const noFundo = new Float64Array(3);
+  for (let j = 0; j < linhasDoFundo; j++) {
+    for (let i = 0; i < colunasDoFundo; i++) {
+      corDoFundo(i * PASSO_DO_FUNDO, (j + linhaInicial) * PASSO_DO_FUNDO, noFundo);
+      nos.set(noFundo, 3 * (j * colunasDoFundo + i));
+    }
+  }
   for (let y = topo; y < baixo; y++) {
+    const fy = (y % PASSO_DO_FUNDO) / PASSO_DO_FUNDO;
+    const j = Math.floor(y / PASSO_DO_FUNDO) - linhaInicial;
     for (let x = 0; x < v.largura; x++) {
-      const kx = (x + 0.5 - v.largura / 2) / v.foco;
-      const ky = -(y + 0.5 - v.altura / 2) / v.foco;
-      const dx = F.x + kx * R.x + ky * U.x;
-      const dy = F.y + kx * R.y + ky * U.y;
-      const dz = F.z + kx * R.z + ky * U.z;
-      const alto = 0.5 + (0.5 * (y + 0.5 - v.altura)) / -v.altura;
-      let r = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[0]! + (FUNDO_DA_PAREDE_ALTO[0]! - FUNDO_DA_PAREDE_BAIXO[0]!) * alto;
-      let g = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[1]! + (FUNDO_DA_PAREDE_ALTO[1]! - FUNDO_DA_PAREDE_BAIXO[1]!) * alto;
-      let b = branco ? 1 : FUNDO_DA_PAREDE_BAIXO[2]! + (FUNDO_DA_PAREDE_ALTO[2]! - FUNDO_DA_PAREDE_BAIXO[2]!) * alto;
-      if (dy < -1e-6) {
-        const s = -O.y / dy;
-        const hx = O.x + dx * s;
-        const hz = O.z + dz * s;
-        const dist = Math.hypot(hx, hz);
-        const m = misturaSuave(raioDoPalco, raioDoFim, dist);
-        const claridade = lerChao(chao, hx, hz);
-        const chaoR = branco ? 1 : FUNDO_DO_CHAO[0]!;
-        const chaoG = branco ? 1 : FUNDO_DO_CHAO[1]!;
-        const chaoB = branco ? 1 : FUNDO_DO_CHAO[2]!;
-        r = (chaoR + (r - chaoR) * m) * (1 + (claridade - 1) * (1 - m));
-        g = (chaoG + (g - chaoG) * m) * (1 + (claridade - 1) * (1 - m));
-        b = (chaoB + (b - chaoB) * m) * (1 + (claridade - 1) * (1 - m));
-      }
+      const fx = (x % PASSO_DO_FUNDO) / PASSO_DO_FUNDO;
+      const n00 = 3 * (j * colunasDoFundo + Math.floor(x / PASSO_DO_FUNDO));
+      const n10 = n00 + 3;
+      const n01 = n00 + 3 * colunasDoFundo;
+      const n11 = n01 + 3;
+      const a0 = (1 - fx) * (1 - fy);
+      const a1 = fx * (1 - fy);
+      const a2 = (1 - fx) * fy;
+      const a3 = fx * fy;
       const i = (y - topo) * v.largura + x;
-      fundoR[i] = r;
-      fundoG[i] = g;
-      fundoB[i] = b;
+      fundoR[i] = a0 * nos[n00]! + a1 * nos[n10]! + a2 * nos[n01]! + a3 * nos[n11]!;
+      fundoG[i] = a0 * nos[n00 + 1]! + a1 * nos[n10 + 1]! + a2 * nos[n01 + 1]! + a3 * nos[n11 + 1]!;
+      fundoB[i] = a0 * nos[n00 + 2]! + a1 * nos[n10 + 2]! + a2 * nos[n01 + 2]! + a3 * nos[n11 + 2]!;
     }
   }
 

@@ -10,7 +10,7 @@ import { criarMolde, type Molde } from './molde';
  */
 
 /** O quanto o ponto pode sair da elipse do tronco (em fração do raio) e ainda contar como do tronco. */
-const TOLERANCIA_DO_TRONCO = 0.15;
+const TOLERANCIA_DO_TRONCO = 0.45;
 
 /** O ângulo do ponto na elipse da altura dele: 0 no meio da frente (+z), crescendo para o lado esquerdo do corpo (+x). */
 function anguloNaElipse(p: Ponto3D, a: number, b: number): number {
@@ -29,12 +29,28 @@ export function caminhoNaElipse(a: number, b: number, angulo: number): number {
   return (soma * passo) / 3;
 }
 
-/** O ponto é do tronco (na elipse da altura dele, com a tolerância): a cabeça, os braços e as pernas não são. */
+/** A distância do ponto ao trecho de `a` a `b`. */
+function distanciaAoTrecho(p: Ponto3D, a: Ponto3D, b: Ponto3D): number {
+  const [dx, dy, dz] = [b.x - a.x, b.y - a.y, b.z - a.z];
+  const l2 = dx * dx + dy * dy + dz * dz;
+  const t = l2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy + (p.z - a.z) * dz) / l2)) : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy, p.z - a.z - t * dz);
+}
+
+/**
+ * O ponto é do tronco: a cabeça, os braços e as pernas não são. O corpo de verdade (ADR 0229) passa bem longe da elipse da
+ * altura: o busto vai à frente dela, e o vale entre os seios, atrás. Por isso a elipse é só a referência larga, e o que separa
+ * o braço é a distância ao osso dele.
+ */
 export function pontoNoTronco(corpo: CorpoDoManequim, p: Ponto3D): boolean {
   const s = secaoNaAltura(corpo, p.y);
   if (!s) return false;
   const r = Math.hypot(p.x / s.a, p.z / s.b);
-  return Math.abs(r - 1) <= TOLERANCIA_DO_TRONCO;
+  if (Math.abs(r - 1) > TOLERANCIA_DO_TRONCO) return false;
+  for (const b of [corpo.bracos.direito, corpo.bracos.esquerdo]) {
+    if (Math.min(distanciaAoTrecho(p, b.inicio, b.meio), distanciaAoTrecho(p, b.meio, b.fim)) < 1.2 * b.raio) return false;
+  }
+  return true;
 }
 
 /** O ponto desenrolado: a horizontal pelo caminho na elipse (com a folga), a vertical pela altura (de cima para baixo). */

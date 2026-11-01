@@ -39,9 +39,21 @@ describe('o desenho no corpo vira o pré-molde (ADR 0134)', () => {
     expect(pontoNoTronco(corpo, noTronco(busto, 0.3))).toBe(true);
     expect(pontoNoTronco(corpo, { x: 0, y: corpo.alturaMm - 50, z: 0 })).toBe(false);
     expect(pontoNoTronco(corpo, { ...noTronco(busto, 1.57), x: noTronco(busto, 1.57).x + 120 })).toBe(false);
+    // O braço, mesmo perto da elipse: a pele dele, do lado de dentro.
+    const { inicio, meio, raio } = corpo.bracos.esquerdo;
+    expect(pontoNoTronco(corpo, { x: (inicio.x + meio.x) / 2 - raio * 0.8, y: (inicio.y + meio.y) / 2, z: (inicio.z + meio.z) / 2 })).toBe(false);
     expect(() => preMoldeDoDesenho(corpo, [noTronco(busto, 0), noTronco(busto, 0.2)], 0, '', 'x')).toThrow('pelo menos três pontos');
     expect(() => preMoldeDoDesenho(corpo, [noTronco(busto, 0), noTronco(busto, 0.2), { x: 0, y: corpo.alturaMm - 50, z: 0 }], 0, '', 'x')).toThrow('no tronco');
     expect(() => preMoldeDoDesenho(corpo, [noTronco(busto, 0), noTronco(busto, 0.2), noTronco(busto, 0.4)], 0, '', 'x')).toThrow('não fecha uma área');
+  });
+
+  it('o corpo de verdade passa longe da elipse: os pontos clicados no busto, no vale entre os seios e na cintura são do tronco', () => {
+    const proj = projecao(cameraDeFrente(corpo.alturaMm), 800, 1000);
+    for (const [x, y] of [[60, corpo.niveis.busto], [-60, corpo.niveis.busto], [0, corpo.niveis.busto], [40, corpo.niveis.cintura], [-40, corpo.niveis.cintura + 60]] as const) {
+      const naTela = proj.projetar(x, y, 120)!;
+      const achado = pontoDoCorpoNaTela(proj, malhaDoCorpo(corpo), naTela.sx, naTela.sy)!;
+      expect(pontoNoTronco(corpo, achado)).toBe(true);
+    }
   });
 
   it('o clique na tela acha o ponto do corpo debaixo dele, o mais perto da câmera (na frente)', () => {

@@ -3,7 +3,7 @@ import { faixasDaImagem, renderizarEstudio } from './estudio3d';
 import type { PedidoDoEstudio, RespostaDoEstudio } from '../estudio3d.worker';
 
 /** Quantos trabalhadores no máximo: cada um guarda uma cópia da cena. */
-const MAIS_TRABALHADORES = 8;
+const MAIS_TRABALHADORES = 6;
 
 /**
  * A imagem final dividida em faixas, cada uma num Worker (ADR 0233): a conta é a mesma, mas todos os núcleos do computador
