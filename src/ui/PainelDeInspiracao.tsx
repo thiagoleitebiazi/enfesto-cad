@@ -300,6 +300,7 @@ function ParteIa(props: {
   const { servico, painel } = props;
   const [estado, setEstado] = useState<EstadoDoServicoDeIa | null>(null);
   const [configurando, setConfigurando] = useState(false);
+  const [conferencia, setConferencia] = useState('');
   const [chave, setChave] = useState('');
   const [modelo, setModelo] = useState(MODELO_PADRAO);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -405,8 +406,21 @@ function ParteIa(props: {
                   ? 'A chave guardada não abre nesta conta ou neste computador: ponha a chave de novo.'
                   : 'Para criar imagens, ponha a chave da sua conta no serviço de imagens. Sem chave, nada sai deste computador.'}
           </p>
+          {conferencia && <p>{conferencia}</p>}
         </div>
         <div className="acoes-da-fila">
+          {configurado && (
+            <button
+              type="button"
+              title="Pergunta ao serviço se a chave vale, sem gastar crédito"
+              onClick={() => {
+                setConferencia('Conferindo…');
+                void window.enfestoCad?.conferirChaveDaIa().then((r) => setConferencia(r.ok ? 'A chave vale: o serviço aceitou.' : (r.erro ?? 'A chave não foi aceita.')));
+              }}
+            >
+              Conferir a chave
+            </button>
+          )}
           <button type="button" onClick={() => setConfigurando((c) => !c)}>
             {configurando ? 'Fechar' : configurado ? 'Trocar a chave ou o modelo' : 'Configurar…'}
           </button>

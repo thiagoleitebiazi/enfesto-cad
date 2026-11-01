@@ -182,6 +182,9 @@ interface BarraDeFerramentasProps {
   readonly portaDeSaida?: string;
   readonly onPortaDeSaida?: () => void;
   readonly onGerenciadorDeImpressao?: () => void;
+  /** Receber de outro programa e a ficha da enfestadeira (ADR 0222). */
+  readonly onReceberDeOutroPrograma?: () => void;
+  readonly onFichaDaEnfestadeira?: () => void;
   /** O teste na máquina de verdade (ADR 0217). */
   readonly onTesteDoEquipamento?: () => void;
   readonly onEscolherPastaDoPlotter?: () => void;
@@ -730,6 +733,8 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                           { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde o plotter está: na rede, compartilhado ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Gerenciador de impressão…', titulo: 'Os riscos que vão para o plotter, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Teste do equipamento…', titulo: 'Uma página de medidas conhecidas para o plotter ou a mesa de corte: mede com a trena e o programa corrige', onEscolher: props.onTesteDoEquipamento ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Receber de outro programa…', titulo: 'Este computador vira um plotter de rede: o que outro sistema plotar nele entra no projeto', onEscolher: props.onReceberDeOutroPrograma ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Ficha da enfestadeira…', titulo: 'Uma planilha com o comprimento, as camadas e as emendas de cada tecido', onEscolher: props.onFichaDaEnfestadeira ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Escolher a pasta do plotter…', onEscolher: props.onEscolherPastaDoPlotter ?? (() => undefined) },
                         ]
                       : []),

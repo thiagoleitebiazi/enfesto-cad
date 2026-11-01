@@ -374,6 +374,9 @@ import { hpglDoIso } from './formats/iso-importacao';
 import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, filaGuardada, filaParaGuardar, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
 import { PainelDaFilaDeImpressao } from './ui/PainelDaFilaDeImpressao';
 import { TecladoVirtual } from './ui/TecladoVirtual';
+import { PainelDoReceptor, type ApiDoReceptor } from './ui/PainelDoReceptor';
+import { hpglDoRecebido } from './formats/plotRecebido';
+import { csvDaEnfestadeira } from './formats/fichaDaEnfestadeira';
 import { PainelDeColaboracao, type ApiDaColaboracao } from './ui/PainelDeColaboracao';
 import type { ProjetoCompartilhado } from './domain/colaboracao';
 import { arquivoDoRisco, estadosDosRiscos } from './domain/encaixeDoRisco';
@@ -2610,6 +2613,11 @@ export default function App(): React.JSX.Element {
       }
       return novas;
     });
+  }, []);
+  const [mostrarReceptor, setMostrarReceptor] = useState(false);
+  const apiDoReceptor = useMemo((): ApiDoReceptor | null => {
+    const api = window.enfestoCad;
+    return api ? { estado: () => api.receptorEstado(), ligar: (porta) => api.receptorLigar(porta), desligar: () => api.receptorDesligar() } : null;
   }, []);
   const apiDaColaboracao = useMemo((): ApiDaColaboracao | null => {
     const api = window.enfestoCad;
@@ -4869,13 +4877,8 @@ export default function App(): React.JSX.Element {
   }, [enfesto, acrescentarPecasImportadas, importarAstm]);
 
   // O PLT (ADR 0157): as peças deduzidas das linhas do arquivo entram como as do DXF.
-  const importarTracos = useCallback((tipo: 'plt' | 'iso') => {
-    const api = window.enfestoCad;
-    if (!api) return;
-    void api.abrirArquivoTexto(tipo).then((arquivo) => {
-      if (!arquivo) return;
-      const nomeDoArquivo = arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho;
-      const { pecas: lidas, avisos } = pecasDoPlt(tipo === 'iso' ? hpglDoIso(arquivo.conteudo) : ehDmpl(arquivo.conteudo) ? hpglDoDmpl(arquivo.conteudo) : arquivo.conteudo);
+  const acrescentarTracos = useCallback((hpgl: string, nomeDoArquivo: string) => {
+      const { pecas: lidas, avisos } = pecasDoPlt(hpgl);
       if (lidas.length === 0) {
         setMensagensImportacao(avisos);
         return;
@@ -4906,8 +4909,25 @@ export default function App(): React.JSX.Element {
       } catch (erro) {
         setMensagensImportacao([`Não foi possível importar: ${erro instanceof Error ? erro.message : String(erro)}`]);
       }
-    });
   }, [enfesto, acrescentarPecasImportadas]);
+
+  const importarTracos = useCallback((tipo: 'plt' | 'iso') => {
+    const api = window.enfestoCad;
+    if (!api) return;
+    void api.abrirArquivoTexto(tipo).then((arquivo) => {
+      if (!arquivo) return;
+      acrescentarTracos(tipo === 'iso' ? hpglDoIso(arquivo.conteudo) : ehDmpl(arquivo.conteudo) ? hpglDoDmpl(arquivo.conteudo) : arquivo.conteudo, arquivo.caminho.split(/[\\/]/).pop() ?? arquivo.caminho);
+    });
+  }, [acrescentarTracos]);
+
+  // O que outro programa plotou neste computador (ADR 0222).
+  useEffect(() => {
+    return window.enfestoCad?.aoReceberDoPlotter?.((texto) => {
+      const hpgl = hpglDoRecebido(texto);
+      if (hpgl) acrescentarTracos(hpgl, 'Recebido do plotter');
+      else setMensagensImportacao(['Chegou um trabalho que não tem linhas de plotter (imagem ou PostScript). No outro sistema, use um driver HP-GL.']);
+    });
+  }, [acrescentarTracos]);
 
   const carregarPerfil = useCallback(() => {
     void window.enfestoCad?.abrirArquivoTexto('perfil').then((arquivo) => {
@@ -5870,6 +5890,11 @@ export default function App(): React.JSX.Element {
         onPortaDeSaida={() => setDialogoDeFerramenta({ tipo: 'porta-de-saida' })}
         onGerenciadorDeImpressao={() => setDialogoDeFerramenta({ tipo: 'gerenciador-de-impressao' })}
         onTesteDoEquipamento={() => setDialogoDeFerramenta({ tipo: 'teste-do-equipamento' })}
+        onReceberDeOutroPrograma={() => setMostrarReceptor(true)}
+        onFichaDaEnfestadeira={() => {
+          if (enfesto) void salvarTexto('ficha-da-enfestadeira.csv', csvDaEnfestadeira({ nome: projetoAtual.nome, codigo: projetoAtual.codigo }, pecas, enfesto));
+          else avisar('Configure o enfesto primeiro.');
+        }}
         onEscolherPastaDoPlotter={() => void acessoAPasta('plotter')?.escolher()}
         onRetanguloDeOrganizacao={() => setDialogoDeFerramenta({ tipo: 'retangulo-de-organizacao' })}
         onAlinharPecas={() => setDialogoDeFerramenta({ tipo: 'alinhar-pecas' })}
@@ -7058,6 +7083,7 @@ export default function App(): React.JSX.Element {
         />
       )}
       {mostrarTeclado && <TecladoVirtual onFechar={() => setMostrarTeclado(false)} />}
+      {mostrarReceptor && apiDoReceptor && <PainelDoReceptor api={apiDoReceptor} onFechar={() => setMostrarReceptor(false)} />}
       {mostrarColaboracao && apiDaColaboracao && (
         <PainelDeColaboracao
           api={apiDaColaboracao}

@@ -588,6 +588,30 @@ async function principal() {
     await espera(300);
   });
 
+  await etapa('Receber de outro programa, e a ficha da enfestadeira', async () => {
+    await aba('Encaixe');
+    const antes = (await lista()).length;
+    await menu('Opções', 'Receber de outro programa');
+    await porNoCampo('Porta', '19100');
+    await botaoNaJanela('Ligar o receptor');
+    await esperarAte(() => js(`Array.from(document.querySelectorAll('[role=dialog] button')).some((b) => b.textContent.trim() === 'Desligar o receptor')`), 5000);
+    // Um "outro sistema" plotando, com o embrulho que os drivers de impressora põem.
+    await new Promise((resolver, rejeitar) => {
+      const c = net.connect(19100, '127.0.0.1', () => c.end('\x1b%-12345X@PJL ENTER LANGUAGE=HPGL2\n\x1bE\x1b%-1BIN;SP1;PU2000,2000;PD6000,2000,6000,8000,2000,8000,2000,2000;\x1b%0A\x1b%-12345X'));
+      c.once('close', resolver);
+      c.once('error', rejeitar);
+    });
+    conferir('a peça plotada por outro programa entra no projeto', (await esperarAte(async () => (await lista()).length === antes + 1, 6000)) === true, String((await lista()).length));
+    await botaoNaJanela('Desligar o receptor');
+    await espera(300);
+    await fecharJanela();
+    await espera(200);
+    await menu('Opções', 'Ficha da enfestadeira');
+    const ficha = await esperarAte(async () => fs.readdirSync(SAIDA).find((f) => f.startsWith('ficha-da-enfestadeira')), 6000);
+    const csv = ficha ? fs.readFileSync(path.join(SAIDA, ficha), 'utf8') : '';
+    conferir('a ficha da enfestadeira sai com o comprimento e as camadas', /Comprimento por camada/.test(csv) && csv.trim().split('\r\n').length >= 2, csv.split('\r\n')[1]);
+  });
+
   await etapa('O teclado virtual', async () => {
     await aba('Encaixe');
     await menu('Opções', 'Porta de saída');

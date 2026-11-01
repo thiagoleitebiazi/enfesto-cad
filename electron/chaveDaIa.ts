@@ -142,3 +142,24 @@ export async function gerarImagens(arquivo: string, cofre: CofreDoSistema, bruto
     clearTimeout(relogio);
   }
 }
+
+/** Confere a chave pela lista de modelos, que não gasta crédito: antes de pagar por uma imagem, sabe-se se ela vale (ADR 0222). */
+export async function conferirChave(arquivo: string, cofre: CofreDoSistema, buscar: Buscar, tempoLimiteMs = 15_000): Promise<{ readonly ok: boolean; readonly erro?: string }> {
+  const c = await lerConfiguracao(arquivo);
+  if (!c) return { ok: false, erro: 'O serviço de IA não está configurado: ponha a sua chave em Configurar.' };
+  const chave = abrirChave(cofre, c);
+  if (!chave) return { ok: false, erro: 'A chave guardada não abre neste computador (ou nesta conta): ponha a chave de novo.' };
+  const parar = new AbortController();
+  const relogio = setTimeout(() => parar.abort(), tempoLimiteMs);
+  try {
+    const { status } = await buscar('https://api.openai.com/v1/models', { method: 'GET', headers: { Authorization: `Bearer ${chave}` }, signal: parar.signal });
+    if (status === 200) return { ok: true };
+    if (status === 401 || status === 403) return { ok: false, erro: 'O serviço recusou a chave: confira se ela foi copiada inteira e se ainda vale.' };
+    if (status === 429) return { ok: false, erro: 'O serviço disse que a conta chegou ao limite: confira o saldo.' };
+    return { ok: false, erro: `O serviço respondeu com o código ${status}.` };
+  } catch {
+    return { ok: false, erro: 'O serviço não respondeu: confira a internet deste computador.' };
+  } finally {
+    clearTimeout(relogio);
+  }
+}

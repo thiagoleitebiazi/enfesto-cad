@@ -354,3 +354,5 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Validação com 34 arquivos ASTM/AAMA públicos e 2 DMPL de verdade; abertura correta das portas LPT e COM | ✅ ADR 0215 |
 | Teste do equipamento: página de medidas, correção pela trena, teste da mesa de corte | ✅ ADR 0217; falta rodar na máquina |
 | Laboratório de validação: plotter virtual, leitores de terceiros, contraste de todo texto, todos os botões | ✅ ADR 0216 |
+| Trazer de sistema de formato fechado sem o formato: plotando neste computador | 🟡 ADR 0222: traz a forma, sem graduação |
+| Ficha para a enfestadeira | 🟡 ADR 0222: planilha, sem o arquivo .aoc |

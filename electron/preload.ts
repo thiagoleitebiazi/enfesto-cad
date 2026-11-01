@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EstadoDaColaboracao, ServidorLigado } from '../src/ui/PainelDeColaboracao';
+import type { ReceptorLigado } from '../src/ui/PainelDoReceptor';
 import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
 import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
@@ -150,6 +151,29 @@ const api = {
   /** Abrir outra janela do programa, ou arrumar as que estão abertas (ADR 0211). */
   async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<boolean> {
     return ipcRenderer.invoke('janelas-arrumar', como) as Promise<boolean>;
+  },
+  /** O receptor do plotter (ADR 0222): ligar, desligar e ouvir o que chega. Devolve a função que para de ouvir. */
+  async receptorEstado(): Promise<ReceptorLigado | null> {
+    return ipcRenderer.invoke('receptor-estado') as Promise<ReceptorLigado | null>;
+  },
+  async receptorLigar(porta: number): Promise<ReceptorLigado | string> {
+    return ipcRenderer.invoke('receptor-ligar', porta) as Promise<ReceptorLigado | string>;
+  },
+  async receptorDesligar(): Promise<void> {
+    await ipcRenderer.invoke('receptor-desligar');
+  },
+  aoReceberDoPlotter(ouvir: (texto: string) => void): () => void {
+    const ouvinte = (_evento: Electron.IpcRendererEvent, texto: unknown): void => {
+      if (typeof texto === 'string') ouvir(texto);
+    };
+    ipcRenderer.on('plotter-recebido', ouvinte);
+    return () => {
+      ipcRenderer.removeListener('plotter-recebido', ouvinte);
+    };
+  },
+  /** Confere a chave da IA, sem gastar crédito (ADR 0222). */
+  async conferirChaveDaIa(): Promise<{ readonly ok: boolean; readonly erro?: string }> {
+    return ipcRenderer.invoke('ia-conferir') as Promise<{ readonly ok: boolean; readonly erro?: string }>;
   },
   /** A fila de impressão, para sobreviver ao fechar (ADR 0219). */
   async lerFilaDeImpressao(): Promise<string | null> {

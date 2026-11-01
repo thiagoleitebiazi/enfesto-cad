@@ -69,9 +69,20 @@ export const MANUAL_DO_PROGRAMA: readonly SecaoDoManual[] = [
       'O Provador 3D veste as peças no manequim, com o tecido, as cores e os aviamentos.',
     ],
   },
+  {
+    titulo: 'Trazer de outro sistema',
+    passos: [
+      'O melhor caminho é o arquivo DXF-AAMA ou DXF-ASTM: quase todo sistema de moldes exporta nesses formatos, com a graduação. Abra em Importar DXF. Se vier um arquivo .RUL junto, deixe-o na mesma pasta.',
+      'Se o sistema só plota, use Opções › Receber de outro programa: instale nele um plotter HP-GL de rede com o endereço deste computador e plote as peças em escala real. Elas chegam sem a graduação.',
+      'Arquivo PLT, HPGL, DMPL ou ISO já pronto entra por Importar PLT ou Importar ISO.',
+      'Arquivos próprios de cada sistema (MDL, VET, IBA, ALF e outros) não têm formato público e não abrem aqui.',
+    ],
+  },
 ];
 
 export const NOVIDADES_DO_PROGRAMA: readonly string[] = [
+  'Receber de outro programa: o que um sistema de formato fechado plotar neste computador entra no projeto.',
+  'Ficha da enfestadeira: comprimento, camadas e emendas de cada tecido, numa planilha.',
   'Tecido por molde: o encaixe pode gerar um tecido por vez, com a grade de cada um.',
   'Encaixe automático com manter peças no lugar, usar só as da mesa, espelhamento, compactar e dobra inferior.',
   'Comando Compactar, Status do encaixe, perdas e rendimento por peça.',

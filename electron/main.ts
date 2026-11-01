@@ -5,8 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Server } from 'node:http';
+import type { Server as ServidorDeRede } from 'node:net';
 import { emCascata, ladoALado, porNoLugar } from './arrumarJanelas';
 import { pedirAoServidor, urlDoServidorValida } from './conexaoDeColaboracao';
+import { criarReceptorDoPlotter } from './receptorDoPlotter';
 import { criarServidorDeColaboracao } from './servidorDeColaboracao';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
@@ -40,7 +42,7 @@ import { lerBibliotecaDeMateriais, VERSAO_DA_BIBLIOTECA_DE_MATERIAIS } from '../
 import { lerColecoes, VERSAO_DAS_COLECOES } from '../src/domain/colecoes';
 import { COMANDO_NO_TEXTO, ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
 import { adicionarPrograma, enderecoValido, lerProgramas, novoPrograma, removerPrograma, type Programa } from '../src/domain/programas';
-import { esquecerChave, estadoDaIa, gerarImagens, guardarChave, mudarModelo, type CofreDoSistema } from './chaveDaIa';
+import { conferirChave, esquecerChave, estadoDaIa, gerarImagens, guardarChave, mudarModelo, type CofreDoSistema } from './chaveDaIa';
 import {
   apagarNaPasta,
   criarSeNaoExiste,
@@ -1080,6 +1082,42 @@ ipcMain.handle('colaboracao-servir', async (_evento, porta: unknown) => {
   return servidorParaAInterface();
 });
 
+// O receptor do plotter (ADR 0222): só liga a pedido, e não volta sozinho ao abrir o programa.
+let receptorDoPlotter: { readonly servidor: ServidorDeRede; readonly porta: number } | null = null;
+
+function receptorParaAInterface(): { porta: number; enderecos: string[] } | null {
+  if (!receptorDoPlotter) return null;
+  const ips = Object.values(os.networkInterfaces()).flatMap((lista) => lista ?? []);
+  return { porta: receptorDoPlotter.porta, enderecos: ips.filter((i) => i.family === 'IPv4' && !i.internal).map((i) => i.address) };
+}
+
+function desligarReceptorDoPlotter(): Promise<void> {
+  const ligado = receptorDoPlotter;
+  receptorDoPlotter = null;
+  return new Promise((resolver) => (ligado ? ligado.servidor.close(() => resolver()) : resolver()));
+}
+
+ipcMain.handle('receptor-estado', () => receptorParaAInterface());
+ipcMain.handle('receptor-desligar', () => desligarReceptorDoPlotter());
+ipcMain.handle('receptor-ligar', async (_evento, porta: unknown) => {
+  await desligarReceptorDoPlotter();
+  if (typeof porta !== 'number' || !Number.isInteger(porta) || porta < 1 || porta > 65535) return 'A porta vai de 1 a 65535.';
+  const servidor = criarReceptorDoPlotter((texto) => {
+    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    janela?.webContents.send('plotter-recebido', texto);
+  });
+  try {
+    await new Promise<void>((resolver, rejeitar) => {
+      servidor.once('error', rejeitar);
+      servidor.listen(porta, '0.0.0.0', resolver);
+    });
+  } catch {
+    return `A porta ${porta} não pôde ser aberta: outro programa pode estar usando.`;
+  }
+  receptorDoPlotter = { servidor, porta };
+  return receptorParaAInterface();
+});
+
 // A fila de impressão (ADR 0219): o que não saiu sobrevive ao fechar o programa.
 const arquivoDaFilaDeImpressao = (): string => path.join(app.getPath('userData'), 'fila-de-impressao.json');
 ipcMain.handle('impressao-ler', () => readFile(arquivoDaFilaDeImpressao(), 'utf-8').catch(() => null));
@@ -1190,6 +1228,7 @@ ipcMain.handle('ia-esquecer-chave', async () => {
   return true;
 });
 
+ipcMain.handle('ia-conferir', () => conferirChave(arquivoDaIa(), cofreDoSistema, (url, init) => net.fetch(url, init)));
 ipcMain.handle('ia-gerar', async (_evento, pedido: unknown) => {
   const resposta = await gerarImagens(arquivoDaIa(), cofreDoSistema, pedido, (url, init) => net.fetch(url, init), 180_000);
   registrarDiagnostico(resposta.ok ? `ia-gerar ok imagens=${resposta.imagens.length}` : 'ia-gerar erro');
