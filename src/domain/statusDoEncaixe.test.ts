@@ -24,7 +24,7 @@ describe('o status do encaixe (ADR 0198)', () => {
     expect(s.foraDaMesa).toBe(1);
     expect(s.comprimentoMm).toBe(600);
     expect(s.porTamanho).toEqual([{ tamanho: 'M', completos: 1, encaixados: 3 }]);
-    expect(s.porMolde).toEqual([
+    expect(s.porMolde.map(({ nome, encaixados }) => ({ nome, encaixados }))).toEqual([
       { nome: 'Frente', encaixados: 2 },
       { nome: 'Costas', encaixados: 1 },
     ]);

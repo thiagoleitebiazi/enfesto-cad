@@ -1,3 +1,4 @@
+import { descricaoTecnicaDosMoldes } from '../domain/descricaoTecnica';
 import { useEffect, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { CampoDeNumero } from './CampoDeNumero';
@@ -271,6 +272,9 @@ function ParteDescricao(props: {
           Descrição do produto
           <textarea rows={3} value={ficha.descricao} disabled={!props.editavel} onChange={(e) => props.campo({ descricao: e.target.value })} />
         </label>
+        <button type="button" disabled={!props.editavel || props.pecas.length === 0} title="Uma primeira versão, com os moldes, os tamanhos, os tecidos e as costuras do projeto" onClick={() => props.campo({ descricao: descricaoTecnicaDosMoldes(props.pecas) })}>
+          Escrever a partir dos moldes
+        </button>
         <label>
           Tamanhos (separados por vírgula)
           <input

@@ -64,6 +64,12 @@ export function PainelDeStatusDoEncaixe(props: PainelDeStatusDoEncaixeProps): Re
             <th scope="col" className="coluna-numerica">
               Encaixados
             </th>
+            <th scope="col" className="coluna-numerica">
+              Consumo
+            </th>
+            <th scope="col" className="coluna-numerica">
+              Parte
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -71,6 +77,8 @@ export function PainelDeStatusDoEncaixe(props: PainelDeStatusDoEncaixeProps): Re
             <tr key={m.nome}>
               <td>{m.nome}</td>
               <td className="coluna-numerica">{m.encaixados}</td>
+              <td className="coluna-numerica">{metros(m.consumoMm)}</td>
+              <td className="coluna-numerica">{numeroComVirgula(m.parteDoConsumoPercentual, 1)}%</td>
             </tr>
           ))}
         </tbody>

@@ -373,3 +373,13 @@ export function unirTamanhos(base: Molde, outras: readonly Molde[], ajustarCurva
   };
   return { ...base, graduacao };
 }
+
+/** As peças num tamanho, com os mesmos ids e quantidades: para provar outro tamanho sem mudar o projeto (ADR 0223). */
+export function pecasNoTamanho(pecas: readonly Molde[], tamanho: string): readonly Molde[] {
+  if (tamanho === '') return pecas;
+  return pecas.map((p) => {
+    const g = p.graduacao;
+    const t = g ? g.tamanhos.indexOf(tamanho) : -1;
+    return !g || t < 0 || t === g.base ? p : { ...moldeDoTamanho(p, t, p.id), quantidade: p.quantidade };
+  });
+}

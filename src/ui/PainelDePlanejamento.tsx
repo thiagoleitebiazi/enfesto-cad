@@ -1,3 +1,4 @@
+import { csvDaSequenciaDeEnfestos } from '../formats/fichaDaEnfestadeira';
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { DesenhoDoRisco } from './DesenhoDoRisco';
@@ -690,6 +691,16 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
       // A estimativa vai guardada com o plano, como saiu agora: o plano confirmado não é recalculado depois.
       custoDoTecido: estimarCustoDoTecido({ entrada: entrada.entrada, resultado: final.resultado, riscos: base.riscos, roupas }),
     };
+  };
+
+  const salvarSequenciaDeEnfestos = async (): Promise<void> => {
+    const plano = montarPlano();
+    if (typeof plano === 'string') {
+      setMensagem(plano);
+      return;
+    }
+    const caminho = await props.onSalvarTexto?.(`enfestos-${plano.entrada.ordem.codigo.replace(/[^\w-]+/g, '_')}.csv`, csvDaSequenciaDeEnfestos(plano.resultado));
+    if (caminho) setMensagem(`Sequência de enfestos salva em ${caminho}.`);
   };
 
   const criarArquivosDeEncaixe = async (): Promise<void> => {
@@ -1970,6 +1981,13 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
                     <button type="button" disabled={!final?.ok} onClick={guardarRascunho}>
                       Salvar rascunho
                     </button>{' '}
+                    {props.onSalvarTexto && (
+                      <>
+                        <button type="button" disabled={!final?.ok} title="Os enfestos em ordem, com o comprimento e as camadas de cada um, para programar a enfestadeira" onClick={() => void salvarSequenciaDeEnfestos()}>
+                          Salvar a sequência de enfestos
+                        </button>{' '}
+                      </>
+                    )}
                     {props.onCriarArquivosDeEncaixe && (
                       <>
                         <button type="button" disabled={!final?.ok} title="Um projeto por risco na biblioteca, com a mesa, as camadas e as peças no lugar" onClick={() => void criarArquivosDeEncaixe()}>

@@ -356,3 +356,11 @@ As fontes anteriores eram o manual de moldes e a apostila. O manual do encaixe, 
 | Laboratório de validação: plotter virtual, leitores de terceiros, contraste de todo texto, todos os botões | ✅ ADR 0216 |
 | Trazer de sistema de formato fechado sem o formato: plotando neste computador | 🟡 ADR 0222: traz a forma, sem graduação |
 | Ficha para a enfestadeira | 🟡 ADR 0222: planilha, sem o arquivo .aoc |
+
+## Décima primeira rodada: as páginas oficiais de cada módulo (2026-11-01)
+
+| Item | Situação |
+|---|---|
+| Provar outro tamanho no provador; consumo por molde; sequência de enfestos; descrição técnica preliminar | ✅ ADR 0223 |
+| Editar a imagem gerada; descrição técnica feita por IA | ⬜ depende do serviço de IA |
+| Integração com a máquina de corte da própria marca | ⬜ protocolo fechado |

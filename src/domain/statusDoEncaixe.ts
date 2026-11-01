@@ -17,6 +17,10 @@ export interface LinhaDoTamanho {
 export interface LinhaDoMolde {
   readonly nome: string;
   readonly encaixados: number;
+  /** A área das peças deste molde na mesa, e a parte do consumo que cabe a ele, pela área (ADR 0223). */
+  readonly areaMm2: number;
+  readonly parteDoConsumoPercentual: number;
+  readonly consumoMm: number;
 }
 
 export interface StatusDoEncaixe {
@@ -64,7 +68,12 @@ export function statusDoEncaixe(pecas: readonly Molde[], enfesto: ConfiguracaoDe
     areaMm2,
     aproveitamentoPercentual: comprimentoMm > 0 ? (areaMm2 / (enfesto.larguraUtilMm * comprimentoMm)) * 100 : 0,
     porTamanho,
-    porMolde: nomes.map((nome) => ({ nome, encaixados: naMesa.filter((p) => p.nome === nome).length })),
+    porMolde: nomes.map((nome) => {
+      const doMolde = naMesa.filter((p) => p.nome === nome);
+      const areaDoMolde = doMolde.reduce((soma, p) => soma + area(linhaDeCorteDaPeca(p)), 0);
+      const parte = areaMm2 > 0 ? areaDoMolde / areaMm2 : 0;
+      return { nome, encaixados: doMolde.length, areaMm2: areaDoMolde, parteDoConsumoPercentual: parte * 100, consumoMm: consumoMm * parte };
+    }),
     rendimentoConsumoM: completos > 0 ? consumoMm / 1000 / completos : null,
     rendimentoPesoKg: completos > 0 && gramaturaGm2 ? (areaDoConsumoM2 * gramaturaGm2) / 1000 / completos : null,
   };

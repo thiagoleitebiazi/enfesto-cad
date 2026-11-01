@@ -1,3 +1,5 @@
+import { tamanhosDasPecas } from '../domain/fichaTecnica';
+import { pecasNoTamanho } from '../domain/tamanhosGraduados';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sobreposicao } from './Sobreposicao';
 import { CampoDeNumero } from './CampoDeNumero';
@@ -119,7 +121,10 @@ export function PainelDoProvador3D(props: {
   /** O pré-molde tirado do desenho no corpo (ADR 0134) vai para o projeto. */
   readonly onCriarPeca?: (peca: Molde) => void;
 }): React.JSX.Element {
-  const instancias = useMemo(() => instanciasDasPecas(props.pecas), [props.pecas]);
+  // Provar outro tamanho (ADR 0223): só muda aqui, o projeto fica como está. O manequim tem a escolha dele.
+  const [tamanhoDasPecas, setTamanhoDasPecas] = useState('');
+  const tamanhosDoMolde = useMemo(() => tamanhosDasPecas(props.pecas), [props.pecas]);
+  const instancias = useMemo(() => instanciasDasPecas(pecasNoTamanho(props.pecas, tamanhoDasPecas)), [props.pecas, tamanhoDasPecas]);
   const [montagem, setMontagem] = useState<Montagem3D>(() => ({ ...props.montagemGuardada, pecas: configuracoesDasInstancias(instancias, props.montagemGuardada) }));
   const guardadaRef = useRef(montagem);
   const [aba, setAba] = useState<AbaDoProvador>('pecas');
@@ -178,6 +183,7 @@ export function PainelDoProvador3D(props: {
     montagem.manequim.pose ?? 'padrao',
     montagem.resolucaoMm,
     montagem.autoColisao !== false,
+    tamanhoDasPecas,
     // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
     // recomeça a simulação.
     { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined },
@@ -614,6 +620,19 @@ export function PainelDoProvador3D(props: {
         </div>
 
         <div className="controles-do-provador">
+          {tamanhosDoMolde.length > 1 && (
+            <label>
+              Tamanho das peças
+              <select value={tamanhoDasPecas} onChange={(e) => setTamanhoDasPecas(e.target.value)}>
+                <option value="">O do molde</option>
+                {tamanhosDoMolde.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="partes-da-sala-de-corte" role="tablist" aria-label="Partes do provador">
             {(
               [
