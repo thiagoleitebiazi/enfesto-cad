@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { contornosSeSobrepoem, ponto } from '../core/geometria';
-import { contornoDaZona, criarConfiguracaoDeEnfesto, lerTextosNoRisco, lerZonasBloqueadas, textoDasZonas, textoDosTextosNoRisco, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
+import { contornoDaZona, criarConfiguracaoDeEnfesto, lerZonasBloqueadas, textoDasZonas, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
 import { criarMolde, linhaDeCorteDaPeca } from './molde';
 import { executarNestingAutomatico, executarNestingPorPontosDeCanto } from './nesting';
 import { validarProjeto } from './validacao';
@@ -33,17 +33,5 @@ describe('as áreas bloqueadas da mesa (ADR 0160)', () => {
     const problemas = validarProjeto([{ ...peca('a'), quantidade: 1 }], enfesto([ZONA]));
     expect(problemas.some((p) => p.mensagem.includes('área bloqueada'))).toBe(true);
     expect(validarProjeto([{ ...peca('a'), quantidade: 1 }], enfesto()).some((p) => p.mensagem.includes('área bloqueada'))).toBe(false);
-  });
-});
-
-describe('os textos no risco (ADR 0165)', () => {
-  it('o formulário: ida e volta, com o texto inteiro; a linha que não serve diz qual é', () => {
-    const lidos = lerTextosNoRisco('1200 300 Emenda aqui\n\n50,5;20 Cortar primeiro');
-    expect(lidos).toEqual([
-      { y: 1200, x: 300, texto: 'Emenda aqui' },
-      { y: 50.5, x: 20, texto: 'Cortar primeiro' },
-    ]);
-    expect(lerTextosNoRisco(textoDosTextosNoRisco(lidos))).toEqual(lidos);
-    expect(() => lerTextosNoRisco('sem numeros')).toThrow(/Texto no risco "sem numeros"/);
   });
 });

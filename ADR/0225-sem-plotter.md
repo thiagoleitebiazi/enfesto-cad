@@ -9,14 +9,17 @@ O dono do projeto pediu para tirar todas as funcionalidades ligadas ao plotter.
 - canetas, níveis de impressão, ferramentas do plotter, texto como linha e auto ajuste de texto;
 - a opção "verificar ao plotar", a altura do nome da peça no plotter e as cores pelas ferramentas;
 - importar PLT e DMPL, e "Receber de outro programa" (ouvia na porta e guardava o que vinha);
-- a página de teste do plotter, a correção pelas medidas e o retângulo de organização, que era a guia do papel.
+- a página de teste do plotter, a correção pelas medidas e o retângulo de organização, que era a guia do papel;
+- os textos no risco: o plotter era a única saída deles, e a tela só mostrava uma prévia do que ia ser riscado.
 
 **Ficou, porque não depende do plotter:**
 
 - a mesa de corte: o ISO, a porta de saída, a fila e o teste, com "plotter" tirado dos textos. O gerenciador de impressão se chama agora "Fila da mesa de corte";
 - a leitura do ISO. Ela passava pelo leitor de PLT, que virou `tracos-importacao.ts`, só por dentro: nenhum arquivo PLT entra mais. Esse leitor ainda entende comandos que o ISO não produz, como texto e movimento relativo, e isso ficou como estava;
 - a fonte TrueType e o estilo da costura, agora só no PDF. A fonte não vira mais traços: a fontkit só confere o arquivo, e o pdfkit embute;
-- "Organizar moldes", agora na largura da mesa.
+- "Organizar moldes", agora na largura da mesa;
+- as linhas de referência: não saem mais impressas, mas continuam na tela e guiam o encaixe e a validação;
+- a descrição da peça: não sai mais impressa, mas continua no rótulo da peça na tela.
 
 **Projetos antigos:** continuam abrindo. Peças importadas de PLT mantêm a origem `plt`, e campos que não existem mais são ignorados. As peças vindas de ISO agora dizem `iso`.
 

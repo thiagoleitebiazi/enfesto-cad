@@ -80,7 +80,7 @@ describe('a emenda clicada na mesa (ADR 0220)', () => {
 
 describe('cada tecido com a sua mesa (ADR 0221)', () => {
   it('o comprimento, as emendas e os textos valem só nele', () => {
-    const e = comAjusteDoTecido(enfesto(), 'Forro', { comprimentoMm: 1500, emendasMm: [700], textosNoRisco: [{ x: 10, y: 20, texto: 'Forro' }] });
+    const e = comAjusteDoTecido(enfesto(), 'Forro', { comprimentoMm: 1500, emendasMm: [700] });
     expect(enfestoDoTecido(e, 'Forro')).toMatchObject({ comprimentoMm: 1500, emendasMm: [700] });
     expect(enfestoDoTecido(e, 'Principal').comprimentoMm).toBe(3000);
     expect(enfestoDoTecido(e, 'Principal').emendasMm).toBeUndefined();

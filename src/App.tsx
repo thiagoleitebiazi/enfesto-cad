@@ -480,7 +480,7 @@ import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } f
 import { recadoDaTroca, trocarMaterialNosModelos } from './domain/trocaDeMaterial';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { comLinhaClicada, lerTextosNoRisco, textoDosTextosNoRisco, comEmendaClicada, DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
+import { comLinhaClicada, comEmendaClicada, DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
 import { estadoDaValidacao, TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -6888,7 +6888,6 @@ export default function App(): React.JSX.Element {
           campos={[
             { tipo: 'medida', id: 'largura', rotulo: 'Largura útil (mm)', inicial: String(enfestoNaMesa.larguraUtilMm) },
             { tipo: 'medida', id: 'comprimento', rotulo: 'Comprimento da mesa (mm)', inicial: String(enfestoNaMesa.comprimentoMm) },
-            { tipo: 'texto', id: 'textos', rotulo: 'Textos no risco: comprimento, largura e texto; separe com |', inicial: textoDosTextosNoRisco(enfestoNaMesa.textosNoRisco ?? []).replace(/\n/g, ' | '), opcional: true },
           ]}
           nota="Vale só para este tecido: a mesa, o encaixe, a validação e as saídas usam estas medidas enquanto ele estiver ativo. As emendas marcadas com ele ativo também ficam só nele."
           rotuloDoBotao="Aplicar"
@@ -6897,13 +6896,7 @@ export default function App(): React.JSX.Element {
             if (!(largura > 0)) return 'A largura tem de ser maior que zero.';
             const comprimentoMm = valores['comprimento'] as number;
             if (!(comprimentoMm > 0)) return 'O comprimento tem de ser maior que zero.';
-            let textosNoRisco: ReturnType<typeof lerTextosNoRisco>;
-            try {
-              textosNoRisco = lerTextosNoRisco(String(valores['textos'] ?? '').replace(/\|/g, '\n'));
-            } catch (e) {
-              return e instanceof Error ? e.message : String(e);
-            }
-            const novo = comAjusteDoTecido(comLarguraDoTecido(enfesto, tecidoAtivo, largura), tecidoAtivo, { comprimentoMm, textosNoRisco });
+            const novo = comAjusteDoTecido(comLarguraDoTecido(enfesto, tecidoAtivo, largura), tecidoAtivo, { comprimentoMm });
             setEnfesto(novo);
             registrarEventoEPersistir('mudanca-de-configuracao', { pecas, tecido, enfesto: novo }, `Largura do tecido ${tecidoAtivo}: ${numeroComVirgula(largura)} mm`);
             return null;

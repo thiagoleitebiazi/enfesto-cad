@@ -956,14 +956,6 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      // Os textos livres no risco (ADR 0165).
-      ctx.fillStyle = '#7c2d12';
-      ctx.font = '12px system-ui, sans-serif';
-      ctx.textAlign = 'left';
-      for (const t of enfesto.textosNoRisco ?? []) {
-        const onde = mundoParaTela(ponto(t.x, t.y), transform);
-        ctx.fillText(t.texto, onde.x, onde.y);
-      }
       // As áreas bloqueadas (ADR 0160): em vermelho, por cima da mesa e por baixo das peças.
       for (const z of enfesto.zonasBloqueadas ?? []) {
         const a = mundoParaTela(ponto(z.minX, z.minY), transform);

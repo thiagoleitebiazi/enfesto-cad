@@ -3,10 +3,8 @@ import { Sobreposicao } from './Sobreposicao';
 import { DiagramaDeEnfesto } from './DiagramaDeEnfesto';
 import {
   criarConfiguracaoDeEnfesto,
-  lerTextosNoRisco,
   lerZonasBloqueadas,
   textoDasZonas,
-  textoDosTextosNoRisco,
   DISTANCIA_PADRAO_ENTRE_PECAS_MM,
   MARGEM_DE_SEGURANCA_DA_MESA_MM,
   margensDaMesa,
@@ -34,7 +32,6 @@ interface CamposDeFormulario {
   alinhamentoDasBordas: 'alinhado' | 'escalonado';
   sentidoDeAlimentacao: 'unico' | 'alternado';
   zonasBloqueadas: string;
-  textosNoRisco: string;
   emendas: string;
   linhas: string;
   perdaPercentual: string;
@@ -72,7 +69,6 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
     alinhamentoDasBordas: config?.tipo === 'ramado' ? config.alinhamentoDasBordas : 'alinhado',
     sentidoDeAlimentacao: config?.tipo === 'ramado' ? config.sentidoDeAlimentacao : 'unico',
     zonasBloqueadas: textoDasZonas(config?.zonasBloqueadas ?? []),
-    textosNoRisco: textoDosTextosNoRisco(config?.textosNoRisco ?? []),
     emendas: (config?.emendasMm ?? []).join(' '),
     linhas: textoDasLinhasDeReferencia(config?.linhasDeReferencia ?? []),
     perdaPercentual: config?.perdaPercentual !== undefined ? String(config.perdaPercentual) : '',
@@ -86,7 +82,6 @@ function camposIniciais(config: ConfiguracaoDeEnfesto | null): CamposDeFormulari
 
 function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
   const zonasBloqueadas = lerZonasBloqueadas(c.zonasBloqueadas);
-  const textosNoRisco = lerTextosNoRisco(c.textosNoRisco);
   const emendasMm = lerPontosDeEmenda(c.emendas);
   const linhasDeReferencia = lerLinhasDeReferencia(c.linhas);
   const perdaPercentual = Number.parseFloat(c.perdaPercentual.replace(',', '.'));
@@ -96,7 +91,6 @@ function construirConfiguracao(c: CamposDeFormulario): ConfiguracaoDeEnfesto {
     ...(perdaPercentual > 0 ? { perdaPercentual } : {}),
     ...(perdaCm > 0 ? { perdaMm: perdaCm * 10 } : {}),
     ...(zonasBloqueadas.length > 0 ? { zonasBloqueadas } : {}),
-    ...(textosNoRisco.length > 0 ? { textosNoRisco } : {}),
     ...(emendasMm.length > 0 ? { emendasMm } : {}),
     ...(c.mostraPadronagem && c.imagemDaPadronagem !== '' ? { padronagem: { imagem: c.imagemDaPadronagem, comprimentoMm: Math.max(1, Number.parseFloat(c.comprimentoDaPadronagemMm) || 100) } } : {}),
     ...(c.corDoTecido !== '' ? { corDoTecido: c.corDoTecido } : {}),
@@ -227,10 +221,6 @@ export function PainelDeEnfesto(props: PainelDeEnfestoProps): React.JSX.Element 
         <label>
           Áreas bloqueadas da mesa (enfesto em escada, emenda, defeito): uma por linha, em mm — comprimento de, até, largura de, até
           <textarea rows={2} value={campos.zonasBloqueadas} placeholder="0 800 900 1500" onChange={(e) => alterar({ zonasBloqueadas: e.target.value })} />
-        </label>
-        <label>
-          Textos no risco: um por linha — comprimento, largura (mm) e o texto
-          <textarea rows={2} value={campos.textosNoRisco} placeholder="1200 300 Emenda aqui" onChange={(e) => alterar({ textosNoRisco: e.target.value })} />
         </label>
         <label>
           Pontos de emenda: no comprimento, em mm, separados por espaço

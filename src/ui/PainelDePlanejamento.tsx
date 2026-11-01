@@ -228,7 +228,7 @@ const LIMITACOES = [
   'Listras e xadrez: o casamento automático alinha o ponto "casamento" de cada peça à repetição; ele precisa da repetição e da fase no cadastro da malha e das camadas estendidas com o desenho alinhado (mesa de agulhas). Casamento por mais de um ponto da peça não é feito.',
   'Encolhimento: compensado só no risco, por decisão; a peça não muda no projeto.',
   'Custo: uma estimativa só do tecido (sem aviamentos, mão de obra e outros custos), em reais, com o consumo planejado (o consumo real da execução do corte não entra nela); a malha tubular só no enfesto tubular, e a largura aberta de uma malha tubular não é presumida.',
-  'Execução do corte: guarda o que quem opera informa (nomes, horas dos cliques, camadas, consumo real por rolo — não por peça); o programa não se liga a enfestadeira, faca ou plotter, e não há fila de cortes entre várias estações.',
+  'Execução do corte: guarda o que quem opera informa (nomes, horas dos cliques, camadas, consumo real por rolo — não por peça); o programa não se liga a enfestadeira ou faca, e não há fila de cortes entre várias estações.',
   'Formatos de molde: DXF (polilinhas, polilinha clássica, linhas e arcos soltos, círculos, splines, blocos) e PDF vetorial, testados com arquivos sintéticos e com dois arquivos reais de outro programa de modelagem (AutoCAD 2018, em cm); a importação é direta, com o nome do arquivo e o fio na horizontal.',
 ];
 
