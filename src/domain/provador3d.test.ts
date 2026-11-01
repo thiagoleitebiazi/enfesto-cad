@@ -22,6 +22,7 @@ import {
   eixosDaFace,
   pontosCosturadosDaPecaDeCima,
   pontosNaPecaDeBaixo,
+  tramaDoTecido,
   type Montagem3D,
   type Tecido3D,
 } from './montagem3d';
@@ -29,6 +30,8 @@ import {
   aberturaDasCosturas,
   alturasDoTecido,
   assentou,
+  FIM_DA_POSE_S,
+  INICIO_DA_POSE_S,
   autoColisaoDaSimulacao,
   avancar,
   elasticidadeNaDirecao,
@@ -227,7 +230,7 @@ describe('a montagem em volta do corpo', () => {
     expect(Object.keys(lida.pecas)).toEqual(['f#0']);
     expect(lida.costuras).toHaveLength(1);
     expect(lida.tecido).toMatchObject({ preset: 'jeans', pesoGm2: 1000, elasticidade: 0 });
-    expect(lida.resolucaoMm).toBe(20);
+    expect(lida.resolucaoMm).toBe(12);
     expect(lerMontagem3d(null)).toBe(MONTAGEM_VAZIA);
   });
 });
@@ -261,6 +264,84 @@ function pecaDeRegata(id: string, nome: string, decote: number): Molde {
   // Da face para o mundo: o y do mundo é o x da tela; o x do mundo, a altura para baixo.
   return criarMolde({ nome, referencia: 'REGATA', tamanho: 'M', contorno: naFace.map(([x, y]) => ponto(-y, x + 250)), linhaDeFio: { inicio: ponto(100, 250), fim: ponto(550, 250) } }, id);
 }
+
+describe('o vestido evasê e o caimento (ADR 0230)', () => {
+  /** A regata que abre em saia até a barra de `barra` mm de meia largura. */
+  const vestido = (id: string, nome: string, decote: number, barra: number): Molde => {
+    const naFace: [number, number][] = [
+      [-80, 0], [-60, -decote * 0.6], [-30, -decote * 0.9], [0, -decote], [30, -decote * 0.9], [60, -decote * 0.6], [80, 0],
+      [200, -40], [205, -120], [220, -175], [250, -200], [235, -420], [barra, -1050], [-barra, -1050], [-235, -420], [-250, -200],
+      [-220, -175], [-205, -120], [-200, -40],
+    ];
+    return criarMolde({ nome, referencia: 'VESTIDO', tamanho: 'M', contorno: naFace.map(([x, y]) => ponto(-y, x + 600)), linhaDeFio: { inicio: ponto(100, 600), fim: ponto(950, 600) } }, id);
+  };
+  const preparar = (barra: number) => {
+    const instancias = instanciasDasPecas([vestido('f', 'Frente do vestido', 90, barra), vestido('c', 'Costas do vestido', 28, barra)]);
+    const configuracoes = configuracoesDasInstancias(instancias, MONTAGEM_VAZIA);
+    const montagem: Montagem3D = { ...MONTAGEM_VAZIA, pecas: configuracoes };
+    let n = 0;
+    return { instancias, configuracoes, costuras: sugerirCosturas(FEMININO, instancias, montagem, () => `c${++n}`) };
+  };
+
+  it('um vestido bem evasê tem os ombros e as laterais sugeridos: a barra larga não afasta o alto da peça do corpo', () => {
+    expect(preparar(340).costuras).toHaveLength(4);
+    expect(preparar(560).costuras).toHaveLength(4);
+  });
+
+  it('cada altura vai na elipse da largura dela: o ombro do evasê fica onde fica o do vestido reto', () => {
+    const pos = (barra: number): Float64Array => {
+      const { instancias, configuracoes } = preparar(barra);
+      const inst = instancias[0]!;
+      const contorno = new Float64Array(inst.contorno.length * 2);
+      inst.contorno.forEach((p, i) => contorno.set([p.x, p.y], 2 * i));
+      return posicoesDeArrumacao(FEMININO, inst, configuracoes[inst.chave]!, contorno)!;
+    };
+    const [reto, evase] = [pos(250), pos(560)];
+    // O canto do ombro (ponto 7) quase não muda, e a barra (ponto 12) abre.
+    expect(Math.abs(reto[3 * 7]! - evase[3 * 7]!)).toBeLessThan(12);
+    expect(Math.abs(evase[3 * 12]!)).toBeGreaterThan(Math.abs(reto[3 * 12]!) + 60);
+  });
+
+  it('a costura resiste a dobrar: há uma dobra atravessando cada trecho costurado', () => {
+    const { instancias, configuracoes, costuras } = preparar(340);
+    const malhas = malhasDasInstancias(instancias, configuracoes, 30, costuras);
+    const com = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas, costuras, tecido: TECIDOS_PRONTOS.malha.tecido });
+    const sem = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas, costuras: [], tecido: TECIDOS_PRONTOS.malha.tecido });
+    expect(com.dobras.length).toBeGreaterThan(sem.dobras.length + 40);
+  });
+
+  it('a roupa é vestida com os braços afastados, e o corpo vai depois até a pose pedida', () => {
+    const corpo = corpoDoManequim(MEDIDAS_DO_PUBLICO.feminino, 'bracos-abaixados', 'feminino');
+    const { instancias, configuracoes, costuras } = preparar(300);
+    const malhas = malhasDasInstancias(instancias, configuracoes, 30, costuras);
+    const sim = montarSimulacao({ corpo, instancias, configuracoes, malhas, costuras, tecido: TECIDOS_PRONTOS.malha.tecido });
+    expect(sim.corpoAgora).not.toBe(corpo);
+    expect(sim.corpoAgora.fracaoDaPose).toBe(0);
+    expect(sim.corposDoCaminho.length).toBeGreaterThan(2);
+    expect(assentou(sim)).toBe(false);
+    for (let t = 0; t < INICIO_DA_POSE_S * 60 - 2; t++) avancar(sim, 1 / 60, 4);
+    expect(sim.corpoAgora.fracaoDaPose).toBe(0);
+    for (let t = 0; t < (FIM_DA_POSE_S - INICIO_DA_POSE_S + 0.2) * 60; t++) avancar(sim, 1 / 60, 4);
+    expect(sim.corpoAgora).toBe(corpo);
+    expect(sim.corposDoCaminho).toHaveLength(0);
+  }, 60000);
+
+  it('na pose de vestir não há caminho nenhum', () => {
+    const { instancias, configuracoes, costuras } = preparar(300);
+    const malhas = malhasDasInstancias(instancias, configuracoes, 30, costuras);
+    const sim = montarSimulacao({ corpo: FEMININO, instancias, configuracoes, malhas, costuras, tecido: TECIDOS_PRONTOS.malha.tecido });
+    expect(sim.corpoAgora).toBe(FEMININO);
+    expect(sim.corposDoCaminho).toHaveLength(0);
+  });
+
+  it('a malha da simulação aceita a muito fina; a trama fica guardada, e sem ela vale a do tecido pronto', () => {
+    const lida = lerMontagem3d(JSON.parse(JSON.stringify({ ...MONTAGEM_VAZIA, resolucaoMm: 8, tecido: { ...TECIDOS_PRONTOS.malha.tecido, trama: 'linho' } })));
+    expect(lida.resolucaoMm).toBe(8);
+    expect(tramaDoTecido(lida.tecido)).toBe('linho');
+    expect(tramaDoTecido(TECIDOS_PRONTOS.jeans.tecido)).toBe('sarja');
+    expect(tramaDoTecido(TECIDOS_PRONTOS.seda.tecido)).toBe('cetim');
+  });
+});
 
 describe('a regata: os ombros', () => {
   const instancias = instanciasDasPecas([pecaDeRegata('f', 'Frente da regata', 80), pecaDeRegata('c', 'Costas da regata', 25)]);

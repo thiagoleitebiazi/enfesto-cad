@@ -161,6 +161,15 @@ export const TRAMA_DO_PRESET: Readonly<Record<PresetDeTecido, TramaDoTecido>> = 
 
 export const tramaDoTecido = (t: Tecido3D): TramaDoTecido => t.trama ?? TRAMA_DO_PRESET[t.preset];
 
+export const ROTULO_DA_TRAMA: Readonly<Record<TramaDoTecido, string>> = {
+  plana: 'Plana (tricoline, popeline)',
+  sarja: 'Sarja (jeans, gabardine)',
+  malha: 'Malha (camiseta)',
+  cetim: 'Cetim (seda, charmeuse)',
+  felpa: 'Felpa (moletom, veludo)',
+  linho: 'Linho (fios irregulares)',
+};
+
 export interface ManequimDaMontagem {
   readonly publico: PublicoDoManequim;
   readonly medidas: MedidasDoManequim;
@@ -186,7 +195,7 @@ export const MONTAGEM_VAZIA: Montagem3D = {
   pecas: {},
   costuras: [],
   tecido: TECIDOS_PRONTOS.malha.tecido,
-  resolucaoMm: 20,
+  resolucaoMm: 12,
 };
 
 // ---- As instâncias (as cópias das peças, inteiras)
@@ -604,6 +613,7 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
   let cx = 0;
   let A: number;
   let B: number;
+  let escalaDaLinha: ((v: number) => number) | null = null;
   if (p.startsWith('perna-')) {
     const perna = p.startsWith('perna-direita') ? corpo.pernas.direita : corpo.pernas.esquerda;
     cx = perna.inicio.x;
@@ -612,22 +622,69 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
     const eixos = semiEixosMaximosDoTronco(corpo, topo - contorno.altura, topo);
     A = eixos.a + 30;
     B = eixos.b + 30;
+    // Cada altura da peça vai na elipse da largura dela: a barra de um vestido evasê abre, e o ombro continua perto do corpo.
     const meiaVolta = perimetroDaElipse(A, B) / 2;
-    if (W > meiaVolta) {
-      A *= W / meiaVolta;
-      B *= W / meiaVolta;
-    }
+    const larguraDaLinha = larguraPorLinha(instancia, config.girarGraus);
+    escalaDaLinha = (v) => Math.max(1, larguraDaLinha(v) / meiaVolta);
   }
   const angulo0 =
     p === 'frente' || p.endsWith('-frente') ? 0 : p === 'costas' || p.endsWith('-costas') ? Math.PI : p === 'lado-direito' ? (3 * Math.PI) / 2 : Math.PI / 2;
-  const elipse = elipsePeloComprimento(A, B);
+  // As elipses de cada escala, de 2 em 2%: medir uma pelo comprimento custa.
+  const elipses = new Map<number, ReturnType<typeof elipsePeloComprimento>>();
+  const elipseNaEscala = (k: number): ReturnType<typeof elipsePeloComprimento> => {
+    const chave = Math.round(k * 50);
+    let e = elipses.get(chave);
+    if (!e) {
+      e = elipsePeloComprimento((A * chave) / 50, (B * chave) / 50);
+      elipses.set(chave, e);
+    }
+    return e;
+  };
   for (let i = 0; i < n; i++) {
-    const q = elipse(angulo0, face.u[i]! + config.desvioMm);
+    const q = elipseNaEscala(escalaDaLinha ? escalaDaLinha(face.v[i]!) : 1)(angulo0, face.u[i]! + config.desvioMm);
     saida[3 * i] = cx + q.x;
     saida[3 * i + 1] = topo - (vMax - face.v[i]!);
     saida[3 * i + 2] = q.z;
   }
   return saida;
+}
+
+/** A largura da peça em cada altura da face (mm), lida no contorno e suavizada. */
+function larguraPorLinha(instancia: InstanciaDaPeca, girarGraus: number): (v: number) => number {
+  const f = coordenadasDaFace(instancia, girarGraus, contornoComoPontos(instancia.contorno));
+  const n = f.u.length;
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (let i = 0; i < n; i++) {
+    vMin = Math.min(vMin, f.v[i]!);
+    vMax = Math.max(vMax, f.v[i]!);
+  }
+  const passo = 20;
+  const linhas = Math.ceil((vMax - vMin) / passo) + 1;
+  const menor = new Float64Array(linhas).fill(Infinity);
+  const maior = new Float64Array(linhas).fill(-Infinity);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const [u0, v0, u1, v1] = [f.u[i]!, f.v[i]!, f.u[j]!, f.v[j]!];
+    const pedacos = Math.ceil(Math.abs(v1 - v0) / (passo / 2)) + 1;
+    for (let s = 0; s <= pedacos; s++) {
+      const t = s / pedacos;
+      const b = Math.round((v0 + (v1 - v0) * t - vMin) / passo);
+      const u = u0 + (u1 - u0) * t;
+      menor[b] = Math.min(menor[b]!, u);
+      maior[b] = Math.max(maior[b]!, u);
+    }
+  }
+  let largura = Float64Array.from({ length: linhas }, (_, b) => Math.max(0, maior[b]! - menor[b]!));
+  for (let volta = 0; volta < 3; volta++) {
+    const atual = largura;
+    largura = Float64Array.from({ length: linhas }, (_, b) => (atual[Math.max(0, b - 1)]! + atual[b]! + atual[Math.min(linhas - 1, b + 1)]!) / 3);
+  }
+  return (v) => {
+    const q = Math.max(0, Math.min(linhas - 1, (v - vMin) / passo));
+    const b = Math.min(linhas - 2, Math.floor(q));
+    return linhas < 2 ? largura[0]! : largura[b]! + (largura[b + 1]! - largura[b]!) * (q - b);
+  };
 }
 
 /**
@@ -1004,6 +1061,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
     preset: presets.includes(t.preset as string) ? (t.preset as PresetDeTecido) : 'malha',
     pesoGm2: Math.min(1000, Math.max(20, numero(t.pesoGm2, 160))),
     elasticidade: limite(t.elasticidade, 70),
+    ...(typeof t.trama === 'string' && t.trama in ROTULO_DA_TRAMA ? { trama: t.trama as TramaDoTecido } : {}),
     ...(typeof t.elasticidadeNaTrama === 'number' ? { elasticidadeNaTrama: limite(t.elasticidadeNaTrama, 70) } : {}),
     ...(typeof t.elasticidadeNoVies === 'number' ? { elasticidadeNoVies: limite(t.elasticidadeNoVies, 70) } : {}),
     rigidez: limite(t.rigidez, 20),
@@ -1011,7 +1069,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
     ...(typeof t.brilho === 'number' ? { brilho: limite(t.brilho, 0) } : {}),
     ...(typeof t.transparencia === 'number' ? { transparencia: limite(t.transparencia, 0) } : {}),
   };
-  const resolucaoMm = [12, 20, 30].includes(bruto.resolucaoMm as number) ? (bruto.resolucaoMm as number) : 20;
+  const resolucaoMm = [8, 12, 20, 30].includes(bruto.resolucaoMm as number) ? (bruto.resolucaoMm as number) : 12;
   return { manequim, pecas, costuras, tecido, resolucaoMm, ...(bruto.autoColisao === false ? { autoColisao: false } : {}) };
 }
 

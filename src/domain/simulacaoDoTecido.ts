@@ -1,5 +1,5 @@
 import type { CorpoDoManequim } from './manequim';
-import { distanciaAoCorpo } from './manequim';
+import { corpoDoManequim, distanciaAoCorpo } from './manequim';
 import type { MalhaDaPeca } from './malhaDaPeca';
 import { trechoDaBorda } from './malhaDaPeca';
 import type { ConfiguracaoDaInstancia, Costura3D, InstanciaDaPeca, Tecido3D } from './montagem3d';
@@ -24,7 +24,12 @@ export interface PecaNaSimulacao {
 }
 
 export interface Simulacao {
+  /** O corpo na pose pedida. */
   readonly corpo: CorpoDoManequim;
+  /** O corpo de agora: veste na pose de vestir e vai aos poucos para a pedida (ADR 0230). */
+  corpoAgora: CorpoDoManequim;
+  /** Os corpos do caminho entre as duas poses, na ordem; vazio se a pose já é a de vestir. */
+  corposDoCaminho: readonly CorpoDoManequim[];
   readonly pecas: readonly PecaNaSimulacao[];
   /** As posições (x, y, z seguidos). */
   readonly x: Float64Array;
@@ -78,11 +83,26 @@ export interface ParametrosDoTecido {
 }
 
 export const TEMPO_DA_COSTURA_S = 1.2;
+/** Depois de vestir, a pose muda neste intervalo (s): com o tecido já pendurado, os braços descem por fora dele. */
+export const INICIO_DA_POSE_S = 2;
+export const FIM_DA_POSE_S = 3;
+/** A mão anda no máximo isto (mm) de um corpo do caminho ao outro: mais, e o braço pularia o pano da manga. */
+const PASSO_DA_MAO_MM = 30;
+const MAIOR_NUMERO_DE_PASSOS = 14;
 /** A distância de partida da peça de cima à de baixo (mm), para fora. */
 const AFASTAMENTO_DA_CAMADA = 4;
 const GRAVIDADE = 9810;
 /** A maior velocidade de um ponto do tecido (mm/s). */
 const VELOCIDADE_MAXIMA = 3000;
+/** No aperto, a complacência da aresta vale tantas vezes a do esticar, e nunca menos que a mínima. */
+const CEDE_AO_APERTO = 40;
+const COMPLACENCIA_DO_APERTO = 2e-4;
+/** O aperto (a fração do comprimento) em que a aresta começa a ceder, em que cede de todo e em que volta a resistir. */
+const INICIO_DO_APERTO = 0.01;
+const FIM_DO_APERTO = 0.04;
+const LIMITE_DO_APERTO = 0.14;
+/** O empurrão (mm/s) que tira o tecido do plano perfeito quando o peso entra: sem ele, nada faz a primeira dobra nascer. */
+const EMPURRAO_DO_CAIMENTO = 60;
 /** Quantas vezes o estiramento e as costuras são resolvidos em cada passo. */
 const VOLTAS_POR_PASSO = 3;
 /**
@@ -123,6 +143,7 @@ export function parametrosDoTecido(t: Tecido3D): ParametrosDoTecido {
 }
 
 export interface EntradaDaSimulacao {
+  /** O corpo na pose pedida (a roupa é vestida na de vestir e o corpo vai até ela). */
   readonly corpo: CorpoDoManequim;
   readonly instancias: readonly InstanciaDaPeca[];
   readonly configuracoes: Readonly<Record<string, ConfiguracaoDaInstancia>>;
@@ -131,8 +152,24 @@ export interface EntradaDaSimulacao {
   readonly tecido: Tecido3D;
 }
 
+/** Os corpos do caminho da pose de vestir à pedida, com o de vestir no começo e o pedido no fim. */
+function caminhoDaPose(corpo: CorpoDoManequim): readonly CorpoDoManequim[] {
+  if (corpo.pose === 'padrao') return [];
+  const de = corpoDoManequim(corpo.medidas, corpo.pose, corpo.publico, 0);
+  const a = de.bracos.esquerdo.fim;
+  const b = corpo.bracos.esquerdo.fim;
+  const passos = Math.min(MAIOR_NUMERO_DE_PASSOS, Math.max(2, Math.ceil(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) / PASSO_DA_MAO_MM)));
+  const lista: CorpoDoManequim[] = [de];
+  for (let k = 1; k < passos; k++) lista.push(corpoDoManequim(corpo.medidas, corpo.pose, corpo.publico, k / passos));
+  lista.push(corpo);
+  return lista;
+}
+
 /** Monta a simulação: as peças postas em volta do corpo, as restrições e as costuras. */
-export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
+export function montarSimulacao(entrada: EntradaDaSimulacao): Simulacao {
+  const corposDoCaminho = caminhoDaPose(entrada.corpo);
+  // A roupa é vestida com os braços afastados: a arrumação e as contas abaixo usam esse corpo.
+  const e: EntradaDaSimulacao = corposDoCaminho.length > 0 ? { ...entrada, corpo: corposDoCaminho[0]! } : entrada;
   const parametros = parametrosDoTecido(e.tecido);
   const pecas: PecaNaSimulacao[] = [];
   let totalDePontos = 0;
@@ -255,6 +292,50 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
   const costuraDistancia0: number[] = [];
   const pecaDe = (chave: string): PecaNaSimulacao | undefined => pecas.find((p) => p.chave === chave);
   const cadeiasDasCosturas: { id: string; pontos: Uint32Array }[] = [];
+  /** O ponto da peça, vizinho de `ponto`, que mais entra nela a partir do trecho da costura. */
+  const pontoDeDentro = (p: PecaNaSimulacao, ponto: number, trecho: ReadonlySet<number>): number | null => {
+    const tri = p.malha.triangulos;
+    const pts = p.malha.pontos;
+    let melhor: number | null = null;
+    let maior = -1;
+    for (let k = 0; k < tri.length; k++) {
+      if (tri[k] !== ponto) continue;
+      const base = k - (k % 3);
+      for (let q = base; q < base + 3; q++) {
+        const o = tri[q]!;
+        if (o === ponto || trecho.has(o)) continue;
+        const d = Math.hypot(pts[2 * o]! - pts[2 * ponto]!, pts[2 * o + 1]! - pts[2 * ponto + 1]!);
+        if (d > maior) {
+          maior = d;
+          melhor = o;
+        }
+      }
+    }
+    return melhor;
+  };
+  /**
+   * A costura resiste a dobrar (ADR 0230): as duas folgas costuradas por dentro fazem dela o trecho mais firme do pano.
+   * Sem isso ela era uma dobradiça solta, e a frente e as costas fechavam uma sobre a outra como um saco vazio. Cada ponto
+   * do trecho ganha uma dobra entre o vizinho de dentro de um lado e o do outro, como se a peça continuasse pela costura.
+   */
+  const dobrarNaCostura = (a: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, b: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, invertida: boolean): void => {
+    const noTrechoA = new Set(a.t.pontos);
+    const noTrechoB = new Set(b.t.pontos);
+    for (let k = 0; k < a.t.pontos.length; k++) {
+      const f = invertida ? 1 - a.t.fracoes[k]! : a.t.fracoes[k]!;
+      let j = 0;
+      while (j < b.t.pontos.length - 1 && Math.abs(b.t.fracoes[j + 1]! - f) < Math.abs(b.t.fracoes[j]! - f)) j++;
+      const pa = a.t.pontos[k]!;
+      const pb = b.t.pontos[j]!;
+      const oa = pontoDeDentro(a.p, pa, noTrechoA);
+      const ob = pontoDeDentro(b.p, pb, noTrechoB);
+      if (oa === null || ob === null) continue;
+      const da = Math.hypot(a.p.malha.pontos[2 * oa]! - a.p.malha.pontos[2 * pa]!, a.p.malha.pontos[2 * oa + 1]! - a.p.malha.pontos[2 * pa + 1]!);
+      const db = Math.hypot(b.p.malha.pontos[2 * ob]! - b.p.malha.pontos[2 * pb]!, b.p.malha.pontos[2 * ob + 1]! - b.p.malha.pontos[2 * pb + 1]!);
+      dobras.push(a.p.inicio + oa, b.p.inicio + ob);
+      comprimentosDasDobras.push(da + db);
+    }
+  };
   const ligar = (de: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, para: { p: PecaNaSimulacao; t: ReturnType<typeof trechoDaBorda> }, invertida: boolean): void => {
     for (let k = 0; k < de.t.pontos.length; k++) {
       const f0 = de.t.fracoes[k]!;
@@ -288,10 +369,13 @@ export function montarSimulacao(e: EntradaDaSimulacao): Simulacao {
     if (ta.pontos.length < 2 || tb.pontos.length < 2) continue;
     ligar({ p: pa, t: ta }, { p: pb, t: tb }, c.invertida);
     ligar({ p: pb, t: tb }, { p: pa, t: ta }, c.invertida);
+    dobrarNaCostura({ p: pa, t: ta }, { p: pb, t: tb }, c.invertida);
     cadeiasDasCosturas.push({ id: c.id, pontos: Uint32Array.from(ta.pontos, (k) => pa.inicio + k) });
   }
   return {
-    corpo: e.corpo,
+    corpo: entrada.corpo,
+    corpoAgora: e.corpo,
+    corposDoCaminho,
     pecas,
     x,
     anterior: Float64Array.from(x),
@@ -336,8 +420,21 @@ function resolverDistancias(x: Float64Array, w: Float64Array, pares: Uint32Array
     const dz = x[3 * i + 2]! - x[3 * j + 2]!;
     const L = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (L < 1e-9) continue;
-    const C = L - comprimentos[k / 2]!;
-    const lambda = -C / (ws + (complacencias ? complacencias[k / 2]! * alfa : alfa));
+    const repouso = comprimentos[k / 2]!;
+    const C = L - repouso;
+    // O pano resiste a esticar, mas quase não resiste a ser apertado: ele enruga. Sem isso a malha trava, cada triângulo
+    // defende as três arestas, e o tecido cai como papelão. A mudança é gradual: uma quina no comprimento de repouso faria
+    // a aresta tremer em volta dele. Passado o limite, o encolhido volta a resistir.
+    let complacencia = complacencias ? complacencias[k / 2]! * alfa : alfa;
+    if (complacencias && C < 0 && C > -LIMITE_DO_APERTO * repouso) {
+      const a = (-C / repouso - INICIO_DO_APERTO) / (FIM_DO_APERTO - INICIO_DO_APERTO);
+      if (a > 0) {
+        const macia = Math.max(complacencia * CEDE_AO_APERTO, alfa * COMPLACENCIA_DO_APERTO);
+        const f = a >= 1 ? 1 : a * a * (3 - 2 * a);
+        complacencia += (macia - complacencia) * f * (1 - Math.max(0, (-C / repouso - FIM_DO_APERTO) / (LIMITE_DO_APERTO - FIM_DO_APERTO)));
+      }
+    }
+    const lambda = -C / (ws + complacencia);
     const fx = (dx / L) * lambda;
     const fy = (dy / L) * lambda;
     const fz = (dz / L) * lambda;
@@ -406,11 +503,25 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
   let maior = 0;
   let mexendo = 0;
   let candidatos: Uint32Array | null = null;
+  if (sim.corposDoCaminho.length > 0 && sim.tempo >= INICIO_DA_POSE_S) {
+    const lista = sim.corposDoCaminho;
+    const k = Math.min(lista.length - 1, Math.floor(((sim.tempo - INICIO_DA_POSE_S) / (FIM_DA_POSE_S - INICIO_DA_POSE_S)) * (lista.length - 1)));
+    sim.corpoAgora = lista[k]!;
+    // Chegou: os corpos do caminho (e as grades deles) não servem mais.
+    if (k === lista.length - 1) sim.corposDoCaminho = [];
+  }
   for (let s = 0; s < subpassos; s++) {
     const costurando = sim.tempo < TEMPO_DA_COSTURA_S;
+    if (!costurando && sim.tempo - dt < TEMPO_DA_COSTURA_S) {
+      // Uma ondulação pela posição, sem sorteio: a mesma roupa cai sempre igual.
+      for (let i = 0; i < n; i++) {
+        v[3 * i] = v[3 * i]! + EMPURRAO_DO_CAIMENTO * Math.sin(0.043 * x[3 * i + 1]! + 0.11 * x[3 * i + 2]! + 1.3) * Math.sin(0.09 * x[3 * i]! + 0.7);
+        v[3 * i + 2] = v[3 * i + 2]! + EMPURRAO_DO_CAIMENTO * Math.sin(0.037 * x[3 * i + 1]! + 0.13 * x[3 * i]! + 2.1) * Math.sin(0.08 * x[3 * i + 2]! + 0.4);
+      }
+    }
     const g = costurando ? 0 : GRAVIDADE;
     // Na costura o ar segura mais (as peças se juntam sem sacudir).
-    const amortecimento = Math.exp(-(costurando ? 12 : 1.5) * dt);
+    const amortecimento = Math.exp(-(costurando ? 12 : 3) * dt);
     for (let i = 0; i < n; i++) {
       if (w[i] === 0) continue;
       v[3 * i] = v[3 * i]! * amortecimento;
@@ -471,7 +582,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
       let px = x[3 * i]!;
       let py = x[3 * i + 1]!;
       let pz = x[3 * i + 2]!;
-      const c = distanciaAoCorpo(sim.corpo, px, py, pz);
+      const c = distanciaAoCorpo(sim.corpoAgora, px, py, pz);
       // A peça de cima guarda o dobro: fica por cima da de baixo, que encosta no corpo.
       const espessura = par.espessura * (1 + sim.camada[i]!);
       let nx = 0;
@@ -514,7 +625,7 @@ export function avancar(sim: Simulacao, segundos: number, subpassos = 10): void 
         // Empurrado para fora de um pedaço do corpo, o ponto pode ter entrado no outro (na axila, entre as pernas):
         // confere de novo, até três vezes.
         for (let volta = 0; volta < 3; volta++) {
-          const c2 = distanciaAoCorpo(sim.corpo, px, py, pz);
+          const c2 = distanciaAoCorpo(sim.corpoAgora, px, py, pz);
           if (c2.d >= espessura) break;
           px += c2.nx * (espessura - c2.d);
           py += c2.ny * (espessura - c2.d);
@@ -614,8 +725,8 @@ export function botoesDaSimulacao(sim: Simulacao, instancias: readonly Instancia
 
 /** A simulação parou: passou a costura e o tecido quase não se mexe. */
 export function assentou(sim: Simulacao): boolean {
-  // Menos de 2% dos pontos ainda se mexendo: uns poucos tremendo numa junção (a axila) não seguram a simulação até o fim.
-  return sim.tempo > TEMPO_DA_COSTURA_S + 0.5 && sim.fracaoEmMovimento < 0.02;
+  // Menos de 5% dos pontos ainda se mexendo: uns poucos tremendo numa junção (a axila) não seguram a simulação até o fim.
+  return sim.tempo > TEMPO_DA_COSTURA_S + 0.5 && sim.corposDoCaminho.length === 0 && sim.fracaoEmMovimento < 0.05;
 }
 
 /** O quanto cada triângulo está esticado (a maior aresta: 0,05 = 5% mais comprida que no molde; negativo: encolhida). */

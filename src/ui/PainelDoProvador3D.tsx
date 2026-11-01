@@ -46,7 +46,9 @@ import {
   type Tecido3D,
   COR_DE_PARTIDA,
   corpoDaMontagem,
+  ROTULO_DA_TRAMA,
   tramaDoTecido,
+  type TramaDoTecido,
 } from '../domain/montagem3d';
 import { corNaVariante, type VarianteDeCor } from '../domain/desenhoTecnico';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, ligarAutoColisao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
@@ -99,6 +101,7 @@ interface Montada {
 const TEMPO_MAXIMO_S = 10;
 /** Quantos pontos tem a imagem rápida (a que acompanha o arrasto e a simulação), no máximo. */
 const PONTOS_DA_IMAGEM_RAPIDA = 260_000;
+const INTERVALO_DE_DESENHO_NA_SIMULACAO_MS = 160;
 /** Quanto a tela fica parada antes de a imagem final ser calculada (ms). */
 const ESPERA_DA_IMAGEM_FINAL_MS = 180;
 /** A qualidade da imagem salva: nas muito grandes, os pontos a mais já vêm do tamanho. */
@@ -198,7 +201,7 @@ export function PainelDoProvador3D(props: {
     tamanhoDasPecas,
     // O brilho e a transparência são só da vista, e o nome do tecido pronto não muda a física: mexer neles não
     // recomeça a simulação.
-    { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined },
+    { ...montagem.tecido, preset: undefined, brilho: undefined, transparencia: undefined, trama: undefined },
     // O zíper é só da vista: pôr ou tirar não recomeça a simulação.
     costurasValidas.map((c) => ({ ...c, ziperMm: undefined })),
     Object.entries(montagem.pecas).map(([k, c]) => [k, c.posicao, c.alturaDoTopo, c.ajusteMm, c.desvioMm, c.girarGraus]),
@@ -293,7 +296,11 @@ export function PainelDoProvador3D(props: {
           .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
       m.lotesDoCorpo[refino] ??= loteDoCorpo(m.malhaDoCorpo.vertices, m.malhaDoCorpo.triangulos, COR_DO_CORPO, refino);
-      return [m.lotesDoCorpo[refino], ...lotesDoTecido(tecido, modo === 'tensao' ? 0 : refino + 1)];
+      // Com a simulação andando, o corpo vai da pose de vestir para a pedida junto com a roupa.
+      const emCaminho = m.sim.tempo > 0 && m.sim.corpoAgora !== m.corpo;
+      const corpoVisto = emCaminho ? malhaDoCorpo(m.sim.corpoAgora) : null;
+      const loteVisto = corpoVisto ? loteDoCorpo(corpoVisto.vertices, corpoVisto.triangulos, COR_DO_CORPO, refino) : m.lotesDoCorpo[refino];
+      return [loteVisto, ...lotesDoTecido(tecido, modo === 'tensao' ? 0 : refino + 1)];
     },
     [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido, instancias, imagensProntas, modo, pixelsDaImagem, desenhoDaFicha],
   );
@@ -404,10 +411,13 @@ export function PainelDoProvador3D(props: {
     let parado = false;
     let relogio: ReturnType<typeof setTimeout> | undefined;
     let quadro = 0;
+    let ultimoDesenho = 0;
     const pedirDesenho = (): void => {
-      if (quadro === 0) {
+      // A imagem custa mais que um passo da física: poucas por segundo bastam para acompanhar, e o tecido assenta antes.
+      if (quadro === 0 && performance.now() - ultimoDesenho > INTERVALO_DE_DESENHO_NA_SIMULACAO_MS) {
         quadro = requestAnimationFrame(() => {
           quadro = 0;
+          ultimoDesenho = performance.now();
           desenhar();
         });
       }
@@ -1384,11 +1394,22 @@ function ParteTecido(props: {
         {regua('brilho', 'Brilho', 'fosco (algodão)', 'brilha (cetim)')}
         {regua('transparencia', 'Transparência', 'opaco', 'deixa ver (voal)')}
         <label>
+          Trama
+          <select value={tramaDoTecido(t)} onChange={(e) => props.onMudar({ ...t, trama: e.target.value as TramaDoTecido })}>
+            {(Object.keys(ROTULO_DA_TRAMA) as TramaDoTecido[]).map((k) => (
+              <option key={k} value={k}>
+                {ROTULO_DA_TRAMA[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Malha da simulação
           <select value={props.resolucaoMm} onChange={(e) => props.onResolucao(Number(e.target.value))}>
-            <option value={30}>Rápida (30 mm)</option>
-            <option value={20}>Normal (20 mm)</option>
-            <option value={12}>Fina (12 mm, mais lenta)</option>
+            <option value={30}>Rascunho (30 mm)</option>
+            <option value={20}>Rápida (20 mm)</option>
+            <option value={12}>Fina (12 mm, com as dobras)</option>
+            <option value={8}>Muito fina (8 mm, dobras pequenas; bem mais lenta)</option>
           </select>
         </label>
         <label className="opcao-em-linha">

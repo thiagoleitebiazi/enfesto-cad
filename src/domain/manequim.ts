@@ -143,6 +143,8 @@ export interface CorpoDoManequim {
   /** A forma do corpo (ADR 0229). */
   readonly publico: PublicoDoManequim;
   readonly pose: PoseDoManequim;
+  /** De 0 (na pose de vestir) a 1 (na pedida). */
+  readonly fracaoDaPose: number;
   readonly alturaMm: number;
   /** De baixo para cima, do gancho ao alto do pescoço. */
   readonly tronco: readonly SecaoDoTronco[];
@@ -184,7 +186,6 @@ function elipse(perimetro: number, k: number): { a: number; b: number } {
 
 const p3 = (x: number, y: number, z: number): Ponto3D => ({ x, y, z });
 
-/** Monta o corpo pelas medidas. */
 /**
  * A pose do manequim (ADR 0138): os braços. A de vestir é a de sempre (um pouco afastados, para as mangas caírem); as
  * outras são para as imagens de catálogo.
@@ -204,7 +205,11 @@ const ABERTURA_DA_POSE: Readonly<Record<PoseDoManequim, number>> = { padrao: 15,
 /** A forma do corpo pelas medidas, para quem só tem as medidas: a criança pela altura, o resto pela diferença do quadril. */
 export const publicoDasMedidas = (m: MedidasDoManequim): PublicoDoManequim => (m.alturaCm < 150 ? 'infantil' : m.quadrilCm - m.cinturaCm >= 20 ? 'feminino' : 'masculino');
 
-export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoManequim = 'padrao', publicoDado?: PublicoDoManequim): CorpoDoManequim {
+/**
+ * Monta o corpo pelas medidas. `fracaoDaPose`: de 0 (os braços na pose de vestir) a 1 (na pose pedida); os valores do
+ * meio são o caminho entre as duas, que a simulação percorre com a roupa já vestida (ADR 0230).
+ */
+export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoManequim = 'padrao', publicoDado?: PublicoDoManequim, fracaoDaPose = 1): CorpoDoManequim {
   const m = medidasConferidas(medidasDadas);
   const publico = publicoDado ?? publicoDasMedidas(m);
   const H = m.alturaCm * 10;
@@ -242,16 +247,15 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoMan
     { y: pescocoAlto, a: sPescoco.a * 0.95, b: sPescoco.b * 0.95 },
   ];
 
-  // Os braços, um pouco abertos (15°), saindo do ombro.
-  const abertura = (ABERTURA_DA_POSE[pose] * Math.PI) / 180;
   // O ombro fica onde o corpo o tem, um pouco para trás do meio do tronco; o braço relaxado cai reto dali.
   const zOmbro = forma.z.ombro * zEscala;
-  const braco = (lado: -1 | 1): BracoOuPerna => {
+  const bracoNaPose = (lado: -1 | 1, poseDoBraco: PoseDoManequim): BracoOuPerna => {
+    const abertura = (ABERTURA_DA_POSE[poseDoBraco] * Math.PI) / 180;
     const inicio = p3(lado * (meioOmbro - raioDoBraco * 0.75), ombro - raioDoBraco * 0.9, zOmbro);
     const d = p3(lado * Math.sin(abertura), -Math.cos(abertura), 0);
     const L = m.comprimentoDoBracoCm * 10;
-    const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, pose === 'maos-na-cintura' ? zOmbro - 0.1 * L : zOmbro);
-    if (pose === 'maos-na-cintura') {
+    const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, poseDoBraco === 'maos-na-cintura' ? zOmbro - 0.1 * L : zOmbro);
+    if (poseDoBraco === 'maos-na-cintura') {
       // O cotovelo vai para o lado e para trás; o antebraço volta dele para a cintura, e o punho dobra: a mão fica deitada
       // no lado do quadril, com os dedos para baixo e para a frente.
       const s = secaoNaAltura({ tronco } as unknown as CorpoDoManequim, cintura)!;
@@ -269,6 +273,21 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoMan
     const fim = p3(inicio.x + d.x * L, inicio.y + d.y * L, zOmbro + 0.05 * L);
     return { inicio, meio, fim, raio: raioDoBraco };
   };
+  const braco = (lado: -1 | 1): BracoOuPerna => {
+    const alvo = bracoNaPose(lado, pose);
+    if (fracaoDaPose >= 1 || pose === 'padrao') return alvo;
+    const de = bracoNaPose(lado, 'padrao');
+    const f = fracaoDaPose;
+    const entre = (a: Ponto3D, b: Ponto3D): Ponto3D => p3(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z + (b.z - a.z) * f);
+    const direcao = (q: BracoOuPerna): Ponto3D => {
+      if (q.mao) return q.mao;
+      const l = Math.hypot(q.fim.x - q.meio.x, q.fim.y - q.meio.y, q.fim.z - q.meio.z) || 1;
+      return p3((q.fim.x - q.meio.x) / l, (q.fim.y - q.meio.y) / l, (q.fim.z - q.meio.z) / l);
+    };
+    const m0 = entre(direcao(de), direcao(alvo));
+    const ml = Math.hypot(m0.x, m0.y, m0.z) || 1;
+    return { inicio: alvo.inicio, meio: entre(de.meio, alvo.meio), fim: entre(de.fim, alvo.fim), raio: alvo.raio, mao: p3(m0.x / ml, m0.y / ml, m0.z / ml) };
+  };
   const raioDaCoxa = (m.coxaCm * 10) / (2 * Math.PI);
   const perna = (lado: -1 | 1): BracoOuPerna => {
     const inicio = p3(lado * raioDaCoxa * 0.98, gancho + raioDaCoxa * 0.5, forma.z.quadril * zEscala);
@@ -282,6 +301,7 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoMan
     medidas: m,
     publico,
     pose,
+    fracaoDaPose,
     alturaMm: H,
     tronco,
     niveis: { gancho, quadril, cintura, busto, axila, ombro, pescoco, queixoDaMalha: pescocoAlto },
@@ -355,10 +375,10 @@ interface CorpoPronto {
 
 /** Os últimos corpos feitos, pela forma, pose e medidas: ajustar a malha e medir a grade custa um quarto de segundo. */
 const prontos = new Map<string, CorpoPronto>();
-const LIMITE_DE_CORPOS_PRONTOS = 8;
+const LIMITE_DE_CORPOS_PRONTOS = 6;
 
 function corpoPronto(corpo: CorpoDoManequim): CorpoPronto {
-  const chave = JSON.stringify([corpo.publico, corpo.pose, corpo.medidas]);
+  const chave = JSON.stringify([corpo.publico, corpo.pose, corpo.fracaoDaPose, corpo.medidas]);
   const achado = prontos.get(chave);
   if (achado) return achado;
   const novo: CorpoPronto = { malha: malhaHumana(corpo), campo: null };

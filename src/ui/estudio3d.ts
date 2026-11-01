@@ -114,8 +114,8 @@ export function luzesDoEstudio(v: VistaDoEstudio): readonly LuzDoEstudio[] {
     return { x, y, z, forca, cor };
   };
   return [
-    emVolta(0.5, 0.72, 0.62, 0.92, [1, 0.97, 0.93]),
-    emVolta(-0.78, 0.12, 0.62, 0.3, [0.92, 0.96, 1]),
+    emVolta(0.74, 0.66, 0.5, 1.06, [1, 0.97, 0.93]),
+    emVolta(-0.8, 0.1, 0.56, 0.22, [0.92, 0.96, 1]),
     emVolta(0.86, 0.3, -0.52, 0.42, [1, 1, 1]),
     emVolta(-0.86, 0.3, -0.52, 0.42, [1, 1, 1]),
   ];
@@ -976,7 +976,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
     const roughON = ehCorpo ? 0.45 : 0.85;
     const onA = 1 / (1 + 0.4739 * roughON);
     const onB = roughON * onA;
-    const envolve = ehCorpo ? 0.1 : 0.22;
+    const envolve = ehCorpo ? 0.1 : 0.14;
 
     // A sombra: o ponto saindo um pouco do pano, para o próprio pano não se sombrear.
     const ruidoDoPonto = (52.9829189 * ((0.06711056 * xp + 0.00583715 * yp) % 1)) % 1;
@@ -1061,9 +1061,9 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
 
     // A luz ambiente: mais clara de cima, mais fraca de baixo (o que volta do chão).
     const ceu = 0.5 + 0.5 * ny;
-    const ambR = (0.24 + 0.2 * ceu) * ao;
-    const ambG = (0.235 + 0.205 * ceu) * ao;
-    const ambB = (0.23 + 0.215 * ceu) * ao;
+    const ambR = (0.17 + 0.17 * ceu) * ao;
+    const ambG = (0.165 + 0.175 * ceu) * ao;
+    const ambB = (0.16 + 0.185 * ceu) * ao;
     sr += ar * ambR;
     sg += ag * ambG;
     sb += ab * ambB;
