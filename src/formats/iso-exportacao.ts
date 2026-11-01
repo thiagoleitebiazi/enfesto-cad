@@ -3,11 +3,10 @@ import { ponto, retanguloEnvolvente } from '../core/geometria';
 import { linhaDeCorteDaPeca, type Molde } from '../domain/molde';
 import { linhasDoMolde } from '../domain/linhasAuxiliares';
 import { corteDoPique, mundoParaDxf } from './dxf-exportacao';
-import { textoParaPlotter } from './plt-exportacao';
 
 /**
  * O arquivo para a mesa de corte automático (ADR 0140): o encaixe como está na mesa, em ISO (G-code, ISO 6983), em
- * milímetros e coordenadas absolutas — o comprimento do encaixe no X (o avanço da mesa) e a largura no Y, como no PLT.
+ * milímetros e coordenadas absolutas — o comprimento do encaixe no X (o avanço da mesa) e a largura no Y.
  *
  * As ferramentas, pelo número (a mesa liga cada número à sua):
  * - T1, a faca: a linha de corte e os furos;
@@ -88,6 +87,14 @@ export function trechosDoCorte(peca: Molde, corte: readonly Ponto2D[]): Readonly
   ];
 }
 
+/** O comentário do G-code: só ASCII. */
+const textoSemAcento = (texto: string): string =>
+  texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[—–]/g, '-')
+    .replace(/[^\x20-\x7e]/g, '?');
+
 export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): string {
   const todos = pecas.flatMap((p) => [...linhaDeCorteDaPeca(p), ...p.contorno]);
   const altura = todos.reduce((maior, p) => Math.max(maior, p.x), opcoes.larguraDaMesaMm ?? 0);
@@ -146,7 +153,7 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
   const naOrdem = [...pecas].sort((a, b) => retanguloEnvolvente(linhaDeCorteDaPeca(a)).minY - retanguloEnvolvente(linhaDeCorteDaPeca(b)).minY);
   for (const peca of naOrdem) {
     const corte = linhaDeCorteDaPeca(peca);
-    linhas.push(`(${textoParaPlotter(`${peca.nome} ${peca.tamanho}`.trim()).replace(/[()]/g, '')})`);
+    linhas.push(`(${textoSemAcento(`${peca.nome} ${peca.tamanho}`.trim()).replace(/[()]/g, '')})`);
     if (opcoes.comCaneta) {
       usar(3);
       for (const interna of linhasDoMolde(peca)) passada(interna, false);

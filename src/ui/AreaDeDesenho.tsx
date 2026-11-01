@@ -363,7 +363,6 @@ interface AreaDeDesenhoProps {
   /** Arrastar uma das peças selecionadas leva todas: um passo só para desfazer. */
   readonly onMoverPecas?: (ids: readonly string[], deslocamento: Ponto2D) => void;
   /** A guia da largura do papel (mm), para organizar os moldes (ADR 0184). */
-  readonly retanguloDeOrganizacaoMm?: number | null;
   /** O arrasto das peças só num eixo (F9 e F10, ADR 0183). */
   readonly travaDoEixo?: TravaDoEixo | null;
   /** Alt + clique numa peça: confere o tamanho dela (ADR 0180). */
@@ -407,8 +406,7 @@ interface AreaDeDesenhoProps {
   readonly codigoDosPacotes?: CodigoDosPacotes;
   readonly coresDosPacotes?: readonly string[];
   readonly destacarRelacionamento?: boolean;
-  /** A cor do contorno pela caneta do corte, e os pontos de pique à vista (ADR 0193). */
-  readonly corDoContorno?: string | null;
+  /** Os pontos de pique à vista (ADR 0193). */
   readonly mostrarPontosDePique?: boolean;
   /** Marca os pontos sem graduação na peça selecionada (ADR 0181). */
   readonly mostrarNaoGraduados?: boolean;
@@ -492,7 +490,6 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     onMoverPecas,
     onConferirTamanho,
     travaDoEixo = null,
-    retanguloDeOrganizacaoMm = null,
     onAlternarNaSelecao,
     onSelecionarVarias,
     onAbrirPropriedades,
@@ -513,7 +510,6 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     estiloDaCostura = 'tracejada',
     coresDosTamanhos = SEM_CORES_ESCOLHIDAS,
     mostrarNaoGraduados = false,
-    corDoContorno = null,
     visao = VISAO_PADRAO,
     coresDaArea = null,
     ocultarReguas = false,
@@ -1016,16 +1012,6 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       }
     }
 
-    if (retanguloDeOrganizacaoMm) {
-      const a = mundoParaTela(ponto(0, 0), transform);
-      const b = mundoParaTela(ponto(retanguloDeOrganizacaoMm, enfesto?.comprimentoMm ?? 3000), transform);
-      ctx.save();
-      ctx.strokeStyle = COR_GRUPO_DO_ENCAIXE;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([10, 6]);
-      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
-      ctx.restore();
-    }
 
     // Grade de pontos em múltiplos redondos de mm (o mesmo passo em que o
     // ímã prende), por baixo das peças. Como a tela troca os eixos, a coluna
@@ -1097,7 +1083,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
       ctx.fill('evenodd');
       const temErro = idsComErro.has(peca.id);
       const estaSelecionada = peca.id === selecionadoId || idsSelecionadosEmLote.has(peca.id);
-      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? (coresDaArea?.selecao ?? COR_CONTORNO_SELECIONADO) : (corDoContorno ?? coresDaArea?.contorno ?? COR_CONTORNO);
+      ctx.strokeStyle = temErro ? COR_CONTORNO_COM_ERRO : estaSelecionada ? (coresDaArea?.selecao ?? COR_CONTORNO_SELECIONADO) : (coresDaArea?.contorno ?? COR_CONTORNO);
       ctx.lineWidth = estaSelecionada || temErro ? 2.5 : 1.5;
       if (temErro) ctx.setLineDash([6, 3]);
       ctx.stroke();
@@ -1806,10 +1792,8 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     destacarPacotes,
     codigoDosPacotes,
     destacarRelacionamento,
-    corDoContorno,
     mostrarPontosDePique,
     imagemDaPadronagem,
-    retanguloDeOrganizacaoMm,
     estiloDaCostura,
     coresDosTamanhos,
     mostrarNaoGraduados,

@@ -1,8 +1,7 @@
 import { area, ponto, retanguloEnvolvente, type Ponto2D } from '../core/geometria';
-import { UNIDADES_POR_MM } from './plt-exportacao';
 
 /**
- * A importação de PLT (ADR 0157): um risco em HPGL, de outro sistema ou guardado para o plotter, vira peças. O PLT só
+ * O leitor de traços (ADR 0157, 0225): por dentro da importação do ISO, que chega aqui como canetas descendo e subindo.
  * tem traços e textos, então as peças são deduzidas:
  * - a linha fechada que não está dentro de outra é o contorno de uma peça (o retângulo da mesa, com um canto na origem
  *   do papel, fica de fora);
@@ -21,7 +20,7 @@ interface Texto {
   readonly texto: string;
 }
 
-export interface PecaDoPlt {
+export interface PecaDosTracos {
   readonly nome: string | null;
   readonly contorno: Ponto2D[];
   readonly furos: Ponto2D[][];
@@ -30,8 +29,8 @@ export interface PecaDoPlt {
   readonly piques: ReadonlyArray<{ readonly posicao: Ponto2D; readonly indiceAresta: number }>;
 }
 
-/** Os traços (em unidades do plotter) e os textos do arquivo. Só os comandos de desenho contam; os outros são pulados. */
-export function lerHpgl(texto: string): { readonly tracos: Traco[]; readonly textos: Texto[] } {
+/** Os traços (em 40 unidades por mm) e os textos do arquivo. Só os comandos de desenho contam; os outros são pulados. */
+export function lerTracos(texto: string): { readonly tracos: Traco[]; readonly textos: Texto[] } {
   const tracos: Traco[] = [];
   const textos: Texto[] = [];
   let terminador = String.fromCharCode(3);
@@ -134,10 +133,13 @@ const FECHA_MM = 0.5;
 const PIQUE_MAXIMO_MM = 20;
 
 /** Os traços em mm, nos eixos do desenho (o comprimento do papel no y, a largura no x, para baixo). */
+/** As unidades em que o ISO importado chega: 0,025 mm. */
+const UNIDADES_POR_MM = 40;
+
 const noDesenho = (p: Ponto2D): Ponto2D => ponto(-p.y / UNIDADES_POR_MM, p.x / UNIDADES_POR_MM);
 
-export function pecasDoPlt(texto: string): { readonly pecas: PecaDoPlt[]; readonly avisos: string[] } {
-  const { tracos, textos } = lerHpgl(texto);
+export function pecasDosTracos(texto: string): { readonly pecas: PecaDosTracos[]; readonly avisos: string[] } {
+  const { tracos, textos } = lerTracos(texto);
   const avisos: string[] = [];
   const fechados: Array<{ readonly pontos: Ponto2D[]; readonly area: number; readonly naOrigem: boolean }> = [];
   const abertos: Ponto2D[][] = [];
@@ -161,7 +163,7 @@ export function pecasDoPlt(texto: string): { readonly pecas: PecaDoPlt[]; readon
     else if (f.area <= dona.area / 2) dona.furos.push(f.pontos);
   }
   if (pecas.length === 0) avisos.push('Nenhuma linha fechada no arquivo: não há peças para importar.');
-  const resultado: PecaDoPlt[] = pecas.map((p) => {
+  const resultado: PecaDosTracos[] = pecas.map((p) => {
     const caixa = retanguloEnvolvente(p.contorno);
     const daPeca = abertos.filter((l) => {
       const meio = l[Math.floor(l.length / 2)]!;

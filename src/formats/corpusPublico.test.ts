@@ -4,10 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { area, retanguloEnvolvente } from '../core/geometria';
 import type { Molde } from '../domain/molde';
 import { ehArquivoAstm, lerAstm, moldesDoAstm } from './astm-importacao';
-import { ehDmpl, hpglDoDmpl } from './dmpl-importacao';
 import { gerarDxfAstm } from './dxf-astm';
-import { UNIDADES_POR_MM } from './plt-exportacao';
-import { lerHpgl } from './plt-importacao';
 
 /**
  * A validação com arquivos de verdade, feitos por outros programas (ADR 0215). Eles são públicos, mas não são nossos:
@@ -78,25 +75,6 @@ describe.skipIf(PASTA === '')('os arquivos ASTM e AAMA públicos (ADR 0215)', ()
       const [a, b] = [moldes, volta].map((l) => medidas(l).map((m) => [m.largura, m.comprimento]).flat());
       expect(b!.length, arquivo).toBeGreaterThan(0);
       expect(Math.max(...a!), arquivo).toBeCloseTo(Math.max(...b!), 0);
-    }
-  });
-});
-
-describe.skipIf(PASTA === '')('os arquivos DMPL públicos (ADR 0215)', () => {
-  it('lê os dois inteiros, dentro de uma folha', () => {
-    const plts = nomes(/^DMPL.*\.plt$/i);
-    expect(plts.length).toBeGreaterThan(0);
-    for (const arquivo of plts) {
-      const texto = ler(arquivo);
-      expect(ehDmpl(texto)).toBe(true);
-      const { tracos } = lerHpgl(hpglDoDmpl(texto));
-      expect(tracos.length, arquivo).toBeGreaterThan(50);
-      const c = retanguloEnvolvente(tracos.flatMap((t) => [...t.pontos]));
-      // A unidade do EC1 é de 0,001 polegada: o desenho tem de caber nas 16 × 11 polegadas do plotter destes arquivos.
-      const lados = [c.maxX - c.minX, c.maxY - c.minY].map((u) => u / UNIDADES_POR_MM).sort((a, b) => b - a);
-      expect(lados[0], arquivo).toBeLessThan(16 * 25.4);
-      expect(lados[1], arquivo).toBeLessThan(11 * 25.4);
-      expect(lados[1], arquivo).toBeGreaterThan(100);
     }
   });
 });

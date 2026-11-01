@@ -28,7 +28,7 @@ export function PainelDeProgramas(props: PainelDeProgramasProps): React.JSX.Elem
       <div className="formulario-de-sobreposicao painel-de-imagens">
         {props.programas.length === 0 ? (
           <p className="nota-do-formulario">
-            Nenhum atalho ainda. Cadastre abaixo os programas que você usa junto com este: o do plotter, o da máquina de
+            Nenhum atalho ainda. Cadastre abaixo os programas que você usa junto com este: o da máquina de
             corte, uma planilha, um site.
           </p>
         ) : (

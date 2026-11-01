@@ -21,9 +21,9 @@ atual, com a evidência de cada área (modelagem, graduação, intercâmbio de
 moldes, encaixe, planejamento e sala de corte, equipamentos, integrações), está
 no [ADR 0098](ADR/0098-auditoria-de-capacidades-rendimento-tubular-e-execucao-do-corte.md).
 Em resumo, ele **não** tem: 3D, ficha técnica, coleções, IA, ERP, login,
-servidor, nem ligação com máquinas (enfestadeira, faca, plotter) — as saídas
-para produção são o PDF em escala 1:1, o DXF e o PLT para plotter (HPGL, ADR
-0101; não testado num plotter físico).
+servidor, nem ligação com máquinas (enfestadeira, faca) — as saídas para
+produção são o PDF em escala 1:1, o DXF e o ISO para a mesa de corte. O suporte
+a plotter foi retirado ([ADR 0225](ADR/0225-sem-plotter.md)).
 
 ## Baixar e instalar (usuário final, Windows)
 
@@ -154,7 +154,7 @@ electron/       processo principal (IPC, diálogos de arquivo, persistência
 src/core/       geometria pura (pontos, contornos, transformações), em mm
 src/domain/     entidades de domínio (Molde, Enfesto, Tecido, nesting,
                  relatórios, restrições de rotação/fio)
-src/formats/    importação/exportação de DXF e PDF; exportação PLT (plotter)
+src/formats/    importação/exportação de DXF, PDF e ISO (mesa de corte)
 src/ui/         interface React (canvas, réguas, painéis, barra de
                  ferramentas em abas)
 ADR/            decisões de arquitetura registradas

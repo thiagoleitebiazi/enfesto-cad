@@ -83,7 +83,7 @@ describe('as opções lembradas', () => {
     const a = memoria();
     expect(opcoesDoEncaixeGuardadas(a).anguloDeGiro).toBe(90);
     guardarOpcoesDoEncaixe(a, { ...opcoesDoEncaixeGuardadas(a), anguloDeGiro: 45, encaixaAoClicar: true });
-    expect(opcoesDoEncaixeGuardadas(a)).toMatchObject({ anguloDeGiro: 45, encaixaAoClicar: true, verificarAoPlotar: true });
+    expect(opcoesDoEncaixeGuardadas(a)).toMatchObject({ anguloDeGiro: 45, encaixaAoClicar: true });
   });
 
   it('os campos da barra descartam o que não existe', () => {

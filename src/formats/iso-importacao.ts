@@ -2,13 +2,13 @@ const UNIDADES_POR_MM = 40;
 
 /**
  * Importar arquivo de corte ISO (ADR 0201): o manual da referência lê de volta o G-code da mesa. O caminho com a
- * ferramenta embaixo é o desenho, e o que vem dele vira HPGL, para seguir o mesmo reconhecimento de peças do PLT. Só o
+ * ferramenta embaixo é o desenho, e o que vem dele vira traços, para o reconhecimento de peças (ADR 0225). Só o
  * básico da norma: G0, G1, X, Y, Z (embaixo em Z0 ou menos). Os furos da ferramenta T4 e de M43 voltam como furinhos na
  * peça (ADR 0220); os comandos de fabricante ficam de fora.
  */
 const RAIO_DO_FURO_MM = 1;
 
-export function hpglDoIso(texto: string): string {
+export function tracosDoIso(texto: string): string {
   const comandos: string[] = ['IN'];
   let x = 0;
   let y = 0;

@@ -1,6 +1,6 @@
 /**
- * O gerenciador de impressão (ADR 0210): os riscos esperando o plotter, um de cada vez. Se um falha, a fila pausa: o
- * plotter desligado ou sem papel faria os seguintes falharem também.
+ * A fila da mesa de corte (ADR 0210): os arquivos esperando a máquina, um de cada vez. Se um falha, a fila pausa: a
+ * máquina desligada faria os seguintes falharem também.
  */
 
 export type EstadoDaImpressao = 'na-fila' | 'enviando' | 'enviado' | 'erro' | 'cancelado';
@@ -60,7 +60,7 @@ export async function esvaziarFila(ler: () => FilaDeImpressao, mudar: (fila: Fil
     mudar(comEstado(ler(), t.id, 'enviando'));
     const r = await enviar(t).catch((e: unknown) => ({ ok: false, erro: e instanceof Error ? e.message : String(e) }));
     if (r.ok) mudar(comEstado(ler(), t.id, 'enviado'));
-    else mudar({ ...comEstado(ler(), t.id, 'erro', r.erro ?? 'O plotter não recebeu o risco.'), pausada: true });
+    else mudar({ ...comEstado(ler(), t.id, 'erro', r.erro ?? 'A mesa de corte não recebeu o arquivo.'), pausada: true });
   }
 }
 
@@ -70,7 +70,7 @@ export function filaParaGuardar(fila: FilaDeImpressao): string {
   return JSON.stringify(pendentes.map(({ id, nome, destino, texto }) => ({ id, nome, destino, texto })));
 }
 
-/** A fila guardada volta pausada: quem abre o programa decide quando mandar, com o plotter pronto. */
+/** A fila guardada volta pausada: quem abre o programa decide quando mandar, com a máquina pronta. */
 export function filaGuardada(bruto: string | null | undefined): FilaDeImpressao {
   try {
     const lidos: unknown = JSON.parse(bruto ?? '[]');

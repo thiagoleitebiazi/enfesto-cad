@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
-import { AJUSTE_DE_TEXTO_PADRAO, alturaDoTextoDaPeca, fioAjustado, gerarPlt } from '../formats/plt-exportacao';
 import { extrairMolde, partesDentro } from './elementos';
 import { criarMolde, fioNaDirecao, fioNoAngulo, transladarMolde, type Molde } from './molde';
 import { comCosturaInvertida } from './modificarElemento';
@@ -143,45 +142,5 @@ describe('o relacionamento dos piques (ADR 0191)', () => {
     const de = comPontoDeCasamento(m, '', ponto(25, 30), 'x', 'horizontal').molde;
     expect(de.marcas[0]!.relacaoDoCasamento).toBe('horizontal');
     expect(comPontoDeCasamento(de, '', ponto(25, 30), 'x').molde.marcas[0]!.relacaoDoCasamento).toBeUndefined();
-  });
-});
-
-describe('o auto ajuste do texto e do fio no plotter (ADR 0192)', () => {
-  const a = AJUSTE_DE_TEXTO_PADRAO;
-
-  it('a altura acompanha a peça, entre o mínimo e o máximo', () => {
-    expect(alturaDoTextoDaPeca(10, 2000, a)).toBe(a.minimoMm);
-    expect(alturaDoTextoDaPeca(5000, 5000, a)).toBe(a.maximoMm);
-    expect(alturaDoTextoDaPeca(600, 900, a)).toBeCloseTo(6, 6);
-  });
-
-  it('o fio fica entre o mínimo e o máximo, com o mesmo meio', () => {
-    const curto = fioAjustado({ inicio: ponto(0, 0), fim: ponto(0, 10) }, a);
-    expect(curto.fim.y - curto.inicio.y).toBeCloseTo(a.fioMinimoMm, 6);
-    expect((curto.fim.y + curto.inicio.y) / 2).toBeCloseTo(5, 6);
-    const certo = { inicio: ponto(0, 0), fim: ponto(0, 100) };
-    expect(fioAjustado(certo, a)).toBe(certo);
-  });
-
-  it('no PLT, o tamanho muda e a orientação gira o letreiro; depois volta', () => {
-    const plt = gerarPlt([quadrado(1000)], { ajusteDeTexto: { ...a, orientacaoGraus: 90 } });
-    expect(plt).toContain('SI0.7,1');
-    expect(plt).toContain('DI0,1');
-    expect(plt).toContain('DI1,0');
-    expect(gerarPlt([quadrado(1000)])).not.toContain('DI');
-  });
-
-  it('com texto em traços, a orientação gira os traços', () => {
-    const deitado = gerarPlt([quadrado(1000)], { textoComoLinha: true });
-    const em90 = gerarPlt([quadrado(1000)], { textoComoLinha: true, ajusteDeTexto: { ...a, orientacaoGraus: 90 } });
-    expect(em90).not.toBe(deitado);
-    expect(em90).not.toContain('DI');
-  });
-
-  it('o estilo da costura sai no plotter quando pedido', () => {
-    const peca = quadrado(200, 10);
-    expect(gerarPlt([peca], { estiloDaCostura: 'tracejada' })).toContain('LT2,1');
-    expect(gerarPlt([peca], { estiloDaCostura: 'pontilhada' })).toContain('LT1,1');
-    expect(gerarPlt([peca])).not.toContain('LT');
   });
 });

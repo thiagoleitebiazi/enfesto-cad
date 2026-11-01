@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
-import { gerarPlt } from '../formats/plt-exportacao';
 import { areaNaUnidade, pesoNaUnidade, ROTULO_DA_UNIDADE_DE_AREA, unidadeDeAreaGuardada, unidadeDePesoGuardada } from '../ui/preferencias';
 import { criarConfiguracaoDeEnfesto, enfestoComEmendas, lerPontosDeEmenda } from './enfesto';
 import { criarMolde, transladarMolde, type Molde } from './molde';
@@ -55,10 +54,6 @@ describe('os pontos de emenda (ADR 0188)', () => {
     expect(validarProjeto([peca(500)], com).some((p) => p.tipo === 'peca-na-emenda')).toBe(false);
   });
 
-  it('sai no plotter, com a marca escrita', () => {
-    const plt = gerarPlt([peca()], { emendas: [1200], larguraDaMesaMm: 1000 });
-    expect(plt).toContain('LBEMENDA');
-  });
 });
 
 describe('as unidades de área e de peso (ADR 0189)', () => {

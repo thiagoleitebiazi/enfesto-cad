@@ -77,7 +77,7 @@ export const RESTRICAO_PADRAO: RestricaoDeRotacao = {
   permiteEspelhamento: false,
 };
 
-/** O traço de uma linha na tela e no plotter. */
+/** O traço de uma linha na tela. */
 export type EstiloDeLinha = 'tracejada' | 'pontilhada' | 'continua';
 
 /** Seta do sentido do fio: de `inicio` para `fim`, em mm no espaço do molde. */
@@ -449,8 +449,6 @@ export interface Molde {
   readonly folgaNoEncaixeMm?: number;
   /** A quantidade própria de cada tamanho, por cima da quantidade da peça (ADR 0202). */
   readonly quantidadePorTamanho?: Readonly<Record<string, number>>;
-  /** A altura do nome da peça no plotter (ADR 0202). */
-  readonly alturaDoTextoMm?: number;
   /** A descrição da peça, que pode aparecer nela (ADR 0199). */
   readonly descricao?: string;
   /** "Usar" desligado: a peça fica fora do encaixe (ADR 0200). */
@@ -507,7 +505,7 @@ export interface Molde {
  * quando chegou fica no histórico do projeto (a importação registra uma versão).
  */
 export interface OrigemDaImportacao {
-  readonly formato: 'dxf' | 'pdf' | 'plt';
+  readonly formato: 'dxf' | 'pdf' | 'plt' | 'iso';
   readonly arquivo: string;
   readonly importadaEmIso: string;
   /** A unidade do arquivo ("mm", "polegadas"…), ou o fator de escala do PDF. */
@@ -531,7 +529,7 @@ export function comPar(molde: Molde, emPar: boolean): Molde {
 /** A origem da importação de uma peça que acabou de chegar, com as medidas dela. */
 export function origemDaPecaImportada(
   peca: Molde,
-  dados: { readonly formato: 'dxf' | 'pdf' | 'plt'; readonly arquivo: string; readonly importadaEmIso: string; readonly unidade: string; readonly unidadeAssumida: boolean },
+  dados: { readonly formato: 'dxf' | 'pdf' | 'plt' | 'iso'; readonly arquivo: string; readonly importadaEmIso: string; readonly unidade: string; readonly unidadeAssumida: boolean },
 ): OrigemDaImportacao {
   return { ...dados, areaMm2: area(peca.contorno), perimetroMm: perimetro(peca.contorno), pontos: peca.contorno.length };
 }

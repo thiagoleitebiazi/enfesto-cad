@@ -3,16 +3,16 @@ import { writeFile } from 'node:fs/promises';
 import { connect } from 'node:net';
 
 /**
- * A porta de saída (ADR 0210): o risco vai direto para o plotter, sem o programa dele. A interface só manda o texto do
+ * A porta de saída (ADR 0210): o arquivo de corte vai direto para a mesa, sem outro programa. A interface só manda o texto do
  * destino; daqui ele sai como uma destas três coisas, e nada mais: um endereço da rede local, uma impressora
- * compartilhada (\\servidor\plotter) ou uma porta LPT/COM do computador. Nenhum arquivo comum é gravado por aqui.
+ * compartilhada (\\servidor\mesa) ou uma porta LPT/COM do computador. Nenhum arquivo comum é gravado por aqui.
  */
 
 export type PortaDeSaida =
   | { readonly tipo: 'rede'; readonly host: string; readonly porta: number }
   | { readonly tipo: 'caminho'; readonly caminho: string; readonly baud?: number };
 
-/** A porta que os plotters e as impressoras de rede ouvem. */
+/** A porta que as máquinas de rede costumam ouvir. */
 const PORTA_PADRAO_DA_REDE = 9100;
 
 function hostDaRedeLocal(host: string): boolean {
@@ -42,7 +42,7 @@ export function lerPortaDeSaida(destino: unknown): PortaDeSaida | null {
 export function enviarPelaRede(host: string, porta: number, dados: Buffer, tempoMs = 15000): Promise<void> {
   return new Promise((resolver, rejeitar) => {
     const conexao = connect({ host, port: porta });
-    conexao.setTimeout(tempoMs, () => conexao.destroy(new Error('O plotter não respondeu.')));
+    conexao.setTimeout(tempoMs, () => conexao.destroy(new Error('A máquina não respondeu.')));
     conexao.once('error', rejeitar);
     conexao.once('connect', () =>
       conexao.end(dados, () => {
@@ -76,7 +76,7 @@ export async function enviarAPorta(porta: PortaDeSaida, texto: string, plataform
   const dados = Buffer.from(texto, 'latin1');
   if (porta.tipo === 'rede') return enviarPelaRede(porta.host, porta.porta, dados);
   // Fora do Windows, este caminho seria um arquivo comum, criado na pasta do programa.
-  if (plataforma !== 'win32') throw new Error('Neste computador, o plotter precisa estar na rede: escreva o endereço dele.');
+  if (plataforma !== 'win32') throw new Error('Neste computador, a máquina precisa estar na rede: escreva o endereço dela.');
   if (porta.baud !== undefined) await configurarSerial(porta.caminho, porta.baud);
   try {
     // A porta do Windows (LPT, COM) só abre como algo que já existe: 'r+' é isso. 'w' pede para criar, e ela recusa.

@@ -33,7 +33,7 @@ const TECLA_DE_COMANDO = NO_MAC ? 'meta' : 'control';
 
 fs.mkdirSync(SAIDA, { recursive: true });
 // Um arquivo de outra rodada passaria por este: a conferência lê a pasta.
-for (const nome of fs.readdirSync(SAIDA)) if (/\.(pdf|plt|dxf|iso|html|csv|xlsx)$/i.test(nome)) fs.rmSync(path.join(SAIDA, nome));
+for (const nome of fs.readdirSync(SAIDA)) if (/\.(pdf|dxf|iso|html|csv|xlsx)$/i.test(nome)) fs.rmSync(path.join(SAIDA, nome));
 const REGISTRO = path.join(SAIDA, 'uso.txt');
 fs.writeFileSync(REGISTRO, '');
 const log = (texto) => {
@@ -170,7 +170,7 @@ async function principal() {
   const naAbertura = JSON.parse(
     await js(`JSON.stringify(Array.from(document.querySelectorAll('[role=tabpanel] [aria-label="Importação e exportação"] button')).map(b => b.textContent.replace(/\\s+/g, ' ').trim()))`),
   );
-  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF, Exportar PLT e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Importar PLT|Importar ISO|Unir encaixes|Informações|Exportar DXF|Exportar ASTM|Exportar PDF|Exportar PLT|Plotar moldes|PLT por partes|Exportar SVG ou XML|Exportar ISO (corte)', naAbertura.join(', '));
+  conferir('a tela de início tem Importar DXF, Importar PDF, Exportar DXF, Exportar PDF e Exportar ISO', naAbertura.join('|') === 'Importar DXF|Importar PDF|Importar ISO|Unir encaixes|Informações|Exportar DXF|Exportar ASTM|Exportar PDF|Exportar SVG ou XML|Exportar ISO (corte)', naAbertura.join(', '));
 
   // 1. Importar o DXF de teste: direto, com o nome do arquivo e o fio na horizontal.
   await aba('Início');
@@ -383,17 +383,6 @@ async function principal() {
   const dxf = dxfs[0] ? fs.readFileSync(path.join(SAIDA, dxfs[0]), 'latin1') : '';
   const contornosNoDxf = dxf.split('0\r\nPOLYLINE\r\n8\r\nCONTORNO\r\n').length - 1;
   conferir('o DXF foi gravado: R12, em mm, com as 3 peças', dxf.startsWith('0\r\nSECTION') && dxf.includes('AC1009') && dxf.includes('$INSUNITS\r\n70\r\n4') && contornosNoDxf === 3, `${JSON.stringify(dxfs)} ${contornosNoDxf} contorno(s)`);
-
-  // 3c. Exportar o PLT para o plotter (ADR 0101): HPGL, começando pelo IN e com um nome (LB) por peça.
-  // Aqui há peças sobrepostas (a vista e o forro do passo 2b): o programa pergunta antes de plotar, e a resposta é sim.
-  await js(`(() => { window.__confirmar = window.confirm; window.confirm = () => true; })()`);
-  await botao('Exportar PLT');
-  await espera(1500);
-  await js(`(() => { window.confirm = window.__confirmar; })()`);
-  const plts = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.plt'));
-  const plt = plts[0] ? fs.readFileSync(path.join(SAIDA, plts[0]), 'latin1') : '';
-  const nomesNoPlt = plt.split(';LB').length - 1;
-  conferir('o PLT foi gravado: HPGL, com o nome das 3 peças', plt.startsWith('IN;SP1;') && plt.trim().endsWith('PU0,0;SP0;') && nomesNoPlt >= 3, `${JSON.stringify(plts)} ${nomesNoPlt} nome(s)`);
 
   // 3d. Exportar o ISO para a mesa de corte (ADR 0140): o diálogo pede a velocidade e a caneta; o G-code em mm,
   // absoluto, com um comentário por peça, a caneta antes da faca em cada peça, e o fim do programa.
@@ -662,25 +651,6 @@ async function principal() {
     `${JSON.stringify(selosDeGrupo)} / ${validacaoComGrupos}`,
   );
   await foto('16-grupos-na-mesa.png');
-
-  // 6b. O plotter de duas canetas (ADR 0115): Opções > "Plotter de duas canetas"; o PLT com a linha de corte na caneta 1,
-  // o risco na 2, e o nome de cada grupo do encaixe no começo do seu trecho.
-  await clicarEm(`Array.from(document.querySelectorAll('.botao-de-menu')).find(b => b.textContent.trim() === 'Opções')`);
-  await clicarEm(`Array.from(document.querySelectorAll('[role=menu] .item-de-menu')).find(b => b.textContent.includes('duas canetas'))`);
-  await espera(300);
-  await aba('Início');
-  await botao('Exportar PLT');
-  await espera(1500);
-  const pltsComGrupos = fs.readdirSync(SAIDA).filter((f) => f.endsWith('.plt'));
-  const pltComGrupos = pltsComGrupos[0] ? fs.readFileSync(path.join(SAIDA, pltsComGrupos[0]), 'latin1') : '';
-  const cortesNaCaneta1 = pltComGrupos.split(';SP1;').length - 1;
-  conferir(
-    'o PLT de duas canetas: o corte na 1, o risco na 2, e o nome dos dois grupos',
-    pltComGrupos.includes(';SP2;') && cortesNaCaneta1 >= 3 && pltComGrupos.includes('LBEntretela\x03') && pltComGrupos.includes('LBSem grupo\x03'),
-    `${cortesNaCaneta1} troca(s) para a 1 / ${pltComGrupos.split(';SP2;').length - 1} para a 2`,
-  );
-  await aba('Encaixe');
-  await espera(300);
 
   // 7. A biblioteca de materiais e aviamentos (ADR 0104): Modelo > Materiais e aviamentos, um material novo pelo
   // formulário, guardado na lista e no arquivo da pasta de dados.

@@ -51,7 +51,8 @@ describe('as teclas do encaixe (ADR 0180)', () => {
     expect(tecla('F9')).toEqual({ tipo: 'travar-horizontal' });
     expect(tecla('F10')).toEqual({ tipo: 'travar-vertical' });
     expect(tecla('F11')).toEqual({ tipo: 'so-na-dobra' });
-    for (const [letra, tipo] of Object.entries({ r: 'mover-com-referencia', g: 'agrupar', u: 'desagrupar', w: 'verificar', t: 'medir', k: 'cortar', p: 'plotar', l: 'localizar' })) {
+    expect(tecla('p', { ctrlKey: true })).toBeNull();
+    for (const [letra, tipo] of Object.entries({ r: 'mover-com-referencia', g: 'agrupar', u: 'desagrupar', w: 'verificar', t: 'medir', k: 'cortar', l: 'localizar' })) {
       expect(tecla(letra, { ctrlKey: true })).toEqual({ tipo });
     }
     expect(tecla('T', { ctrlKey: true, shiftKey: true })).toEqual({ tipo: 'texto' });

@@ -36,8 +36,6 @@ function propsBase(): Props {
     onAlternarIma: vi.fn(),
     unidadeDaRegua: 'cm',
     onDefinirUnidadeDaRegua: vi.fn(),
-    canetasDoPlotter: 1,
-    onDefinirCanetasDoPlotter: vi.fn(),
     onAbrirAtalhos: vi.fn(),
     onAbrirSobre: vi.fn(),
     mostrarListaDePecas: true,
@@ -78,7 +76,6 @@ function propsBase(): Props {
     onAbrirExportacaoPdf: vi.fn(),
     podeExportarPdf: true,
     onExportarDxf: vi.fn(),
-    onExportarPlt: vi.fn(),
     onExportarIso: vi.fn(),
     onAbrirMesaDigitalizadora: vi.fn(),
     onSalvar: vi.fn(),
@@ -232,7 +229,7 @@ describe('BarraDeFerramentas: abas', () => {
 
     expect(Object.keys(gruposDaAba())[0]).toBe('Importação e exportação');
     expect(gruposDaAba()).toEqual({
-      'Importação e exportação': ['Importar DXF', 'Importar PDF', 'Exportar DXF', 'Exportar PDF', 'Exportar PLT', 'Exportar ISO (corte)'],
+      'Importação e exportação': ['Importar DXF', 'Importar PDF', 'Exportar DXF', 'Exportar PDF', 'Exportar ISO (corte)'],
       Desenho: ['Cor'],
       Editar: ['Colar', 'Recortar', 'Copiar', 'Excluir'],
       Selecionar: ['Selecionar', 'Inverter seleção', 'Selecionar tudo', 'Inverter moldes', 'Selecionar moldes'],
@@ -644,9 +641,8 @@ describe('BarraDeFerramentas: ferramentas ligadas', () => {
     fireEvent.click(botao('Importar PDF'));
     fireEvent.click(botao('Exportar DXF'));
     fireEvent.click(botao('Exportar PDF'));
-    fireEvent.click(botao('Exportar PLT'));
     fireEvent.click(botao('Exportar ISO (corte)'));
-    for (const acao of [props.onImportarDxf, props.onImportarPdf, props.onExportarDxf, props.onAbrirExportacaoPdf, props.onExportarPlt, props.onExportarIso]) expect(acao).toHaveBeenCalledTimes(1);
+    for (const acao of [props.onImportarDxf, props.onImportarPdf, props.onExportarDxf, props.onAbrirExportacaoPdf, props.onExportarIso]) expect(acao).toHaveBeenCalledTimes(1);
     cleanup();
 
     renderizar('Início', { podeExportarPdf: false });

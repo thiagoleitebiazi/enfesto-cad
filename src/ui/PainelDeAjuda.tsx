@@ -62,7 +62,6 @@ const ATALHOS_DE_TECLADO: ReadonlyArray<readonly [string, string]> = [
   ['Ctrl+T', 'Medir distâncias'],
   ['Ctrl+K', 'Cortar'],
   ['Ctrl+Shift+T', 'Inserir texto'],
-  ['Ctrl+P', 'Plotar (PLT)'],
   ['Ctrl+L', 'Localizar (Biblioteca)'],
   ['Alt+clique', 'Selecionar as peças do mesmo tamanho'],
   ['Ctrl+A', 'Selecionar tudo'],

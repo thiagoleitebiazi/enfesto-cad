@@ -372,3 +372,11 @@ As transcrições não puderam ser lidas: o YouTube recusa a leitura automática
 | Item | Situação |
 |---|---|
 | Enfesto em escada: camadas por bloco, degraus, consumo e ficha | ✅ ADR 0224 |
+
+## O plotter saiu (2026-11-01)
+
+A pedido do dono do projeto, tudo o que dependia do plotter foi tirado. Os itens das rodadas anteriores que falam de PLT, canetas, níveis, DMPL e do receptor ficam aqui como história, mas não existem mais no programa. A mesa de corte, o ISO, o PDF e o DXF continuam.
+
+| Item | Situação |
+|---|---|
+| PLT, plotar moldes, pasta do plotter, canetas e níveis, texto como linha, ajuste de texto, DMPL, receptor, correção por medidas | ❌ retirados, ADR 0225 |

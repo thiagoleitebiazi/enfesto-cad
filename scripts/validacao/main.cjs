@@ -2,7 +2,7 @@
 /*
  * O laboratório de validação (ADR 0216): usa o programa gerado, de verdade, no que os testes unitários não alcançam —
  * o cálculo em segundo plano, o bundle de produção, o processo principal, as portas, os arquivos e a tela. O que iria
- * para uma máquina vai para o plotter virtual, que interpreta tudo sozinho. Não tira fotos: confere pelo que a tela
+ * para uma máquina vai para a mesa de corte virtual, que interpreta tudo sozinho. Não tira fotos: confere pelo que a tela
  * mostra, pelos arquivos gravados e pelos pixels da janela.
  *
  *   npm run build
@@ -16,7 +16,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { criarPlotterVirtual, interpretarHpgl, interpretarIso, melhorDesvio } = require('./plotter-virtual.cjs');
+const { criarMesaVirtual, interpretarIso, melhorDesvio } = require('./mesa-virtual.cjs');
 const DxfParser = require('dxf-parser');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
@@ -355,116 +355,72 @@ async function principal() {
     await encaixar();
   });
 
-  /** O que o plotter deve desenhar, em mm no papel: X é o comprimento da mesa, e Y sobe a partir da borda de baixo. */
-  const noPapel = (contorno, altura) => contorno.map((p) => ({ x: p.y, y: altura - p.x }));
-  const plotter = criarPlotterVirtual();
-  await plotter.ligar();
-  const enviar = async () => {
-    const antes = plotter.recebidos.length;
-    await aba('Encaixe');
-    await menu('Opções', 'Enviar ao plotter (');
-    return esperarAte(async () => plotter.recebidos.length > antes && plotter.recebidos[plotter.recebidos.length - 1], 15000);
-  };
-  const situacoesDaFila = () => js(`JSON.stringify(Array.from(document.querySelectorAll('[role=dialog] tbody tr')).map((l) => l.children[2].textContent))`).then(JSON.parse);
-
-  await etapa('O envio ao plotter pela rede', async () => {
-    await aba('Encaixe');
-    await menu('Opções', 'Porta de saída');
-    await porNoCampo('Onde o plotter está', `localhost:${plotter.porta}`);
-    await botaoNaJanela('Guardar');
-    await espera(300);
-    const hpgl = await enviar();
-    conferir('o plotter virtual recebeu o risco', Boolean(hpgl), `${(hpgl || '').length} bytes`);
-    const r = interpretarHpgl(hpgl || '');
-    conferir('nenhum comando desconhecido', r.desconhecidos.length === 0, r.desconhecidos.join(','));
-    conferir('nenhum erro de plotagem', r.erros.length === 0, r.erros.slice(0, 3).join(' | '));
-    const { pecas, enfesto } = await estadoGravado();
-    const altura = Math.max(enfesto.larguraUtilMm, ...pecas.flatMap((p) => p.contorno.map((q) => q.x)));
-    const fechados = r.eventos.filter((e) => e.tipo === 'traco').map((e) => e.pontos);
-    const desvios = pecas.map((p) => melhorDesvio(fechados, [...noPapel(p.contorno, altura), noPapel(p.contorno, altura)[0]].slice(0, -1).concat(noPapel(p.contorno, altura)[0])));
-    conferir('cada peça sai no lugar e no tamanho, a menos de 0,05 mm', desvios.every((d) => d < 0.05), desvios.map((d) => d.toFixed(3)).join(' / '));
-    const fio = pecas.map((p) => melhorDesvio(fechados, noPapel([p.linhaDeFio.inicio, p.linhaDeFio.fim], altura)));
-    conferir('o fio de cada peça também', fio.every((d) => d < 0.05), fio.map((d) => d.toFixed(3)).join(' / '));
-    const textos = r.eventos.filter((e) => e.tipo === 'texto').map((e) => e.texto);
-    conferir('o nome das 3 peças sai no risco', pecas.every((p) => textos.some((t) => t.includes(p.nome.slice(0, 8)))), textos.slice(0, 4).join(' | '));
-    log(`      maior coordenada: ${r.maiorCoordenada} (${(r.maiorCoordenada / 40).toFixed(0)} mm)${r.passaDoLimiteAntigo ? ' — passa do limite de plotters antigos' : ''}`);
-    await menu('Opções', 'Gerenciador de impressão');
-    conferir('o gerenciador mostra o risco como enviado', (await situacoesDaFila()).includes('Enviado'), JSON.stringify(await situacoesDaFila()));
-    await fecharJanela();
-  });
-
-  await etapa('A falha no plotter e a volta', async () => {
-    const porta = plotter.porta;
-    await plotter.desligar();
-    await aba('Encaixe');
-    await menu('Opções', 'Enviar ao plotter (');
-    await espera(1500);
-    await menu('Opções', 'Gerenciador de impressão');
-    const com = await esperarAte(async () => (await situacoesDaFila()).find((s) => s.startsWith('Erro')), 15000);
-    conferir('o plotter desligado aparece como erro', Boolean(com), String(com));
-    conferir('a fila pausa', (await js(`Array.from(document.querySelectorAll('[role=dialog] button')).some((b) => b.textContent.trim() === 'Continuar a fila')`)) === true);
-    await plotter.ligar(porta);
-    const antes = plotter.recebidos.length;
-    await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find((b) => b.textContent.trim() === 'Enviar de novo')`);
-    conferir('ligado de novo, o risco chega', (await esperarAte(async () => plotter.recebidos.length > antes, 15000)) === true);
-    await fecharJanela();
-  });
-
-  await etapa('Os níveis de impressão', async () => {
-    await aba('Encaixe');
-    await menu('Opções', 'Ferramentas do plotter');
-    await marcarCaixa('Usar níveis de impressão');
-    await porNoCampo('Linha de corte: nível', '3');
-    await porNoCampo('Nomes e textos: nível', '1');
-    await botaoNaJanela('Guardar');
-    await espera(300);
-    const hpgl = await enviar();
-    const r = interpretarHpgl(hpgl || '');
-    const { pecas, enfesto } = await estadoGravado();
-    const altura = Math.max(enfesto.larguraUtilMm, ...pecas.flatMap((p) => p.contorno.map((q) => q.x)));
-    const indice = (contorno) => {
-      const alvo = noPapel(contorno, altura);
-      return r.eventos.findIndex((e) => e.tipo === 'traco' && melhorDesvio([e.pontos], [...alvo, alvo[0]]) < 0.05);
-    };
-    const cortes = pecas.map((p) => indice(p.contorno));
-    const ultimoTexto = r.eventos.map((e) => e.tipo).lastIndexOf('texto');
-    conferir('todos os nomes saem antes de qualquer corte', cortes.every((i) => i > ultimoTexto) && r.erros.length === 0, `textos até ${ultimoTexto}, cortes em ${cortes.join(',')}`);
-    await menu('Opções', 'Ferramentas do plotter');
-    await marcarCaixa('Usar níveis de impressão');
-    await botaoNaJanela('Guardar');
-    await espera(300);
-  });
-
-  await etapa('O ISO pela porta', async () => {
+  /** Onde a faca deve passar, em mm na mesa: X é o comprimento da mesa, e Y sobe a partir da borda de baixo. */
+  const naMesa = (contorno, altura) => contorno.map((p) => ({ x: p.y, y: altura - p.x }));
+  const mesaVirtual = criarMesaVirtual();
+  await mesaVirtual.ligar();
+  const pedirEnvio = async () => {
     await aba('Início');
-    const antes = plotter.recebidos.length;
     await botao('Exportar ISO (corte)');
     await marcarCaixa('Enviar direto pela porta de saída');
     await botaoNaJanela('Salvar o ISO');
-    const chegou = await esperarAte(async () => plotter.recebidos.length > antes, 15000);
+  };
+  const situacoesDaFila = () => js(`JSON.stringify(Array.from(document.querySelectorAll('[role=dialog] tbody tr')).map((l) => l.children[2].textContent))`).then(JSON.parse);
+
+  await etapa('O ISO pela rede', async () => {
+    await aba('Encaixe');
+    await menu('Opções', 'Porta de saída');
+    await porNoCampo('Onde a mesa de corte está', `localhost:${mesaVirtual.porta}`);
+    await botaoNaJanela('Guardar');
+    await espera(300);
+    const antes = mesaVirtual.recebidos.length;
+    await pedirEnvio();
+    const chegou = await esperarAte(async () => mesaVirtual.recebidos.length > antes, 15000);
     conferir('a mesa virtual recebeu o ISO', chegou === true);
-    const iso = interpretarIso(plotter.recebidos[plotter.recebidos.length - 1]);
+    const iso = interpretarIso(mesaVirtual.recebidos[mesaVirtual.recebidos.length - 1]);
     conferir('em mm, absoluto, com o fim do programa', iso.milimetros && iso.absoluto && iso.fim, JSON.stringify({ mm: iso.milimetros, abs: iso.absoluto, fim: iso.fim }));
     conferir('o leitor de terceiros não acha erro de corte', iso.erros.length === 0, iso.erros.slice(0, 3).join(' | '));
     const { pecas, enfesto } = await estadoGravado();
     const altura = Math.max(enfesto.larguraUtilMm, ...pecas.flatMap((p) => p.contorno.map((q) => q.x)));
     const faca = iso.caminhos.filter((c) => c.ferramenta === 1).map((c) => c.pontos);
     const desvios = pecas.map((p) => {
-      const alvo = noPapel(p.contorno, altura);
+      const alvo = naMesa(p.contorno, altura);
       return melhorDesvio(faca, [...alvo, alvo[0]]);
     });
     conferir('a faca passa em cada peça, a menos de 0,02 mm', desvios.every((d) => d < 0.02), desvios.map((d) => d.toFixed(3)).join(' / '));
+    await aba('Encaixe');
+    await menu('Opções', 'Fila da mesa de corte');
+    conferir('a fila mostra o arquivo como enviado', (await situacoesDaFila()).includes('Enviado'), JSON.stringify(await situacoesDaFila()));
+    await fecharJanela();
+  });
+
+  await etapa('A falha na mesa e a volta', async () => {
+    const porta = mesaVirtual.porta;
+    await mesaVirtual.desligar();
+    await pedirEnvio();
+    await espera(1500);
+    await aba('Encaixe');
+    await menu('Opções', 'Fila da mesa de corte');
+    const com = await esperarAte(async () => (await situacoesDaFila()).find((s) => s.startsWith('Erro')), 15000);
+    conferir('a mesa desligada aparece como erro', Boolean(com), String(com));
+    conferir('a fila pausa', (await js(`Array.from(document.querySelectorAll('[role=dialog] button')).some((b) => b.textContent.trim() === 'Continuar a fila')`)) === true);
+    await mesaVirtual.ligar(porta);
+    const antes = mesaVirtual.recebidos.length;
+    await clicarEm(`Array.from(document.querySelectorAll('[role=dialog] button')).find((b) => b.textContent.trim() === 'Enviar de novo')`);
+    conferir('ligada de novo, o arquivo chega', (await esperarAte(async () => mesaVirtual.recebidos.length > antes, 15000)) === true);
+    await fecharJanela();
   });
 
   await etapa('As portas que não servem', async () => {
     const destinoErrado = async (destino, texto) => {
       await aba('Encaixe');
       await menu('Opções', 'Porta de saída');
-      await porNoCampo('Onde o plotter está', destino);
+      await porNoCampo('Onde a mesa de corte está', destino);
       await botaoNaJanela('Guardar');
       await espera(300);
-      await menu('Opções', 'Enviar ao plotter (');
-      await menu('Opções', 'Gerenciador de impressão');
+      await pedirEnvio();
+      await aba('Encaixe');
+      await menu('Opções', 'Fila da mesa de corte');
       const achou = await esperarAte(async () => (await situacoesDaFila()).find((s) => s.includes(texto)), 8000);
       conferir(`"${destino}" é explicado`, Boolean(achou), String(achou));
       await botaoNaJanela('Continuar a fila');
@@ -474,64 +430,33 @@ async function principal() {
     await destinoErrado('8.8.8.8', 'A porta de saída não vale');
     await aba('Encaixe');
     await menu('Opções', 'Porta de saída');
-    await porNoCampo('Onde o plotter está', `localhost:${plotter.porta}`);
+    await porNoCampo('Onde a mesa de corte está', `localhost:${mesaVirtual.porta}`);
     await botaoNaJanela('Guardar');
     await espera(300);
   });
 
-  await etapa('O teste do equipamento', async () => {
+  await etapa('O teste da mesa de corte', async () => {
     await aba('Encaixe');
-    await menu('Opções', 'Teste do equipamento');
-    conferir('abre a janela do teste', (await janela()) === 'Teste do equipamento', await janela());
-    const antes = plotter.recebidos.length;
-    await botaoNaJanela('Enviar a página de teste');
-    await esperarAte(async () => plotter.recebidos.length > antes, 10000);
-    const pagina = interpretarHpgl(plotter.recebidos[plotter.recebidos.length - 1] || '');
-    const pontos = pagina.eventos.filter((e) => e.tipo === 'traco').flatMap((e) => e.pontos);
-    const c = caixa(pontos);
-    conferir('a página tem a moldura de 1000 x 140 mm', Math.abs(c.maxX - c.minX - 1000) < 0.05 && Math.abs(c.maxY - c.minY - 140) < 0.05, `${(c.maxX - c.minX).toFixed(2)} x ${(c.maxY - c.minY).toFixed(2)}`);
-    conferir('e o plotter entende tudo', pagina.erros.length === 0 && pagina.desconhecidos.length === 0, [...pagina.erros, ...pagina.desconhecidos].slice(0, 3).join(' | '));
-    await porNoCampo('Comprimento medido', '1005');
-    await porNoCampo('Largura medida', '139,3');
-    await botaoNaJanela('Guardar a correção');
-    const texto = await esperarAte(() => js(`(document.querySelector('[role=dialog] [role=status]') || {}).textContent || ''`), 3000);
-    conferir('a correção é calculada pelas medidas', String(texto).includes('Correção guardada'), String(texto).slice(0, 90));
+    await menu('Opções', 'Teste da mesa de corte');
+    conferir('abre a janela do teste', (await janela()) === 'Teste da mesa de corte', await janela());
+    const antes = mesaVirtual.recebidos.length;
     await botaoNaJanela('Enviar o teste de corte');
-    await espera(1200);
-    const mesa = interpretarIso(plotter.recebidos[plotter.recebidos.length - 1] || '');
-    conferir('a mesa virtual recebe o quadrado de 100 mm', mesa.caminhos.some((k) => k.ferramenta === 1 && Math.abs(caixa(k.pontos).maxX - caixa(k.pontos).minX - 100) < 0.01) && mesa.fim, `${mesa.caminhos.length} caminho(s)`);
+    await esperarAte(async () => mesaVirtual.recebidos.length > antes, 10000);
+    const teste = interpretarIso(mesaVirtual.recebidos[mesaVirtual.recebidos.length - 1] || '');
+    conferir('a mesa virtual recebe o quadrado de 100 mm', teste.caminhos.some((k) => k.ferramenta === 1 && Math.abs(caixa(k.pontos).maxX - caixa(k.pontos).minX - 100) < 0.01) && teste.fim, `${teste.caminhos.length} caminho(s)`);
     await fecharJanela();
-    const { pecas, enfesto } = await estadoGravado();
-    const hpgl = await enviar();
-    const corrigido = interpretarHpgl(hpgl || '');
-    const altura = Math.max(enfesto.larguraUtilMm, ...pecas.flatMap((p) => p.contorno.map((q) => q.x)));
-    const fator = (p) => ({ x: p.x * (1000 / 1005), y: p.y * (140 / 139.3) });
-    const desvios = pecas.map((p) => {
-      const alvo = noPapel(p.contorno, altura).map(fator);
-      return melhorDesvio(corrigido.eventos.filter((e) => e.tipo === 'traco').map((e) => e.pontos), [...alvo, alvo[0]]);
-    });
-    conferir('os riscos seguintes saem corrigidos', desvios.every((d) => d < 0.05), desvios.map((d) => d.toFixed(3)).join(' / '));
-    await menu('Opções', 'Teste do equipamento');
-    await botaoNaJanela('Apagar a correção');
-    await fecharJanela();
-    const hpglDepois = interpretarHpgl((await enviar()) || '');
-    const alvo = noPapel(pecas[0].contorno, altura);
-    conferir('apagada, o risco volta à medida do arquivo', melhorDesvio(hpglDepois.eventos.filter((e) => e.tipo === 'traco').map((e) => e.pontos), [...alvo, alvo[0]]) < 0.05);
   });
 
-  await etapa('A fonte TrueType, no bundle de produção', async () => {
+  await etapa('A fonte do PDF, no bundle de produção', async () => {
     if (!fs.existsSync(ARIAL)) {
       log('      (sem a Arial neste sistema)');
       return;
     }
     arquivoParaAbrir = ARIAL;
     await aba('Encaixe');
-    await menu('Opções', 'Fonte TrueType');
+    await menu('Opções', 'Fonte do PDF');
     const nome = await esperarAte(async () => (await itensDoMenu('Opções')).find((i) => i.includes('arial.ttf')), 12000);
     conferir('a fonte escolhida aparece no menu', Boolean(nome), String(nome));
-    const hpgl = await enviar();
-    const r = interpretarHpgl(hpgl || '');
-    conferir('os textos saem em linhas, sem o letreiro do plotter', !(hpgl || '').includes('LB') && r.erros.length === 0, `${r.eventos.length} traços`);
     await aba('Início');
     await botao('Exportar PDF');
     await espera(500);
@@ -545,10 +470,8 @@ async function principal() {
     conferir('o PDF traz a fonte embutida', pdf.includes('/FontFile2') && /FontName \/[A-Z]+\+Arial/.test(pdf), pdfs ? pdfs[0] : 'sem PDF');
     await fecharJanela();
     await aba('Encaixe');
-    await menu('Opções', 'Tirar a fonte TrueType');
+    await menu('Opções', 'Tirar a fonte do PDF');
     arquivoParaAbrir = DXF;
-    const hpglDepois = await enviar();
-    conferir('tirada a fonte, volta o letreiro', (hpglDepois || '').includes('LB'));
   });
 
   await etapa('Os arquivos para outros programas', async () => {
@@ -579,8 +502,6 @@ async function principal() {
     await tecla('Escape');
     const { enfesto } = await estadoGravado();
     conferir('o clique marca a emenda', (enfesto.emendasMm || []).length === 1, JSON.stringify(enfesto.emendasMm));
-    const hpgl = await enviar();
-    conferir('e ela sai no risco', (hpgl || '').includes('LBEMENDA'));
     await aba('Encaixe');
     await botao('Pontos de emenda');
     await marcarCaixa('Apagar os pontos');
@@ -588,24 +509,8 @@ async function principal() {
     await espera(300);
   });
 
-  await etapa('Receber de outro programa, e a ficha da enfestadeira', async () => {
+  await etapa('A ficha da enfestadeira', async () => {
     await aba('Encaixe');
-    const antes = (await lista()).length;
-    await menu('Opções', 'Receber de outro programa');
-    await porNoCampo('Porta', '19100');
-    await botaoNaJanela('Ligar o receptor');
-    await esperarAte(() => js(`Array.from(document.querySelectorAll('[role=dialog] button')).some((b) => b.textContent.trim() === 'Desligar o receptor')`), 5000);
-    // Um "outro sistema" plotando, com o embrulho que os drivers de impressora põem.
-    await new Promise((resolver, rejeitar) => {
-      const c = net.connect(19100, '127.0.0.1', () => c.end('\x1b%-12345X@PJL ENTER LANGUAGE=HPGL2\n\x1bE\x1b%-1BIN;SP1;PU2000,2000;PD6000,2000,6000,8000,2000,8000,2000,2000;\x1b%0A\x1b%-12345X'));
-      c.once('close', resolver);
-      c.once('error', rejeitar);
-    });
-    conferir('a peça plotada por outro programa entra no projeto', (await esperarAte(async () => (await lista()).length === antes + 1, 6000)) === true, String((await lista()).length));
-    await botaoNaJanela('Desligar o receptor');
-    await espera(300);
-    await fecharJanela();
-    await espera(200);
     await menu('Opções', 'Ficha da enfestadeira');
     const ficha = await esperarAte(async () => fs.readdirSync(SAIDA).find((f) => f.startsWith('ficha-da-enfestadeira')), 6000);
     const csv = ficha ? fs.readFileSync(path.join(SAIDA, ficha), 'utf8') : '';
@@ -821,9 +726,8 @@ async function principal() {
     // O tema escuro nas janelas grandes: é nelas que costuma sobrar uma cor escrita à mão.
     await menu('Opções', 'Cores escuras');
     const janelas = [
-      async () => menu('Opções', 'Teste do equipamento'),
-      async () => menu('Opções', 'Gerenciador de impressão'),
-      async () => menu('Opções', 'Ferramentas do plotter'),
+      async () => menu('Opções', 'Teste da mesa de corte'),
+      async () => menu('Opções', 'Fila da mesa de corte'),
       async () => botao('Nesting Automático'),
       async () => propriedades(0),
     ];
@@ -903,7 +807,7 @@ async function principal() {
     conferir('o processo da tela não caiu', caiu === '', caiu);
   });
 
-  await plotter.desligar();
+  await mesaVirtual.desligar();
   const distintos = [...new Set(errosDoConsole)].filter((m) => !/não achei|campo não achado|Script failed/.test(m));
   conferir('o console ficou sem erros', distintos.length === 0, distintos.slice(0, 4).join(' | ').slice(0, 300));
   log(`\nresultado: ${acertos} conferidos, ${falhas} falha(s)`);

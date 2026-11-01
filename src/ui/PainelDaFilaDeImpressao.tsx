@@ -19,11 +19,11 @@ const ROTULO_DO_ESTADO: Readonly<Record<EstadoDaImpressao, string>> = {
   cancelado: 'Cancelado',
 };
 
-/** O gerenciador de impressão (ADR 0210): o que vai para o plotter, em que ordem, e o que deu errado. */
+/** A fila da mesa de corte (ADR 0210): o que vai para a máquina, em que ordem, e o que deu errado. */
 export function PainelDaFilaDeImpressao(props: PainelDaFilaDeImpressaoProps): React.JSX.Element {
   const { fila } = props;
   return (
-    <Sobreposicao titulo="Gerenciador de impressão" onFechar={props.onFechar}>
+    <Sobreposicao titulo="Fila da mesa de corte" onFechar={props.onFechar}>
       <p>
         <button type="button" onClick={props.onPausar}>
           {fila.pausada ? 'Continuar a fila' : 'Pausar a fila'}
@@ -33,12 +33,12 @@ export function PainelDaFilaDeImpressao(props: PainelDaFilaDeImpressaoProps): Re
         </button>
       </p>
       {fila.trabalhos.length === 0 ? (
-        <p>Nenhum risco na fila. Escolha a porta de saída e use "Enviar ao plotter".</p>
+        <p>Nenhum arquivo na fila. Escolha a porta de saída e, na janela do ISO, marque o envio direto.</p>
       ) : (
         <table className="tabela-de-moldes">
           <thead>
             <tr>
-              <th scope="col">Risco</th>
+              <th scope="col">Arquivo</th>
               <th scope="col">Destino</th>
               <th scope="col">Situação</th>
               <th scope="col">Ações</th>

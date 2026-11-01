@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { EstadoDaColaboracao, ServidorLigado } from '../src/ui/PainelDeColaboracao';
-import type { ReceptorLigado } from '../src/ui/PainelDoReceptor';
 import type { Projeto } from '../src/domain/projeto';
 import type { Programa } from '../src/domain/programas';
 import { ehAcaoDeEdicao, type AcaoDeEdicao } from '../src/ui/edicaoPeloMenu';
@@ -26,8 +25,8 @@ const api = {
   async abrirArquivoPdf(): Promise<ArquivoAberto | null> {
     return ipcRenderer.invoke('abrir-arquivo-pdf') as Promise<ArquivoAberto | null>;
   },
-  /** O projeto exportado ou o PLT (ADR 0156, 0157). */
-  async abrirArquivoTexto(tipo: 'projeto' | 'plt' | 'perfil' | 'iso' | 'rul'): Promise<ArquivoAberto | null> {
+  /** O projeto exportado e os outros arquivos de texto. */
+  async abrirArquivoTexto(tipo: 'projeto' | 'perfil' | 'iso' | 'rul'): Promise<ArquivoAberto | null> {
     return ipcRenderer.invoke('abrir-arquivo-texto', tipo) as Promise<ArquivoAberto | null>;
   },
   async salvarArquivo(sugestaoDeNome: string, conteudo: ArrayBuffer): Promise<string | null> {
@@ -152,25 +151,6 @@ const api = {
   async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<boolean> {
     return ipcRenderer.invoke('janelas-arrumar', como) as Promise<boolean>;
   },
-  /** O receptor do plotter (ADR 0222): ligar, desligar e ouvir o que chega. Devolve a função que para de ouvir. */
-  async receptorEstado(): Promise<ReceptorLigado | null> {
-    return ipcRenderer.invoke('receptor-estado') as Promise<ReceptorLigado | null>;
-  },
-  async receptorLigar(porta: number): Promise<ReceptorLigado | string> {
-    return ipcRenderer.invoke('receptor-ligar', porta) as Promise<ReceptorLigado | string>;
-  },
-  async receptorDesligar(): Promise<void> {
-    await ipcRenderer.invoke('receptor-desligar');
-  },
-  aoReceberDoPlotter(ouvir: (texto: string) => void): () => void {
-    const ouvinte = (_evento: Electron.IpcRendererEvent, texto: unknown): void => {
-      if (typeof texto === 'string') ouvir(texto);
-    };
-    ipcRenderer.on('plotter-recebido', ouvinte);
-    return () => {
-      ipcRenderer.removeListener('plotter-recebido', ouvinte);
-    };
-  },
   /** Confere a chave da IA, sem gastar crédito (ADR 0222). */
   async conferirChaveDaIa(): Promise<{ readonly ok: boolean; readonly erro?: string }> {
     return ipcRenderer.invoke('ia-conferir') as Promise<{ readonly ok: boolean; readonly erro?: string }>;
@@ -182,7 +162,7 @@ const api = {
   async gravarFilaDeImpressao(texto: string): Promise<void> {
     await ipcRenderer.invoke('impressao-gravar', texto);
   },
-  /** O risco direto para o plotter (ADR 0210): o destino é o texto da porta de saída. */
+  /** O arquivo de corte direto para a mesa (ADR 0210): o destino é o texto da porta de saída. */
   async enviarAPorta(destino: string, texto: string): Promise<{ readonly ok: boolean; readonly erro?: string }> {
     return ipcRenderer.invoke('saida-enviar', { destino, texto }) as Promise<{ readonly ok: boolean; readonly erro?: string }>;
   },

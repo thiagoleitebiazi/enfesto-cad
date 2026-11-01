@@ -1,5 +1,4 @@
 import type { EstiloDeLinha, FormatoDePique } from '../domain/molde';
-import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from '../formats/plt-exportacao';
 import { PIQUE_PADRAO } from '../domain/piques';
 /**
  * As preferências deste computador (ADR 0175 a 0177): as teclas de atalho, o perfil (salvar, carregar, restaurar) e o
@@ -114,14 +113,6 @@ export function guardarCoresDosTamanhos(a: Pick<Armazenamento, 'setItem'>, cores
   a.setItem(CHAVE_DAS_CORES, JSON.stringify(cores));
 }
 
-// ---- As cores pelas ferramentas (ADR 0193).
-
-const CORES_DAS_CANETAS = ['#212529', '#c92a2a', '#2b8a3e', '#1971c2', '#e67700', '#9c36b5', '#0b7285', '#c2255c'] as const;
-
-/** A cor com que a caneta aparece na tela: da 1 à 8. */
-export function corDaCaneta(numero: number): string {
-  return CORES_DAS_CANETAS[Math.min(8, Math.max(1, Math.round(numero))) - 1]!;
-}
 
 // ---- As cores da área de trabalho (ADR 0203).
 
@@ -161,23 +152,6 @@ export function guardarCoresDaArea(a: Pick<Armazenamento, 'setItem'>, esquemas: 
 /** As cores do esquema escolhido; no padrão, nenhuma: vale o que o desenho já usa. */
 export const corDaAreaNoEsquema = (e: EsquemasDaArea): CoresDaArea | null => (e.esquema === 'padrao' ? null : e[e.esquema]);
 
-// ---- O auto ajuste de texto no plotter (ADR 0192).
-
-const CHAVE_DO_AJUSTE = `${PREFIXO}ajuste-de-texto`;
-
-/** O ajuste lembrado, ou `null`: sem ele, o texto sai como sempre. */
-export function ajusteDeTextoGuardado(a: Pick<Armazenamento, 'getItem'>): AjusteDeTexto | null {
-  try {
-    const v = JSON.parse(a.getItem(CHAVE_DO_AJUSTE) ?? 'null') as Partial<AjusteDeTexto> | null;
-    return v ? { ...AJUSTE_DE_TEXTO_PADRAO, ...v } : null;
-  } catch {
-    return null;
-  }
-}
-
-export function guardarAjusteDeTexto(a: Pick<Armazenamento, 'setItem'>, ajuste: AjusteDeTexto | null): void {
-  a.setItem(CHAVE_DO_AJUSTE, JSON.stringify(ajuste));
-}
 
 // ---- As unidades de área e de peso (ADR 0189).
 

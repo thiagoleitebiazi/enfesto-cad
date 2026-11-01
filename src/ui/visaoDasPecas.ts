@@ -99,7 +99,6 @@ export interface OpcoesDoEncaixe {
   readonly encaixaAoClicar: boolean;
   /** A peça solta anda no rumo do arrasto até encostar: o SNAP do encaixe. */
   readonly encostarAoSoltar: boolean;
-  readonly verificarAoPlotar: boolean;
   readonly codigoDosPacotes: CodigoDosPacotes;
   readonly coresDosPacotes?: readonly string[];
   /** "Usar envolvente de grupo" (ADR 0208). */
@@ -112,7 +111,7 @@ export interface OpcoesDoEncaixe {
 
 export const pecasEmOrdemDeTamanho = (pecas: readonly Molde[]): Molde[] => [...pecas].sort((a, b) => posicaoDoTamanho(a.tamanho) - posicaoDoTamanho(b.tamanho));
 
-export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, encostarAoSoltar: false, verificarAoPlotar: true, codigoDosPacotes: 'alfanumerico' };
+export const OPCOES_PADRAO_DO_ENCAIXE: OpcoesDoEncaixe = { anguloDeGiro: 90, precisao: null, encaixaAoClicar: false, encostarAoSoltar: false, codigoDosPacotes: 'alfanumerico' };
 
 const CHAVE_DAS_OPCOES = 'enfesto-cad:opcoes-do-encaixe';
 

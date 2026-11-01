@@ -13,7 +13,7 @@ export const MANUAL_DO_PROGRAMA: readonly SecaoDoManual[] = [
     titulo: 'Começar um modelo',
     passos: [
       'Novo projeto cria o modelo, com o tecido e a mesa. Depois, em Informações, entram o cliente, a descrição e as palavras chave.',
-      'Importe o DXF, o PDF vetorial, o PLT ou o ISO, ou desenhe na aba Construção. O Molde da foto transforma a foto de um molde de papel em peça, e "Criar todos da foto" faz isso com todos os moldes de uma vez.',
+      'Importe o DXF, o PDF vetorial ou o ISO, ou desenhe na aba Construção. O Molde da foto transforma a foto de um molde de papel em peça, e "Criar todos da foto" faz isso com todos os moldes de uma vez.',
     ],
   },
   {
@@ -55,9 +55,8 @@ export const MANUAL_DO_PROGRAMA: readonly SecaoDoManual[] = [
     ],
   },
   {
-    titulo: 'Plotar, imprimir e exportar',
+    titulo: 'Imprimir e exportar',
     passos: [
-      'Plotar (Ctrl+P) gera o PLT, com fatores, espelho, limites e observação. Em Opções ficam as canetas, o texto como linha, o auto ajuste de texto e a pasta do plotter.',
       'O PDF sai em escala real, em folhas, ou com proporção, e Visualizar mostra como fica. Também saem DXF, ASTM, ISO, SVG e XML.',
       'Confira a escala no primeiro risco impresso.',
     ],
@@ -73,15 +72,12 @@ export const MANUAL_DO_PROGRAMA: readonly SecaoDoManual[] = [
     titulo: 'Trazer de outro sistema',
     passos: [
       'O melhor caminho é o arquivo DXF-AAMA ou DXF-ASTM: quase todo sistema de moldes exporta nesses formatos, com a graduação. Abra em Importar DXF. Se vier um arquivo .RUL junto, deixe-o na mesma pasta.',
-      'Se o sistema só plota, use Opções › Receber de outro programa: instale nele um plotter HP-GL de rede com o endereço deste computador e plote as peças em escala real. Elas chegam sem a graduação.',
-      'Arquivo PLT, HPGL, DMPL ou ISO já pronto entra por Importar PLT ou Importar ISO.',
       'Arquivos próprios de cada sistema (MDL, VET, IBA, ALF e outros) não têm formato público e não abrem aqui.',
     ],
   },
 ];
 
 export const NOVIDADES_DO_PROGRAMA: readonly string[] = [
-  'Receber de outro programa: o que um sistema de formato fechado plotar neste computador entra no projeto.',
   'Ficha da enfestadeira: comprimento, camadas e emendas de cada tecido, numa planilha.',
   'Tecido por molde: o encaixe pode gerar um tecido por vez, com a grade de cada um.',
   'Encaixe automático com manter peças no lugar, usar só as da mesa, espelhamento, compactar e dobra inferior.',
@@ -91,7 +87,7 @@ export const NOVIDADES_DO_PROGRAMA: readonly string[] = [
   'Modificar com Discreto e Proporcional; fundir pique ao contorno; inverter costura; manter diferença.',
   'Moldes no encaixe: o que aparece em cada peça. Destacar pacotes e relacionamento de piques.',
   'Sentido por tamanho e por pacote nos tecidos de um sentido só.',
-  'Plotar com fatores, espelho e limites; texto como linha; pasta do plotter; importar ISO; exportar SVG e XML.',
+  'Importar ISO; exportar SVG e XML.',
   'Impressão com proporção, cores e prévia.',
   'Captura em lote do molde da foto, rastreabilidade do material e previsão de compra.',
 ];

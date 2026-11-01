@@ -1,6 +1,6 @@
 /**
  * Atalhos para os outros programas que se usam junto com este (aba Início >
- * Programas): o do plotter, o da máquina de corte, uma planilha, um site. É
+ * Programas): o da máquina de corte, uma planilha, um site. É
  * o usuário quem cadastra cada um; o programa só abre o que está na lista.
  */
 export interface Programa {

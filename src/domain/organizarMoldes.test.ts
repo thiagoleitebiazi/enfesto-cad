@@ -1,34 +1,22 @@
-import { retanguloDoElemento } from './plotarMoldes';
 import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
 import { criarMolde } from './molde';
-import { moldesParaPlotar, moldeVizinho, organizarPecas } from './plotarMoldes';
+import { moldeVizinho, organizarPecas, retanguloDoElemento } from './organizarMoldes';
 import { comTamanhoIntermediario, contornoNoTamanho } from './tamanhoIntermediario';
 import { definirTamanhosDoMolde } from './tamanhosGraduados';
 import { definirRegra, cantosDoContorno } from './graduacao';
 
 const peca = (id: string, a = 400, c = 300) =>
   criarMolde({ nome: id, referencia: '', tamanho: 'M', contorno: [ponto(500, 900), ponto(500 + a, 900), ponto(500 + a, 900 + c), ponto(500, 900 + c)], linhaDeFio: { inicio: ponto(510, 910), fim: ponto(510, 990) } }, id);
-let k = 0;
-const novoId = (): string => `n${++k}`;
 const caixa = (p: ReturnType<typeof peca>) => retanguloEnvolvente(p.contorno);
 
-describe('plotar os moldes (ADR 0167)', () => {
-  it('reorganiza em colunas na largura do papel, a partir do zero', () => {
+describe('organizar os moldes (ADR 0167)', () => {
+  it('reorganiza em colunas na largura da mesa, a partir do zero', () => {
     const r = organizarPecas([peca('a'), peca('b'), peca('c')], 1000, 20);
     expect([caixa(r[0]!).minX, caixa(r[0]!).minY]).toEqual([0, 0]);
     expect([caixa(r[1]!).minX, caixa(r[1]!).minY]).toEqual([420, 0]);
     // A terceira não cabe na largura: coluna nova, depois do comprimento da primeira.
     expect([caixa(r[2]!).minX, caixa(r[2]!).minY]).toEqual([0, 320]);
-  });
-
-  it('só as selecionadas, cada tamanho separado e girada 90°', () => {
-    const graduada = definirTamanhosDoMolde(peca('a'), ['P', 'M', 'G'], 'M');
-    const r = moldesParaPlotar([graduada, peca('b')], { ids: new Set(['a']), tamanhosSeparados: true, larguraDoPapelMm: 5000 }, novoId);
-    expect(r.map((p) => p.tamanho)).toEqual(['P', 'M', 'G']);
-    const g = moldesParaPlotar([peca('a')], { girar90: true, larguraDoPapelMm: 1000 }, novoId)[0]!;
-    expect(caixa(g).maxX - caixa(g).minX).toBeCloseTo(300);
-    expect(caixa(g).maxY - caixa(g).minY).toBeCloseTo(400);
   });
 
   it('o molde vizinho dá a volta; sem seleção, a primeira', () => {

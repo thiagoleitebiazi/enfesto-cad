@@ -13,7 +13,7 @@ const abrir = (f: FilaDeImpressao) => {
   return acoes;
 };
 
-describe('o gerenciador de impressão (ADR 0210)', () => {
+describe('a fila da mesa de corte (ADR 0210)', () => {
   it('mostra o erro e deixa enviar de novo', () => {
     const acoes = abrir(fila);
     expect(screen.getByText('Erro: sem papel')).toBeTruthy();
@@ -37,6 +37,6 @@ describe('o gerenciador de impressão (ADR 0210)', () => {
 
   it('sem nada na fila, diz o que fazer', () => {
     abrir(FILA_DE_IMPRESSAO_VAZIA);
-    expect(screen.getByText(/Nenhum risco na fila/)).toBeTruthy();
+    expect(screen.getByText(/Nenhum arquivo na fila/)).toBeTruthy();
   });
 });

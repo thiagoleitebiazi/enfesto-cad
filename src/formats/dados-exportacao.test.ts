@@ -7,9 +7,8 @@ import { definirInformacoes, filtrarProjetos } from '../domain/projeto';
 import { fatoresDaImpressao, ESCALA_REAL } from './escalaDaImpressao';
 import { gerarSvgDoEncaixe, gerarXmlDoEncaixe } from './dados-exportacao';
 import { gerarIso } from './iso-exportacao';
-import { hpglDoIso } from './iso-importacao';
-import { pecasDoPlt } from './plt-importacao';
-import { gerarPlt } from './plt-exportacao';
+import { tracosDoIso } from './iso-importacao';
+import { pecasDosTracos } from './tracos-importacao';
 
 const peca = (nome: string, x = 100, y = 200): Molde =>
   transladarMolde(
@@ -42,7 +41,7 @@ describe('o SVG e o XML do encaixe (ADR 0201)', () => {
 
 describe('importar o arquivo ISO (ADR 0201)', () => {
   it('o que sai para a mesa volta a ser a mesma peça', () => {
-    const lidas = pecasDoPlt(hpglDoIso(gerarIso([peca('Frente')]))).pecas;
+    const lidas = pecasDosTracos(tracosDoIso(gerarIso([peca('Frente')]))).pecas;
     expect(lidas).toHaveLength(1);
     const c = retanguloEnvolvente(lidas[0]!.contorno);
     expect(c.maxX - c.minX).toBeCloseTo(300, 0);
@@ -50,8 +49,8 @@ describe('importar o arquivo ISO (ADR 0201)', () => {
   });
 
   it('com a ferramenta em cima, não desenha; comentário não atrapalha', () => {
-    expect(hpglDoIso('(so andar)\nG0 Z5\nG0 X10 Y10\nG0 X20 Y20')).toBe('IN;');
-    expect(hpglDoIso('G0 X1 Y1\nG1 Z0\nG1 X2 Y1 F100\nG0 Z5')).toBe('IN;PU40,40;PD80,40;');
+    expect(tracosDoIso('(so andar)\nG0 Z5\nG0 X10 Y10\nG0 X20 Y20')).toBe('IN;');
+    expect(tracosDoIso('G0 X1 Y1\nG1 Z0\nG1 X2 Y1 F100\nG0 Z5')).toBe('IN;PU40,40;PD80,40;');
   });
 });
 
@@ -89,19 +88,6 @@ describe('as informações do arquivo (ADR 0201)', () => {
     expect(filtrarProjetos([a], 'linho', 'todos')).toHaveLength(1);
     expect(filtrarProjetos([a], 'loja x', 'todos')).toHaveLength(1);
     expect(filtrarProjetos([a], 'outra coisa', 'todos')).toHaveLength(0);
-  });
-});
-
-describe('a plotagem com espelho e observação (ADR 0201)', () => {
-  it('espelhar troca o lado, sem mudar o tamanho', () => {
-    const normal = gerarPlt([peca('a', 0, 0), peca('b', 0, 600)]);
-    const espelhado = gerarPlt([peca('a', 0, 0), peca('b', 0, 600)], { espelhar: true });
-    expect(espelhado).not.toBe(normal);
-    expect(espelhado.length).toBeGreaterThan(0);
-  });
-
-  it('a observação entra no cabeçalho', () => {
-    expect(gerarPlt([peca('a')], { observacao: 'CORTAR PRIMEIRO' })).toContain('LBCORTAR PRIMEIRO');
   });
 });
 

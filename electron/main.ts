@@ -5,10 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Server } from 'node:http';
-import type { Server as ServidorDeRede } from 'node:net';
 import { emCascata, ladoALado, porNoLugar } from './arrumarJanelas';
 import { pedirAoServidor, urlDoServidorValida } from './conexaoDeColaboracao';
-import { criarReceptorDoPlotter } from './receptorDoPlotter';
 import { criarServidorDeColaboracao } from './servidorDeColaboracao';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
@@ -605,17 +603,16 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
   return { caminho, conteudo };
 });
 
-// Os outros arquivos de texto que a interface abre: o projeto exportado (ADR 0156) e o PLT (ADR 0157).
+// Os outros arquivos de texto que a interface abre: o projeto exportado (ADR 0156) e os outros.
 const ARQUIVOS_DE_TEXTO = {
   projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto CAD', extensions: ['enfesto'] },
-  plt: { title: 'Importar PLT', name: 'PLT (HPGL) ou DMPL', extensions: ['plt', 'hpgl', 'hpg', 'dmpl', 'dmp'] },
   perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto CAD', extensions: ['json'] },
   iso: { title: 'Importar arquivo de corte ISO', name: 'ISO (G-code)', extensions: ['iso', 'nc', 'cnc', 'tap', 'txt'] },
   rul: { title: 'Arquivo de regras de graduação', name: 'Regras (RUL)', extensions: ['rul', 'txt'] },
 } as const;
 
 ipcMain.handle('abrir-arquivo-texto', async (_evento, tipo: unknown) => {
-  if (tipo !== 'projeto' && tipo !== 'plt' && tipo !== 'perfil' && tipo !== 'iso' && tipo !== 'rul') return null;
+  if (tipo !== 'projeto' && tipo !== 'perfil' && tipo !== 'iso' && tipo !== 'rul') return null;
   const { title, name, extensions } = ARQUIVOS_DE_TEXTO[tipo];
   const resultado = await dialog.showOpenDialog({ title, filters: [{ name, extensions: [...extensions] }], properties: ['openFile'] });
   if (resultado.canceled || resultado.filePaths.length === 0) return null;
@@ -1082,49 +1079,13 @@ ipcMain.handle('colaboracao-servir', async (_evento, porta: unknown) => {
   return servidorParaAInterface();
 });
 
-// O receptor do plotter (ADR 0222): só liga a pedido, e não volta sozinho ao abrir o programa.
-let receptorDoPlotter: { readonly servidor: ServidorDeRede; readonly porta: number } | null = null;
-
-function receptorParaAInterface(): { porta: number; enderecos: string[] } | null {
-  if (!receptorDoPlotter) return null;
-  const ips = Object.values(os.networkInterfaces()).flatMap((lista) => lista ?? []);
-  return { porta: receptorDoPlotter.porta, enderecos: ips.filter((i) => i.family === 'IPv4' && !i.internal).map((i) => i.address) };
-}
-
-function desligarReceptorDoPlotter(): Promise<void> {
-  const ligado = receptorDoPlotter;
-  receptorDoPlotter = null;
-  return new Promise((resolver) => (ligado ? ligado.servidor.close(() => resolver()) : resolver()));
-}
-
-ipcMain.handle('receptor-estado', () => receptorParaAInterface());
-ipcMain.handle('receptor-desligar', () => desligarReceptorDoPlotter());
-ipcMain.handle('receptor-ligar', async (_evento, porta: unknown) => {
-  await desligarReceptorDoPlotter();
-  if (typeof porta !== 'number' || !Number.isInteger(porta) || porta < 1 || porta > 65535) return 'A porta vai de 1 a 65535.';
-  const servidor = criarReceptorDoPlotter((texto) => {
-    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    janela?.webContents.send('plotter-recebido', texto);
-  });
-  try {
-    await new Promise<void>((resolver, rejeitar) => {
-      servidor.once('error', rejeitar);
-      servidor.listen(porta, '0.0.0.0', resolver);
-    });
-  } catch {
-    return `A porta ${porta} não pôde ser aberta: outro programa pode estar usando.`;
-  }
-  receptorDoPlotter = { servidor, porta };
-  return receptorParaAInterface();
-});
-
 // A fila de impressão (ADR 0219): o que não saiu sobrevive ao fechar o programa.
 const arquivoDaFilaDeImpressao = (): string => path.join(app.getPath('userData'), 'fila-de-impressao.json');
 ipcMain.handle('impressao-ler', () => readFile(arquivoDaFilaDeImpressao(), 'utf-8').catch(() => null));
 ipcMain.handle('impressao-gravar', (_evento, texto: unknown) => (typeof texto === 'string' ? gravarSemCorromper(arquivoDaFilaDeImpressao(), texto) : undefined));
 
-// A fonte TrueType (ADR 0211): o caminho fica em <userData>/fonte-do-plotter.json, e nunca vem da interface.
-const arquivoDaFonte = (): string => path.join(app.getPath('userData'), 'fonte-do-plotter.json');
+// A fonte TrueType (ADR 0211): o caminho fica em <userData>/fonte-do-pdf.json, e nunca vem da interface.
+const arquivoDaFonte = (): string => path.join(app.getPath('userData'), 'fonte-do-pdf.json');
 
 async function lerFonteGuardada(): Promise<{ nome: string; bytes: Uint8Array } | null> {
   try {
@@ -1138,7 +1099,7 @@ async function lerFonteGuardada(): Promise<{ nome: string; bytes: Uint8Array } |
 
 ipcMain.handle('fonte-ler', () => lerFonteGuardada());
 ipcMain.handle('fonte-escolher', async () => {
-  const resultado = await dialog.showOpenDialog({ title: 'Fonte dos textos do plotter e do PDF', ...(process.platform === 'win32' ? { defaultPath: 'C:\\Windows\\Fonts' } : {}), filters: [{ name: 'Fontes TrueType', extensions: ['ttf', 'otf'] }], properties: ['openFile'] });
+  const resultado = await dialog.showOpenDialog({ title: 'Fonte dos textos do PDF', ...(process.platform === 'win32' ? { defaultPath: 'C:\\Windows\\Fonts' } : {}), filters: [{ name: 'Fontes TrueType', extensions: ['ttf', 'otf'] }], properties: ['openFile'] });
   if (resultado.canceled || resultado.filePaths.length === 0) return null;
   await writeFile(arquivoDaFonte(), JSON.stringify({ caminho: resultado.filePaths[0] }));
   return lerFonteGuardada();
@@ -1164,7 +1125,7 @@ ipcMain.handle('janelas-arrumar', async (_evento, como: unknown) => {
 
 ipcMain.handle('saida-enviar', async (_evento, p: { destino?: unknown; texto?: unknown }) => {
   const porta = lerPortaDeSaida(p?.destino);
-  if (!porta || typeof p?.texto !== 'string') return { ok: false, erro: 'A porta de saída não vale: use um endereço da rede local, \\\\servidor\\plotter, LPT1 ou COM1.' };
+  if (!porta || typeof p?.texto !== 'string') return { ok: false, erro: 'A porta de saída não vale: use um endereço da rede local, \\\\servidor\\mesa, LPT1 ou COM1.' };
   try {
     await enviarAPorta(porta, p.texto);
     return { ok: true };

@@ -38,7 +38,6 @@ export type AcaoDaTecla =
         | 'medir'
         | 'cortar'
         | 'texto'
-        | 'plotar'
         | 'localizar';
     }
   | { readonly tipo: 'mover'; readonly direcao: DirecaoDoEncaixe };
@@ -66,7 +65,6 @@ const LETRAS_COM_CTRL: Readonly<Record<string, AcaoDaTecla>> = {
   w: { tipo: 'verificar' },
   t: { tipo: 'medir' },
   k: { tipo: 'cortar' },
-  p: { tipo: 'plotar' },
   l: { tipo: 'localizar' },
 };
 

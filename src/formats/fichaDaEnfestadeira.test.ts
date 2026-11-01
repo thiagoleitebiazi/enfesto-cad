@@ -4,34 +4,6 @@ import { criarConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { criarMolde, type Molde } from '../domain/molde';
 import { comAjusteDoTecido } from '../domain/tecidosDoModelo';
 import { csvDaEnfestadeira } from './fichaDaEnfestadeira';
-import { hpglDoRecebido } from './plotRecebido';
-import { pecasDoPlt } from './plt-importacao';
-
-const QUADRADO = 'IN;SP1;PU400,400;PD4400,400,4400,4400,400,4400,400,400;';
-
-describe('o que chega no receptor do plotter (ADR 0222)', () => {
-  it('HPGL puro passa como veio', () => {
-    expect(hpglDoRecebido(QUADRADO)).toBe(QUADRADO);
-  });
-
-  it('tira o embrulho do driver de impressora', () => {
-    const embrulhado = `\x1b%-12345X@PJL JOB\n@PJL ENTER LANGUAGE=HPGL2\n\x1bE\x1b%-1B${QUADRADO}\x1b%0A\x1bE\x1b%-12345X`;
-    const { pecas } = pecasDoPlt(hpglDoRecebido(embrulhado)!);
-    expect(pecas).toHaveLength(1);
-  });
-
-  it('DMPL e ISO viram HPGL', () => {
-    expect(hpglDoRecebido(';:H A EC1 U 0,0 D 1000,0 @')).toContain('PD1016,0');
-    expect(hpglDoRecebido('%\nG90\nG0 X0 Y0\nG1 Z0\nG1 X10 Y0\nG0 Z5\nM30\n%')).toContain('PD400,0');
-  });
-
-  it('PostScript, PDF e lixo não têm linhas para ler', () => {
-    expect(hpglDoRecebido('%!PS-Adobe-3.0\nshowpage')).toBeNull();
-    expect(hpglDoRecebido('%PDF-1.7')).toBeNull();
-    expect(hpglDoRecebido('texto qualquer')).toBeNull();
-    expect(hpglDoRecebido('')).toBeNull();
-  });
-});
 
 describe('a ficha da enfestadeira (ADR 0222)', () => {
   const peca = (id: string, tecidoDoMolde?: string): Molde => ({

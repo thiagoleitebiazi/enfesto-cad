@@ -107,7 +107,6 @@ export interface PatchDeMolde {
   /** A folga no encaixe, a quantidade por tamanho e o tamanho do texto (ADR 0202). */
   readonly folgaNoEncaixeMm?: number;
   readonly quantidadePorTamanho?: Readonly<Record<string, number>>;
-  readonly alturaDoTextoMm?: number;
   /** A descrição, e se a peça entra no encaixe (ADR 0199, 0200). */
   readonly descricao?: string;
   readonly usarNoEncaixe?: boolean;
@@ -388,19 +387,6 @@ export function PainelDePropriedades(props: PainelDePropriedadesProps): React.JS
             <input key={peca.id} type="text" defaultValue={textoDasQuantidades(peca.quantidadePorTamanho)} placeholder="P:2 M:1" onBlur={(e) => props.onAlterar({ quantidadePorTamanho: lerQuantidades(e.target.value) })} />
           </label>
         )}
-        <label title="A altura do nome da peça no plotter">
-          Tamanho do texto (mm)
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={peca.alturaDoTextoMm ?? 5}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (v > 0) props.onAlterar({ alturaDoTextoMm: v });
-            }}
-          />
-        </label>
         <label title="O tecido em que a peça é cortada: o encaixe pode gerar um tecido por vez">
           Tecido do molde
           <input list="tecidos-do-molde" value={peca.tecidoDoMolde ?? ''} placeholder="Principal" onChange={(e) => props.onAlterar({ tecidoDoMolde: e.target.value })} />

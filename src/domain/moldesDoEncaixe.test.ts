@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { area, ponto, retanguloEnvolvente } from '../core/geometria';
-import { gerarPlt } from '../formats/plt-exportacao';
 import { aplicarConjunto, comConjunto, conjuntosGuardados, guardarConjuntos, lerQuantidades, textoDasQuantidades } from '../ui/visaoDasPecas';
 import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, compactarEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe, voltarAoOriginal } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto } from './enfesto';
@@ -105,13 +104,6 @@ describe('a quantidade por tamanho (ADR 0202)', () => {
   it('lê e escreve o campo, sem o que não é número', () => {
     expect(lerQuantidades('P:2 M:1  G:x')).toEqual({ P: 2, M: 1 });
     expect(textoDasQuantidades({ P: 2, M: 1 })).toBe('P:2 M:1');
-  });
-});
-
-describe('o tamanho do texto da peça no plotter (ADR 0202)', () => {
-  it('vale no nome', () => {
-    expect(gerarPlt([quadrado({ alturaDoTextoMm: 20 })])).toContain('SI1.4,2');
-    expect(gerarPlt([quadrado()])).toContain('SI0.35,0.5');
   });
 });
 

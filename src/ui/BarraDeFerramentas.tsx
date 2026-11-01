@@ -53,9 +53,6 @@ interface BarraDeFerramentasProps {
   readonly onAlternarIma: () => void;
   readonly unidadeDaRegua: UnidadeDeRegua;
   readonly onDefinirUnidadeDaRegua: (unidade: UnidadeDeRegua) => void;
-  /** O plotter: uma caneta (tudo na 1) ou duas (a linha de corte na 1, o risco na 2), para o Exportar PLT. */
-  readonly canetasDoPlotter: 1 | 2;
-  readonly onDefinirCanetasDoPlotter: (canetas: 1 | 2) => void;
   readonly onAbrirAtalhos: () => void;
   readonly onAbrirSobre: () => void;
   /** O manual e as novidades (ADR 0204). */
@@ -112,10 +109,7 @@ interface BarraDeFerramentasProps {
   readonly podeExportarPdf: boolean;
   /** Grava as peças, como estão na mesa, num arquivo DXF (ADR 0096). */
   readonly onExportarDxf: () => void;
-  /** Grava o encaixe, em escala 1:1, num arquivo PLT (HPGL) para o plotter (ADR 0101). */
-  readonly onExportarPlt: () => void;
   /** As preferências (ADR 0174, 0176, 0177). */
-  readonly onFerramentasDoPlotter?: () => void;
   readonly esquemaDeCores?: EsquemaDeCores;
   readonly onEsquemaDeCores?: (esquema: EsquemaDeCores) => void;
   readonly onSalvarPerfil?: () => void;
@@ -125,8 +119,6 @@ interface BarraDeFerramentasProps {
   readonly onSobMedida?: () => void;
   /** O DXF no padrão ASTM (ADR 0166). */
   readonly onExportarAstm?: () => void;
-  /** Plotar os moldes, e não o encaixe (ADR 0167). */
-  readonly onPlotarMoldes?: () => void;
   /** Um tamanho entre dois da grade (ADR 0168). */
   readonly onTamanhoIntermediario?: () => void;
   /** Visão: a peça seguinte ou a anterior, enquadrada; lembrar o molde salvo; organizar as peças (ADR 0167, 0170). */
@@ -163,18 +155,12 @@ interface BarraDeFerramentasProps {
   /** Mandar as peças para a mesa ou para fora dela (ADR 0200). */
   readonly onPosicionar?: (destino: 'mesa' | 'fora', alvo: AlvoDoPosicionar) => void;
   /** As cores pelas ferramentas e os pontos de pique (ADR 0193). */
-  readonly coresPelasFerramentas?: boolean;
-  readonly onAlternarCoresPelasFerramentas?: () => void;
   readonly mostrarPontosDePique?: boolean;
   readonly onAlternarPontosDePique?: () => void;
-  /** O texto como linha, a pasta do plotter e o retângulo de organização (ADR 0184). */
-  readonly textoComoLinha?: boolean;
-  readonly onAlternarTextoComoLinha?: () => void;
-  readonly onEnviarAoPlotter?: () => void;
   /** A fonte TrueType, o teclado virtual e as janelas (ADR 0211). */
-  readonly fonteDoPlotter?: string;
-  readonly onFonteDoPlotter?: () => void;
-  readonly onTirarFonteDoPlotter?: () => void;
+  readonly fonteDoPdf?: string;
+  readonly onFonteDoPdf?: () => void;
+  readonly onTirarFonteDoPdf?: () => void;
   readonly mostrarTeclado?: boolean;
   readonly onAlternarTeclado?: () => void;
   readonly onJanelas?: (como: 'nova' | 'cascata' | 'lado-a-lado') => void;
@@ -182,20 +168,16 @@ interface BarraDeFerramentasProps {
   readonly portaDeSaida?: string;
   readonly onPortaDeSaida?: () => void;
   readonly onGerenciadorDeImpressao?: () => void;
-  /** Receber de outro programa e a ficha da enfestadeira (ADR 0222). */
-  readonly onReceberDeOutroPrograma?: () => void;
+  /** A ficha da enfestadeira (ADR 0222). */
   readonly onFichaDaEnfestadeira?: () => void;
   /** O teste na máquina de verdade (ADR 0217). */
   readonly onTesteDoEquipamento?: () => void;
-  readonly onEscolherPastaDoPlotter?: () => void;
-  readonly onRetanguloDeOrganizacao?: () => void;
   /** O fio por seleção e inverter a costura (ADR 0190). */
   readonly onFioPorSelecao?: () => void;
   readonly onInverterCostura?: () => void;
-  /** O auto ajuste de texto, o estilo da costura no plotter e a calculadora (ADR 0192). */
-  readonly onAutoAjusteDeTexto?: () => void;
-  readonly estiloDaCosturaNoPlotter?: boolean;
-  readonly onAlternarEstiloDaCosturaNoPlotter?: () => void;
+  /** O estilo da costura no PDF e a calculadora (ADR 0192). */
+  readonly estiloDaCosturaNoPdf?: boolean;
+  readonly onAlternarEstiloDaCosturaNoPdf?: () => void;
   readonly onCalculadora?: () => void;
   /** As unidades de área e de peso (ADR 0189). */
   readonly unidadeDeArea?: UnidadeDeArea;
@@ -205,12 +187,8 @@ interface BarraDeFerramentasProps {
   readonly lembrarOriginal?: boolean;
   readonly onLembrarOriginal?: () => void;
   readonly onOrganizarMoldes?: () => void;
-  /** O PLT por partes: de onde o papel acabou, ou uma faixa do papel (ADR 0158). */
-  readonly onExportarPltPorPartes?: () => void;
   /** Alinha e distribui as peças selecionadas (ADR 0161). */
   readonly onAlinharPecas?: () => void;
-  /** Importa peças de um PLT (ADR 0157). */
-  readonly onImportarPlt?: () => void;
   /** O menu Arquivo do manual do encaixe (ADR 0201). */
   readonly onImportarIso?: () => void;
   readonly onExportarDados?: () => void;
@@ -225,7 +203,6 @@ interface BarraDeFerramentasProps {
   /** Trocar o tamanho das peças já encaixadas (ADR 0206). */
   readonly onSubstituirTamanho?: () => void;
   readonly onColarIncrementarGrade?: () => void;
-  readonly onPlotar?: () => void;
   /** O projeto num arquivo (ADR 0156). */
   readonly onExportarProjeto?: () => void;
   readonly onImportarProjeto?: () => void;
@@ -643,9 +620,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                           { tipo: 'acao' as const, rotulo: 'Moldes no encaixe…', titulo: 'O que aparece em cada peça na tela; não muda o que sai impresso', onEscolher: props.onMoldesNoEncaixe ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar pacotes', marcado: props.destacarPacotes === true, titulo: 'Cada pacote do encaixe numa cor, com o código dele', onEscolher: props.onAlternarDestacarPacotes ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Destacar relacionamento de piques', marcado: props.destacarRelacionamento === true, titulo: 'Marca os pontos de casamento das peças', onEscolher: props.onAlternarDestacarRelacionamento ?? (() => undefined) },
-                          { tipo: 'opcao' as const, rotulo: 'Cores pelas ferramentas', marcado: props.coresPelasFerramentas === true, titulo: 'O contorno das peças na cor da caneta do corte (Opções › Ferramentas do plotter)', onEscolher: props.onAlternarCoresPelasFerramentas ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Pontos de pique', marcado: props.mostrarPontosDePique === true, titulo: 'Marca o ponto de cada pique no contorno', onEscolher: props.onAlternarPontosDePique ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Retângulo de organização…', titulo: 'A guia da largura do papel, para arrumar os moldes antes de plotar', onEscolher: props.onRetanguloDeOrganizacao ?? (() => undefined) },
                           { tipo: 'opcao' as const, rotulo: 'Pontos não graduados', marcado: props.mostrarNaoGraduados === true, titulo: 'Marca, na peça selecionada, os cantos que não têm regra de graduação', onEscolher: props.onAlternarNaoGraduados ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Cores dos tamanhos…', titulo: 'A cor de cada tamanho na área de trabalho', onEscolher: props.onCoresDosTamanhos ?? (() => undefined) },
                         ]
@@ -690,52 +665,28 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                 onEscolher: () => props.onDefinirUnidadeDaRegua('pol'),
               },
               { tipo: 'separador' },
-              {
-                tipo: 'opcao',
-                rotulo: 'Plotter de uma caneta',
-                marcado: props.canetasDoPlotter === 1,
-                titulo: 'Exportar PLT: tudo com a caneta 1',
-                onEscolher: () => props.onDefinirCanetasDoPlotter(1),
-              },
-              {
-                tipo: 'opcao',
-                rotulo: 'Plotter de duas canetas (corte e risco)',
-                marcado: props.canetasDoPlotter === 2,
-                titulo: 'Exportar PLT: a linha de corte com a caneta 1; a costura, as linhas internas, o fio, os piques e os textos com a 2',
-                onEscolher: () => props.onDefinirCanetasDoPlotter(2),
-              },
-              ...(props.onFerramentasDoPlotter
+              ...(props.onOpcoesDoEncaixe
                 ? [
-                    { tipo: 'acao' as const, rotulo: 'Ferramentas do plotter…', titulo: 'A caneta de cada elemento: corte, costura, furos, linhas, fio, piques e textos', onEscolher: props.onFerramentasDoPlotter },
-                    ...(props.onOpcoesDoEncaixe
+                    { tipo: 'acao' as const, rotulo: 'Opções do encaixe…', titulo: 'O ângulo de giro, a precisão, encaixar ao clicar', onEscolher: props.onOpcoesDoEncaixe },
+                    { tipo: 'acao' as const, rotulo: 'Cores da área de trabalho…', titulo: 'A mesa, a margem, o contorno e a seleção, em até três esquemas próprios', onEscolher: props.onCoresDaArea ?? (() => undefined) },
+                    { tipo: 'acao' as const, rotulo: 'Propriedades de encaixe…', titulo: 'Conjuntos com nome de giro, quantidade e tecido, para aplicar de uma vez', onEscolher: props.onPropriedadesDeEncaixe ?? (() => undefined) },
+                    { tipo: 'acao' as const, rotulo: 'Barra de status…', titulo: 'Quais informações do encaixe a barra de status mostra', onEscolher: props.onBarraDeStatus ?? (() => undefined) },
+                    ...(props.onCalculadora
                       ? [
-                          { tipo: 'acao' as const, rotulo: 'Opções do encaixe…', titulo: 'O ângulo de giro, a precisão, encaixar ao clicar, verificar ao plotar', onEscolher: props.onOpcoesDoEncaixe },
-                          { tipo: 'acao' as const, rotulo: 'Cores da área de trabalho…', titulo: 'A mesa, a margem, o contorno e a seleção, em até três esquemas próprios', onEscolher: props.onCoresDaArea ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Propriedades de encaixe…', titulo: 'Conjuntos com nome de giro, quantidade e tecido, para aplicar de uma vez', onEscolher: props.onPropriedadesDeEncaixe ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Barra de status…', titulo: 'Quais informações do encaixe a barra de status mostra', onEscolher: props.onBarraDeStatus ?? (() => undefined) },
-                        ]
-                      : []),
-                    ...(props.onAutoAjusteDeTexto
-                      ? [
-                          { tipo: 'acao' as const, rotulo: 'Auto ajuste de texto…', titulo: 'O tamanho do nome e do fio de acordo com a peça, e a orientação do texto no plotter', onEscolher: props.onAutoAjusteDeTexto },
-                          { tipo: 'opcao' as const, rotulo: 'Estilo da costura no plotter', marcado: props.estiloDaCosturaNoPlotter === true, titulo: 'A linha de costura sai no plotter com o estilo escolhido aqui, e não cheia', onEscolher: props.onAlternarEstiloDaCosturaNoPlotter ?? (() => undefined) },
+                          { tipo: 'opcao' as const, rotulo: 'Estilo da costura no PDF', marcado: props.estiloDaCosturaNoPdf === true, titulo: 'A linha de costura sai no PDF com o estilo escolhido aqui, e não cheia', onEscolher: props.onAlternarEstiloDaCosturaNoPdf ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Calculadora…', onEscolher: props.onCalculadora ?? (() => undefined) },
                         ]
                       : []),
                     ...(props.onUnidadeDeArea ? (Object.keys(ROTULO_DA_UNIDADE_DE_AREA) as UnidadeDeArea[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Área em ${ROTULO_DA_UNIDADE_DE_AREA[u]}`, marcado: (props.unidadeDeArea ?? 'cm2') === u, onEscolher: () => props.onUnidadeDeArea?.(u) })) : []),
                     ...(props.onUnidadeDePeso ? (Object.keys(ROTULO_DA_UNIDADE_DE_PESO) as UnidadeDePeso[]).map((u) => ({ tipo: 'opcao' as const, rotulo: `Peso em ${ROTULO_DA_UNIDADE_DE_PESO[u]}`, marcado: (props.unidadeDePeso ?? 'kg') === u, onEscolher: () => props.onUnidadeDePeso?.(u) })) : []),
-                    ...(props.onEnviarAoPlotter
+                    ...(props.onPortaDeSaida
                       ? [
-                          { tipo: 'opcao' as const, rotulo: 'Texto como linha no plotter', marcado: props.textoComoLinha === true, titulo: 'Os textos saem desenhados em traços, para o plotter que não tem letreiro próprio', onEscolher: props.onAlternarTextoComoLinha ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: props.fonteDoPlotter ? `Fonte TrueType: ${props.fonteDoPlotter}…` : 'Fonte TrueType…', titulo: 'Os textos do plotter e do PDF saem nesta fonte', onEscolher: props.onFonteDoPlotter ?? (() => undefined) },
-                          ...(props.fonteDoPlotter ? [{ tipo: 'acao' as const, rotulo: 'Tirar a fonte TrueType', onEscolher: props.onTirarFonteDoPlotter ?? (() => undefined) }] : []),
-                          { tipo: 'acao' as const, rotulo: props.portaDeSaida ? `Enviar ao plotter (${props.portaDeSaida})` : 'Enviar ao plotter (pasta)', titulo: props.portaDeSaida ? 'Põe o risco na fila do gerenciador de impressão' : 'Grava o risco na pasta que o programa do plotter vigia', onEscolher: props.onEnviarAoPlotter },
-                          { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde o plotter está: na rede, compartilhado ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Gerenciador de impressão…', titulo: 'Os riscos que vão para o plotter, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Teste do equipamento…', titulo: 'Uma página de medidas conhecidas para o plotter ou a mesa de corte: mede com a trena e o programa corrige', onEscolher: props.onTesteDoEquipamento ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Receber de outro programa…', titulo: 'Este computador vira um plotter de rede: o que outro sistema plotar nele entra no projeto', onEscolher: props.onReceberDeOutroPrograma ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: props.fonteDoPdf ? `Fonte do PDF: ${props.fonteDoPdf}…` : 'Fonte do PDF…', titulo: 'Os textos do PDF saem nesta fonte', onEscolher: props.onFonteDoPdf ?? (() => undefined) },
+                          ...(props.fonteDoPdf ? [{ tipo: 'acao' as const, rotulo: 'Tirar a fonte do PDF', onEscolher: props.onTirarFonteDoPdf ?? (() => undefined) }] : []),
+                          { tipo: 'acao' as const, rotulo: 'Porta de saída…', titulo: 'Onde a mesa de corte está: na rede, compartilhada ou numa porta do computador', onEscolher: props.onPortaDeSaida ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Fila da mesa de corte…', titulo: 'Os arquivos de corte que vão para a mesa, em ordem', onEscolher: props.onGerenciadorDeImpressao ?? (() => undefined) },
+                          { tipo: 'acao' as const, rotulo: 'Teste da mesa de corte…', titulo: 'Um quadrado de 100 mm, para conferir a mesa em papel', onEscolher: props.onTesteDoEquipamento ?? (() => undefined) },
                           { tipo: 'acao' as const, rotulo: 'Ficha da enfestadeira…', titulo: 'Uma planilha com o comprimento, as camadas e as emendas de cada tecido', onEscolher: props.onFichaDaEnfestadeira ?? (() => undefined) },
-                          { tipo: 'acao' as const, rotulo: 'Escolher a pasta do plotter…', onEscolher: props.onEscolherPastaDoPlotter ?? (() => undefined) },
                         ]
                       : []),
                     ...(props.onPiquePadrao ? [{ tipo: 'acao' as const, rotulo: 'Pique padrão…', titulo: 'A largura, a altura e o ângulo com que os piques novos começam', onEscolher: props.onPiquePadrao }] : []),
@@ -745,7 +696,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                     { tipo: 'separador' as const },
                     ...(Object.keys(ROTULO_DO_ESQUEMA) as EsquemaDeCores[]).map((e) => ({ tipo: 'opcao' as const, rotulo: ROTULO_DO_ESQUEMA[e], marcado: props.esquemaDeCores === e, onEscolher: () => props.onEsquemaDeCores?.(e) })),
                     { tipo: 'separador' as const },
-                    { tipo: 'acao' as const, rotulo: 'Salvar perfil…', titulo: 'Grava num arquivo as preferências deste computador: favoritos, teclas, cores, canetas', onEscolher: props.onSalvarPerfil ?? (() => {}) },
+                    { tipo: 'acao' as const, rotulo: 'Salvar perfil…', titulo: 'Grava num arquivo as preferências deste computador: favoritos, teclas, cores', onEscolher: props.onSalvarPerfil ?? (() => {}) },
                     { tipo: 'acao' as const, rotulo: 'Carregar perfil…', titulo: 'Traz as preferências de um arquivo; valem ao abrir o programa de novo', onEscolher: props.onCarregarPerfil ?? (() => {}) },
                     { tipo: 'acao' as const, rotulo: 'Restaurar padrões', titulo: 'Tira as preferências deste computador; valem ao abrir o programa de novo', onEscolher: props.onRestaurarPadroes ?? (() => {}) },
                   ]
@@ -887,7 +838,6 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   dica="Importar peças de um PDF (o exportado por este programa traz a peça inteira)"
                   onClick={props.onImportarPdf}
                 />
-                {props.onImportarPlt && <Ferramenta tamanho="grande" rotulo={['Importar', 'PLT']} icone="importar" dica="Importar peças de um arquivo PLT (HPGL): as linhas fechadas viram peças, com os furos, as linhas e os piques; confira o fio" onClick={props.onImportarPlt} />}
                 {props.onImportarIso && <Ferramenta tamanho="grande" rotulo={['Importar', 'ISO']} icone="importar" dica="Importar ISO: lê de volta um arquivo de corte (G-code), e cada contorno vira uma peça" onClick={props.onImportarIso} />}
                 {props.onUnirEncaixes && <Ferramenta tamanho="grande" rotulo={['Unir', 'encaixes']} icone="importar" dica="Unir: traz para este projeto as peças de outro projeto da biblioteca" onClick={props.onUnirEncaixes} />}
                 {props.onInformacoesDoArquivo && <Ferramenta tamanho="grande" rotulo="Informações" icone="importar" dica="Informações: o cliente, a descrição, as palavras chave e as datas do arquivo" onClick={props.onInformacoesDoArquivo} />}
@@ -917,34 +867,6 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   falta={props.podeExportarPdf ? null : SEM_PECAS}
                   onClick={props.onAbrirExportacaoPdf}
                 />
-                <Ferramenta
-                  tamanho="grande"
-                  rotulo={['Exportar', 'PLT']}
-                  icone="exportar"
-                  dica="Exportar PLT (plotter): o encaixe em escala 1:1, em HPGL, para riscar no plotter de papel — confira a escala no primeiro risco (não testado num plotter físico)"
-                  falta={props.podeExportarPdf ? null : SEM_PECAS}
-                  onClick={props.onExportarPlt}
-                />
-                {props.onPlotarMoldes && (
-                  <Ferramenta
-                    tamanho="grande"
-                    rotulo={['Plotar', 'moldes']}
-                    icone="exportar"
-                    dica="Plotar os moldes, e não o encaixe: só as selecionadas, cada tamanho separado, desdobradas, giradas 90°, reorganizadas na largura do papel"
-                    falta={props.podeExportarPdf ? null : SEM_PECAS}
-                    onClick={props.onPlotarMoldes}
-                  />
-                )}
-                {props.onExportarPltPorPartes && (
-                  <Ferramenta
-                    tamanho="grande"
-                    rotulo={['PLT por', 'partes']}
-                    icone="exportar"
-                    dica="PLT por partes: retoma o risco de onde o papel acabou (X inicial), ou divide em faixas um risco mais largo que o papel"
-                    falta={props.podeExportarPdf ? null : SEM_PECAS}
-                    onClick={props.onExportarPltPorPartes}
-                  />
-                )}
                 {props.onExportarDados && <Ferramenta tamanho="grande" rotulo={['Exportar', 'SVG ou XML']} icone="exportar" dica="Exportar: o encaixe como imagem vetorial (SVG) ou como arquivo de dados (XML)" falta={props.podeExportarPdf ? null : SEM_PECAS} onClick={props.onExportarDados} />}
                 <Ferramenta
                   tamanho="grande"
@@ -1083,7 +1005,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                   tamanho="grande"
                   rotulo="Programas"
                   icone="programas"
-                  dica="Programas: atalhos para os outros programas que você usa junto com este (plotter, máquina de corte, planilhas, sites) — é você quem escolhe quais"
+                  dica="Programas: atalhos para os outros programas que você usa junto com este (máquina de corte, planilhas, sites) — é você quem escolhe quais"
                   falta={props.podeAbrirProgramas ? null : 'disponível só no programa instalado, não no navegador'}
                   onClick={props.onAbrirProgramas}
                 />
@@ -2523,7 +2445,6 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       { tipo: 'acao', rotulo: 'Colar vários…', onEscolher: props.onColarVarios ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Colar incrementando a grade', onEscolher: props.onColarIncrementarGrade ?? (() => undefined) },
                       { tipo: 'separador' },
-                      { tipo: 'acao', rotulo: 'Plotar…', onEscolher: props.onPlotar ?? (() => undefined) },
                     ]}
                   />
                 )}

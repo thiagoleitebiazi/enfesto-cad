@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
-import { gerarPlt } from '../formats/plt-exportacao';
 import { compactarEncaixe } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto, enfestoComEmendas, lerLinhasDeReferencia, segmentoDaLinha, textoDasLinhasDeReferencia, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, transladarMolde, type Molde } from './molde';
@@ -120,10 +119,6 @@ describe('as linhas de referência (ADR 0196)', () => {
     expect(retanguloEnvolvente(r[0]!.contorno).minY).toBeGreaterThanOrEqual(301);
   });
 
-  it('sai no plotter, com o nome', () => {
-    const plt = gerarPlt([peca('x')], { larguraDaMesaMm: 1000, linhas: [{ de: ponto(100, 0), ate: ponto(100, 3000), nome: 'MEIO' }] });
-    expect(plt).toContain('LBMEIO');
-  });
 });
 
 describe('a verificação (ADR 0196)', () => {
