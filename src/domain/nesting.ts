@@ -154,7 +154,7 @@ export function* passosDoNesting(
 
   const instancias = construirInstancias(pecas);
   const limitesDaMesa: LimitesDeArea = areaUtilDaMesa(enfesto);
-  const zonas = (enfesto.zonasBloqueadas ?? []).map(contornoDaZona);
+  const zonas = [...(enfesto.zonasBloqueadas ?? []).map(contornoDaZona), ...(enfesto.obstaculos ?? [])];
   // Cada grupo do encaixe começa depois de tudo o que já foi posto (à distância entre as peças): os grupos ficam em
   // trechos separados do comprimento. Sem grupos, a mesa toda o tempo todo.
   let limites: LimitesDeArea = limitesDaMesa;
@@ -344,6 +344,8 @@ export function executarNestingPorPontosDeCanto(
     paradaPorMetaDeAproveitamento: false,
   });
   if (copias.length === 0 || !(largura > 0) || !(comprimento > 0)) return vazio(copias, false);
+  // A grade trabalha com retângulos: nela, a peça mantida ocupa a caixa dela.
+  const zonasDaGrade = [...(enfesto.zonasBloqueadas ?? []), ...(enfesto.obstaculos ?? []).map(retanguloEnvolvente)];
   const risco = fazerRisco(copias, {}, {
     larguraMm: largura,
     comprimentoMaximoMm: comprimento,
@@ -351,7 +353,7 @@ export function executarNestingPorPontosDeCanto(
     sentidoUnico: opcoes.tecidoDeSentidoUnico ?? false,
     deixarDeFora: true,
     agora,
-    ...(enfesto.zonasBloqueadas ? { zonasBloqueadas: enfesto.zonasBloqueadas.map((z) => ({ minX: z.minX - util.minX, maxX: z.maxX - util.minX, minY: z.minY - util.minY, maxY: z.maxY - util.minY })) } : {}),
+    ...(zonasDaGrade.length > 0 ? { zonasBloqueadas: zonasDaGrade.map((z) => ({ minX: z.minX - util.minX, maxX: z.maxX - util.minX, minY: z.minY - util.minY, maxY: z.maxY - util.minY })) } : {}),
     ...(opcoes.limiteDeTempoMs !== undefined ? { tempoLimiteMs: opcoes.limiteDeTempoMs } : {}),
     ...(opcoes.deveContinuar ? { deveParar: () => !opcoes.deveContinuar!() } : {}),
     ...(opcoes.aoProgredir ? { aoProgredir: opcoes.aoProgredir } : {}),

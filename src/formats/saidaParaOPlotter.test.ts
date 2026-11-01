@@ -76,6 +76,18 @@ describe('o arquivo DMPL (ADR 0210)', () => {
   });
 });
 
+describe('a costura no PDF (ADR 0221)', () => {
+  it('sai no traço escolhido', async () => {
+    const e = criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 3000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 0 });
+    const comMargem = { ...peca('a'), margemDeCosturaMm: 10 };
+    const opcoes = { formato: 'A4', orientacao: 'retrato', margemMm: 10 } as const;
+    const texto = async (b: Blob): Promise<string> => Buffer.from(await b.arrayBuffer()).toString('latin1');
+    const contar = (t: string): number => (t.match(/\] 0 d/g) ?? []).length;
+    const cheia = contar(await texto(await gerarPdfDeEncaixe([comMargem], e, opcoes)));
+    expect(contar(await texto(await gerarPdfDeEncaixe([comMargem], e, { ...opcoes, estiloDaCostura: 'tracejada' })))).toBeGreaterThan(cheia);
+  });
+});
+
 describe('as emendas no PDF do encaixe (ADR 0210)', () => {
   it('saem na folha', async () => {
     const e = criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 3000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 0 });

@@ -412,7 +412,7 @@ import {
   type OpcoesDoEncaixe,
   type VisaoDasPecas,
 } from './ui/visaoDasPecas';
-import { pecasDoRisco, comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, pecasDoTecido, tecidosDoModelo, comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
+import { comAjusteDoTecido, pecasDoRisco, comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, pecasDoTecido, tecidosDoModelo, comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
 import { ajusteDeTextoGuardado, corDaAreaNoEsquema, corDaCaneta, CORES_DA_AREA_PADRAO, coresDaAreaGuardadas, guardarAjusteDeTexto, guardarCoresDaArea, type EsquemaDaArea, type EsquemasDaArea } from './ui/preferencias';
@@ -481,7 +481,7 @@ import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } f
 import { recadoDaTroca, trocarMaterialNosModelos } from './domain/trocaDeMaterial';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { comEmendaClicada, DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, segmentoDaLinha, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
+import { comLinhaClicada, lerTextosNoRisco, textoDosTextosNoRisco, comEmendaClicada, DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, segmentoDaLinha, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
 import { estadoDaValidacao, TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -714,6 +714,7 @@ type DialogoDeFerramenta =
   | { readonly tipo: 'retangulo-de-organizacao' }
   | { readonly tipo: 'status-do-encaixe' }
   | { readonly tipo: 'envolvente' }
+  | { readonly tipo: 'linha-na-mesa' }
   | { readonly tipo: 'largura-do-tecido' }
   | { readonly tipo: 'porta-de-saida' }
   | { readonly tipo: 'gerenciador-de-impressao' }
@@ -941,16 +942,16 @@ export default function App(): React.JSX.Element {
   // A fonte TrueType e o teclado virtual (ADR 0211). A leitura da fonte só vem quando há uma.
   const [fonteDoPlotter, setFonteDoPlotter] = useState<FonteDoPlotter | null>(null);
   const [mostrarTeclado, setMostrarTeclado] = useState(false);
-  // Marcando as emendas com o clique na mesa (ADR 0220): Esc termina.
-  const [marcandoEmenda, setMarcandoEmenda] = useState(false);
+  // Marcando na mesa, com o clique: as emendas (ADR 0220) ou uma linha de referência (ADR 0221). Esc termina.
+  const [marcandoNaMesa, setMarcandoNaMesa] = useState<'emenda' | { readonly nome: string; readonly referencia: 'esquerda' | 'superior'; readonly evitarSobreposicao: boolean } | null>(null);
   useEffect(() => {
-    if (!marcandoEmenda) return undefined;
+    if (!marcandoNaMesa) return undefined;
     const ouvir = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMarcandoEmenda(false);
+      if (e.key === 'Escape') setMarcandoNaMesa(null);
     };
     window.addEventListener('keydown', ouvir);
     return () => window.removeEventListener('keydown', ouvir);
-  }, [marcandoEmenda]);
+  }, [marcandoNaMesa]);
   const usarFonte = useCallback(async (arquivo: { readonly nome: string; readonly bytes: Uint8Array } | null) => {
     if (!arquivo) return;
     const { fonteDoArquivo } = await import('./formats/fonteTrueType');
@@ -3898,6 +3899,7 @@ export default function App(): React.JSX.Element {
           margemMm: opcoesEscolhidas.margemMm,
           ...(opcoesEscolhidas.emCores !== undefined ? { emCores: opcoesEscolhidas.emCores } : {}),
           ...(fonteDoPlotter ? { fonte: fonteDoPlotter.bytes } : {}),
+          ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}),
         };
         const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfestoNaMesa ? enfestoNaMesa : null;
         const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(noEncaixe ? pecasQueSaem : pecasNaMesa, noEncaixe), areaImprimivelMm(opcoesDePagina));
@@ -3922,7 +3924,7 @@ export default function App(): React.JSX.Element {
         setGerandoPdf(false);
       }
     },
-    [pecas, pecasNaMesa, pecasQueSaem, enfesto, enfestoNaMesa, tecido, fonteDoPlotter, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, pecasQueSaem, enfesto, enfestoNaMesa, tecido, fonteDoPlotter, estiloDaCostura, estiloDaCosturaNoPlotter, registrarEventoEPersistir],
   );
 
   // O DXF (ADR 0096): as peças como estão na mesa, direto para a janela de salvar — não há o que escolher antes.
@@ -5883,6 +5885,7 @@ export default function App(): React.JSX.Element {
           carregarListaDeProjetos();
           setDialogoDeFerramenta({ tipo: 'substituir-tamanho' });
         }}
+        onLinhaNaMesa={() => setDialogoDeFerramenta({ tipo: 'linha-na-mesa' })}
         onCriarEnvolvente={() => {
           if (selecionadoId || idsSelecionadosEmLote.size > 0) setDialogoDeFerramenta({ tipo: 'envolvente' });
           else avisar('Selecione as peças primeiro.');
@@ -7130,18 +7133,57 @@ export default function App(): React.JSX.Element {
       {dialogoDeFerramenta?.tipo === 'largura-do-tecido' && enfesto && enfestoNaMesa && (
         <DialogoDeCampos
           titulo={`Largura do tecido ${tecidoAtivo}`}
-          campos={[{ tipo: 'medida', id: 'largura', rotulo: 'Largura útil (mm)', inicial: String(enfestoNaMesa.larguraUtilMm) }]}
-          nota="Vale só para este tecido: a mesa, o encaixe, a validação e as saídas usam esta largura enquanto ele estiver ativo."
+          campos={[
+            { tipo: 'medida', id: 'largura', rotulo: 'Largura útil (mm)', inicial: String(enfestoNaMesa.larguraUtilMm) },
+            { tipo: 'medida', id: 'comprimento', rotulo: 'Comprimento da mesa (mm)', inicial: String(enfestoNaMesa.comprimentoMm) },
+            { tipo: 'texto', id: 'textos', rotulo: 'Textos no risco: comprimento, largura e texto; separe com |', inicial: textoDosTextosNoRisco(enfestoNaMesa.textosNoRisco ?? []).replace(/\n/g, ' | '), opcional: true },
+          ]}
+          nota="Vale só para este tecido: a mesa, o encaixe, a validação e as saídas usam estas medidas enquanto ele estiver ativo. As emendas marcadas com ele ativo também ficam só nele."
           rotuloDoBotao="Aplicar"
           onAplicar={(valores) => {
             const largura = valores['largura'] as number;
             if (!(largura > 0)) return 'A largura tem de ser maior que zero.';
-            const novo = comLarguraDoTecido(enfesto, tecidoAtivo, largura);
+            const comprimentoMm = valores['comprimento'] as number;
+            if (!(comprimentoMm > 0)) return 'O comprimento tem de ser maior que zero.';
+            let textosNoRisco: ReturnType<typeof lerTextosNoRisco>;
+            try {
+              textosNoRisco = lerTextosNoRisco(String(valores['textos'] ?? '').replace(/\|/g, '\n'));
+            } catch (e) {
+              return e instanceof Error ? e.message : String(e);
+            }
+            const novo = comAjusteDoTecido(comLarguraDoTecido(enfesto, tecidoAtivo, largura), tecidoAtivo, { comprimentoMm, textosNoRisco });
             setEnfesto(novo);
             registrarEventoEPersistir('mudanca-de-configuracao', { pecas, tecido, enfesto: novo }, `Largura do tecido ${tecidoAtivo}: ${numeroComVirgula(largura)} mm`);
             return null;
           }}
           onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'largura-do-tecido' ? null : d))}
+        />
+      )}
+      {dialogoDeFerramenta?.tipo === 'linha-na-mesa' && (
+        <DialogoDeCampos
+          titulo="Linha de referência na mesa"
+          campos={[
+            { tipo: 'texto', id: 'nome', rotulo: 'Nome da linha', inicial: 'Linha' },
+            {
+              tipo: 'escolha',
+              id: 'referencia',
+              rotulo: 'Direção',
+              opcoes: [
+                { valor: 'esquerda', rotulo: 'Na largura: atravessa a mesa' },
+                { valor: 'superior', rotulo: 'No comprimento: ao longo da mesa' },
+              ],
+              inicial: 'esquerda',
+            },
+            { tipo: 'caixa', id: 'evitar', rotulo: 'Nenhuma peça atravessa a linha', inicial: false },
+          ]}
+          nota="Depois de aplicar, clique na mesa onde a linha fica."
+          rotuloDoBotao="Marcar na mesa"
+          onAplicar={(valores) => {
+            setMarcandoNaMesa({ nome: String(valores['nome'] ?? 'Linha'), referencia: valores['referencia'] === 'superior' ? 'superior' : 'esquerda', evitarSobreposicao: valores['evitar'] === true });
+            avisar('Clique na mesa onde a linha fica. Esc cancela.');
+            return null;
+          }}
+          onFechar={() => setDialogoDeFerramenta((d) => (d?.tipo === 'linha-na-mesa' ? null : d))}
         />
       )}
       {dialogoDeFerramenta?.tipo === 'envolvente' && (
@@ -7210,7 +7252,7 @@ export default function App(): React.JSX.Element {
               const comprimento = statusDoEncaixe(pecasNaMesa, enfesto).comprimentoMm;
               const modo = String(valores['modo']);
               if (modo === 'clicar') {
-                setMarcandoEmenda(true);
+                setMarcandoNaMesa('emenda');
                 avisar('Clique na mesa onde fica cada emenda. Clique de novo para tirar. Esc termina.');
                 return null;
               }
@@ -7220,7 +7262,7 @@ export default function App(): React.JSX.Element {
                   : modo === 'metodo-1'
                     ? emendasAutomaticas(pecas, comprimento, { minimaMm: valores['minima'] as number, maximaMm: valores['maxima'] as number, margemMm: valores['margem'] as number })
                     : emendasPorEspaco(pecas, comprimento, valores['espaco'] as number, modo === 'volta' ? 'volta' : 'ida');
-              setEnfesto({ ...enfesto, emendasMm: pontos.map((p) => p.posicaoMm) });
+              setEnfesto(comAjusteDoTecido(enfesto, tecidoAtivo, { emendasMm: pontos.map((p) => p.posicaoMm) }));
               avisar(pontos.length === 0 ? 'Sem pontos de emenda.' : pontos.map((p) => `${numeroComVirgula(p.posicaoMm / 10, 1)} cm (transpasse de ${numeroComVirgula(p.transpasseMm / 10, 1)} cm)`).join('; '));
               return null;
             } catch (e) {
@@ -8533,7 +8575,17 @@ export default function App(): React.JSX.Element {
             contornoOriginal={lembrarOriginal ? (projetoAtual.estadoAtual.pecas.find((p) => p.id === selecionadoId)?.contorno ?? null) : null}
             imagens={imagens}
             pecas={pecasNaMesa}
-            onClicarNaMesa={marcandoEmenda && enfesto ? (mundo) => setEnfesto(comEmendaClicada(enfesto, mundo.y)) : null}
+            onClicarNaMesa={
+              marcandoNaMesa && enfesto && enfestoNaMesa
+                ? (mundo) => {
+                    if (marcandoNaMesa === 'emenda') setEnfesto(comAjusteDoTecido(enfesto, tecidoAtivo, { emendasMm: comEmendaClicada(enfestoNaMesa, mundo.y).emendasMm ?? [] }));
+                    else {
+                      setEnfesto(comLinhaClicada(enfesto, mundo, marcandoNaMesa));
+                      setMarcandoNaMesa(null);
+                    }
+                  }
+                : null
+            }
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
             enfesto={enfestoNaMesa}

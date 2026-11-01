@@ -54,6 +54,13 @@ export interface ZonaBloqueada {
   readonly maxY: number;
 }
 
+/** O que um tecido pode ter de diferente da mesa do projeto (ADR 0221). */
+export interface AjusteDoTecido {
+  readonly comprimentoMm?: number;
+  readonly emendasMm?: readonly number[];
+  readonly textosNoRisco?: readonly TextoNoRisco[];
+}
+
 /** Um texto no risco (ADR 0165): "emenda aqui", "cortar primeiro". No comprimento e na largura da mesa, em mm. */
 export interface TextoNoRisco {
   readonly x: number;
@@ -96,6 +103,10 @@ export interface ConfiguracaoBase {
   readonly perdaMm?: number;
   /** A dobra do tecido embaixo, e não em cima (ADR 0195). */
   readonly dobraInferior?: boolean;
+  /** O que muda em cada tecido, além da largura (ADR 0221). */
+  readonly ajustesPorTecido?: Readonly<Record<string, AjusteDoTecido>>;
+  /** Formas que o encaixe tem de contornar, neste cálculo: as peças mantidas no lugar (ADR 0221). */
+  readonly obstaculos?: readonly Contorno[];
   /** A largura de cada tecido, quando não é a do enfesto (ADR 0209). */
   readonly largurasPorTecido?: Readonly<Record<string, number>>;
   /** "Usar envolvente de grupo" desligado, e os blocos na vertical, neste encaixe (ADR 0208). */
@@ -347,4 +358,13 @@ export function comEmendaClicada(enfesto: ConfiguracaoDeEnfesto, posicaoMm: numb
   if (perto !== undefined) return { ...enfesto, emendasMm: atuais.filter((e) => e !== perto) };
   if (posicaoMm <= 0 || posicaoMm >= enfesto.comprimentoMm) return enfesto;
   return { ...enfesto, emendasMm: [...atuais, Math.round(posicaoMm)].sort((a, b) => a - b) };
+}
+
+/** A linha de referência marcada com o clique na mesa (ADR 0221): na largura, ou ao longo do comprimento. */
+export function comLinhaClicada(enfesto: ConfiguracaoDeEnfesto, mundo: { readonly x: number; readonly y: number }, modelo: { readonly nome: string; readonly referencia: 'esquerda' | 'superior'; readonly evitarSobreposicao: boolean }): ConfiguracaoDeEnfesto {
+  const distanciaMm = Math.round(modelo.referencia === 'esquerda' ? mundo.y : mundo.x);
+  const limite = modelo.referencia === 'esquerda' ? enfesto.comprimentoMm : enfesto.larguraUtilMm;
+  if (distanciaMm <= 0 || distanciaMm >= limite) return enfesto;
+  const linha: LinhaDeReferencia = { nome: modelo.nome, distanciaMm, referencia: modelo.referencia, ...(modelo.evitarSobreposicao ? { evitarSobreposicao: true } : {}) };
+  return { ...enfesto, linhasDeReferencia: [...(enfesto.linhasDeReferencia ?? []), linha] };
 }

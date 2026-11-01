@@ -1,5 +1,5 @@
 import { retanguloEnvolvente } from '../core/geometria';
-import type { ConfiguracaoDeEnfesto, ZonaBloqueada } from './enfesto';
+import type { AjusteDoTecido, ConfiguracaoDeEnfesto } from './enfesto';
 import { moverParaForaDoEnfesto } from './encaixeManual';
 import { comGrupoDoEncaixe } from './gruposDoEncaixe';
 import { linhaDeCorteDaPeca, rotacionarMolde, type Molde } from './molde';
@@ -63,10 +63,18 @@ export function pecasDoTecido(pecas: readonly Molde[], tecido: string): readonly
   return tecido === '' ? pecas : pecas.filter((p) => tecidoDaPeca(p) === tecido);
 }
 
-/** A mesa do tecido: o mesmo enfesto, na largura dele. */
+/** A mesa do tecido: o mesmo enfesto, com a largura dele e o que mais for próprio dele. */
 export function enfestoDoTecido(enfesto: ConfiguracaoDeEnfesto, tecido: string): ConfiguracaoDeEnfesto {
   const largura = enfesto.largurasPorTecido?.[tecido];
-  return largura === undefined || largura === enfesto.larguraUtilMm ? enfesto : { ...enfesto, larguraUtilMm: largura };
+  const ajuste = enfesto.ajustesPorTecido?.[tecido];
+  if ((largura === undefined || largura === enfesto.larguraUtilMm) && !ajuste) return enfesto;
+  return { ...enfesto, ...(largura !== undefined ? { larguraUtilMm: largura } : {}), ...ajuste };
+}
+
+/** Grava o que mudou na mesa à vista: na do tecido ativo, ou na do projeto, se forem todos (ADR 0221). */
+export function comAjusteDoTecido(enfesto: ConfiguracaoDeEnfesto, tecido: string, ajuste: AjusteDoTecido): ConfiguracaoDeEnfesto {
+  if (tecido === '') return { ...enfesto, ...ajuste };
+  return { ...enfesto, ajustesPorTecido: { ...enfesto.ajustesPorTecido, [tecido]: { ...enfesto.ajustesPorTecido?.[tecido], ...ajuste } } };
 }
 
 export function comLarguraDoTecido(enfesto: ConfiguracaoDeEnfesto, tecido: string, larguraMm: number): ConfiguracaoDeEnfesto {
@@ -79,14 +87,10 @@ export function comPecasMudadas(pecas: readonly Molde[], mudadas: readonly Molde
   return pecas.map((p) => porId.get(p.id) ?? p);
 }
 
-/** O enfesto com o lugar das peças fixas bloqueado: a caixa de cada uma. */
+/** O enfesto com as peças fixas no caminho: o encaixe contorna a forma de cada uma, e pode usar os vãos dela (ADR 0221). */
 export function enfestoComFixas(enfesto: ConfiguracaoDeEnfesto, fixas: readonly Molde[]): ConfiguracaoDeEnfesto {
   if (fixas.length === 0) return enfesto;
-  const zonas: ZonaBloqueada[] = fixas.map((p) => {
-    const c = retanguloEnvolvente(linhaDeCorteDaPeca(p));
-    return { minX: c.minX, maxX: c.maxX, minY: c.minY, maxY: c.maxY };
-  });
-  return { ...enfesto, zonasBloqueadas: [...(enfesto.zonasBloqueadas ?? []), ...zonas] };
+  return { ...enfesto, obstaculos: [...(enfesto.obstaculos ?? []), ...fixas.map((p) => linhaDeCorteDaPeca(p))] };
 }
 
 /** Todos os tecidos no mesmo risco: cada um vira um grupo do encaixe, e sai num trecho da mesa. */

@@ -53,6 +53,8 @@ export interface OpcoesDePagina {
   readonly formato: FormatoDePagina;
   readonly orientacao: OrientacaoDePagina;
   readonly margemMm: number;
+  /** O traço da linha de costura; ausente, cheia (ADR 0221). */
+  readonly estiloDaCostura?: 'tracejada' | 'pontilhada';
   /** A fonte TrueType, embutida: todos os textos saem nela (ADR 0211). */
   readonly fonte?: Uint8Array;
   /** "Em cores" (ADR 0185): ligado, a peça sai com a cor dela; `false`, tudo em preto e branco. Ausente, como sempre saiu. */
@@ -208,10 +210,12 @@ function escreverCentrado(doc: PDFKit.PDFDocument, texto: string, centro: Ponto2
  * Desenha a peça na página, com `origem` no canto dela. Com `comRegistro`, escreve também o registro da peça —
  * ela inteira, num comentário do PDF, que não aparece na folha: é por ele que a importação a traz de volta como era.
  */
-function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, comRegistro = false, fundo = FUNDO_DA_PECA): void {
+function desenharPeca(doc: PDFKit.PDFDocument, peca: Molde, origem: Ponto2D, comRegistro = false, fundo = FUNDO_DA_PECA, estiloDaCostura?: 'tracejada' | 'pontilhada'): void {
   doc.lineWidth(mmParaPontos(0.25));
 
   doc.save();
+  // Com margem, o contorno é a linha de costura: sai no traço escolhido (ADR 0221).
+  if (estiloDaCostura && peca.margemDeCosturaMm > 0) doc.dash(mmParaPontos(estiloDaCostura === 'tracejada' ? 2.5 : 0.6), { space: mmParaPontos(1) });
   tracarContorno(doc, peca.contorno, origem);
   for (const furo of peca.furos) tracarContorno(doc, furo, origem);
   doc.fillColor(fundo).fillOpacity(1);
@@ -397,7 +401,7 @@ export async function gerarPdfDeEncaixe(
         const caixa = retanguloEnvolvente(linhaDeCorteDaPeca(peca));
         const cai =
           caixa.maxY >= origem.y && caixa.minY <= origem.y + larguraImprimivel && caixa.maxX >= origem.x && caixa.minX <= origem.x + alturaImprimivel;
-        if (cai) desenharPeca(doc, peca, origem, false, fundoDaPeca(peca, opcoes));
+        if (cai) desenharPeca(doc, peca, origem, false, fundoDaPeca(peca, opcoes), opcoes.estiloDaCostura);
       }
 
       // Os grupos do encaixe (ADR 0103): a divisa tracejada atravessando a mesa e o nome no começo de cada trecho.
@@ -486,7 +490,7 @@ export async function gerarPdfDeMoldesIndividuais(
         doc.clip();
         doc.translate(mmParaPontos(opcoes.margemMm), mmParaPontos(opcoes.margemMm));
         // O registro vai só na primeira página da peça: nas outras (a peça maior que uma folha) seria ela de novo.
-        desenharPeca(doc, peca, origem, indiceNaPeca === 1);
+        desenharPeca(doc, peca, origem, indiceNaPeca === 1, FUNDO_DA_PECA, opcoes.estiloDaCostura);
         doc.restore();
 
         doc.save();

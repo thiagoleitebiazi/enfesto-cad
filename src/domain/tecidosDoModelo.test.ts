@@ -51,7 +51,7 @@ describe('os tecidos do modelo (ADR 0194)', () => {
   it('as peças mantidas não entram, e o lugar delas fica bloqueado', () => {
     const s = separarParaOEncaixe([peca('a', 200, 300), peca('b')], { idsFixos: new Set(['a']) }, enfesto());
     expect(s.paraEncaixar.map((p) => p.id)).toEqual(['b']);
-    expect(enfestoComFixas(enfesto(), s.fixas).zonasBloqueadas).toEqual([{ minX: 200, maxX: 300, minY: 300, maxY: 400 }]);
+    expect(enfestoComFixas(enfesto(), s.fixas).obstaculos).toEqual([s.fixas[0]!.contorno]);
   });
 
   it('"somente peças encaixadas": a que foi para fora da mesa não entra', () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
-import { comEmendaClicada, criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
+import { comEmendaClicada, comLinhaClicada, criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, type Molde } from './molde';
-import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, juntarAoEncaixe, pecasDoRisco, pecasDoTecido, separarParaOEncaixe } from './tecidosDoModelo';
+import { comAjusteDoTecido, comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, juntarAoEncaixe, pecasDoRisco, pecasDoTecido, separarParaOEncaixe } from './tecidosDoModelo';
 
 const enfesto = (): ConfiguracaoDeEnfesto => criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 3000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 0 });
 
@@ -75,5 +75,37 @@ describe('a emenda clicada na mesa (ADR 0220)', () => {
     const e = enfesto();
     expect(comEmendaClicada(e, 3500)).toBe(e);
     expect(comEmendaClicada(e, -5)).toBe(e);
+  });
+});
+
+describe('cada tecido com a sua mesa (ADR 0221)', () => {
+  it('o comprimento, as emendas e os textos valem só nele', () => {
+    const e = comAjusteDoTecido(enfesto(), 'Forro', { comprimentoMm: 1500, emendasMm: [700], textosNoRisco: [{ x: 10, y: 20, texto: 'Forro' }] });
+    expect(enfestoDoTecido(e, 'Forro')).toMatchObject({ comprimentoMm: 1500, emendasMm: [700] });
+    expect(enfestoDoTecido(e, 'Principal').comprimentoMm).toBe(3000);
+    expect(enfestoDoTecido(e, 'Principal').emendasMm).toBeUndefined();
+  });
+
+  it('sem tecido ativo, grava na mesa do projeto', () => {
+    expect(comAjusteDoTecido(enfesto(), '', { emendasMm: [500] }).emendasMm).toEqual([500]);
+  });
+
+  it('um ajuste não apaga o outro', () => {
+    const e = comAjusteDoTecido(comAjusteDoTecido(enfesto(), 'Forro', { comprimentoMm: 1500 }), 'Forro', { emendasMm: [700] });
+    expect(enfestoDoTecido(e, 'Forro')).toMatchObject({ comprimentoMm: 1500, emendasMm: [700] });
+  });
+});
+
+describe('a linha de referência clicada na mesa (ADR 0221)', () => {
+  const modelo = { nome: 'Corte', referencia: 'esquerda' as const, evitarSobreposicao: true };
+
+  it('na largura, vale o comprimento do clique; ao longo, a largura dele', () => {
+    expect(comLinhaClicada(enfesto(), { x: 200, y: 1200.4 }, modelo).linhasDeReferencia).toEqual([{ nome: 'Corte', distanciaMm: 1200, referencia: 'esquerda', evitarSobreposicao: true }]);
+    expect(comLinhaClicada(enfesto(), { x: 200, y: 1200 }, { ...modelo, referencia: 'superior', evitarSobreposicao: false }).linhasDeReferencia).toEqual([{ nome: 'Corte', distanciaMm: 200, referencia: 'superior' }]);
+  });
+
+  it('fora da mesa, nada muda', () => {
+    const e = enfesto();
+    expect(comLinhaClicada(e, { x: 200, y: 3500 }, modelo)).toBe(e);
   });
 });

@@ -214,6 +214,8 @@ interface BarraDeFerramentasProps {
   readonly onInformacoesDoArquivo?: () => void;
   readonly onUnirEncaixes?: () => void;
   readonly onColarVarios?: () => void;
+  /** A linha de referência marcada com o clique na mesa (ADR 0221). */
+  readonly onLinhaNaMesa?: () => void;
   /** Criar e eliminar a envolvente (ADR 0208). */
   readonly onCriarEnvolvente?: () => void;
   readonly onEliminarEnvolvente?: () => void;
@@ -2511,6 +2513,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
                       { tipo: 'separador' },
                       { tipo: 'acao', rotulo: 'Criar envolvente…', onEscolher: props.onCriarEnvolvente ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Eliminar envolvente', onEscolher: props.onEliminarEnvolvente ?? (() => undefined) },
+                      { tipo: 'acao', rotulo: 'Linha de referência na mesa…', onEscolher: props.onLinhaNaMesa ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Substituir tamanho…', onEscolher: props.onSubstituirTamanho ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Colar vários…', onEscolher: props.onColarVarios ?? (() => undefined) },
                       { tipo: 'acao', rotulo: 'Colar incrementando a grade', onEscolher: props.onColarIncrementarGrade ?? (() => undefined) },

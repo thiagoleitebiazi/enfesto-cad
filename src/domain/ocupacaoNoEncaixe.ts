@@ -1,4 +1,4 @@
-import { area, areaAssinada, deslocarContornoParaFora, espelharHorizontal, pontoDentroDoContorno, retanguloEnvolvente, rotacionar, type Contorno, type Ponto2D } from '../core/geometria';
+import { area, areaAssinada, contornosSeSobrepoem, deslocarContornoParaFora, espelharHorizontal, pontoDentroDoContorno, retanguloEnvolvente, rotacionar, type Contorno, type Ponto2D } from '../core/geometria';
 import { comFolgaNoEncaixe, comOrientacaoInicial, compactarResultado, semFolgaNoEncaixe } from './encaixeManual';
 import { areaUtilDaMesa, dobraDoEnfesto, enfestoComEmendas, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
 import { posicaoDoTamanho } from './graduacao';
@@ -73,12 +73,31 @@ export function ocupacaoDaPeca(peca: Molde): Contorno {
   return e.margemMm > 0 ? deslocarContornoParaFora(base, e.margemMm) : base;
 }
 
-/** A forma que o grupo ocupa: a volta das peças, com a envolvente da primeira. */
+/**
+ * As peças do grupo numa linha só: cada uma ligada à anterior por um traço sem largura, entre os vértices mais próximos.
+ * A forma fica com os vãos entre elas, e o encaixe pode pôr outras peças ali (ADR 0221).
+ */
+export function costurarContornos(contornos: readonly Contorno[]): Contorno {
+  const sentido = Math.sign(areaAssinada(contornos[0]!));
+  const noMesmoSentido = contornos.map((c) => (Math.sign(areaAssinada(c)) === sentido ? [...c] : [...c].reverse()));
+  return noMesmoSentido.slice(1).reduce((linha, proxima) => {
+    let [i, j, menor] = [0, 0, Infinity];
+    linha.forEach((a, ia) =>
+      proxima.forEach((b, ib) => {
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < menor) [i, j, menor] = [ia, ib, d];
+      }),
+    );
+    return [...linha.slice(i), ...linha.slice(0, i), linha[i]!, ...proxima.slice(j), ...proxima.slice(0, j), proxima[j]!];
+  }, noMesmoSentido[0]!);
+}
+
+/** A forma que o grupo ocupa, com a envolvente da primeira peça. Peças que se tocam não têm vão: vale a volta delas. */
 function ocupacaoDoGrupo(membros: readonly Molde[]): Contorno {
-  const pontos = membros.flatMap((m) => [...ocupacaoDaPeca(m)]);
-  const e = membros[0]!.envolvente;
-  if (e?.tipo === 'retangular') return retangulo(pontos, 0);
-  return fechoConvexo(pontos);
+  const contornos = membros.map(ocupacaoDaPeca);
+  if (membros[0]!.envolvente?.tipo === 'retangular') return retangulo(contornos.flat(), 0);
+  const seTocam = contornos.some((a, i) => contornos.slice(i + 1).some((b) => contornosSeSobrepoem(a, b)));
+  return seTocam ? fechoConvexo(contornos.flat()) : costurarContornos(contornos);
 }
 
 function restricaoDoGrupo(membros: readonly Molde[]): RestricaoDeRotacao {
@@ -215,6 +234,7 @@ function mesaDeLado(enfesto: ConfiguracaoDeEnfesto): ConfiguracaoDeEnfesto {
     margemLateralMm: enfesto.margemDeExtremidadeMm,
     margemDeExtremidadeMm: enfesto.margemLateralMm,
     zonasBloqueadas: zonas,
+    ...(enfesto.obstaculos ? { obstaculos: enfesto.obstaculos.map((o) => o.map((p) => ({ x: c - p.y, y: p.x }))) } : {}),
   } as ConfiguracaoDeEnfesto;
 }
 

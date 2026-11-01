@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { contornosSeSobrepoem, distanciaEntreContornos, ponto, retanguloEnvolvente } from '../core/geometria';
+import { areaAssinada, contornosSeSobrepoem, distanciaEntreContornos, ponto, retanguloEnvolvente } from '../core/geometria';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, linhaDeCorteDaPeca, rotacionarMolde, transladarMolde, type Molde } from './molde';
 import { executarNestingAutomatico } from './nesting';
-import { comBlocos, comOcupacao, contornoComMargens, entradaDoEncaixe, fechoConvexo, lerBlocos, ocupacaoDaPeca, semOcupacao } from './ocupacaoNoEncaixe';
+import { comBlocos, comOcupacao, contornoComMargens, costurarContornos, entradaDoEncaixe, fechoConvexo, lerBlocos, ocupacaoDaPeca, semOcupacao } from './ocupacaoNoEncaixe';
 import { validarProjeto } from './validacao';
 
 const enfesto = (extra: Partial<ConfiguracaoDeEnfesto> = {}): ConfiguracaoDeEnfesto =>
@@ -147,5 +147,42 @@ describe('os blocos (ADR 0208)', () => {
     }
     expect(r.blocosDosGrupos).toBeUndefined();
     expect(validarProjeto(r.pecasColocadas.map((c) => c.molde), e).filter((p) => p.tipo === 'sobreposicao' || p.tipo === 'fora-dos-limites')).toEqual([]);
+  });
+});
+
+describe('os vãos do grupo e a forma das peças mantidas (ADR 0221)', () => {
+  const mesa = () => enfesto({ larguraUtilMm: 340, comprimentoMm: 3000 } as Partial<ConfiguracaoDeEnfesto>);
+  const fixa = (id: string, x: number, l: number, c: number) => ({ ...transladarMolde(peca(id, l, c, { restricaoDeRotacao: { permite180: false, permite90e270: false } }), { x, y: 0 }, id) });
+
+  it('a peça pequena entra no vão entre as peças do grupo', () => {
+    const a = { ...fixa('a', 0, 100, 300), conjuntoRigido: 'g' };
+    const b = { ...fixa('b', 200, 100, 300), conjuntoRigido: 'g' };
+    const r = encaixar([a, b, fixa('c', 0, 60, 200)], mesa());
+    expect(r.pecasColocadas).toHaveLength(3);
+    expect(r.comprimentoUtilizadoMm).toBeLessThan(350);
+    const [ma, mb, mc] = ['a', 'b', 'c'].map((id) => r.pecasColocadas.find((p) => p.idOriginal === id)!.molde.contorno);
+    expect(contornosSeSobrepoem(mc!, ma!)).toBe(false);
+    expect(contornosSeSobrepoem(mc!, mb!)).toBe(false);
+  });
+
+  it('o grupo que se toca ocupa a volta dele', () => {
+    const o = comOcupacao([{ ...fixa('a', 0, 100, 300), conjuntoRigido: 'g' }, { ...fixa('b', 50, 100, 300), conjuntoRigido: 'g' }]);
+    expect(o.pecas[0]!.contorno).toHaveLength(4);
+  });
+
+  it('a costura passa por todos os pontos das peças, e a área é a soma delas', () => {
+    const q = [ponto(0, 0), ponto(10, 0), ponto(10, 10), ponto(0, 10)];
+    const costura = costurarContornos([q, q.map((p) => ponto(p.x + 30, p.y))]);
+    expect(costura).toHaveLength(10);
+    expect(Math.abs(areaAssinada(costura))).toBeCloseTo(200, 6);
+  });
+
+  it('a peça mantida no lugar bloqueia a forma dela: o encaixe usa o vão', () => {
+    const emL = { ...peca('l'), contorno: [ponto(0, 0), ponto(300, 0), ponto(300, 100), ponto(100, 100), ponto(100, 300), ponto(0, 300)] };
+    const e = { ...mesa(), obstaculos: [linhaDeCorteDaPeca(emL)] };
+    const r = encaixar([fixa('c', 0, 180, 180)], e);
+    expect(r.pecasColocadas).toHaveLength(1);
+    expect(retanguloEnvolvente(r.pecasColocadas[0]!.molde.contorno).minY).toBeLessThan(200);
+    expect(contornosSeSobrepoem(r.pecasColocadas[0]!.molde.contorno, emL.contorno)).toBe(false);
   });
 });

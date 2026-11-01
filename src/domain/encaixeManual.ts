@@ -107,7 +107,7 @@ export function moverAteEncostar(peca: Molde, outras: readonly Molde[], enfesto:
   const ate = { direita: util.maxY - caixa.maxY, esquerda: caixa.minY - util.minY, baixo: util.maxX - caixa.maxX, cima: caixa.minX - util.minX }[direcao];
   if (ate <= 0) return { x: 0, y: 0 };
   const v = VETOR_DA_DIRECAO[direcao];
-  const existentes = [...outras.map(linhaDeCorteDaPeca), ...(enfesto.zonasBloqueadas ?? []).map(contornoDaZona)];
+  const existentes = [...outras.map(linhaDeCorteDaPeca), ...(enfesto.obstaculos ?? []), ...(enfesto.zonasBloqueadas ?? []).map(contornoDaZona)];
   const caixas = existentes.map(caixaDe);
   const livre = (d: number): boolean =>
     lugarLivre(transladarContorno(corte, { x: v.x * d, y: v.y * d }), existentes, caixas, enfesto.distanciaMinimaEntrePecasMm, FOLGA_DO_ENCOSTO_MM);
