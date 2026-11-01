@@ -8,7 +8,6 @@ import type { FichaTecnica } from '../domain/fichaTecnica';
 import type { RegrasDeCaimento } from '../domain/recomendacaoDeTamanho';
 import type { ImagemDoModelo } from '../domain/imagens';
 import {
-  corpoDoManequim,
   LIMITES_DA_MEDIDA,
   malhaDoCorpo,
   manequimDoTamanho,
@@ -46,6 +45,8 @@ import {
   type PresetDeTecido,
   type Tecido3D,
   COR_DE_PARTIDA,
+  corpoDaMontagem,
+  tramaDoTecido,
 } from '../domain/montagem3d';
 import { corNaVariante, type VarianteDeCor } from '../domain/desenhoTecnico';
 import { aberturaDasCosturas, alturasDoTecido, assentou, avancar, botoesDaSimulacao, ligarAutoColisao, maiorPenetracao, montarSimulacao, tensoes, TEMPO_DA_COSTURA_S, type Simulacao } from '../domain/simulacaoDoTecido';
@@ -53,18 +54,18 @@ import {
   cameraDeFrente,
   corDaTensao,
   corRgb,
-  desenharCena,
-  desenharSombraNoChao,
+  COR_DO_CORPO,
   guinadasDoGiro,
-  luzDoTom,
-  montarCena,
   pontoDoCorpoNaTela,
   projecao,
-  TONS_DA_ESTAMPA,
+  vistaDaProjecao,
   type Camera3D,
-  type EstampaPronta,
-  type TecidoParaDesenhar,
+  type Projecao,
 } from './cena3d';
+import { QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type QualidadeDoEstudio } from './estudio3d';
+import { imagemDoEstudio } from './imagemDoEstudio';
+import { loteDoCorpo } from './malhasDoEstudio';
+import { lotesDoTecido, type PecaParaOEstudio, type TecidoParaOEstudio } from './lotesDoTecido';
 import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
 import { ROTULO_DA_POSE, type PoseDoManequim, type Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
@@ -89,11 +90,19 @@ interface Montada {
   readonly sim: Simulacao;
   readonly corpo: CorpoDoManequim;
   readonly malhaDoCorpo: MalhaDoCorpo;
+  /** O corpo pronto para o estúdio, por refino (feito uma vez). */
+  readonly lotesDoCorpo: (LoteDoEstudio | undefined)[];
   readonly botoes: ReturnType<typeof botoesDaSimulacao>;
   readonly uvs: ReadonlyMap<string, Float64Array>;
 }
 
 const TEMPO_MAXIMO_S = 10;
+/** Quantos pontos tem a imagem rápida (a que acompanha o arrasto e a simulação), no máximo. */
+const PONTOS_DA_IMAGEM_RAPIDA = 260_000;
+/** Quanto a tela fica parada antes de a imagem final ser calculada (ms). */
+const ESPERA_DA_IMAGEM_FINAL_MS = 180;
+/** A qualidade da imagem salva: nas muito grandes, os pontos a mais já vêm do tamanho. */
+const qualidadeDaImagem = (fator: number): QualidadeDoEstudio => ({ ...QUALIDADE_FINAL, sombraPx: 2048, superamostragem: fator >= 3 ? 1 : 2 });
 const VISTAS: ReadonlyArray<readonly [string, number]> = [
   ['Frente', 0],
   ['Lado', -Math.PI / 2],
@@ -144,8 +153,11 @@ export function PainelDoProvador3D(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const montadaRef = useRef<Montada | null>(null);
   const arrastoRef = useRef<{ x: number; y: number; camera: Camera3D } | null>(null);
-  /** Cada imagem de estampa reduzida e sombreada em cada tom (feita uma vez). */
-  const tonsRef = useRef(new Map<string, HTMLCanvasElement[]>());
+  /** Os pixels de cada imagem de estampa, reduzida (feita uma vez). */
+  const pixelsDasImagensRef = useRef(new Map<string, { largura: number; altura: number; rgba: Uint8ClampedArray }>());
+  /** O cancelamento do cálculo final em andamento, e o relógio que espera a tela parar para pedir outro. */
+  const finalRef = useRef<{ cancelar: () => void } | null>(null);
+  const relogioDoFinalRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // A montagem mudada vai para o projeto meio segundo depois da última mudança (e ao fechar).
   const { onGuardar } = props;
@@ -201,7 +213,7 @@ export function PainelDoProvador3D(props: {
   /** A simulação da montagem de agora (refeita se a física mudou). */
   const obterMontada = useCallback((): Montada => {
     if (montadaRef.current && montadaRef.current.chave === chaveDaFisica) return montadaRef.current;
-    const corpo = corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose);
+    const corpo = corpoDaMontagem(montagem);
     const malhas = malhasDasInstancias(instancias, montagem.pecas, montagem.resolucaoMm, costurasValidas);
     const sim = montarSimulacao({ corpo, instancias, configuracoes: montagem.pecas, malhas, costuras: costurasValidas, tecido: montagem.tecido });
     ligarAutoColisao(sim, montagem.autoColisao !== false);
@@ -216,34 +228,27 @@ export function PainelDoProvador3D(props: {
       }
       uvs.set(p.chave, uv);
     }
-    montadaRef.current = { chave: chaveDaFisica, sim, corpo, malhaDoCorpo: malhaDoCorpo(corpo), botoes: botoesDaSimulacao(sim, instancias), uvs };
+    montadaRef.current = { chave: chaveDaFisica, sim, corpo, malhaDoCorpo: malhaDoCorpo(corpo), lotesDoCorpo: [], botoes: botoesDaSimulacao(sim, instancias), uvs };
     return montadaRef.current;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a chave da física resume a montagem que importa aqui
   }, [chaveDaFisica]);
 
-  /** A imagem reduzida (até 512 px) e escurecida em cada tom de luz, guardada para os próximos desenhos. */
-  const tonsDaImagem = useCallback((id: string, img: HTMLImageElement): HTMLCanvasElement[] | null => {
-    const prontos = tonsRef.current.get(id);
+  /** Os pixels da imagem (até 1024 px), guardados para os próximos desenhos. */
+  const pixelsDaImagem = useCallback((id: string, img: HTMLImageElement): { largura: number; altura: number; rgba: Uint8ClampedArray } | null => {
+    const prontos = pixelsDasImagensRef.current.get(id);
     if (prontos) return prontos;
-    const escala = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.max(1, Math.round(img.naturalWidth * escala));
-    const h = Math.max(1, Math.round(img.naturalHeight * escala));
-    const tons: HTMLCanvasElement[] = [];
-    for (let tom = 0; tom < TONS_DA_ESTAMPA; tom++) {
-      const c = document.createElement('canvas');
-      c.width = w;
-      c.height = h;
-      const cx = c.getContext('2d');
-      if (!cx) return null;
-      cx.drawImage(img, 0, 0, w, h);
-      // Escurece pelo tom: o preto por cima, com a transparência da sombra (só onde a imagem tem tinta).
-      cx.globalCompositeOperation = 'source-atop';
-      cx.fillStyle = `rgba(0,0,0,${(1 - luzDoTom(tom)).toFixed(3)})`;
-      cx.fillRect(0, 0, w, h);
-      tons.push(c);
-    }
-    tonsRef.current.set(id, tons);
-    return tons;
+    const escala = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+    const largura = Math.max(1, Math.round(img.naturalWidth * escala));
+    const altura = Math.max(1, Math.round(img.naturalHeight * escala));
+    const c = document.createElement('canvas');
+    c.width = largura;
+    c.height = altura;
+    const cx = c.getContext('2d');
+    if (!cx) return null;
+    cx.drawImage(img, 0, 0, largura, altura);
+    const novos = { largura, altura, rgba: cx.getImageData(0, 0, largura, altura).data };
+    pixelsDasImagensRef.current.set(id, novos);
+    return novos;
   }, []);
 
   // A cor do modelo (ADR 0152): as variantes do desenho técnico vistas no 3D; só a vista muda, a física não.
@@ -252,55 +257,34 @@ export function PainelDoProvador3D(props: {
   const [varianteId, setVarianteId] = useState('');
   const varianteAtual = variantesDeCor.find((v) => v.id === varianteId) ?? null;
 
-  /** Desenha a cena no canvas dado (o da janela, ou um à parte para a imagem). */
-  const desenharEm = useCallback(
-    (canvas: HTMLCanvasElement, cam: Camera3D, fundo: string | null, variante: VarianteDeCor | null = varianteAtual): boolean => {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return false;
+  /** Os lotes da cena de agora para o estúdio; `refino`: quantas vezes o tecido e o corpo são subdivididos. */
+  const lotesDaCena = useCallback(
+    (variante: VarianteDeCor | null, refino: number): LoteDoEstudio[] => {
       const m = obterMontada();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      if (fundo) {
-        ctx.fillStyle = fundo;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      } else ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const proj = projecao(cam, canvas.width, canvas.height, m.corpo.alturaMm);
-      const estampas = new Map<string, EstampaPronta>();
-      const pecas: TecidoParaDesenhar['pecas'][number][] = [];
-      for (const p of m.sim.pecas) {
+      const pecas: PecaParaOEstudio[] = m.sim.pecas.map((p) => {
         const config = montagem.pecas[p.chave]!;
         const inst = instancias.find((i) => i.chave === p.chave)!;
         const e = config.estampa;
         const img = e ? imagensProntas.get(e.imagemId) : undefined;
-        const tons = e && img && img.naturalWidth > 0 ? tonsDaImagem(e.imagemId, img) : null;
-        if (e && tons) {
-          const padroes = tons.map((c) => ctx.createPattern(c, e.modo === 'corrida' ? 'repeat' : 'no-repeat')).filter((x): x is CanvasPattern => x !== null);
-          if (padroes.length === TONS_DA_ESTAMPA) {
-            const w = tons[0]!.width;
-            const h = tons[0]!.height;
-            const s = e.larguraMm / w;
-            estampas.set(p.chave, {
-              padroes,
-              imagemParaFace: e.modo === 'corrida' ? [s, 0, 0, -s, 0, 0] : [s, 0, 0, -s, (-s * w) / 2, e.alturaMm + (s * h) / 2],
-            });
-          }
-        }
-        const base = {
+        const pixels = e && img && img.naturalWidth > 0 ? pixelsDaImagem(e.imagemId, img) : null;
+        const base: PecaParaOEstudio = {
           chave: p.chave,
           primeiroTriangulo: p.primeiroTriangulo,
           quantidade: p.malha.triangulos.length / 3,
+          inicio: p.inicio,
+          uv: m.uvs.get(p.chave)!,
           cor: corRgb(desenhoDaFicha ? corNaVariante(config.cor, desenhoDaFicha, variante, COR_DE_PARTIDA) : config.cor),
           espelhada: inst.espelhada,
-          inicio: p.inicio,
-          camada: config.posicao === 'sobre-outra-peca' ? 1 : 0,
         };
-        const uv = estampas.has(p.chave) ? m.uvs.get(p.chave) : undefined;
-        pecas.push(uv ? { ...base, uv } : base);
-      }
-      const tecido: TecidoParaDesenhar = {
+        return e && pixels ? { ...base, estampa: { ...pixels, larguraMm: e.larguraMm, modo: e.modo, alturaMm: e.alturaMm } } : base;
+      });
+      const tecido: TecidoParaOEstudio = {
         x: m.sim.x,
         triangulos: m.sim.triangulos,
         pecas,
         botoes: m.botoes,
+        costuras: { a: m.sim.costuraA, b1: m.sim.costuraB1, b2: m.sim.costuraB2 },
+        trama: tramaDoTecido(montagem.tecido),
         ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}),
         ...(montagem.tecido.brilho ? { brilho: montagem.tecido.brilho } : {}),
         ...(montagem.tecido.transparencia ? { transparencia: montagem.tecido.transparencia } : {}),
@@ -308,27 +292,78 @@ export function PainelDoProvador3D(props: {
           .filter((c) => c.ziperMm)
           .map((c) => ({ pontos: m.sim.cadeiasDasCosturas.find((x) => x.id === c.id)?.pontos ?? new Uint32Array(0), comprimentoMm: c.ziperMm! })),
       };
-      desenharSombraNoChao(ctx, proj);
-      desenharCena(ctx, montarCena(proj, m.malhaDoCorpo, tecido), estampas);
-      // O desenho no corpo, por cima: o contorno vermelho, fechado com três pontos ou mais, e os pontos.
+      m.lotesDoCorpo[refino] ??= loteDoCorpo(m.malhaDoCorpo.vertices, m.malhaDoCorpo.triangulos, COR_DO_CORPO, refino);
+      return [m.lotesDoCorpo[refino], ...lotesDoTecido(tecido, modo === 'tensao' ? 0 : refino + 1)];
+    },
+    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido, instancias, imagensProntas, modo, pixelsDaImagem, desenhoDaFicha],
+  );
+
+  /** O desenho no corpo, por cima da imagem: o contorno vermelho, fechado com três pontos ou mais, e os pontos. */
+  const pintarPorCima = useCallback(
+    (ctx: CanvasRenderingContext2D, proj: Projecao): void => {
       const naTela = pontosDoDesenho.map((p) => proj.projetar(p.x, p.y, p.z)).filter((p): p is NonNullable<typeof p> => p !== null);
-      if (naTela.length > 0) {
-        ctx.strokeStyle = '#d32f2f';
-        ctx.fillStyle = '#d32f2f';
-        ctx.lineWidth = 2.5;
+      if (naTela.length === 0) return;
+      ctx.strokeStyle = '#d32f2f';
+      ctx.fillStyle = '#d32f2f';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      naTela.forEach((p, i) => (i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy)));
+      if (naTela.length >= 3) ctx.closePath();
+      ctx.stroke();
+      for (const p of naTela) {
         ctx.beginPath();
-        naTela.forEach((p, i) => (i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy)));
-        if (naTela.length >= 3) ctx.closePath();
-        ctx.stroke();
-        for (const p of naTela) {
-          ctx.beginPath();
-          ctx.arc(p.sx, p.sy, 4, 0, 2 * Math.PI);
-          ctx.fill();
-        }
+        ctx.arc(p.sx, p.sy, 4, 0, 2 * Math.PI);
+        ctx.fill();
       }
+    },
+    [pontosDoDesenho],
+  );
+
+  /** A imagem rápida no canvas dado: em tamanho menor quando a área é grande, para acompanhar o arrasto. */
+  const desenharRapido = useCallback(
+    (canvas: HTMLCanvasElement, cam: Camera3D, fundo: FundoDoEstudio, variante: VarianteDeCor | null = varianteAtual): boolean => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return false;
+      const alturaDaCena = obterMontada().corpo.alturaMm;
+      const fator = Math.min(1, Math.sqrt(PONTOS_DA_IMAGEM_RAPIDA / Math.max(1, canvas.width * canvas.height)));
+      const largura = Math.max(1, Math.round(canvas.width * fator));
+      const altura = Math.max(1, Math.round(canvas.height * fator));
+      const rgba = renderizarEstudio(vistaDaProjecao(projecao(cam, largura, altura, alturaDaCena), alturaDaCena), lotesDaCena(variante, 0), QUALIDADE_RAPIDA, fundo);
+      const imagem = new ImageData(new Uint8ClampedArray(rgba), largura, altura);
+      if (largura === canvas.width && altura === canvas.height) ctx.putImageData(imagem, 0, 0);
+      else {
+        const menor = document.createElement('canvas');
+        menor.width = largura;
+        menor.height = altura;
+        menor.getContext('2d')?.putImageData(imagem, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(menor, 0, 0, canvas.width, canvas.height);
+      }
+      pintarPorCima(ctx, projecao(cam, canvas.width, canvas.height, alturaDaCena));
       return true;
     },
-    [obterMontada, montagem.pecas, montagem.costuras, montagem.tecido.brilho, montagem.tecido.transparencia, instancias, imagensProntas, modo, tonsDaImagem, pontosDoDesenho, varianteAtual, desenhoDaFicha],
+    [obterMontada, lotesDaCena, pintarPorCima, varianteAtual],
+  );
+
+  /** A imagem final no canvas dado, calculada à parte: a janela não para. `cancelar` larga o cálculo. */
+  const desenharFinal = useCallback(
+    (canvas: HTMLCanvasElement, cam: Camera3D, fundo: FundoDoEstudio, variante: VarianteDeCor | null, qualidade: QualidadeDoEstudio): { pronta: Promise<boolean>; cancelar: () => void } => {
+      const alturaDaCena = obterMontada().corpo.alturaMm;
+      const proj = projecao(cam, canvas.width, canvas.height, alturaDaCena);
+      const pedido = imagemDoEstudio(vistaDaProjecao(proj, alturaDaCena), lotesDaCena(variante, 1), qualidade, fundo);
+      return {
+        cancelar: pedido.cancelar,
+        pronta: pedido.pronta.then((rgba) => {
+          const ctx = canvas.getContext('2d');
+          if (!rgba || !ctx) return false;
+          ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), canvas.width, canvas.height), 0, 0);
+          pintarPorCima(ctx, proj);
+          return true;
+        }),
+      };
+    },
+    [obterMontada, lotesDaCena, pintarPorCima],
   );
 
   const desenhar = useCallback((): void => {
@@ -339,8 +374,24 @@ export function PainelDoProvador3D(props: {
     const h = Math.max(200, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w) canvas.width = w;
     if (canvas.height !== h) canvas.height = h;
-    desenharEm(canvas, camera, null);
-  }, [desenharEm, camera]);
+    finalRef.current?.cancelar();
+    finalRef.current = null;
+    clearTimeout(relogioDoFinalRef.current);
+    if (!desenharRapido(canvas, camera, 'estudio')) return;
+    // Parado o movimento, a imagem final toma o lugar da rápida.
+    relogioDoFinalRef.current = setTimeout(() => {
+      const pedido = desenharFinal(canvas, camera, 'estudio', varianteAtual, QUALIDADE_FINAL);
+      finalRef.current = pedido;
+    }, ESPERA_DA_IMAGEM_FINAL_MS);
+  }, [desenharRapido, desenharFinal, camera, varianteAtual]);
+
+  useEffect(
+    () => () => {
+      finalRef.current?.cancelar();
+      clearTimeout(relogioDoFinalRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     desenhar();
@@ -428,17 +479,17 @@ export function PainelDoProvador3D(props: {
     }
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    cores.forEach(([nome, variante], i) => {
+    for (const [i, [nome, variante]] of cores.entries()) {
       const parte = document.createElement('canvas');
       parte.width = largura;
       parte.height = altura;
-      desenharEm(parte, camera, '#ffffff', variante);
+      await desenharFinal(parte, camera, 'branco', variante, qualidadeDaImagem(fatorDaImagem)).pronta;
       ctx.drawImage(parte, i * largura, 0);
       ctx.fillStyle = '#1f2933';
       ctx.font = `600 ${22 * fatorDaImagem}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(nome, i * largura + largura / 2, altura + 38 * fatorDaImagem);
-    });
+    }
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
     if (!blob) {
       setMensagem('Não foi possível gerar a imagem neste computador.');
@@ -463,17 +514,18 @@ export function PainelDoProvador3D(props: {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const vistas = todas ? VISTAS : [['Esta vista', camera.guinada] as const];
-    vistas.forEach(([nome, guinada], i) => {
+    for (const [i, [nome, guinada]] of vistas.entries()) {
       const parte = document.createElement('canvas');
       parte.width = todas ? largura : canvas.width;
       parte.height = altura;
-      desenharEm(parte, { ...camera, guinada, ...(todas ? { arfagem: 0.08, distancia: cameraDeFrente(montagem.manequim.medidas.alturaCm * 10).distancia } : {}) }, '#ffffff');
+      const cam = { ...camera, guinada, ...(todas ? { arfagem: 0.08, distancia: cameraDeFrente(montagem.manequim.medidas.alturaCm * 10).distancia } : {}) };
+      await desenharFinal(parte, cam, 'branco', varianteAtual, qualidadeDaImagem(fatorDaImagem)).pronta;
       ctx.drawImage(parte, i * parte.width, 0);
       ctx.fillStyle = '#1f2933';
       ctx.font = `600 ${22 * fatorDaImagem}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(todas ? nome : props.nomeDoModelo, i * parte.width + parte.width / 2, altura + 38 * fatorDaImagem);
-    });
+    }
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
     if (!blob) {
       setMensagem('Não foi possível gerar a imagem neste computador.');
@@ -514,7 +566,7 @@ export function PainelDoProvador3D(props: {
     setMensagem('Gravando o giro…');
     gravador.start();
     for (const guinada of guinadasDoGiro(camera.guinada, 90)) {
-      desenharEm(canvas, { ...camera, guinada }, '#ffffff');
+      desenharRapido(canvas, { ...camera, guinada }, 'branco');
       await new Promise((r) => setTimeout(r, 1000 / 30));
     }
     gravador.stop();
@@ -661,7 +713,7 @@ export function PainelDoProvador3D(props: {
               montagem={montagem}
               onMudar={(costuras) => setMontagem((m) => ({ ...m, costuras }))}
               onSugerir={() => {
-                const novas = sugerirCosturas(corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose), instancias, montagem, props.novoId);
+                const novas = sugerirCosturas(corpoDaMontagem(montagem), instancias, montagem, props.novoId);
                 setMensagem(novas.length > 0 ? `${novas.length} costura(s) sugerida(s): confira na lista.` : 'Nenhuma costura nova a sugerir (as que sobram se escolhem à mão).');
                 if (novas.length > 0) setMontagem((m) => ({ ...m, costuras: [...m.costuras, ...novas] }));
               }}
@@ -1077,7 +1129,7 @@ function ParteCosturas(props: {
     const [a, b] = lados as [{ chave: string; de: number; ate: number }, { chave: string; de: number; ate: number }];
     const ia = props.instancias.find((i) => i.chave === a.chave)!;
     const ib = props.instancias.find((i) => i.chave === b.chave)!;
-    const corpo = corpoDoManequim(props.montagem.manequim.medidas, props.montagem.manequim.pose);
+    const corpo = corpoDaMontagem(props.montagem);
     const invertida = sentidoSugerido(corpo, { inst: ia, config: props.montagem.pecas[a.chave]!, de: a.de, ate: a.ate }, { inst: ib, config: props.montagem.pecas[b.chave]!, de: b.de, ate: b.ate });
     props.onMudar([...props.montagem.costuras, { id: props.novoId(), a: { chave: a.chave, de: a.de, ate: a.ate, assinatura: ia.assinatura }, b: { chave: b.chave, de: b.de, ate: b.ate, assinatura: ib.assinatura }, invertida }]);
     setLados((l) => l.map((x) => ({ ...x, de: null, ate: null })));

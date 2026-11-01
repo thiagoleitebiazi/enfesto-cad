@@ -70,24 +70,20 @@ describe('o manequim', () => {
     expect(volta(FEMININO.niveis.cintura)).toBeCloseTo(720, -1);
     expect(volta(FEMININO.niveis.quadril)).toBeCloseTo(1000, -1);
     expect(FEMININO.alturaMm).toBe(1650);
-    expect(FEMININO.cabeca.centro.y + FEMININO.cabeca.raios.y).toBeGreaterThan(1580);
-    expect(FEMININO.cabeca.centro.y + FEMININO.cabeca.raios.y).toBeLessThan(1700);
   });
 
   it('a distância ao corpo: dentro é negativa, fora positiva, e a normal aponta para fora', () => {
     const y = FEMININO.niveis.cintura;
-    const s = secaoNaAltura(FEMININO, y)!;
-    const dentro = distanciaAoCorpo(FEMININO, 0, y, s.b - 10);
-    expect(dentro.d).toBeCloseTo(-10, 0);
-    expect(dentro.nz).toBeGreaterThan(0.95);
-    const fora = distanciaAoCorpo(FEMININO, 0, y, s.b + 20);
-    expect(fora.d).toBeCloseTo(20, 0);
-    // No ombro inclinado a normal sobe.
-    const ombro = distanciaAoCorpo(FEMININO, 110, FEMININO.niveis.ombro + 10, 0);
+    expect(distanciaAoCorpo(FEMININO, 0, y, 30).d).toBeLessThan(-20);
+    const fora = distanciaAoCorpo(FEMININO, 0, y, 200);
+    expect(fora.d).toBeGreaterThan(60);
+    expect(fora.nz).toBeGreaterThan(0.9);
+    // Em cima do ombro a normal sobe.
+    const ombro = distanciaAoCorpo(FEMININO, 110, FEMININO.niveis.ombro + 25, FEMININO.bracos.esquerdo.inicio.z);
     expect(ombro.ny).toBeGreaterThan(0.2);
     // No meio do braço.
     const b = FEMININO.bracos.direito;
-    expect(distanciaAoCorpo(FEMININO, b.meio.x, b.meio.y, b.meio.z).d).toBeLessThan(-30);
+    expect(distanciaAoCorpo(FEMININO, b.meio.x, b.meio.y, b.meio.z).d).toBeLessThan(-10);
   });
 
   it('a malha do corpo: os triângulos com a frente para fora', () => {

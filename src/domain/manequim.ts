@@ -1,13 +1,15 @@
+import type { CampoDoCorpo, MalhaHumana } from './corpoHumano';
+import { campoDoCorpo, lerCampo, malhaHumana, proporcoesDoCorpo } from './corpoHumano';
 import type { FichaTecnica } from './fichaTecnica';
 import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
 import { guiaDeMedidas } from './recomendacaoDeTamanho';
 
 /**
- * O manequim do provador 3D (ADR 0111): um corpo feito pelas medidas — o tronco em seções elípticas empilhadas (do
- * gancho ao pescoço), os braços e as pernas em cones arredondados, a cabeça num elipsoide. Serve para duas coisas:
- * o desenho (a malha de triângulos) e a colisão do tecido (o ponto que entra no corpo é empurrado para fora, pela
- * normal da superfície). Em mm, com o y para cima, o chão em y = 0 e a frente do corpo para +z; o lado direito do
- * manequim fica em −x (quem olha de frente o vê à esquerda).
+ * O manequim do provador 3D (ADR 0111): as medidas, os níveis do corpo e a posição dos braços e das pernas. O tronco em
+ * seções elípticas empilhadas (do gancho ao pescoço) serve para arrumar as peças em volta do corpo. O corpo que se vê e
+ * em que o tecido bate é a malha humana ajustada a essas medidas (ADR 0229): o ponto que entra nele é empurrado para
+ * fora pela normal da superfície. Em mm, com o y para cima, o chão em y = 0 e a frente do corpo para +z; o lado direito
+ * do manequim fica em −x (quem olha de frente o vê à esquerda).
  */
 
 export interface MedidasDoManequim {
@@ -136,23 +138,25 @@ export interface SecaoDoTronco {
   readonly b: number;
 }
 
-/** Um cone arredondado (um braço, uma perna): do ponto `p0` (raio `r0`) ao `p1` (raio `r1`). */
-export interface Capsula {
-  readonly p0: Ponto3D;
-  readonly p1: Ponto3D;
-  readonly r0: number;
-  readonly r1: number;
-}
-
 export interface CorpoDoManequim {
   readonly medidas: MedidasDoManequim;
+  /** A forma do corpo (ADR 0229). */
+  readonly publico: PublicoDoManequim;
+  readonly pose: PoseDoManequim;
   readonly alturaMm: number;
   /** De baixo para cima, do gancho ao alto do pescoço. */
   readonly tronco: readonly SecaoDoTronco[];
-  readonly capsulas: readonly Capsula[];
-  readonly cabeca: { readonly centro: Ponto3D; readonly raios: Ponto3D };
   /** As alturas de referência (mm), para pôr as peças. */
-  readonly niveis: { readonly gancho: number; readonly quadril: number; readonly cintura: number; readonly busto: number; readonly ombro: number; readonly pescoco: number };
+  readonly niveis: {
+    readonly gancho: number;
+    readonly quadril: number;
+    readonly cintura: number;
+    readonly busto: number;
+    readonly axila: number;
+    readonly ombro: number;
+    readonly pescoco: number;
+    readonly queixoDaMalha: number;
+  };
   /** Os braços (o direito em −x): o ombro, o cotovelo e o punho, e o raio no alto. */
   readonly bracos: { readonly direito: BracoOuPerna; readonly esquerdo: BracoOuPerna };
   readonly pernas: { readonly direita: BracoOuPerna; readonly esquerda: BracoOuPerna };
@@ -163,6 +167,8 @@ export interface BracoOuPerna {
   readonly meio: Ponto3D;
   readonly fim: Ponto3D;
   readonly raio: number;
+  /** Para onde a mão aponta, quando ela não segue o antebraço (a direção, com o tamanho 1). */
+  readonly mao?: Ponto3D;
 }
 
 /** O perímetro de uma elipse (Ramanujan). */
@@ -193,11 +199,17 @@ export const ROTULO_DA_POSE: Readonly<Record<PoseDoManequim, string>> = {
 };
 
 /** Quanto o braço sai do corpo (graus, da vertical) em cada pose. */
-const ABERTURA_DA_POSE: Readonly<Record<PoseDoManequim, number>> = { padrao: 15, 'bracos-abaixados': 7, 'bracos-abertos': 60, 'maos-na-cintura': 32 };
+const ABERTURA_DA_POSE: Readonly<Record<PoseDoManequim, number>> = { padrao: 15, 'bracos-abaixados': 7, 'bracos-abertos': 60, 'maos-na-cintura': 40 };
 
-export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoManequim = 'padrao'): CorpoDoManequim {
+/** A forma do corpo pelas medidas, para quem só tem as medidas: a criança pela altura, o resto pela diferença do quadril. */
+export const publicoDasMedidas = (m: MedidasDoManequim): PublicoDoManequim => (m.alturaCm < 150 ? 'infantil' : m.quadrilCm - m.cinturaCm >= 20 ? 'feminino' : 'masculino');
+
+export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoManequim = 'padrao', publicoDado?: PublicoDoManequim): CorpoDoManequim {
   const m = medidasConferidas(medidasDadas);
+  const publico = publicoDado ?? publicoDasMedidas(m);
   const H = m.alturaCm * 10;
+  const forma = proporcoesDoCorpo(publico);
+  const zEscala = H / forma.altura;
   const gancho = m.entrepernaCm * 10;
   const quadril = gancho + 0.06 * H;
   const cintura = Math.max(quadril + 0.05 * H, 0.625 * H);
@@ -232,59 +244,47 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoMan
 
   // Os braços, um pouco abertos (15°), saindo do ombro.
   const abertura = (ABERTURA_DA_POSE[pose] * Math.PI) / 180;
+  // O ombro fica onde o corpo o tem, um pouco para trás do meio do tronco; o braço relaxado cai reto dali.
+  const zOmbro = forma.z.ombro * zEscala;
   const braco = (lado: -1 | 1): BracoOuPerna => {
-    const inicio = p3(lado * (meioOmbro - raioDoBraco * 0.75), ombro - raioDoBraco * 0.9, 0);
+    const inicio = p3(lado * (meioOmbro - raioDoBraco * 0.75), ombro - raioDoBraco * 0.9, zOmbro);
     const d = p3(lado * Math.sin(abertura), -Math.cos(abertura), 0);
     const L = m.comprimentoDoBracoCm * 10;
-    const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, 0);
+    const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, pose === 'maos-na-cintura' ? zOmbro - 0.1 * L : zOmbro);
     if (pose === 'maos-na-cintura') {
-      // O antebraço volta do cotovelo para a cintura: a mão no lado do quadril, um pouco à frente.
+      // O cotovelo vai para o lado e para trás; o antebraço volta dele para a cintura, e o punho dobra: a mão fica deitada
+      // no lado do quadril, com os dedos para baixo e para a frente.
       const s = secaoNaAltura({ tronco } as unknown as CorpoDoManequim, cintura)!;
-      const alvo = p3(lado * (s.a + raioDoBraco * 0.5), cintura + 0.01 * H, s.b * 0.25);
+      const alvo = p3(lado * (s.a + raioDoBraco * 0.62), cintura + 0.005 * H, s.b * 0.3);
       const dx = alvo.x - meio.x;
       const dy = alvo.y - meio.y;
       const dz = alvo.z - meio.z;
       const l = Math.hypot(dx, dy, dz) || 1;
       const k = Math.min(1, (L * 0.45) / l);
-      return { inicio, meio, fim: p3(meio.x + dx * k, meio.y + dy * k, meio.z + dz * k), raio: raioDoBraco };
+      const [mx, my, mz] = [-lado * 0.3, -0.85, 0.43];
+      const ml = Math.hypot(mx, my, mz);
+      return { inicio, meio, fim: p3(meio.x + dx * k, meio.y + dy * k, meio.z + dz * k), raio: raioDoBraco, mao: p3(mx / ml, my / ml, mz / ml) };
     }
-    const fim = p3(inicio.x + d.x * L, inicio.y + d.y * L, 0);
+    // O cotovelo nunca fica travado: o antebraço vem um pouco à frente.
+    const fim = p3(inicio.x + d.x * L, inicio.y + d.y * L, zOmbro + 0.05 * L);
     return { inicio, meio, fim, raio: raioDoBraco };
   };
   const raioDaCoxa = (m.coxaCm * 10) / (2 * Math.PI);
   const perna = (lado: -1 | 1): BracoOuPerna => {
-    const inicio = p3(lado * raioDaCoxa * 0.98, gancho + raioDaCoxa * 0.5, 0);
-    const meio = p3(lado * (raioDaCoxa * 0.98 + 10), 0.285 * H, 0);
-    const fim = p3(lado * (raioDaCoxa * 0.98 + 25), 0.045 * H, 0);
+    const inicio = p3(lado * raioDaCoxa * 0.98, gancho + raioDaCoxa * 0.5, forma.z.quadril * zEscala);
+    const meio = p3(lado * (raioDaCoxa * 0.98 + 10), 0.285 * H, forma.z.joelho * zEscala);
+    const fim = p3(lado * (raioDaCoxa * 0.98 + 25), 0.045 * H, forma.z.tornozelo * zEscala);
     return { inicio, meio, fim, raio: raioDaCoxa };
   };
   const bracos = { direito: braco(-1), esquerdo: braco(1) };
   const pernas = { direita: perna(-1), esquerda: perna(1) };
-  const capsulas: Capsula[] = [];
-  for (const b of [bracos.direito, bracos.esquerdo]) {
-    capsulas.push({ p0: b.inicio, p1: b.meio, r0: b.raio, r1: b.raio * 0.78 });
-    capsulas.push({ p0: b.meio, p1: b.fim, r0: b.raio * 0.78, r1: b.raio * 0.55 });
-    // A mão: um cone curto depois do pulso, na mesma direção do braço — a manga comprida se apoia nela (sem a mão, a
-    // ponta da manga ficava sem nada embaixo e se torcia).
-    const dx = b.fim.x - b.meio.x;
-    const dy = b.fim.y - b.meio.y;
-    const dz = b.fim.z - b.meio.z;
-    const L = Math.hypot(dx, dy, dz) || 1;
-    const mao = 0.1 * H;
-    capsulas.push({ p0: b.fim, p1: p3(b.fim.x + (dx / L) * mao, b.fim.y + (dy / L) * mao, b.fim.z + (dz / L) * mao), r0: b.raio * 0.55, r1: b.raio * 0.45 });
-  }
-  for (const p of [pernas.direita, pernas.esquerda]) {
-    capsulas.push({ p0: p.inicio, p1: p.meio, r0: p.raio, r1: p.raio * 0.62 });
-    capsulas.push({ p0: p.meio, p1: p.fim, r0: p.raio * 0.62, r1: p.raio * 0.4 });
-  }
-  const cabeca = { centro: p3(0, pescocoAlto + 0.06 * H, 0.008 * H), raios: p3(0.046 * H, 0.068 * H, 0.056 * H) };
   return {
     medidas: m,
+    publico,
+    pose,
     alturaMm: H,
     tronco,
-    capsulas,
-    cabeca,
-    niveis: { gancho, quadril, cintura, busto, ombro, pescoco },
+    niveis: { gancho, quadril, cintura, busto, axila, ombro, pescoco, queixoDaMalha: pescocoAlto },
     bracos,
     pernas,
   };
@@ -346,72 +346,45 @@ export function raioMaximoDoTronco(corpo: CorpoDoManequim, y0: number, y1: numbe
   return r;
 }
 
-/**
- * A distância (aproximada) do ponto à superfície do corpo, com a normal para fora: negativa dentro do corpo. Vale o
- * pedaço do corpo em que o ponto mais entra (o tronco, um braço, uma perna, a cabeça).
- */
-export function distanciaAoCorpo(corpo: CorpoDoManequim, x: number, y: number, z: number): { d: number; nx: number; ny: number; nz: number } {
-  let melhor = { d: Infinity, nx: 0, ny: 1, nz: 0 };
-  // O tronco: a elipse da altura; a normal pelo gradiente de (x/a)² + (z/b)², com a inclinação das seções.
-  const s = secaoNaAltura(corpo, y);
-  if (s) {
-    const r = Math.sqrt((x / s.a) ** 2 + (z / s.b) ** 2);
-    const raio = Math.hypot(x, z);
-    const d = r > 1e-9 ? raio * (1 - 1 / r) : -Math.min(s.a, s.b);
-    let gx = (2 * x) / (s.a * s.a);
-    let gz = (2 * z) / (s.b * s.b);
-    let gy = (-2 * x * x * s.da) / (s.a * s.a * s.a) - (2 * z * z * s.db) / (s.b * s.b * s.b);
-    const g = Math.hypot(gx, gy, gz);
-    if (g > 1e-12) {
-      gx /= g;
-      gy /= g;
-      gz /= g;
-    } else {
-      gx = 0;
-      gy = 0;
-      gz = 1;
-    }
-    melhor = { d, nx: gx, ny: gy, nz: gz };
-  }
-  for (const c of corpo.capsulas) {
-    const dx = c.p1.x - c.p0.x;
-    const dy = c.p1.y - c.p0.y;
-    const dz = c.p1.z - c.p0.z;
-    const L2 = dx * dx + dy * dy + dz * dz;
-    const t = L2 > 0 ? Math.min(1, Math.max(0, ((x - c.p0.x) * dx + (y - c.p0.y) * dy + (z - c.p0.z) * dz) / L2)) : 0;
-    const cx = c.p0.x + dx * t;
-    const cy = c.p0.y + dy * t;
-    const cz = c.p0.z + dz * t;
-    const ex = x - cx;
-    const ey = y - cy;
-    const ez = z - cz;
-    const e = Math.hypot(ex, ey, ez);
-    const d = e - (c.r0 + (c.r1 - c.r0) * t);
-    if (d < melhor.d) melhor = e > 1e-9 ? { d, nx: ex / e, ny: ey / e, nz: ez / e } : { d, nx: 0, ny: 0, nz: 1 };
-  }
-  {
-    const { centro: c, raios: R } = corpo.cabeca;
-    const ex = x - c.x;
-    const ey = y - c.y;
-    const ez = z - c.z;
-    const r = Math.sqrt((ex / R.x) ** 2 + (ey / R.y) ** 2 + (ez / R.z) ** 2);
-    const e = Math.hypot(ex, ey, ez);
-    const d = r > 1e-9 ? e * (1 - 1 / r) : -R.x;
-    if (d < melhor.d) {
-      let gx = ex / (R.x * R.x);
-      let gy = ey / (R.y * R.y);
-      let gz = ez / (R.z * R.z);
-      const g = Math.hypot(gx, gy, gz) || 1;
-      gx /= g;
-      gy /= g;
-      gz /= g;
-      melhor = { d, nx: gx, ny: gy, nz: gz };
-    }
-  }
-  return melhor;
+// ---- O corpo que se vê e em que o tecido bate (ADR 0229)
+
+interface CorpoPronto {
+  readonly malha: MalhaHumana;
+  campo: CampoDoCorpo | null;
 }
 
-// ---- A malha (para o desenho)
+/** Os últimos corpos feitos, pela forma, pose e medidas: ajustar a malha e medir a grade custa um quarto de segundo. */
+const prontos = new Map<string, CorpoPronto>();
+const LIMITE_DE_CORPOS_PRONTOS = 8;
+
+function corpoPronto(corpo: CorpoDoManequim): CorpoPronto {
+  const chave = JSON.stringify([corpo.publico, corpo.pose, corpo.medidas]);
+  const achado = prontos.get(chave);
+  if (achado) return achado;
+  const novo: CorpoPronto = { malha: malhaHumana(corpo), campo: null };
+  if (prontos.size >= LIMITE_DE_CORPOS_PRONTOS) prontos.delete(prontos.keys().next().value!);
+  prontos.set(chave, novo);
+  return novo;
+}
+
+const camposDoCorpo = new WeakMap<CorpoDoManequim, CampoDoCorpo>();
+
+function campoDe(corpo: CorpoDoManequim): CampoDoCorpo {
+  const achado = camposDoCorpo.get(corpo);
+  if (achado) return achado;
+  const pronto = corpoPronto(corpo);
+  pronto.campo ??= campoDoCorpo(pronto.malha);
+  camposDoCorpo.set(corpo, pronto.campo);
+  return pronto.campo;
+}
+
+const leitura = new Float64Array(4);
+
+/** A distância do ponto à superfície do corpo, com a normal para fora: negativa dentro do corpo. */
+export function distanciaAoCorpo(corpo: CorpoDoManequim, x: number, y: number, z: number): { d: number; nx: number; ny: number; nz: number } {
+  lerCampo(campoDe(corpo), x, y, z, leitura);
+  return { d: leitura[0]!, nx: leitura[1]!, ny: leitura[2]!, nz: leitura[3]! };
+}
 
 export interface MalhaDoCorpo {
   /** Os vértices em x, y, z seguidos. */
@@ -420,110 +393,5 @@ export interface MalhaDoCorpo {
   readonly triangulos: Uint32Array;
 }
 
-/** A malha de triângulos do corpo, para o desenho (`lados` pontos em cada anel). */
-export function malhaDoCorpo(corpo: CorpoDoManequim, lados = 40): MalhaDoCorpo {
-  const v: number[] = [];
-  const t: number[] = [];
-  const anel = (pontos: Ponto3D[]): number => {
-    const inicio = v.length / 3;
-    for (const p of pontos) v.push(p.x, p.y, p.z);
-    return inicio;
-  };
-  /** Liga dois anéis (de `n` pontos cada) com a frente para fora. */
-  const ligar = (a: number, b: number, n: number): void => {
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      t.push(a + i, b + i, b + j, a + i, b + j, a + j);
-    }
-  };
-  /** Fecha um anel num ponto (a tampa). */
-  const tampar = (a: number, n: number, centro: Ponto3D, paraCima: boolean): void => {
-    const c = anel([centro]);
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      if (paraCima) t.push(a + i, c, a + j);
-      else t.push(a + i, a + j, c);
-    }
-  };
-  // O tronco: anéis nas seções e entre elas.
-  const ys: number[] = [];
-  for (let i = 0; i < corpo.tronco.length - 1; i++) {
-    const s0 = corpo.tronco[i]!;
-    const s1 = corpo.tronco[i + 1]!;
-    const partes = Math.max(3, Math.ceil((s1.y - s0.y) / 22));
-    for (let k = 0; k < partes; k++) ys.push(s0.y + ((s1.y - s0.y) * k) / partes);
-  }
-  ys.push(corpo.tronco[corpo.tronco.length - 1]!.y);
-  let anterior = -1;
-  let primeiro = -1;
-  for (const y of ys) {
-    const s = secaoNaAltura(corpo, y)!;
-    const pontos: Ponto3D[] = [];
-    // Em volta, de +z (a frente) para +x: o sentido que deixa a frente dos triângulos para fora.
-    for (let i = 0; i < lados; i++) {
-      const f = (2 * Math.PI * i) / lados;
-      pontos.push(p3(s.a * Math.sin(f), y, s.b * Math.cos(f)));
-    }
-    const atual = anel(pontos);
-    if (anterior >= 0) ligar(atual, anterior, lados);
-    else primeiro = atual;
-    anterior = atual;
-  }
-  tampar(primeiro, lados, p3(0, ys[0]!, 0), true);
-  // Os braços e as pernas: tubos com as pontas fechadas.
-  const n = Math.max(10, Math.round(lados / 2));
-  for (const c of corpo.capsulas) {
-    const dx = c.p1.x - c.p0.x;
-    const dy = c.p1.y - c.p0.y;
-    const dz = c.p1.z - c.p0.z;
-    const L = Math.hypot(dx, dy, dz) || 1;
-    const d = p3(dx / L, dy / L, dz / L);
-    // Dois vetores perpendiculares ao eixo.
-    const ref = Math.abs(d.z) < 0.9 ? p3(0, 0, 1) : p3(1, 0, 0);
-    let ux = d.y * ref.z - d.z * ref.y;
-    let uy = d.z * ref.x - d.x * ref.z;
-    let uz = d.x * ref.y - d.y * ref.x;
-    const ul = Math.hypot(ux, uy, uz) || 1;
-    ux /= ul;
-    uy /= ul;
-    uz /= ul;
-    const wx = d.y * uz - d.z * uy;
-    const wy = d.z * ux - d.x * uz;
-    const wz = d.x * uy - d.y * ux;
-    const roda = (centro: Ponto3D, r: number): Ponto3D[] => {
-      const ps: Ponto3D[] = [];
-      for (let i = 0; i < n; i++) {
-        const f = (2 * Math.PI * i) / n;
-        ps.push(p3(centro.x + r * (Math.cos(f) * ux + Math.sin(f) * wx), centro.y + r * (Math.cos(f) * uy + Math.sin(f) * wy), centro.z + r * (Math.cos(f) * uz + Math.sin(f) * wz)));
-      }
-      return ps;
-    };
-    const aneis: number[] = [];
-    for (let k = 0; k <= 8; k++) {
-      const f = k / 8;
-      aneis.push(anel(roda(p3(c.p0.x + dx * f, c.p0.y + dy * f, c.p0.z + dz * f), c.r0 + (c.r1 - c.r0) * f)));
-    }
-    for (let k = 0; k < aneis.length - 1; k++) ligar(aneis[k + 1]!, aneis[k]!, n);
-    tampar(aneis[0]!, n, p3(c.p0.x - d.x * c.r0 * 0.6, c.p0.y - d.y * c.r0 * 0.6, c.p0.z - d.z * c.r0 * 0.6), true);
-    tampar(aneis[aneis.length - 1]!, n, p3(c.p1.x + d.x * c.r1 * 0.6, c.p1.y + d.y * c.r1 * 0.6, c.p1.z + d.z * c.r1 * 0.6), false);
-  }
-  // A cabeça: uma esfera achatada.
-  {
-    const { centro: c, raios: R } = corpo.cabeca;
-    const faixas = 14;
-    const aneis: number[] = [];
-    for (let k = 1; k < faixas; k++) {
-      const fi = (Math.PI * k) / faixas;
-      const pontos: Ponto3D[] = [];
-      for (let i = 0; i < lados; i++) {
-        const f = (2 * Math.PI * i) / lados;
-        pontos.push(p3(c.x + R.x * Math.sin(fi) * Math.sin(f), c.y + R.y * Math.cos(fi), c.z + R.z * Math.sin(fi) * Math.cos(f)));
-      }
-      aneis.push(anel(pontos));
-    }
-    for (let k = 0; k < aneis.length - 1; k++) ligar(aneis[k]!, aneis[k + 1]!, lados);
-    tampar(aneis[0]!, lados, p3(c.x, c.y + R.y, c.z), false);
-    tampar(aneis[aneis.length - 1]!, lados, p3(c.x, c.y - R.y, c.z), true);
-  }
-  return { vertices: Float64Array.from(v), triangulos: Uint32Array.from(t) };
-}
+/** A malha de triângulos do corpo, para o desenho. */
+export const malhaDoCorpo = (corpo: CorpoDoManequim): MalhaDoCorpo => corpoPronto(corpo).malha;

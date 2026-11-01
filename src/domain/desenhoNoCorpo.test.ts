@@ -51,7 +51,8 @@ describe('o desenho no corpo vira o pré-molde (ADR 0134)', () => {
     const achado = pontoDoCorpoNaTela(proj, malhaDoCorpo(corpo), naTela.sx, naTela.sy)!;
     // A frente (z > 0), não as costas.
     expect(achado.z).toBeGreaterThan(0);
-    expect(Math.hypot(achado.x - alvo.x, achado.y - alvo.y, achado.z - alvo.z)).toBeLessThan(15);
+    // O ponto sai do corpo de verdade, um pouco à frente ou atrás da elipse que arruma as peças.
+    expect(Math.hypot(achado.x - alvo.x, achado.y - alvo.y, achado.z - alvo.z)).toBeLessThan(40);
     expect(pontoDoCorpoNaTela(proj, malhaDoCorpo(corpo), 5, 5)).toBeNull();
   });
 });

@@ -112,6 +112,9 @@ export interface Costura3D {
 
 export type PresetDeTecido = 'malha' | 'moletom' | 'tricoline' | 'jeans' | 'seda' | 'linho' | 'personalizado';
 
+/** Como os fios se cruzam: é o que se vê de perto e como a luz corre no pano. */
+export type TramaDoTecido = 'plana' | 'sarja' | 'malha' | 'cetim' | 'felpa' | 'linho';
+
 export interface Tecido3D {
   readonly preset: PresetDeTecido;
   /** Gramatura (g/m²). */
@@ -126,6 +129,8 @@ export interface Tecido3D {
   readonly rigidez: number;
   /** De 0 (escorrega) a 100 (agarra no corpo). */
   readonly atrito: number;
+  /** A trama; ausente: a do tecido pronto (ADR 0230). Só na vista. */
+  readonly trama?: TramaDoTecido;
   /** De 0 (fosco, como o algodão) a 100 (brilha, como o cetim): o reflexo da luz no tecido (ADR 0131). Só na vista. */
   readonly brilho?: number;
   /** De 0 (opaco) a 100 (deixa ver o corpo, como o voal): ADR 0131. Só na vista. */
@@ -142,6 +147,19 @@ export const TECIDOS_PRONTOS: Readonly<Record<Exclude<PresetDeTecido, 'personali
   seda: { nome: 'Seda / viscose', tecido: { preset: 'seda', pesoGm2: 90, elasticidade: 15, elasticidadeNaTrama: 22, elasticidadeNoVies: 85, rigidez: 5, atrito: 20, brilho: 55, transparencia: 10 } },
   linho: { nome: 'Linho', tecido: { preset: 'linho', pesoGm2: 180, elasticidade: 5, elasticidadeNaTrama: 12, elasticidadeNoVies: 72, rigidez: 65, atrito: 45 } },
 };
+
+/** A trama de cada tecido pronto, que o estúdio desenha (ADR 0230). O personalizado fica com a mais comum, a plana. */
+export const TRAMA_DO_PRESET: Readonly<Record<PresetDeTecido, TramaDoTecido>> = {
+  malha: 'malha',
+  moletom: 'felpa',
+  tricoline: 'plana',
+  jeans: 'sarja',
+  seda: 'cetim',
+  linho: 'linho',
+  personalizado: 'plana',
+};
+
+export const tramaDoTecido = (t: Tecido3D): TramaDoTecido => t.trama ?? TRAMA_DO_PRESET[t.preset];
 
 export interface ManequimDaMontagem {
   readonly publico: PublicoDoManequim;
@@ -734,8 +752,8 @@ function compararTrechos(a: Float64Array, b: Float64Array): { invertida: boolean
  * pontas (a barra da frente e a das costas se tocam nas pontas, mas o meio fica longe).
  */
 function ladoALado(d: readonly number[], comprimento: number): boolean {
-  const pontas = (d[0]! + d[4]!) / 2;
-  return d[2]! <= pontas + 40 && Math.max(...d) <= Math.max(160, comprimento * 0.4);
+  // Na peça evasê, as pontas ficam longe uma da outra só em cima: o meio não pode ir além da ponta mais afastada.
+  return d[2]! <= Math.max(d[0]!, d[4]!) + 40 && Math.max(...d) <= Math.max(160, comprimento * 0.4);
 }
 
 /**
@@ -1111,7 +1129,7 @@ export function pontosCosturadosDaPecaDeCima(inst: InstanciaDaPeca, girarGraus: 
 }
 
 /** O corpo da montagem. */
-export const corpoDaMontagem = (montagem: Montagem3D): CorpoDoManequim => corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose);
+export const corpoDaMontagem = (montagem: Montagem3D): CorpoDoManequim => corpoDoManequim(montagem.manequim.medidas, montagem.manequim.pose, montagem.manequim.publico);
 
 /** A malha de cada instância posta no corpo (as de fora não entram). */
 export function malhasDasInstancias(
