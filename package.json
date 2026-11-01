@@ -68,15 +68,20 @@
       "output": "release"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         {
           "target": "dmg",
@@ -91,6 +96,7 @@
       "artifactName": "Enfesto-CAD-${version}-mac.${ext}"
     },
     "dmg": {
+      "icon": "build/icon.icns",
       "title": "Enfesto CAD"
     }
   }
