@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
-import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
+import { comEmendaClicada, criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, type Molde } from './molde';
 import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, juntarAoEncaixe, pecasDoRisco, pecasDoTecido, separarParaOEncaixe } from './tecidosDoModelo';
 
@@ -58,5 +58,22 @@ describe('o que vai para o risco (ADR 0218)', () => {
   it('sem enfesto, não há mesa: todas saem', () => {
     const lista = [peca('a')];
     expect(pecasDoRisco(lista, null)).toBe(lista);
+  });
+});
+
+describe('a emenda clicada na mesa (ADR 0220)', () => {
+  it('entra na ordem, e arredondada', () => {
+    const r = comEmendaClicada(comEmendaClicada(enfesto(), 2000.4), 1000);
+    expect(r.emendasMm).toEqual([1000, 2000]);
+  });
+
+  it('o clique perto de uma emenda tira ela', () => {
+    expect(comEmendaClicada({ ...enfesto(), emendasMm: [1000, 2000] }, 1010).emendasMm).toEqual([2000]);
+  });
+
+  it('o clique fora da mesa não muda nada', () => {
+    const e = enfesto();
+    expect(comEmendaClicada(e, 3500)).toBe(e);
+    expect(comEmendaClicada(e, -5)).toBe(e);
   });
 });

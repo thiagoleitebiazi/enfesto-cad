@@ -389,6 +389,8 @@ interface AreaDeDesenhoProps {
   readonly opcoesDaCerca: OpcoesDeMoverCerca;
   readonly onDefinirCerca?: (cerca: Cerca) => void;
   readonly ferramentaDeVista: FerramentaDeVista | null;
+  /** Marcando na mesa (a emenda, ADR 0220): o clique vai para cá, e não para as ferramentas. */
+  readonly onClicarNaMesa?: ((mundo: Ponto2D) => void) | null;
   readonly onZoomJanelaConcluido?: () => void;
   /** "Zoom de um elemento": o clique, em mm do mundo (ADR 0181). */
   readonly onZoomNoElemento?: (ponto: Ponto2D, raioMm: number) => void;
@@ -505,6 +507,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     opcoesDaCerca,
     onDefinirCerca,
     ferramentaDeVista,
+    onClicarNaMesa,
     onZoomJanelaConcluido,
     onZoomNoElemento,
     estiloDaCostura = 'tracejada',
@@ -1940,6 +1943,11 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
     if (e.button !== 0) return;
     const tela = posicaoDoMouse(e);
 
+    if (onClicarNaMesa) {
+      onClicarNaMesa(telaParaMundo(tela, transform));
+      return;
+    }
+
     if (ferramentaDeVista === 'zoom-elemento') {
       onZoomNoElemento?.(telaParaMundo(tela, transform), 8 / transform.escalaPxPorMm);
       return;
@@ -2284,7 +2292,7 @@ export function AreaDeDesenho(props: AreaDeDesenhoProps): React.JSX.Element {
           onDoubleClick={aoClicarDuasVezes}
           onWheel={aoRolarMouse}
           onContextMenu={(e) => e.preventDefault()}
-          style={{ cursor: cursorDoCanvas }}
+          style={{ cursor: onClicarNaMesa ? 'crosshair' : cursorDoCanvas }}
         />
       </div>
     </div>

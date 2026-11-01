@@ -134,16 +134,24 @@ export function moverAteEncostar(peca: Molde, outras: readonly Molde[], enfesto:
  * isso se repete enquanto alguma andar. Com grupos, não mexe: os trechos da mesa não podem misturar.
  */
 export function compactarEncaixe(pecas: readonly Molde[], enfesto: ConfiguracaoDeEnfesto): readonly Molde[] {
-  if (pecas.some((p) => p.grupoDoEncaixe)) return pecas;
   const comEmendas = enfestoComEmendas(enfesto);
   const atual = [...pecas];
+  // Com grupos, a peça não pode entrar no trecho do grupo anterior: o que vem antes do começo do dela fica bloqueado.
+  const comGrupos = pecas.some((p) => p.grupoDoEncaixe);
+  const inicioDoGrupo = new Map<string, number>();
+  for (const p of pecas) {
+    const g = p.grupoDoEncaixe ?? '';
+    inicioDoGrupo.set(g, Math.min(inicioDoGrupo.get(g) ?? Infinity, retanguloEnvolvente(linhaDeCorteDaPeca(p)).minY));
+  }
+  const mesaDa = (peca: Molde): ConfiguracaoDeEnfesto =>
+    comGrupos ? { ...comEmendas, zonasBloqueadas: [...(comEmendas.zonasBloqueadas ?? []), { minX: 0, maxX: comEmendas.larguraUtilMm, minY: 0, maxY: inicioDoGrupo.get(peca.grupoDoEncaixe ?? '')! }] } : comEmendas;
   const ordem = atual.map((_, i) => i).sort((a, b) => retanguloEnvolvente(linhaDeCorteDaPeca(atual[a]!)).minY - retanguloEnvolvente(linhaDeCorteDaPeca(atual[b]!)).minY);
   for (let volta = 0; volta < VOLTAS_DA_COMPACTACAO; volta++) {
     let andou = false;
     for (const i of ordem) {
       for (const direcao of ['esquerda', 'cima'] as const) {
         const peca = atual[i]!;
-        const d = moverAteEncostar(peca, atual.filter((_, k) => k !== i), comEmendas, direcao);
+        const d = moverAteEncostar(peca, atual.filter((_, k) => k !== i), mesaDa(peca), direcao);
         if (Math.hypot(d.x, d.y) > 0.5) {
           atual[i] = transladarMolde(peca, d, peca.id);
           andou = true;

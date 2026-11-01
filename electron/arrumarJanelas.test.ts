@@ -44,10 +44,11 @@ describe('pôr a janela no lugar, e conferir', () => {
   const esperar = async (): Promise<void> => undefined;
 
   /** Uma janela de mentira: ignora os primeiros pedidos, como o Windows faz saindo do maximizado. */
-  const janela = (extra: { ignorar?: number; maximizada?: boolean; demoraParaRestaurar?: number; arredonda?: number } = {}) => {
+  const janela = (extra: { ignorar?: number; maximizada?: boolean; minimizada?: boolean; demoraParaRestaurar?: number; arredonda?: number } = {}) => {
     let ignorar = extra.ignorar ?? 0;
     let maximizada = extra.maximizada ?? false;
     let demora = extra.demoraParaRestaurar ?? 0;
+    let minimizada = extra.minimizada ?? false;
     let bounds: Retangulo = { x: 0, y: 0, width: 1280, height: 700 };
     const j = {
       pedidos: 0,
@@ -55,13 +56,17 @@ describe('pôr a janela no lugar, e conferir', () => {
       fechada: false,
       isDestroyed: () => j.fechada,
       isMaximized: () => maximizada,
+      isMinimized: () => minimizada,
+      restore: () => {
+        minimizada = false;
+      },
       unmaximize: () => {
         if (demora-- <= 0) maximizada = false;
       },
       getBounds: () => bounds,
       setBounds: (l: Retangulo) => {
         j.pedidos++;
-        if (maximizada || ignorar-- > 0) return;
+        if (maximizada || minimizada || ignorar-- > 0) return;
         bounds = { ...l, width: l.width + (extra.arredonda ?? 0) };
       },
       getMinimumSize: () => j.minimo,
@@ -90,6 +95,13 @@ describe('pôr a janela no lugar, e conferir', () => {
     const j = janela({ maximizada: true, demoraParaRestaurar: 2 });
     expect(await porNoLugar(j, LUGAR, esperar)).toBe(true);
     expect(j.isMaximized()).toBe(false);
+    expect(j.getBounds()).toEqual(LUGAR);
+  });
+
+  it('a janela minimizada volta e vai para o lugar: era ela que faltava no arranjo', async () => {
+    const j = janela({ minimizada: true });
+    expect(await porNoLugar(j, LUGAR, esperar)).toBe(true);
+    expect(j.isMinimized()).toBe(false);
     expect(j.getBounds()).toEqual(LUGAR);
   });
 

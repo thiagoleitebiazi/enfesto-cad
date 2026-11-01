@@ -481,7 +481,7 @@ import { COMPONENTES, componente, componenteNoProjeto, type TipoDeComponente } f
 import { recadoDaTroca, trocarMaterialNosModelos } from './domain/trocaDeMaterial';
 import { criarTecido, sentidoUnicoDoTecido, type Tecido } from './domain/tecido';
 import type { ConfiguracaoDeEnfesto } from './domain/enfesto';
-import { DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, segmentoDaLinha, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
+import { comEmendaClicada, DISTANCIA_PADRAO_ENTRE_PECAS_MM, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, segmentoDaLinha, criarConfiguracaoDeEnfesto, margensDaMesa } from './domain/enfesto';
 import { estadoDaValidacao, TOLERANCIAS_PADRAO, validarProjeto } from './domain/validacao';
 import { semLinhasQueSaem, semLinhasSoltas, semOQueSaiDasLinhas } from './domain/linhasSoltas';
 import { sugerirPosicaoSemSobreposicao, posicionarAsQueChegam } from './domain/posicionamento';
@@ -941,6 +941,16 @@ export default function App(): React.JSX.Element {
   // A fonte TrueType e o teclado virtual (ADR 0211). A leitura da fonte só vem quando há uma.
   const [fonteDoPlotter, setFonteDoPlotter] = useState<FonteDoPlotter | null>(null);
   const [mostrarTeclado, setMostrarTeclado] = useState(false);
+  // Marcando as emendas com o clique na mesa (ADR 0220): Esc termina.
+  const [marcandoEmenda, setMarcandoEmenda] = useState(false);
+  useEffect(() => {
+    if (!marcandoEmenda) return undefined;
+    const ouvir = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMarcandoEmenda(false);
+    };
+    window.addEventListener('keydown', ouvir);
+    return () => window.removeEventListener('keydown', ouvir);
+  }, [marcandoEmenda]);
   const usarFonte = useCallback(async (arquivo: { readonly nome: string; readonly bytes: Uint8Array } | null) => {
     if (!arquivo) return;
     const { fonteDoArquivo } = await import('./formats/fonteTrueType');
@@ -7183,6 +7193,7 @@ export default function App(): React.JSX.Element {
                 { valor: 'metodo-1', rotulo: 'Automático, método 1: entre uma distância mínima e uma máxima, onde o transpasse é menor' },
                 { valor: 'ida', rotulo: 'Automático, método 2: de espaço em espaço, do começo para o fim' },
                 { valor: 'volta', rotulo: 'Automático, método 2: de espaço em espaço, do fim para o começo' },
+                { valor: 'clicar', rotulo: 'Marcar clicando na mesa' },
                 { valor: 'apagar', rotulo: 'Apagar os pontos' },
               ],
               inicial: 'metodo-1',
@@ -7198,6 +7209,11 @@ export default function App(): React.JSX.Element {
             try {
               const comprimento = statusDoEncaixe(pecasNaMesa, enfesto).comprimentoMm;
               const modo = String(valores['modo']);
+              if (modo === 'clicar') {
+                setMarcandoEmenda(true);
+                avisar('Clique na mesa onde fica cada emenda. Clique de novo para tirar. Esc termina.');
+                return null;
+              }
               const pontos =
                 modo === 'apagar'
                   ? []
@@ -8517,6 +8533,7 @@ export default function App(): React.JSX.Element {
             contornoOriginal={lembrarOriginal ? (projetoAtual.estadoAtual.pecas.find((p) => p.id === selecionadoId)?.contorno ?? null) : null}
             imagens={imagens}
             pecas={pecasNaMesa}
+            onClicarNaMesa={marcandoEmenda && enfesto ? (mundo) => setEnfesto(comEmendaClicada(enfesto, mundo.y)) : null}
             selecionadoId={selecionadoId}
             idsSelecionadosEmLote={idsSelecionadosEmLote}
             enfesto={enfestoNaMesa}

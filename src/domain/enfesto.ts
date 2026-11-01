@@ -337,3 +337,14 @@ export function lerTextosNoRisco(texto: string): TextoNoRisco[] {
       return { y: Number(m[1]!.replace(',', '.')), x: Number(m[2]!.replace(',', '.')), texto: m[3]! };
     });
 }
+
+const PERTO_DA_EMENDA_MM = 15;
+
+/** A emenda clicada na mesa (ADR 0220): o clique perto de uma tira ela; fora da mesa, nada muda. */
+export function comEmendaClicada(enfesto: ConfiguracaoDeEnfesto, posicaoMm: number): ConfiguracaoDeEnfesto {
+  const atuais = enfesto.emendasMm ?? [];
+  const perto = atuais.find((e) => Math.abs(e - posicaoMm) <= PERTO_DA_EMENDA_MM);
+  if (perto !== undefined) return { ...enfesto, emendasMm: atuais.filter((e) => e !== perto) };
+  if (posicaoMm <= 0 || posicaoMm >= enfesto.comprimentoMm) return enfesto;
+  return { ...enfesto, emendasMm: [...atuais, Math.round(posicaoMm)].sort((a, b) => a - b) };
+}

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { area, ponto, retanguloEnvolvente } from '../core/geometria';
 import { gerarPlt } from '../formats/plt-exportacao';
 import { aplicarConjunto, comConjunto, conjuntosGuardados, guardarConjuntos, lerQuantidades, textoDasQuantidades } from '../ui/visaoDasPecas';
-import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe, voltarAoOriginal } from './encaixeManual';
+import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, compactarEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe, voltarAoOriginal } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto } from './enfesto';
-import { criarMolde, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, type Molde } from './molde';
+import { criarMolde, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, transladarMolde, type Molde } from './molde';
 import type { ResultadoDeNesting } from './nesting';
 import { fundirPiques } from './piques';
 import { comSentidoAlternado } from './tecidosDoModelo';
@@ -183,5 +183,18 @@ describe('a peça lembra que foi espelhada (ADR 0218)', () => {
   it('a cópia espelhada de um par continua espelhada', () => {
     const par = espelharMolde({ ...lados, emPar: true }, 'a');
     expect(voltarAoOriginal(par).espelhada).toBe(true);
+  });
+});
+
+describe('compactar com grupos (ADR 0220)', () => {
+  const e = criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 3000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 0 });
+  const em = (id: string, y: number, grupoDoEncaixe: string): Molde => ({ ...transladarMolde(quadrado({ quantidade: 1 }), { x: 100, y }, id), grupoDoEncaixe });
+
+  it('a folga dentro de um trecho fecha, e ninguém entra no trecho do outro', () => {
+    const r = compactarEncaixe([em('a', 0, 'A'), em('b', 500, 'A'), em('c', 1000, 'B'), em('d', 1600, 'B')], e);
+    const inicio = (id: string): number => retanguloEnvolvente(r.find((p) => p.id === id)!.contorno).minY;
+    expect(inicio('b')).toBeCloseTo(200, 1);
+    expect(inicio('c')).toBeCloseTo(1000, 1);
+    expect(inicio('d')).toBeCloseTo(1200, 1);
   });
 });

@@ -1113,7 +1113,8 @@ ipcMain.handle('janelas-arrumar', async (_evento, como: unknown) => {
     criarJanelaPrincipal();
     return true;
   }
-  const janelas = BrowserWindow.getAllWindows().filter((j) => j.isVisible() && !j.isMinimized());
+  // A minimizada entra: sem ela, "lado a lado" deixaria uma janela só, na tela inteira. As escondidas são as de trabalho.
+  const janelas = BrowserWindow.getAllWindows().filter((j) => j.isVisible() || j.isMinimized());
   const primeira = janelas[0];
   if (!primeira) return true;
   const area = screen.getDisplayMatching(primeira.getBounds()).workArea;

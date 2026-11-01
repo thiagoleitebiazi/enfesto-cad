@@ -565,6 +565,29 @@ async function principal() {
     conferir('o ASTM também, com um bloco por peça', Object.keys(lidoAstm.blocks).filter((b) => !b.startsWith('*')).length >= 3, `${Object.keys(lidoAstm.blocks).length} blocos`);
   });
 
+  await etapa('A emenda clicada na mesa', async () => {
+    await aba('Encaixe');
+    await botao('Pontos de emenda');
+    await marcarCaixa('Marcar clicando na mesa');
+    await botaoNaJanela('Aplicar');
+    await espera(400);
+    const r = JSON.parse(await js(`JSON.stringify(document.querySelector('.area-de-desenho-container canvas').getBoundingClientRect())`));
+    const [x, y] = [Math.round(r.left + r.width * 0.6), Math.round(r.top + r.height * 0.5)];
+    win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+    await espera(400);
+    await tecla('Escape');
+    const { enfesto } = await estadoGravado();
+    conferir('o clique marca a emenda', (enfesto.emendasMm || []).length === 1, JSON.stringify(enfesto.emendasMm));
+    const hpgl = await enviar();
+    conferir('e ela sai no risco', (hpgl || '').includes('LBEMENDA'));
+    await aba('Encaixe');
+    await botao('Pontos de emenda');
+    await marcarCaixa('Apagar os pontos');
+    await botaoNaJanela('Aplicar');
+    await espera(300);
+  });
+
   await etapa('O teclado virtual', async () => {
     await aba('Encaixe');
     await menu('Opções', 'Porta de saída');

@@ -33,7 +33,9 @@ export function ladoALado(quantas: number, area: Retangulo): Retangulo[] {
 export interface JanelaArrumavel {
   isDestroyed(): boolean;
   isMaximized(): boolean;
+  isMinimized(): boolean;
   unmaximize(): void;
+  restore(): void;
   getBounds(): Retangulo;
   setBounds(lugar: Retangulo): void;
   getMinimumSize(): number[];
@@ -47,7 +49,7 @@ const FOLGA_DO_ARRANJO_PX = 8;
 
 function estaNoLugar(janela: JanelaArrumavel, lugar: Retangulo): boolean {
   const b = janela.getBounds();
-  return !janela.isMaximized() && [b.x - lugar.x, b.y - lugar.y, b.width - lugar.width, b.height - lugar.height].every((d) => Math.abs(d) <= FOLGA_DO_ARRANJO_PX);
+  return !janela.isMaximized() && !janela.isMinimized() && [b.x - lugar.x, b.y - lugar.y, b.width - lugar.width, b.height - lugar.height].every((d) => Math.abs(d) <= FOLGA_DO_ARRANJO_PX);
 }
 
 /**
@@ -60,8 +62,9 @@ export async function porNoLugar(janela: JanelaArrumavel, lugar: Retangulo, espe
   janela.setMinimumSize(Math.min(larguraMinima, lugar.width), Math.min(alturaMinima, lugar.height));
   for (let i = 0; i < TENTATIVAS_DO_ARRANJO; i++) {
     if (janela.isDestroyed()) return true;
-    if (janela.isMaximized()) {
-      janela.unmaximize();
+    if (janela.isMinimized() || janela.isMaximized()) {
+      if (janela.isMinimized()) janela.restore();
+      else janela.unmaximize();
       await esperar(ESPERA_DO_ARRANJO_MS);
       if (janela.isDestroyed()) return true;
     }

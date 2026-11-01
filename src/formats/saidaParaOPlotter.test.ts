@@ -4,6 +4,7 @@ import { criarConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { criarMolde, type Molde } from '../domain/molde';
 import { ehDmpl, hpglDoDmpl } from './dmpl-importacao';
 import { tracosDoTexto } from './fonteDeTracos';
+import { hpglDoIso } from './iso-importacao';
 import { gerarPdfDeEncaixe } from './pdf-exportacao';
 import { gerarPlt, type ElementoDoPlotter } from './plt-exportacao';
 import { pecasDoPlt } from './plt-importacao';
@@ -109,5 +110,14 @@ describe('o texto em traços, com acentos (ADR 0218)', () => {
 
   it('um sinal que não é do português é ignorado, sem andar', () => {
     expect(tracosDoTexto('A\u0308B', 6)).toEqual(tracosDoTexto('AB', 6));
+  });
+});
+
+describe('as marcas do furador no ISO importado (ADR 0220)', () => {
+  it('o furo pelo eixo Z e o de M43 voltam como furos da peça', () => {
+    const iso = ['%', 'T1', 'G0 Z5', 'G0 X10 Y10', 'G1 Z0', 'G1 X110 Y10 F1000', 'G1 X110 Y110', 'G1 X10 Y110', 'G1 X10 Y10', 'G0 Z5', 'T4', 'G0 X30 Y30', 'G1 Z0', 'G0 Z5', 'G0 X70 Y70', 'M43', 'M44', 'M30', '%'].join('\n');
+    const { pecas } = pecasDoPlt(hpglDoIso(iso));
+    expect(pecas).toHaveLength(1);
+    expect(pecas[0]!.furos).toHaveLength(2);
   });
 });
