@@ -310,6 +310,10 @@ async function principal() {
   await naJanelaDoDialogo('Vista: a largura (mm) · Forro: quanto encurta (mm)', '30');
   await continuar();
   await espera(400);
+  // Na tela baixa do Mac do GitHub, a faixa da ferramenta empurra esta borda da peça para fora da área de desenho, e o
+  // clique cairia na barra de baixo: ajustar à tela põe a peça inteira à vista.
+  await clicarEm(`document.querySelector('button[aria-label="Ajustar à tela"]')`);
+  await espera(400);
   // A conta da posição é refeita agora: a fita da Produção não tem a altura da do Início, e a faixa de instrução da
   // ferramenta ("Vista: clique no contorno…") apareceu em cima do desenho e o empurrou para baixo.
   const desenhoAgora = JSON.parse(await js(`JSON.stringify(document.querySelector('.area-de-desenho-container canvas').getBoundingClientRect())`));
@@ -1451,8 +1455,11 @@ async function principal() {
   await foto('37-provador-estampa.png');
   await parteDaJanela('Imagem');
   await botaoNaJanela('Salvar frente, lado e costas (PNG)');
-  await espera(2500);
-  const pngs = fs.readdirSync(SAIDA).filter((f) => f.startsWith('provador-3d-') && f.endsWith('-frente-lado-costas.png'));
+  // As três vistas demoram mais onde não há placa de vídeo, como no Mac do GitHub: espera o arquivo, não um tempo fixo.
+  const tresVistas = () => fs.readdirSync(SAIDA).filter((f) => f.startsWith('provador-3d-') && f.endsWith('-frente-lado-costas.png'));
+  for (let i = 0; i < 60 && tresVistas().length === 0; i++) await espera(500);
+  await espera(500);
+  const pngs = tresVistas();
   const png = pngs[0] ? fs.readFileSync(path.join(SAIDA, pngs[0])) : null;
   conferir('a imagem das três vistas foi gravada (PNG, 1800 de largura)', !!png && png.length > 20000 && png.subarray(1, 4).toString() === 'PNG' && png.readUInt32BE(16) === 1800, `${JSON.stringify(pngs)} ${png ? png.length : 0} bytes`);
   // A resolução alta e o giro em vídeo (ADR 0139): esta vista em 2× (1440 × 1920) e uma volta inteira em WebM.

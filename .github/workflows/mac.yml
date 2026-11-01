@@ -50,7 +50,7 @@ jobs:
       # Informativo: o Mac do GitHub é de chip Apple, e a parte Intel só roda nele pelo Rosetta (que emula o
       # Intel); uma falha aqui fica registrada, mas não segura o instalador.
       - name: Abrir o programa montado (Intel, pelo Rosetta)
-        timeout-minutes: 3
+        timeout-minutes: 6
         continue-on-error: true
         run: |
           if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
@@ -58,7 +58,8 @@ jobs:
             exit 0
           fi
           APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
-          ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel.png" \
+          # Prazo longo: o Rosetta sem placa de vídeo é bem mais lento que um Mac Intel de verdade.
+          ENFESTO_CAD_PRAZO_DE_ABERTURA_S=120 ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel.png" \
             arch -x86_64 "$APP" --user-data-dir="$RUNNER_TEMP/dados-intel" 2>&1 | tee abertura-intel.txt
           grep -q "ABERTURA-OK" abertura-intel.txt
 
@@ -83,7 +84,7 @@ jobs:
       # O programa usado como uma pessoa usaria, com o mouse e o teclado do sistema e uma foto a cada passo
       # (scripts/teste-de-uso): importar, selecionar, arrastar o grupo, exportar o PDF, o planejamento, o enfesto.
       - name: Usar o programa (chip Apple)
-        timeout-minutes: 8
+        timeout-minutes: 12
         continue-on-error: true
         run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
 
