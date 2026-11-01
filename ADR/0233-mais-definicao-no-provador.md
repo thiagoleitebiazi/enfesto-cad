@@ -39,6 +39,8 @@ O modelo 3D parecia ter poucos pixels. Medindo, eram várias causas somadas:
 
 **O clique no tronco.** O desenho no corpo conferia o ponto contra a elipse da altura, e o corpo de verdade passa longe dela: cliques no busto eram recusados. Passou no teste de uso antes por sorte das coordenadas, e só apareceu quando o enquadramento mudou. Agora a elipse é uma referência larga, e o braço é separado pela distância ao osso dele.
 
+**A sombra que a superfície fazia em si mesma.** A procura de quem faz a sombra é larga, e numa superfície curva os vizinhos que sobem para a luz pareciam bloqueadores: a pele e o pano escureciam sozinhos, o que na imagem rápida aparecia em riscos e degraus, e na final, como uma penumbra sem motivo. Foi um teste novo que pegou: a trava barrou a gravação com um salto de 17 níveis numa esfera lisa. Cada amostra agora é comparada com o plano da própria superfície.
+
 ## O que não foi feito
 
 Perto da costura lateral, onde a frente e as costas se encontram, ainda há um pontilhado fino quando se chega bem perto: as duas camadas se cruzam em pedaços menores que a malha.

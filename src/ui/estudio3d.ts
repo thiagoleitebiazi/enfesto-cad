@@ -104,7 +104,7 @@ export interface QualidadeDoEstudio {
   readonly amostrasDeOclusao: number;
 }
 
-export const QUALIDADE_RAPIDA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 512, amostrasDeSombra: 4, amostrasDeOclusao: 0 };
+export const QUALIDADE_RAPIDA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 768, amostrasDeSombra: 4, amostrasDeOclusao: 0 };
 /** A etapa do meio: um ponto por pixel, nos pixels que a tela tem. Chega em menos de um segundo, enquanto a final é calculada. */
 export const QUALIDADE_MEDIA: QualidadeDoEstudio = { superamostragem: 1, sombraPx: 1536, amostrasDeSombra: 9, amostrasDeOclusao: 8 };
 export const QUALIDADE_FINAL: QualidadeDoEstudio = { superamostragem: 3, sombraPx: 2048, amostrasDeSombra: 9, amostrasDeOclusao: 8 };
@@ -692,11 +692,19 @@ const FOLGA_DA_SOMBRA_MM = 2.2;
 const FOLGA_DA_SOMBRA_NO_PANO_MM = 7;
 
 /** Quanto da luz chega ao ponto (0 a 1): a penumbra cresce com a distância de quem faz a sombra, como numa luz grande. */
-function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: number, amostras: number, folga = FOLGA_DA_SOMBRA_MM): number {
+function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, nx: number, ny: number, nz: number, giro: number, amostras: number, folga = FOLGA_DA_SOMBRA_MM): number {
   const s = (x * m.ux + y * m.uy + z * m.uz - m.centroU) * m.porMm + m.lado / 2;
   const t = (x * m.vx + y * m.vy + z * m.vz - m.centroV) * m.porMm + m.lado / 2;
   const h = x * m.lx + y * m.ly + z * m.lz;
   const { lado, d } = m;
+  // Num mapa grosso, cada texel cobre vários mm: a folga nunca é menor que ele.
+  const folgaReal = Math.max(folga, 1.5 / m.porMm);
+  // Cada amostra é comparada com o plano da própria superfície, não com a altura do ponto. A procura é larga, e numa superfície
+  // curva os vizinhos que sobem para a luz pareciam quem faz a sombra: a pele e o pano escureciam em si mesmos, em degraus.
+  const paraLuz = nx * m.lx + ny * m.ly + nz * m.lz;
+  const emPe = paraLuz > 0.05 ? 1 / (paraLuz * m.porMm) : 0;
+  const sobeU = -(nx * m.ux + ny * m.uy + nz * m.uz) * emPe;
+  const sobeV = -(nx * m.vx + ny * m.vy + nz * m.vz) * emPe;
   const le = (a: number, b: number): number => {
     const i = a | 0;
     const j = b | 0;
@@ -709,9 +717,12 @@ function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: num
   for (let k = 0; k < giros; k++) {
     const a = giro + k * AUREO;
     const r = procura * Math.sqrt((k + 0.5) / giros);
-    const v = le(s + Math.cos(a) * r, t + Math.sin(a) * r);
-    if (v > h + folga) {
-      soma += v - h;
+    const du = Math.cos(a) * r;
+    const dv = Math.sin(a) * r;
+    const noPlano = h + du * sobeU + dv * sobeV;
+    const v = le(s + du, t + dv);
+    if (v > noPlano + folgaReal) {
+      soma += v - noPlano;
       achados++;
     }
   }
@@ -721,7 +732,9 @@ function luzQueChega(m: MapaDeSombra, x: number, y: number, z: number, giro: num
   for (let k = 0; k < amostras; k++) {
     const a = giro + 1.7 + k * AUREO;
     const r = meia * Math.sqrt((k + 0.5) / amostras);
-    if (le(s + Math.cos(a) * r, t + Math.sin(a) * r) <= h + folga) passa++;
+    const du = Math.cos(a) * r;
+    const dv = Math.sin(a) * r;
+    if (le(s + du, t + dv) <= h + du * sobeU + dv * sobeV + folgaReal) passa++;
   }
   return passa / amostras;
 }
@@ -790,7 +803,7 @@ function mapaDoChao(c: CenaAchatada, sombra: MapaDeSombra, alturaDaCena: number,
       const x = (q + 0.5) * passo - meiaLargura;
       const z = (r + 0.5) * passo - meiaLargura;
       const giro = ((q * 12.9898 + r * 78.233) % 1) * DOIS_PI;
-      direta[r * lado + q] = luzQueChega(sombra, x, 0.5, z, giro, amostras);
+      direta[r * lado + q] = luzQueChega(sombra, x, 0.5, z, 0, 1, 0, giro, amostras);
     }
   }
   // A luz grande não faz borda dura no chão: a sombra sai borrada, e mais fraca que a do corpo sobre ele mesmo.
@@ -1178,7 +1191,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
     // Na imagem rápida, com poucas amostras, o ruído viraria um pontilhado, e ela ainda é ampliada na tela: sem ele, a sombra
     // fica um pouco em degraus, mas limpa.
     const giro = q.amostrasDeSombra <= 4 ? 0 : ruidoDoPonto * DOIS_PI;
-    const sombraKey = luzQueChega(sombra, px + nx * 3, py + ny * 3, pz + nz * 3, giro, q.amostrasDeSombra, tecido ? FOLGA_DA_SOMBRA_NO_PANO_MM : FOLGA_DA_SOMBRA_MM);
+    const sombraKey = luzQueChega(sombra, px + nx * 3, py + ny * 3, pz + nz * 3, nx, ny, nz, giro, q.amostrasDeSombra, tecido ? FOLGA_DA_SOMBRA_NO_PANO_MM : FOLGA_DA_SOMBRA_MM);
 
     let ao = 1;
     if (comOclusao && nOclusao > 0) {

@@ -219,6 +219,15 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
     expect(faixasDaImagem(100, 1)).toEqual([{ de: 0, ate: 100 }]);
   });
 
+  it('uma superfície curva não faz sombra em si mesma: a imagem rápida coincide com a final, sem degraus', () => {
+    const lotes = [esfera({ acabamento: 'corpo', cor: [214, 208, 200] }, 0, 300)];
+    const rapida = render(lotes);
+    const final = render(lotes, QUALIDADE_FINAL);
+    // No meio da esfera, a mesma luz nas duas: a sombra só entra onde há mesmo quem a faça.
+    const y = Math.round(L * 0.46);
+    for (let x = Math.round(L * 0.4); x < L * 0.6; x++) expect(Math.abs(pixel(rapida, x, y)[0] - pixel(final, x, y)[0])).toBeLessThan(5);
+  });
+
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {
     const lotes = [esfera(TECIDO)];
     expect(render(lotes, QUALIDADE_FINAL)).toEqual(render(lotes, QUALIDADE_FINAL));
