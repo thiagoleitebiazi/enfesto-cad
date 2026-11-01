@@ -371,12 +371,12 @@ import { metodoSugerido } from './domain/metodoDeEnfesto';
 import { gerarSvgDoEncaixe, gerarXmlDoEncaixe } from './formats/dados-exportacao';
 import { ehDmpl, hpglDoDmpl } from './formats/dmpl-importacao';
 import { hpglDoIso } from './formats/iso-importacao';
-import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
+import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, filaGuardada, filaParaGuardar, moverNaFila, semConcluidos, type FilaDeImpressao } from './domain/filaDeImpressao';
 import { PainelDaFilaDeImpressao } from './ui/PainelDaFilaDeImpressao';
 import { TecladoVirtual } from './ui/TecladoVirtual';
 import { PainelDeColaboracao, type ApiDaColaboracao } from './ui/PainelDeColaboracao';
 import type { ProjetoCompartilhado } from './domain/colaboracao';
-import { estadosDosRiscos } from './domain/encaixeDoRisco';
+import { arquivoDoRisco, estadosDosRiscos } from './domain/encaixeDoRisco';
 import { calibracaoGuardada, paginaDeTesteDoPlotter, testeDaMesaDeCorte, type Calibracao } from './formats/testeDoEquipamento';
 import { PainelDoTesteDoEquipamento } from './ui/PainelDoTesteDoEquipamento';
 import { modeloDoPlano } from './domain/modeloDoPlano';
@@ -971,6 +971,15 @@ export default function App(): React.JSX.Element {
   const mudarFilaDeImpressao = useCallback((fila: FilaDeImpressao) => {
     filaDeImpressaoRef.current = fila;
     setFilaDeImpressao(fila);
+    void window.enfestoCad?.gravarFilaDeImpressao?.(filaParaGuardar(fila));
+  }, []);
+  useEffect(() => {
+    void window.enfestoCad?.lerFilaDeImpressao?.().then((texto) => {
+      const guardada = filaGuardada(texto);
+      if (guardada.trabalhos.length === 0) return;
+      filaDeImpressaoRef.current = guardada;
+      setFilaDeImpressao(guardada);
+    });
   }, []);
   const esvaziarFilaDeImpressao = useCallback(() => {
     const api = window.enfestoCad;
@@ -1235,7 +1244,24 @@ export default function App(): React.JSX.Element {
   const [mostrarNovoProjeto, setMostrarNovoProjeto] = useState(false);
 
   // O tecido ativo (ADR 0209): a mesa, a validação e as saídas veem só as peças dele, na largura dele. Em branco, todos.
-  const [tecidoEscolhido, setTecidoEscolhido] = useState('');
+  const [tecidosEscolhidos, setTecidosEscolhidos] = useState<Readonly<Record<string, string>>>(() => {
+    try {
+      const lidos: unknown = JSON.parse(window.localStorage.getItem('enfesto-cad:tecido-ativo') ?? '{}');
+      return typeof lidos === 'object' && lidos !== null ? (lidos as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const tecidoEscolhido = tecidosEscolhidos[projetoAtual.id] ?? '';
+  const escolherTecido = (tecidoNovo: string): void => {
+    const novos = { ...tecidosEscolhidos, [projetoAtual.id]: tecidoNovo };
+    setTecidosEscolhidos(novos);
+    try {
+      window.localStorage.setItem('enfesto-cad:tecido-ativo', JSON.stringify(novos));
+    } catch {
+      // Sem o armazenamento do navegador, vale até fechar.
+    }
+  };
   const tecidosDaMesa = useMemo(() => tecidosDoModelo(pecas), [pecas]);
   const tecidoAtivo = tecidosDaMesa.includes(tecidoEscolhido) ? tecidoEscolhido : '';
   const pecasNaMesa = useMemo(() => pecasDoTecido(pecas, tecidoAtivo), [pecas, tecidoAtivo]);
@@ -2737,13 +2763,21 @@ export default function App(): React.JSX.Element {
     async (plano: PlanoDeCorteV2): Promise<string> => {
       const agora = new Date().toISOString();
       const estados = estadosDosRiscos(plano, modeloDoPlano(pecas), { pecas, tecido, enfesto }, enfesto?.distanciaMinimaEntrePecasMm ?? DISTANCIA_PADRAO_ENTRE_PECAS_MM, proximoId);
-      const novos = estados.map((estado, i) => criarProjeto(`${projetoAtual.nome} - risco ${i + 1}`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, novoCodigoDeProjeto(), agora, estado));
-      setProjetos((lista) => [...lista, ...novos]);
+      let atualizados = 0;
+      const novos = estados.map((estado, i) => {
+        const origemDoPlano = { projetoId: projetoAtual.id, chaveDoRisco: plano.riscos[i]!.chave };
+        const existente = arquivoDoRisco(projetos, origemDoPlano);
+        if (existente) atualizados++;
+        return existente ? registrarEvento(existente, 'mudanca-de-configuracao', estado, agora, 'Atualizado pelo plano de corte') : { ...criarProjeto(`${projetoAtual.nome} - risco ${i + 1}`, `projeto-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, novoCodigoDeProjeto(), agora, estado), origemDoPlano };
+      });
+      const ids = new Set(novos.map((p) => p.id));
+      setProjetos((lista) => [...lista.filter((p) => !ids.has(p.id)), ...novos]);
       await Promise.all(novos.map(persistirProjeto));
       carregarListaDeProjetos();
-      return `${novos.length} ${novos.length === 1 ? 'arquivo de encaixe criado' : 'arquivos de encaixe criados'} na biblioteca: ${novos.map((p) => p.nome).join(', ')}.`;
+      const partes = [novos.length - atualizados > 0 ? `${novos.length - atualizados} criado(s)` : '', atualizados > 0 ? `${atualizados} atualizado(s)` : ''].filter((p) => p !== '');
+      return `Arquivos de encaixe na biblioteca, ${partes.join(' e ')}: ${novos.map((p) => p.nome).join(', ')}.`;
     },
-    [pecas, tecido, enfesto, projetoAtual.nome, novoCodigoDeProjeto, persistirProjeto, carregarListaDeProjetos],
+    [pecas, tecido, enfesto, projetos, projetoAtual.id, projetoAtual.nome, novoCodigoDeProjeto, persistirProjeto, carregarListaDeProjetos],
   );
 
   const aplicarEstadoCompartilhado = useCallback(
@@ -7019,6 +7053,10 @@ export default function App(): React.JSX.Element {
           onVersao={guardarVersaoCompartilhada}
           onEstado={aplicarEstadoCompartilhado}
           onBaixar={baixarProjetoCompartilhado}
+          onVerPeca={(id) => {
+            selecionarUnico(id);
+            setMostrarColaboracao(false);
+          }}
           onFechar={() => setMostrarColaboracao(false)}
         />
       )}
@@ -8460,7 +8498,7 @@ export default function App(): React.JSX.Element {
                     className={t === tecidoAtivo ? 'ativa' : ''}
                     title={t === '' ? 'Todas as peças na mesma mesa' : `Só as peças do tecido ${t}, com o encaixe e a largura dele`}
                     onClick={() => {
-                      setTecidoEscolhido(t);
+                      escolherTecido(t);
                       selecionarUnico(null);
                     }}
                   >

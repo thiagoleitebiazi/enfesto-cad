@@ -2,6 +2,7 @@ import { linhaDeCorteDaPeca, type Molde } from './molde';
 import type { Projeto } from './projeto';
 import { area, retanguloEnvolvente } from '../core/geometria';
 import { ROTULO_DO_TIPO, type ConfiguracaoDeEnfesto } from './enfesto';
+import { consumoComPerdasMm } from './statusDoEncaixe';
 import { ROTULO_DO_STATUS } from './projeto';
 
 /**
@@ -33,6 +34,8 @@ export interface RelatorioDeProducao {
   readonly quantidadeDeCamadas: number | null;
   readonly pecasPorTamanho: readonly LinhaDePecasPorTamanho[];
   readonly comprimentoUtilizadoMm: number;
+  /** O comprimento com as perdas do enfesto (ADR 0219); igual ao utilizado se não há perdas. */
+  readonly consumoComPerdasMm: number;
   readonly areaOcupadaMm2: number;
   readonly aproveitamentoPercentual: number | null;
   readonly desperdicioPercentual: number | null;
@@ -110,6 +113,7 @@ export function gerarRelatorioDeProducao(projeto: Projeto, agoraIso: string): Re
     quantidadeDeCamadas: enfesto?.quantidadeDeCamadas ?? null,
     pecasPorTamanho: agruparPorTamanho(pecas, gramaturaGm2),
     comprimentoUtilizadoMm,
+    consumoComPerdasMm: enfesto ? consumoComPerdasMm(comprimentoUtilizadoMm, enfesto) : comprimentoUtilizadoMm,
     areaOcupadaMm2,
     aproveitamentoPercentual,
     desperdicioPercentual,

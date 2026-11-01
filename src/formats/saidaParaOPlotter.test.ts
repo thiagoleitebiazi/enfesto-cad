@@ -85,6 +85,13 @@ describe('as emendas no PDF do encaixe (ADR 0210)', () => {
   });
 });
 
+describe('a descrição da peça (ADR 0219)', () => {
+  it('sai no plotter, perto do nome; sem ela, nada muda', () => {
+    expect(gerarPlt([{ ...peca('a'), descricao: 'Frente esquerda' }])).toContain('LBFrente esquerda\x03');
+    expect(gerarPlt([peca('a')]).match(/LB/g)).toHaveLength(1);
+  });
+});
+
 describe('o texto em traços, com acentos (ADR 0218)', () => {
   const pontosDe = (t: string) => tracosDoTexto(t, 6).flat();
 

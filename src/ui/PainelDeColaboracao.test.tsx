@@ -106,3 +106,31 @@ describe('o painel de colaboração (ADR 0214)', () => {
     expect(screen.getByText('Endereços: http://192.168.0.5:8931')).toBeTruthy();
   });
 });
+
+describe('o comentário sobre uma peça (ADR 0219)', () => {
+  const peca = { id: 'frente#0', nome: 'Frente', tamanho: 'M' } as ProjetoCompartilhado['estado']['pecas'][number];
+  const comPeca: ProjetoCompartilhado = { ...projeto, estado: { ...projeto.estado, pecas: [peca] } };
+  const pedir: PedidoAoServidor = async (metodo, caminho) => {
+    if (caminho === '/projetos') return { status: 200, corpo: { projetos: [{ id: 'p1', nome: 'Camisa', codigo: 'C1', versao: 1, autor: 'Bia', aprovacao: null }] } };
+    if (metodo === 'GET') return { status: 200, corpo: { versao: 1, projeto, comentarios: [{ id: 1, autor: 'Bia', texto: 'Subir a cava', pecaId: 'frente#0' }], aprovacao: null, presentes: [] } };
+    return { status: 200, corpo: {} };
+  };
+  const api: ApiDaColaboracao = { estado: async () => LIGADO, conectar: async () => null, pedir, servir: async () => null };
+
+  it('mostra a peça do comentário e vai até ela', async () => {
+    const onVerPeca = vi.fn();
+    render(<PainelDeColaboracao api={api} projeto={comPeca} versaoBase={1} onVersao={vi.fn()} onEstado={vi.fn()} onBaixar={vi.fn()} onVerPeca={onVerPeca} onFechar={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver Frente' }));
+    expect(onVerPeca).toHaveBeenCalledWith('frente#0');
+  });
+
+  it('o comentário novo vai com a peça escolhida', async () => {
+    const espiao = vi.fn(pedir);
+    render(<PainelDeColaboracao api={{ ...api, pedir: espiao }} projeto={comPeca} versaoBase={1} onVersao={vi.fn()} onEstado={vi.fn()} onBaixar={vi.fn()} onFechar={vi.fn()} />);
+    await screen.findByText('Subir a cava');
+    fireEvent.change(screen.getByLabelText('Sobre a peça'), { target: { value: 'frente#0' } });
+    fireEvent.change(screen.getByLabelText('Novo comentário'), { target: { value: 'Ok' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Comentar' }));
+    await waitFor(() => expect(espiao).toHaveBeenCalledWith('POST', '/projetos/p1/comentarios', { autor: 'Ana', texto: 'Ok', pecaId: 'frente#0' }));
+  });
+});

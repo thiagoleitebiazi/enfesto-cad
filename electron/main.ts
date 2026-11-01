@@ -1080,6 +1080,11 @@ ipcMain.handle('colaboracao-servir', async (_evento, porta: unknown) => {
   return servidorParaAInterface();
 });
 
+// A fila de impressão (ADR 0219): o que não saiu sobrevive ao fechar o programa.
+const arquivoDaFilaDeImpressao = (): string => path.join(app.getPath('userData'), 'fila-de-impressao.json');
+ipcMain.handle('impressao-ler', () => readFile(arquivoDaFilaDeImpressao(), 'utf-8').catch(() => null));
+ipcMain.handle('impressao-gravar', (_evento, texto: unknown) => (typeof texto === 'string' ? gravarSemCorromper(arquivoDaFilaDeImpressao(), texto) : undefined));
+
 // A fonte TrueType (ADR 0211): o caminho fica em <userData>/fonte-do-plotter.json, e nunca vem da interface.
 const arquivoDaFonte = (): string => path.join(app.getPath('userData'), 'fonte-do-plotter.json');
 

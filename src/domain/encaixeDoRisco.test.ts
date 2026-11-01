@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ponto, retanguloEnvolvente } from '../core/geometria';
-import { estadosDosRiscos } from './encaixeDoRisco';
+import { arquivoDoRisco, estadosDosRiscos } from './encaixeDoRisco';
 import { areaUtilDaMesa, criarConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, linhaDeCorteDaPeca, rotacionarMolde, type Molde } from './molde';
 import { modeloDoPlano } from './modeloDoPlano';
 import { fazerRisco, pecasDaGrade } from './risco';
 import { validarProjeto } from './validacao';
 import type { RiscoDoPlanejamento } from './planoDeEnfesto';
+import type { Projeto } from './projeto';
 import type { PecaPostaNoRisco } from './risco';
 
 const peca = (extra: Partial<Molde> = {}): Molde => ({
@@ -108,5 +109,15 @@ describe('um projeto por risco (ADR 0212)', () => {
     const id = m.pecasPorTamanho['M']![0]!.pecaId;
     const [e] = estadosDosRiscos(plano(risco([posta({ pecaId: id, anguloGraus: 0, espelhada: true, deslocamentoMm: ponto(0, 0) })])), m, { ...estado, pecas: [par] }, 3, novoId);
     expect(e!.pecas[0]!.contorno[1]).not.toEqual(par.contorno[1]);
+  });
+});
+
+describe('criar de novo (ADR 0219)', () => {
+  const projeto = (id: string, origemDoPlano?: Projeto['origemDoPlano']): Projeto => ({ id, ...(origemDoPlano ? { origemDoPlano } : {}) }) as Projeto;
+
+  it('acha o projeto do mesmo risco do mesmo modelo, e só ele', () => {
+    const lista = [projeto('a'), projeto('b', { projetoId: 'm', chaveDoRisco: 'r1' }), projeto('c', { projetoId: 'm', chaveDoRisco: 'r2' }), projeto('d', { projetoId: 'n', chaveDoRisco: 'r1' })];
+    expect(arquivoDoRisco(lista, { projetoId: 'm', chaveDoRisco: 'r2' })?.id).toBe('c');
+    expect(arquivoDoRisco(lista, { projetoId: 'm', chaveDoRisco: 'r9' })).toBeUndefined();
   });
 });

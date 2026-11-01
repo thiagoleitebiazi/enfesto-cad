@@ -598,7 +598,7 @@ describe('PainelDePlanejamento — encolhimento e casamento', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calcular as alternativas' }));
     await screen.findByRole('table', { name: 'Alternativas (escolha uma)' });
     expect(larguras).toHaveLength(1);
-    expect(larguras[0]).toBeCloseTo(1600 * 0.96, 6 - 8);
+    expect(larguras[0]).toBeCloseTo(1600 * 0.96 - 8, 6);
     fireEvent.click(screen.getByRole('button', { name: 'Revisar e confirmar esta alternativa' }));
     escrever(/Responsável/, 'Bruno');
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar o plano' }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, moverNaFila, proximoDaFila, semConcluidos, type FilaDeImpressao } from './filaDeImpressao';
+import { cancelarNaFila, comEstado, comTrabalho, esvaziarFila, FILA_DE_IMPRESSAO_VAZIA, filaGuardada, filaParaGuardar, moverNaFila, proximoDaFila, semConcluidos, type FilaDeImpressao } from './filaDeImpressao';
 
 const trabalho = (id: string) => ({ id, nome: id, destino: 'COM1', texto: 'IN;' });
 const fila = (...ids: string[]): FilaDeImpressao => ids.reduce((f, id) => comTrabalho(f, trabalho(id)), FILA_DE_IMPRESSAO_VAZIA);
@@ -77,5 +77,23 @@ describe('o envio da fila (ADR 0210)', () => {
       },
     );
     expect(f.trabalhos.map((t) => t.estado)).toEqual(['enviado', 'enviado']);
+  });
+});
+
+describe('a fila guardada ao fechar (ADR 0219)', () => {
+  it('volta só o que não saiu, pausada', () => {
+    const f = comEstado(comEstado(comEstado(fila('a', 'b', 'c', 'd'), 'a', 'enviado'), 'b', 'enviando'), 'c', 'erro', 'sem papel');
+    const volta = filaGuardada(filaParaGuardar(cancelarNaFila(f, 'd')));
+    expect(volta.pausada).toBe(true);
+    expect(volta.trabalhos.map((t) => [t.id, t.estado, t.erro])).toEqual([
+      ['b', 'na-fila', undefined],
+      ['c', 'na-fila', undefined],
+    ]);
+  });
+
+  it('nada guardado, ou guardado estragado: fila vazia e solta', () => {
+    expect(filaGuardada(null)).toEqual(FILA_DE_IMPRESSAO_VAZIA);
+    expect(filaGuardada('{quebrado')).toEqual(FILA_DE_IMPRESSAO_VAZIA);
+    expect(filaGuardada('[{"id":1}]')).toEqual({ pausada: false, trabalhos: [] });
   });
 });

@@ -5,7 +5,7 @@ import { linhaDeCorteDaPeca, transladarMolde, type Molde } from './molde';
 import type { ModeloDoPlano } from './modeloDoPlano';
 import type { PlanoDeCorteV2 } from './planejamento';
 import { enfestoDoPlano } from './planoDeCorte';
-import type { EstadoDoProjeto } from './projeto';
+import type { EstadoDoProjeto, Projeto } from './projeto';
 import type { RiscoDoPlanejamento } from './planoDeEnfesto';
 import { moldeOrientado, type PecaPostaNoRisco } from './risco';
 import { expandirComGrade } from './tamanhosGraduados';
@@ -54,4 +54,9 @@ export function estadosDosRiscos(plano: Pick<PlanoDeCorteV2, 'riscos' | 'resulta
     const nasGrades = expandirComGrade(base.pecas, novoId, risco.grade);
     return { pecas: moverParaForaDoEnfesto(nasGrades, new Set(nasGrades.map((p) => p.id)), enfesto), tecido: base.tecido, enfesto };
   });
+}
+
+/** O projeto já criado para este risco: criar de novo atualiza esse, em vez de fazer outro (ADR 0219). */
+export function arquivoDoRisco(projetos: readonly Projeto[], origem: NonNullable<Projeto['origemDoPlano']>): Projeto | undefined {
+  return projetos.find((p) => p.origemDoPlano?.projetoId === origem.projetoId && p.origemDoPlano.chaveDoRisco === origem.chaveDoRisco);
 }

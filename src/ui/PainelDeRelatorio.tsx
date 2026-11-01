@@ -44,6 +44,12 @@ export function PainelDeRelatorio(props: PainelDeRelatorioProps): React.JSX.Elem
           <dd>{r.quantidadeDeCamadas ?? '—'}</dd>
           <dt>Comprimento utilizado</dt>
           <dd>{numeroComVirgula(r.comprimentoUtilizadoMm, 1)} mm</dd>
+          {r.consumoComPerdasMm !== r.comprimentoUtilizadoMm && (
+            <>
+              <dt>Com as perdas</dt>
+              <dd>{numeroComVirgula(r.consumoComPerdasMm, 1)} mm</dd>
+            </>
+          )}
           <dt>Aproveitamento / Desperdício</dt>
           <dd>
             {r.aproveitamentoPercentual !== null

@@ -63,3 +63,21 @@ export async function esvaziarFila(ler: () => FilaDeImpressao, mudar: (fila: Fil
     else mudar({ ...comEstado(ler(), t.id, 'erro', r.erro ?? 'O plotter não recebeu o risco.'), pausada: true });
   }
 }
+
+/** O que guardar ao fechar: o que ainda não saiu, sem a situação (ADR 0219). */
+export function filaParaGuardar(fila: FilaDeImpressao): string {
+  const pendentes = fila.trabalhos.filter((t) => t.estado === 'na-fila' || t.estado === 'enviando' || t.estado === 'erro');
+  return JSON.stringify(pendentes.map(({ id, nome, destino, texto }) => ({ id, nome, destino, texto })));
+}
+
+/** A fila guardada volta pausada: quem abre o programa decide quando mandar, com o plotter pronto. */
+export function filaGuardada(bruto: string | null | undefined): FilaDeImpressao {
+  try {
+    const lidos: unknown = JSON.parse(bruto ?? '[]');
+    if (!Array.isArray(lidos)) return FILA_DE_IMPRESSAO_VAZIA;
+    const validos = lidos.filter((t): t is Pick<TrabalhoDeImpressao, 'id' | 'nome' | 'destino' | 'texto'> => typeof t === 'object' && t !== null && ['id', 'nome', 'destino', 'texto'].every((c) => typeof (t as Record<string, unknown>)[c] === 'string'));
+    return { pausada: validos.length > 0, trabalhos: validos.map((t) => ({ id: t.id, nome: t.nome, destino: t.destino, texto: t.texto, estado: 'na-fila' })) };
+  } catch {
+    return FILA_DE_IMPRESSAO_VAZIA;
+  }
+}

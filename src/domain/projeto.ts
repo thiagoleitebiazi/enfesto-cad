@@ -106,6 +106,8 @@ export interface Projeto {
   readonly revisoesDoMolde?: readonly RevisaoDoMolde[];
   /** A ficha técnica do modelo (aba Modelo > Ficha técnica, ADR 0105). Ausente: ainda não feita. */
   readonly fichaTecnica?: FichaTecnica;
+  /** O projeto e o risco de onde este saiu, por "Criar arquivos de encaixe" (ADR 0219). */
+  readonly origemDoPlano?: { readonly projetoId: string; readonly chaveDoRisco: string };
   /** As regras de caimento da recomendação de tamanho (a folga de cada ponto de medida, ADR 0110). */
   readonly regrasDeCaimento?: RegrasDeCaimento;
   /** O tecido da peça na recomendação de tamanho: quanto a volta cede no corpo (ADR 0119). */

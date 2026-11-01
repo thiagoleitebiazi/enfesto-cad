@@ -236,6 +236,7 @@ export function gerarPlt(pecas: readonly Molde[], opcoes: OpcoesDoPlt = {}): str
     caneta(2, 'textos');
     const caixa = retanguloEnvolvente(peca.contorno);
     const inicio = noPapel(ponto(caixa.maxX - 10, caixa.minY + 10));
+    if (peca.descricao) rotulo(noPapel(ponto(caixa.maxX - 18, caixa.minY + 10)), peca.descricao, 0.25, 0.35);
     const nomeDaPeca = `${peca.nome} ${peca.tamanho}`.trim();
     if (opcoes.ajusteDeTexto) {
       const altura = alturaDoTextoDaPeca(caixa.maxX - caixa.minX, caixa.maxY - caixa.minY, opcoes.ajusteDeTexto) / 10;

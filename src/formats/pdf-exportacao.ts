@@ -409,6 +409,8 @@ export async function gerarPdfDeEncaixe(
         doc.lineWidth(mmParaPontos(0.3)).strokeColor(COR_DOS_GRUPOS).dash(mmParaPontos(1.5), { space: mmParaPontos(1.5) });
         doc.moveTo(de.x, de.y).lineTo(ate.x, ate.y).stroke();
         doc.undash();
+        doc.fillColor(COR_DOS_GRUPOS).fontSize(mmParaPontos(3));
+        doc.text('EMENDA', de.x + mmParaPontos(1), de.y + mmParaPontos(1), { lineBreak: false });
         doc.restore();
       }
       if (blocos.length > 0) {

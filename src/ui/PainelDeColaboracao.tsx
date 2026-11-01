@@ -40,7 +40,7 @@ interface ItemDoServidor {
 
 interface DetalheDoProjeto {
   readonly versao: number;
-  readonly comentarios: readonly { readonly id: number; readonly autor: string; readonly texto: string }[];
+  readonly comentarios: readonly { readonly id: number; readonly autor: string; readonly texto: string; readonly pecaId?: string }[];
   readonly aprovacao: Aprovacao | null;
   readonly presentes: readonly string[];
 }
@@ -53,6 +53,8 @@ interface PainelDeColaboracaoProps {
   readonly onVersao: (id: string, versao: number) => void;
   readonly onEstado: (estado: EstadoDoProjeto) => void;
   readonly onBaixar: (projeto: ProjetoCompartilhado, versao: number) => void;
+  /** Vai à peça de que o comentário fala (ADR 0219). */
+  readonly onVerPeca?: (id: string) => void;
   readonly onFechar: () => void;
 }
 
@@ -73,6 +75,7 @@ export function PainelDeColaboracao(props: PainelDeColaboracaoProps): React.JSX.
   const [lista, setLista] = useState<readonly ItemDoServidor[]>([]);
   const [detalhe, setDetalhe] = useState<DetalheDoProjeto | null>(null);
   const [comentario, setComentario] = useState('');
+  const [pecaDoComentario, setPecaDoComentario] = useState('');
   const [nota, setNota] = useState('');
   const [mensagem, setMensagem] = useState('');
 
@@ -181,8 +184,9 @@ export function PainelDeColaboracao(props: PainelDeColaboracaoProps): React.JSX.
 
   const comentar = (): void =>
     sinalizar(async () => {
-      await api.pedir('POST', `/projetos/${projeto.id}/comentarios`, { autor: nome, texto: comentario });
+      await api.pedir('POST', `/projetos/${projeto.id}/comentarios`, { autor: nome, texto: comentario, ...(pecaDoComentario ? { pecaId: pecaDoComentario } : {}) });
       setComentario('');
+      setPecaDoComentario('');
       await atualizar(nome);
     });
 
@@ -276,12 +280,31 @@ export function PainelDeColaboracao(props: PainelDeColaboracaoProps): React.JSX.
                 {detalhe.comentarios.map((c) => (
                   <li key={c.id}>
                     <strong>{c.autor}:</strong> {c.texto}
+                    {c.pecaId && projeto.estado.pecas.some((p) => p.id === c.pecaId) && (
+                      <>
+                        {' '}
+                        <button type="button" onClick={() => props.onVerPeca?.(c.pecaId!)}>
+                          Ver {projeto.estado.pecas.find((p) => p.id === c.pecaId)!.nome}
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
               <label>
                 Novo comentário
                 <textarea rows={2} value={comentario} onChange={(e) => setComentario(e.target.value)} />
+              </label>
+              <label>
+                Sobre a peça
+                <select value={pecaDoComentario} onChange={(e) => setPecaDoComentario(e.target.value)}>
+                  <option value="">O projeto todo</option>
+                  {projeto.estado.pecas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {`${p.nome} ${p.tamanho}`.trim()}
+                    </option>
+                  ))}
+                </select>
               </label>
               <button type="button" disabled={nome.trim() === '' || comentario.trim() === ''} onClick={comentar}>
                 Comentar

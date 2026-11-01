@@ -77,6 +77,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [todosOsTamanhos, setTodosOsTamanhos] = useState(true);
   const tamanhosDaGrade = [...new Set(props.pecas.flatMap((p) => p.graduacao?.tamanhos ?? []))];
   const tecidos = tecidosDoModelo(props.pecas);
+  const tamanhosDoProjeto = [...new Set(props.pecas.flatMap((p) => p.graduacao?.tamanhos ?? [p.tamanho]))].filter((t) => t !== '');
   const [tecidoDoEncaixe, setTecidoDoEncaixe] = useState(props.tecidoAtivo ?? '');
   const gradeEscrita = (chave: string): Readonly<Record<string, string>> => Object.fromEntries(tamanhosDaGrade.map((t) => [t, String(props.gradesIniciais?.[chave]?.[t] ?? props.gradesIniciais?.['']?.[t] ?? 1)]));
   const [grades, setGrades] = useState<Readonly<Record<string, Readonly<Record<string, string>>>>>({});
@@ -91,6 +92,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
   const [blocosEscritos, setBlocosEscritos] = useState('');
   const [blocosVerticais, setBlocosVerticais] = useState(false);
   const [manterPacotes, setManterPacotes] = useState(false);
+  const tamanhosDesconhecidos = lerBlocos(blocosEscritos).flat().filter((t) => !tamanhosDoProjeto.includes(t));
   const [dobraInferior, setDobraInferior] = useState(props.dobraInferior === true);
   const temSimetria = props.pecas.some((p) => arestaDeSimetria(p) !== null);
   const [abrirSimetrias, setAbrirSimetrias] = useState(true);
@@ -262,6 +264,12 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                       Tamanhos de cada bloco, separados por ponto e vírgula
                       <input type="text" value={blocosEscritos} placeholder="P M; G GG" onChange={(e) => setBlocosEscritos(e.target.value)} />
                     </label>
+                  )}
+                  {!separacaoCompleta && tamanhosDoProjeto.length > 0 && <p className="nota-do-formulario">Tamanhos deste projeto: {tamanhosDoProjeto.join(', ')}</p>}
+                  {!separacaoCompleta && tamanhosDesconhecidos.length > 0 && (
+                    <p className="nota-do-formulario" role="alert">
+                      Estes tamanhos não existem aqui: {tamanhosDesconhecidos.join(', ')}.
+                    </p>
                   )}
                   <label>
                     Orientação dos blocos

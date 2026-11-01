@@ -162,7 +162,7 @@ export function criarServidorDeColaboracao(opcoes: { readonly pasta: string; rea
         autor: textoDe(corpo['autor'], 'o seu nome', LIMITE_DO_NOME),
         texto: textoDe(corpo['texto'], 'o comentário', LIMITE_DO_TEXTO),
         quandoIso: agora().toISOString(),
-        ...(idDeProjetoValido(corpo['pecaId']) ? { pecaId: corpo['pecaId'] } : {}),
+        ...(typeof corpo['pecaId'] === 'string' && corpo['pecaId'] !== '' ? { pecaId: corpo['pecaId'].slice(0, LIMITE_DO_NOME * 2) } : {}),
       };
       await gravarRegistro(id, { ...r, comentarios: [...r.comentarios, comentario] });
       return { comentario };

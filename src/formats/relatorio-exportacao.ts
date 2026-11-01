@@ -49,6 +49,7 @@ export function camposDoRelatorioEmPdf(relatorio: RelatorioDeProducao): Array<[s
     ['Tipo de enfesto:', relatorio.tipoDeEnfesto ?? '—'],
     ['Quantidade de camadas:', String(relatorio.quantidadeDeCamadas ?? '—')],
     ['Comprimento utilizado:', `${numeroComVirgula(relatorio.comprimentoUtilizadoMm, 1)} mm`],
+    ['Com as perdas:', `${numeroComVirgula(relatorio.consumoComPerdasMm, 1)} mm`],
     ['Área ocupada:', `${numeroComVirgula(relatorio.areaOcupadaMm2 / 1_000_000, 3)} m²`],
     [
       'Aproveitamento / Desperdício:',
@@ -133,6 +134,7 @@ export async function gerarExcelDeRelatorio(relatorio: RelatorioDeProducao): Pro
     ['Tipo de enfesto', relatorio.tipoDeEnfesto ?? '—'],
     ['Quantidade de camadas', relatorio.quantidadeDeCamadas ?? '—'],
     ['Comprimento utilizado (mm)', Number(relatorio.comprimentoUtilizadoMm.toFixed(1))],
+    ['Com as perdas (mm)', Number(relatorio.consumoComPerdasMm.toFixed(1))],
     ['Área ocupada (m²)', Number((relatorio.areaOcupadaMm2 / 1_000_000).toFixed(3))],
     ['Aproveitamento (%)', relatorio.aproveitamentoPercentual !== null ? Number(relatorio.aproveitamentoPercentual.toFixed(1)) : '—'],
     ['Desperdício (%)', relatorio.desperdicioPercentual !== null ? Number(relatorio.desperdicioPercentual.toFixed(1)) : '—'],

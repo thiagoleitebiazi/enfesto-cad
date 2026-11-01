@@ -151,6 +151,13 @@ const api = {
   async arrumarJanelas(como: 'nova' | 'cascata' | 'lado-a-lado'): Promise<boolean> {
     return ipcRenderer.invoke('janelas-arrumar', como) as Promise<boolean>;
   },
+  /** A fila de impressão, para sobreviver ao fechar (ADR 0219). */
+  async lerFilaDeImpressao(): Promise<string | null> {
+    return ipcRenderer.invoke('impressao-ler') as Promise<string | null>;
+  },
+  async gravarFilaDeImpressao(texto: string): Promise<void> {
+    await ipcRenderer.invoke('impressao-gravar', texto);
+  },
   /** O risco direto para o plotter (ADR 0210): o destino é o texto da porta de saída. */
   async enviarAPorta(destino: string, texto: string): Promise<{ readonly ok: boolean; readonly erro?: string }> {
     return ipcRenderer.invoke('saida-enviar', { destino, texto }) as Promise<{ readonly ok: boolean; readonly erro?: string }>;
