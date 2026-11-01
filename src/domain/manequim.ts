@@ -373,7 +373,7 @@ interface CorpoPronto {
   campo: CampoDoCorpo | null;
 }
 
-/** Os últimos corpos feitos, pela forma, pose e medidas: ajustar a malha e medir a grade custa um quarto de segundo. */
+/** Os últimos corpos feitos, pela forma, pose e medidas: ajustar a malha e medir a grade custa de meio segundo a quase um. */
 const prontos = new Map<string, CorpoPronto>();
 const LIMITE_DE_CORPOS_PRONTOS = 6;
 

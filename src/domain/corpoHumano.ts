@@ -531,50 +531,67 @@ export interface CampoDoCorpo {
 }
 
 const PASSO_DO_CAMPO = 8;
-const MARGEM_DO_CAMPO = 120;
+/** A margem da grade em volta do corpo (mm): mais longe que isso, a leitura soma a distância até a borda dela. */
+const MARGEM_DO_CAMPO = 56;
 
-/** A distância ao quadrado do ponto ao triângulo, e o ponto mais perto em `c`. */
-function pontoMaisPerto(p: Float64Array, ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, s: Float64Array): void {
+/** O ponto mais perto de `p` no triângulo (a, b, c), em `s`. */
+function pontoMaisPerto(px: number, py: number, pz: number, ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, s: Float64Array): void {
   const abx = bx - ax;
   const aby = by - ay;
   const abz = bz - az;
   const acx = cx - ax;
   const acy = cy - ay;
   const acz = cz - az;
-  const apx = p[0]! - ax;
-  const apy = p[1]! - ay;
-  const apz = p[2]! - az;
+  const apx = px - ax;
+  const apy = py - ay;
+  const apz = pz - az;
   const d1 = abx * apx + aby * apy + abz * apz;
   const d2 = acx * apx + acy * apy + acz * apz;
-  const fim = (u: number, w: number): void => {
-    s[0] = ax + abx * u + acx * w;
-    s[1] = ay + aby * u + acy * w;
-    s[2] = az + abz * u + acz * w;
-  };
-  if (d1 <= 0 && d2 <= 0) return fim(0, 0);
-  const bpx = p[0]! - bx;
-  const bpy = p[1]! - by;
-  const bpz = p[2]! - bz;
-  const d3 = abx * bpx + aby * bpy + abz * bpz;
-  const d4 = acx * bpx + acy * bpy + acz * bpz;
-  if (d3 >= 0 && d4 <= d3) return fim(1, 0);
-  const vc = d1 * d4 - d3 * d2;
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) return fim(d1 / (d1 - d3), 0);
-  const cpx = p[0]! - cx;
-  const cpy = p[1]! - cy;
-  const cpz = p[2]! - cz;
-  const d5 = abx * cpx + aby * cpy + abz * cpz;
-  const d6 = acx * cpx + acy * cpy + acz * cpz;
-  if (d6 >= 0 && d5 <= d6) return fim(0, 1);
-  const vb = d5 * d2 - d1 * d6;
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) return fim(0, d2 / (d2 - d6));
-  const va = d3 * d6 - d5 * d4;
-  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
-    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
-    return fim(1 - w, w);
+  let u: number;
+  let w: number;
+  if (d1 <= 0 && d2 <= 0) {
+    u = 0;
+    w = 0;
+  } else {
+    const bpx = px - bx;
+    const bpy = py - by;
+    const bpz = pz - bz;
+    const d3 = abx * bpx + aby * bpy + abz * bpz;
+    const d4 = acx * bpx + acy * bpy + acz * bpz;
+    const vc = d1 * d4 - d3 * d2;
+    if (d3 >= 0 && d4 <= d3) {
+      u = 1;
+      w = 0;
+    } else if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+      u = d1 / (d1 - d3);
+      w = 0;
+    } else {
+      const cpx = px - cx;
+      const cpy = py - cy;
+      const cpz = pz - cz;
+      const d5 = abx * cpx + aby * cpy + abz * cpz;
+      const d6 = acx * cpx + acy * cpy + acz * cpz;
+      const vb = d5 * d2 - d1 * d6;
+      const va = d3 * d6 - d5 * d4;
+      if (d6 >= 0 && d5 <= d6) {
+        u = 0;
+        w = 1;
+      } else if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+        u = 0;
+        w = d2 / (d2 - d6);
+      } else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+        w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+        u = 1 - w;
+      } else {
+        const den = 1 / (va + vb + vc);
+        u = vb * den;
+        w = vc * den;
+      }
+    }
   }
-  const den = 1 / (va + vb + vc);
-  return fim(vb * den, vc * den);
+  s[0] = ax + abx * u + acx * w;
+  s[1] = ay + aby * u + acy * w;
+  s[2] = az + abz * u + acz * w;
 }
 
 /**
@@ -604,7 +621,6 @@ export function campoDoCorpo(malha: MalhaHumana): CampoDoCorpo {
   const sinal = new Int8Array(total);
   const faixa = 1.75 * passo;
   const faixa2 = faixa * faixa;
-  const q = new Float64Array(3);
   const c = new Float64Array(3);
   for (let k = 0; k < t.length; k += 3) {
     const a = t[k]!;
@@ -631,13 +647,13 @@ export function campoDoCorpo(malha: MalhaHumana): CampoDoCorpo {
     for (let kk = k0; kk <= k1; kk++) {
       for (let jj = j0; jj <= j1; jj++) {
         for (let ii = i0; ii <= i1; ii++) {
-          q[0] = ox + ii * passo;
-          q[1] = oy + jj * passo;
-          q[2] = oz + kk * passo;
-          pontoMaisPerto(q, ax, ay, az, bx, by, bz, ex, ey, ez, c);
-          const dx = q[0]! - c[0]!;
-          const dy = q[1]! - c[1]!;
-          const dz = q[2]! - c[2]!;
+          const qx = ox + ii * passo;
+          const qy = oy + jj * passo;
+          const qz = oz + kk * passo;
+          pontoMaisPerto(qx, qy, qz, ax, ay, az, bx, by, bz, ex, ey, ez, c);
+          const dx = qx - c[0]!;
+          const dy = qy - c[1]!;
+          const dz = qz - c[2]!;
           const d2 = dx * dx + dy * dy + dz * dz;
           if (d2 > faixa2) continue;
           const g = ii + jj * nx + kk * nx * ny;
@@ -656,48 +672,54 @@ export function campoDoCorpo(malha: MalhaHumana): CampoDoCorpo {
   let fim = 0;
   fila[fim++] = 0;
   fora[0] = 1;
+  const planoXY = nx * ny;
   while (ini < fim) {
     const g = fila[ini++]!;
-    const kk = Math.floor(g / (nx * ny));
-    const jj = Math.floor((g - kk * nx * ny) / nx);
-    const ii = g - kk * nx * ny - jj * nx;
-    const entra = (h: number): void => {
-      if (fora[h] === 0 && sinal[h] === 0) {
+    const kk = Math.floor(g / planoXY);
+    const jj = Math.floor((g - kk * planoXY) / nx);
+    const ii = g - kk * planoXY - jj * nx;
+    for (let q = 0; q < 6; q++) {
+      let h = -1;
+      if (q === 0) h = ii > 0 ? g - 1 : -1;
+      else if (q === 1) h = ii < nx - 1 ? g + 1 : -1;
+      else if (q === 2) h = jj > 0 ? g - nx : -1;
+      else if (q === 3) h = jj < ny - 1 ? g + nx : -1;
+      else if (q === 4) h = kk > 0 ? g - planoXY : -1;
+      else h = kk < nz - 1 ? g + planoXY : -1;
+      if (h >= 0 && fora[h] === 0 && sinal[h] === 0) {
         fora[h] = 1;
         fila[fim++] = h;
       }
-    };
-    if (ii > 0) entra(g - 1);
-    if (ii < nx - 1) entra(g + 1);
-    if (jj > 0) entra(g - nx);
-    if (jj < ny - 1) entra(g + nx);
-    if (kk > 0) entra(g - nx * ny);
-    if (kk < nz - 1) entra(g + nx * ny);
+    }
   }
-  // A propagação da distância: duas varreduras de ida e volta, com os vizinhos em volta.
-  const vizinhos: [number, number, number, number][] = [];
+  // A propagação da distância: uma varredura de ida e uma de volta, com os vizinhos já vistos. A borda da grade não varre:
+  // ela copia a vizinha de dentro no fim.
+  const saltos = new Int32Array(13);
+  const custos = new Float32Array(13);
+  let m = 0;
   for (let dz = -1; dz <= 1; dz++) {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
-        if (dz < 0 || (dz === 0 && (dy < 0 || (dy === 0 && dx < 0)))) vizinhos.push([dx, dy, dz, Math.hypot(dx, dy, dz) * passo]);
+        if (dz < 0 || (dz === 0 && (dy < 0 || (dy === 0 && dx < 0)))) {
+          saltos[m] = dx + dy * nx + dz * planoXY;
+          custos[m++] = Math.hypot(dx, dy, dz) * passo;
+        }
       }
     }
   }
   const varrer = (sentido: 1 | -1): void => {
-    const [ka, kb] = sentido > 0 ? [0, nz] : [nz - 1, -1];
-    const [ja, jb] = sentido > 0 ? [0, ny] : [ny - 1, -1];
-    const [ia, ib] = sentido > 0 ? [0, nx] : [nx - 1, -1];
+    const [ka, kb] = sentido > 0 ? [1, nz - 1] : [nz - 2, 0];
+    const [ja, jb] = sentido > 0 ? [1, ny - 1] : [ny - 2, 0];
+    const [ia, ib] = sentido > 0 ? [1, nx - 1] : [nx - 2, 0];
     for (let kk = ka; kk !== kb; kk += sentido) {
       for (let jj = ja; jj !== jb; jj += sentido) {
-        for (let ii = ia; ii !== ib; ii += sentido) {
-          const g = ii + jj * nx + kk * nx * ny;
+        let g = ia + jj * nx + kk * planoXY;
+        for (let ii = ia; ii !== ib; ii += sentido, g += sentido) {
+          // Na faixa da superfície a distância já é a exata.
+          if (sinal[g] !== 0) continue;
           let melhor = d[g]!;
-          for (const [dx, dy, dz, custo] of vizinhos) {
-            const a = ii + sentido * dx;
-            const b = jj + sentido * dy;
-            const e = kk + sentido * dz;
-            if (a < 0 || b < 0 || e < 0 || a >= nx || b >= ny || e >= nz) continue;
-            const w = d[a + b * nx + e * nx * ny]! + custo;
+          for (let q = 0; q < 13; q++) {
+            const w = d[g + sentido * saltos[q]!]! + custos[q]!;
             if (w < melhor) melhor = w;
           }
           d[g] = melhor;
@@ -707,6 +729,14 @@ export function campoDoCorpo(malha: MalhaHumana): CampoDoCorpo {
   };
   varrer(1);
   varrer(-1);
+  for (let kk = 0; kk < nz; kk++) {
+    for (let jj = 0; jj < ny; jj++) {
+      for (let ii = 0; ii < nx; ii++) {
+        if (ii > 0 && jj > 0 && kk > 0 && ii < nx - 1 && jj < ny - 1 && kk < nz - 1) continue;
+        d[ii + jj * nx + kk * planoXY] = d[Math.max(1, Math.min(nx - 2, ii)) + Math.max(1, Math.min(ny - 2, jj)) * nx + Math.max(1, Math.min(nz - 2, kk)) * planoXY]! + passo;
+      }
+    }
+  }
   for (let g = 0; g < total; g++) {
     const s = sinal[g] !== 0 ? sinal[g]! : fora[g] ? 1 : -1;
     d[g] = d[g]! * s;

@@ -27,7 +27,7 @@ Com o corpo e a luz novos (ADR 0228, 0229), o que denunciava o 3D era o tecido: 
 ## O que não foi feito
 
 - **Os vincos menores que a malha.** Com 12 mm, as dobras têm de 4 cm para cima; as finas de verdade pedem a malha de 8 mm.
-- **O tempo.** Com 12 mm, um vestido leva uns 20 s para assentar; com 8 mm, passa de um minuto.
+- **O tempo.** Com 12 mm, um vestido leva uns 20 s para assentar; com 8 mm, passa de um minuto. Cada corpo do caminho da pose custa meio segundo de grade, e a janela para enquanto ela é medida: da pose de vestir aos braços abertos, ou às mãos na cintura, são até 14 corpos, uns 10 s a mais.
 
 ## Conferência
 

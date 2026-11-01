@@ -20,7 +20,7 @@ O manequim era feito de elipses e cones, com a cabeça num elipsoide (ADR 0111).
 
 **O acabamento é o de um manequim de vitrine:** cor única, sem pele, e o peito liso. O bico marcaria o tecido justo, e a roupa é o assunto.
 
-**A colisão** deixou de ser por elipses e cones. O corpo vira um campo de distâncias numa grade de 8 mm (`campoDoCorpo`), exato perto da superfície. Ler a grade custa o mesmo em qualquer parte do corpo, e ela conhece a axila, o gancho, as mãos e o queixo. Ajustar e medir leva cerca de um quarto de segundo; os últimos oito corpos ficam guardados.
+**A colisão** deixou de ser por elipses e cones. O corpo vira um campo de distâncias numa grade de 8 mm (`campoDoCorpo`), exato perto da superfície. Ler a grade custa o mesmo em qualquer parte do corpo, e ela conhece a axila, o gancho, as mãos e o queixo. Medir leva cerca de meio segundo, ou 0,8 s com os braços abertos, que alargam a grade; os últimos seis corpos ficam guardados.
 
 **O que ficou igual:** as seções elípticas do tronco continuam arrumando as peças em volta do corpo. Só o que se vê e o que empurra o tecido mudou.
 

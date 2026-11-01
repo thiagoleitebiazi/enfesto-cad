@@ -84,7 +84,7 @@ jobs:
       # O programa usado como uma pessoa usaria, com o mouse e o teclado do sistema e uma foto a cada passo
       # (scripts/teste-de-uso): importar, selecionar, arrastar o grupo, exportar o PDF, o planejamento, o enfesto.
       - name: Usar o programa (chip Apple)
-        timeout-minutes: 12
+        timeout-minutes: 25
         continue-on-error: true
         run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
 
