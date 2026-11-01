@@ -49,7 +49,7 @@ import { blocosNaMesa } from '../domain/gruposDoEncaixe';
 import { modeloDoPlano, quantidadesPorRoupa } from '../domain/modeloDoPlano';
 import { revisaoAtualDoMolde, type Projeto } from '../domain/projeto';
 import { escreverM, riscoDaMesa } from '../domain/planoDeCorte';
-import { ROTULO_DO_TIPO, type TipoDeEnfesto } from '../domain/enfesto';
+import { dobraDoEnfesto, MARGEM_DE_SEGURANCA_DA_MESA_MM, ROTULO_DO_TIPO, type TipoDeEnfesto } from '../domain/enfesto';
 import { retanguloEnvolvente } from '../core/geometria';
 import { ROTULO_DA_UNIDADE_DO_CUSTO, ROTULO_DO_TIPO_DE_TECIDO, type Tecido, type TipoDeTecido, type UnidadeDoCusto } from '../domain/tecido';
 import { estimarCustoDoTecido, roupasPorTamanho } from '../domain/custoDoTecido';
@@ -576,7 +576,8 @@ export function PainelDePlanejamento(props: PainelDePlanejamentoProps): React.JS
     const { promessa, cancelar } = props.buscarRiscos(
       pedidos,
       {
-        larguraMm: larguraDaBusca,
+        // A margem de segurança da mesa vale nos dois lados; na dobra, a peça encosta (ADR 0218).
+        larguraMm: larguraDaBusca - MARGEM_DE_SEGURANCA_DA_MESA_MM * (dobraDoEnfesto(tipo) === 'horizontal' ? 1 : 2),
         ...(casamento ? { casamento } : {}),
         comprimentoMaximoMm: config.comprimentoMaximoDaMesaMm - config.margemInicialDaMesaMm - config.margemFinalDaMesaMm,
         distanciaMm: config.distanciaEntrePecasMm,

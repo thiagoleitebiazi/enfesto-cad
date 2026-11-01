@@ -3,6 +3,7 @@ import { ponto, retanguloEnvolvente } from '../core/geometria';
 import { criarConfiguracaoDeEnfesto } from '../domain/enfesto';
 import { criarMolde, type Molde } from '../domain/molde';
 import { ehDmpl, hpglDoDmpl } from './dmpl-importacao';
+import { tracosDoTexto } from './fonteDeTracos';
 import { gerarPdfDeEncaixe } from './pdf-exportacao';
 import { gerarPlt, type ElementoDoPlotter } from './plt-exportacao';
 import { pecasDoPlt } from './plt-importacao';
@@ -81,5 +82,25 @@ describe('as emendas no PDF do encaixe (ADR 0210)', () => {
     const sem = await gerarPdfDeEncaixe([peca('a')], e, opcoes);
     const com = await gerarPdfDeEncaixe([peca('a')], { ...e, emendasMm: [100] }, opcoes);
     expect(com.size).toBeGreaterThan(sem.size);
+  });
+});
+
+describe('o texto em traços, com acentos (ADR 0218)', () => {
+  const pontosDe = (t: string) => tracosDoTexto(t, 6).flat();
+
+  it('o acento fica em cima da letra e não empurra a seguinte', () => {
+    const a = tracosDoTexto('AB', 6);
+    const b = tracosDoTexto('ÃB', 6);
+    expect(b).toHaveLength(a.length + 1);
+    expect(retanguloEnvolvente(pontosDe('Ã')).maxY).toBeCloseTo(8, 6);
+    expect(retanguloEnvolvente(pontosDe('ÃB')).maxX).toBeCloseTo(retanguloEnvolvente(pontosDe('AB')).maxX, 6);
+  });
+
+  it('a cedilha fica embaixo', () => {
+    expect(retanguloEnvolvente(pontosDe('Ç')).minY).toBeCloseTo(-2, 6);
+  });
+
+  it('um sinal que não é do português é ignorado, sem andar', () => {
+    expect(tracosDoTexto('A\u0308B', 6)).toEqual(tracosDoTexto('AB', 6));
   });
 });

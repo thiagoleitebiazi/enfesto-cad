@@ -126,6 +126,11 @@ describe('os blocos (ADR 0208)', () => {
     expect(m!.minY).toBeGreaterThanOrEqual(p!.maxY);
   });
 
+  it('com o tecido dobrado, a mesa não fica de lado: a dobra continua valendo', () => {
+    const entrada = entradaDoEncaixe([de('P')], enfesto({ tipo: 'par', blocosVerticais: true } as Partial<ConfiguracaoDeEnfesto>), false);
+    expect(entrada.dobra.enfesto.comprimentoMm).toBe(3000);
+  });
+
   it('na vertical, um bloco abaixo do outro na largura, dentro da mesa e sem girar', () => {
     const e = enfesto({ blocosVerticais: true });
     const pecas = comBlocos([{ ...de('P'), quantidade: 2 }, { ...de('M'), quantidade: 2 }], { separacaoCompleta: true, blocos: [], vertical: true });

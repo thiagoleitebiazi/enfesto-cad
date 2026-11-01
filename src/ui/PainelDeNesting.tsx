@@ -126,7 +126,7 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
       ...(somenteNaMesa ? { somenteNaMesa } : {}),
       ...(usarEspelhamento ? { usarEspelhamento } : {}),
       ...(compactar ? { compactar } : {}),
-      ...(emBlocos ? { blocos: { separacaoCompleta, blocos: lerBlocos(blocosEscritos), vertical: blocosVerticais } } : {}),
+      ...(emBlocos ? { blocos: { separacaoCompleta, blocos: lerBlocos(blocosEscritos), vertical: blocosVerticais && !props.temDobra } } : {}),
       ...(manterPacotes ? { manterOrientacaoDosPacotes: true } : {}),
       ...(props.temDobra ? { dobraInferior } : {}),
     };
@@ -267,7 +267,9 @@ export function PainelDeNesting(props: PainelDeNestingProps): React.JSX.Element 
                     Orientação dos blocos
                     <select value={blocosVerticais ? 'vertical' : 'horizontal'} onChange={(e) => setBlocosVerticais(e.target.value === 'vertical')}>
                       <option value="horizontal">Horizontal: um depois do outro no comprimento</option>
-                      <option value="vertical">Vertical: um abaixo do outro na largura</option>
+                      <option value="vertical" disabled={props.temDobra}>
+                        {props.temDobra ? 'Vertical: não vale com o tecido dobrado' : 'Vertical: um abaixo do outro na largura'}
+                      </option>
                     </select>
                   </label>
                 </fieldset>

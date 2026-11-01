@@ -10,7 +10,7 @@ import {
   type Graduacao,
   type PontoGraduado,
 } from './graduacao';
-import { rotacionarMolde, cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, type Pique, curvaLevada, penceLevada } from './molde';
+import { espelharMolde, rotacionarMolde, cunhasLevadas, pregasLevadas, semGraduacao, transladarMolde, type Marca, type Molde, type Pique, curvaLevada, penceLevada } from './molde';
 import { perimetrosNosTamanhosNovos, piquesNoTamanho, semGraduacao as piqueSemGraduacao } from './piquesGraduados';
 
 /**
@@ -247,7 +247,8 @@ export function substituirTamanho(pecas: readonly Molde[], ids: ReadonlySet<stri
       return peca;
     }
     const t = g.tamanhos.indexOf(novoTamanho);
-    const nova = t === g.base ? semGraduacao(origem) : moldeDoTamanho(origem, t, peca.id);
+    const doTamanho = t === g.base ? semGraduacao(origem) : moldeDoTamanho(origem, t, peca.id);
+    const nova = peca.espelhada ? espelharMolde(doTamanho, doTamanho.id) : doTamanho;
     const giro = peca.anguloDeRotacaoGraus - nova.anguloDeRotacaoGraus;
     const girada = giro === 0 ? nova : rotacionarMolde(nova, giro);
     const a = retanguloEnvolvente(peca.contorno);

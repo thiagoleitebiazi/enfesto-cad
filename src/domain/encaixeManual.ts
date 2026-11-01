@@ -245,7 +245,9 @@ export function incrementarGrade(pecas: readonly Molde[], copiadas: readonly Mol
 
 /** "Molde original": a peça volta à orientação com que entrou no projeto. O espelho não volta: a peça não guarda se foi espelhada. */
 export function voltarAoOriginal(peca: Molde): Molde {
-  return peca.anguloDeRotacaoGraus === 0 ? peca : rotacionarMolde(peca, -peca.anguloDeRotacaoGraus);
+  const semGiro = peca.anguloDeRotacaoGraus === 0 ? peca : rotacionarMolde(peca, -peca.anguloDeRotacaoGraus);
+  // A cópia espelhada de um par é assim mesmo: desfazer o espelho faria dois lados iguais.
+  return semGiro.espelhada && !semGiro.emPar ? espelharMolde(semGiro, semGiro.id) : semGiro;
 }
 
 /** A peça levada à dobra do tecido: a simetria na borda, sem a margem de segurança (ADR 0172). No resto, fica onde está. */

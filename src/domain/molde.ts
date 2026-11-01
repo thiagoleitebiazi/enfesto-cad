@@ -437,6 +437,8 @@ export interface Molde {
   readonly textos?: readonly TextoDaPeca[];
   /** Cor de fundo da peça no desenho (aba Início); ausente, vale a cor padrão. */
   readonly cor?: string;
+  /** A peça está espelhada em relação ao molde (ADR 0218): para voltar ao original e para trocar de tamanho. */
+  readonly espelhada?: true;
   /** A margem envolvente da peça no encaixe (ADR 0208). */
   readonly envolvente?: { readonly margemMm: number; readonly tipo: 'contorno' | 'retangular' };
   /** A margem de cada ponto do contorno, pelo número dele no desenho (ADR 0208). */
@@ -916,11 +918,13 @@ export function comOFioNaHorizontal(molde: Molde): { readonly molde: Molde; read
  * geometria — NÃO verifica `restricaoDeRotacao.permiteEspelhamento`; quem
  * chama deve checar antes (regra crítica da seção 5, nunca ignorada).
  */
-export function espelharMolde(molde: Molde, novoId: string): Molde {
+export function espelharMolde(moldeDeOrigem: Molde, novoId: string): Molde {
+  const { espelhada, ...molde } = moldeDeOrigem;
   const centro = retanguloEnvolvente(molde.contorno);
   const centroX = (centro.minX + centro.maxX) / 2;
   return {
     ...molde,
+    ...(espelhada ? {} : { espelhada: true as const }),
     id: novoId,
     contorno: espelharContornoHorizontal(molde.contorno, centroX),
     linhasInternas: molde.linhasInternas.map((l) => espelharContornoHorizontal(l, centroX)),

@@ -74,3 +74,48 @@ describe('o teclado virtual (ADR 0211)', () => {
     expect(onFechar).toHaveBeenCalled();
   });
 });
+
+describe('o resto do teclado (ADR 0218)', () => {
+  it('escreve os acentos', () => {
+    render(
+      <>
+        <Campo />
+        <TecladoVirtual onFechar={() => undefined} />
+      </>,
+    );
+    campo().focus();
+    campo().setSelectionRange(2, 2);
+    fireEvent.click(screen.getByRole('button', { name: 'ã' }));
+    expect(campo().value).toBe('abã');
+  });
+
+  it('Tab vai ao campo seguinte, sem cair no teclado', () => {
+    render(
+      <div role="dialog">
+        <input aria-label="um" />
+        <input aria-label="dois" />
+        <TecladoVirtual onFechar={() => undefined} />
+      </div>,
+    );
+    screen.getByLabelText('um').focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Tab' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('dois'));
+    fireEvent.click(screen.getByRole('button', { name: 'Tab' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('um'));
+  });
+
+  it('Enter envia o formulário do campo', () => {
+    const enviar = vi.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <>
+        <form onSubmit={enviar}>
+          <input aria-label="campo" />
+        </form>
+        <TecladoVirtual onFechar={() => undefined} />
+      </>,
+    );
+    campo().focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Enter' }));
+    expect(enviar).toHaveBeenCalled();
+  });
+});

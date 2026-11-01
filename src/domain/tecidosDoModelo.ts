@@ -43,7 +43,7 @@ export interface PecasDoEncaixe {
   readonly deOutrosTecidos: readonly Molde[];
 }
 
-const estaNaMesa = (peca: Molde, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'>): boolean => retanguloEnvolvente(linhaDeCorteDaPeca(peca)).minY < enfesto.comprimentoMm;
+export const estaNaMesa = (peca: Molde, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'>): boolean => retanguloEnvolvente(linhaDeCorteDaPeca(peca)).minY < enfesto.comprimentoMm;
 
 export function separarParaOEncaixe(pecas: readonly Molde[], escolha: EscolhaDoEncaixe, enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'>): PecasDoEncaixe {
   const fixas = pecas.filter((p) => escolha.idsFixos?.has(p.id));
@@ -51,6 +51,11 @@ export function separarParaOEncaixe(pecas: readonly Molde[], escolha: EscolhaDoE
   const entra = (p: Molde): boolean => !p.naoUsar && (escolha.tecido === undefined || tecidoDaPeca(p) === escolha.tecido) && (!escolha.somenteNaMesa || estaNaMesa(p, enfesto));
   const deOutro = (p: Molde): boolean => escolha.manterOutrosTecidos === true && escolha.tecido !== undefined && tecidoDaPeca(p) !== escolha.tecido;
   return { paraEncaixar: resto.filter(entra), fixas, foraDoEncaixe: resto.filter((p) => !entra(p) && !deOutro(p)), deOutrosTecidos: resto.filter(deOutro) };
+}
+
+/** O que vai para o risco: a peça deixada depois do fim da mesa está fora do encaixe, e não sai (ADR 0218). */
+export function pecasDoRisco(pecas: readonly Molde[], enfesto: Pick<ConfiguracaoDeEnfesto, 'comprimentoMm'> | null): readonly Molde[] {
+  return enfesto ? pecas.filter((p) => estaNaMesa(p, enfesto)) : pecas;
 }
 
 /** As peças do tecido ativo (ADR 0209): em branco, todas. */

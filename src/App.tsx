@@ -412,7 +412,7 @@ import {
   type OpcoesDoEncaixe,
   type VisaoDasPecas,
 } from './ui/visaoDasPecas';
-import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, pecasDoTecido, tecidosDoModelo, comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
+import { pecasDoRisco, comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, pecasDoTecido, tecidosDoModelo, comEspelhamentoPermitido, comSentidoAlternado, comUmTrechoPorTecido, enfestoComFixas, juntarAoEncaixe, separarParaOEncaixe, TODOS_EM_TRECHOS } from './domain/tecidosDoModelo';
 import { calcularConta } from './ui/medidas';
 import { AJUSTE_DE_TEXTO_PADRAO, type AjusteDeTexto } from './formats/plt-exportacao';
 import { ajusteDeTextoGuardado, corDaAreaNoEsquema, corDaCaneta, CORES_DA_AREA_PADRAO, coresDaAreaGuardadas, guardarAjusteDeTexto, guardarCoresDaArea, type EsquemaDaArea, type EsquemasDaArea } from './ui/preferencias';
@@ -1240,6 +1240,8 @@ export default function App(): React.JSX.Element {
   const tecidoAtivo = tecidosDaMesa.includes(tecidoEscolhido) ? tecidoEscolhido : '';
   const pecasNaMesa = useMemo(() => pecasDoTecido(pecas, tecidoAtivo), [pecas, tecidoAtivo]);
   const enfestoNaMesa = useMemo(() => (enfesto ? enfestoDoTecido(enfesto, tecidoAtivo) : null), [enfesto, tecidoAtivo]);
+  // O que sai no risco: a peça deixada depois do fim da mesa está fora do encaixe (ADR 0218).
+  const pecasQueSaem = useMemo(() => pecasDoRisco(pecasNaMesa, enfestoNaMesa), [pecasNaMesa, enfestoNaMesa]);
 
   const resumoDaBarra = useMemo(() => {
     if (!enfestoNaMesa || camposDaBarra.length === 0) return null;
@@ -3854,8 +3856,8 @@ export default function App(): React.JSX.Element {
           ...(fonteDoPlotter ? { fonte: fonteDoPlotter.bytes } : {}),
         };
         const noEncaixe = opcoesEscolhidas.tipo === 'encaixe-completo' && enfestoNaMesa ? enfestoNaMesa : null;
-        const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(pecasNaMesa, noEncaixe), areaImprimivelMm(opcoesDePagina));
-        const naEscala = pecasNaEscala(pecasNaMesa, fatores);
+        const fatores = fatoresDaImpressao(opcoesEscolhidas.escala ?? ESCALA_REAL, tamanhoDoDesenho(noEncaixe ? pecasQueSaem : pecasNaMesa, noEncaixe), areaImprimivelMm(opcoesDePagina));
+        const naEscala = pecasNaEscala(noEncaixe ? pecasQueSaem : pecasNaMesa, fatores);
         const blob = noEncaixe
           ? await gerarPdfDeEncaixe(naEscala, { ...noEncaixe, larguraUtilMm: noEncaixe.larguraUtilMm * fatores.vertical, comprimentoMm: noEncaixe.comprimentoMm * fatores.horizontal }, {
               ...opcoesDePagina,
@@ -3876,7 +3878,7 @@ export default function App(): React.JSX.Element {
         setGerandoPdf(false);
       }
     },
-    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, fonteDoPlotter, registrarEventoEPersistir],
+    [pecas, pecasNaMesa, pecasQueSaem, enfesto, enfestoNaMesa, tecido, fonteDoPlotter, registrarEventoEPersistir],
   );
 
   // O DXF (ADR 0096): as peças como estão na mesa, direto para a janela de salvar — não há o que escolher antes.
@@ -3897,9 +3899,16 @@ export default function App(): React.JSX.Element {
 
   // O PLT (ADR 0101): o encaixe em escala 1:1, em HPGL, para o plotter — com o contorno da mesa, quando há enfesto.
   const textoDoPlt = useCallback(
-    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasNaMesa, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(calibracaoDoPlotter ? { calibracao: calibracaoDoPlotter } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
-    [pecasNaMesa, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, fonteDoPlotter, calibracaoDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
+    (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => gerarPlt(pecasNaEscala(pecasQueSaem, fatores), { ...(enfestoNaMesa?.linhasDeReferencia ? { linhas: enfestoNaMesa.linhasDeReferencia.map((l) => ({ de: segmentoDaLinha(l, enfestoNaMesa)[0], ate: segmentoDaLinha(l, enfestoNaMesa)[1], nome: l.nome })) } : {}), textoComoLinha, ...(ajusteDeTexto ? { ajusteDeTexto } : {}), ...(estiloDaCosturaNoPlotter && estiloDaCostura !== 'continua' ? { estiloDaCostura } : {}), ...(enfestoNaMesa?.emendasMm ? { emendas: enfestoNaMesa.emendasMm } : {}), canetas: canetasDoPlotter, ferramentas: ferramentasDoPlotter, ...(niveisDoPlotter ? { niveis: niveisDoPlotter } : {}), ...(fonteDoPlotter ? { tracosDaFonte: fonteDoPlotter.tracos } : {}), ...(calibracaoDoPlotter ? { calibracao: calibracaoDoPlotter } : {}), ...(enfestoNaMesa?.textosNoRisco ? { textos: enfestoNaMesa.textosNoRisco } : {}), cabecalho: cabecalhoDoRisco({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasQueSaem, larguraMm: enfestoNaMesa?.larguraUtilMm ?? null, dataIso: new Date().toISOString() }), ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm, comprimentoDaMesaMm: enfestoNaMesa.comprimentoMm } : {}), ...partes }),
+    [pecasQueSaem, enfestoNaMesa, canetasDoPlotter, ferramentasDoPlotter, niveisDoPlotter, fonteDoPlotter, calibracaoDoPlotter, textoComoLinha, ajusteDeTexto, estiloDaCosturaNoPlotter, estiloDaCostura, projetoAtual.nome, projetoAtual.codigo],
   );
+
+  /** Antes de mandar ao plotter, por qualquer caminho: as peças sobrepostas, e as que ficaram fora da mesa (ADR 0218). */
+  const podePlotar = useCallback((): boolean => {
+    const fora = pecasNaMesa.length - pecasQueSaem.length;
+    if (fora > 0) avisar(`${fora === 1 ? 'Uma peça fora da mesa não sai' : `${fora} peças fora da mesa não saem`} no risco.`);
+    return !opcoesDoEncaixe.verificarAoPlotar || !problemasDeValidacao.some((p) => p.tipo === 'sobreposicao') || window.confirm('Há moldes sobrepostos no encaixe. Plotar assim mesmo?');
+  }, [pecasNaMesa, pecasQueSaem, opcoesDoEncaixe.verificarAoPlotar, problemasDeValidacao, avisar]);
 
   const exportarPlt = useCallback(async (partes: Partial<OpcoesDoPlt> = {}, fatores: FatoresDaImpressao = { horizontal: 1, vertical: 1 }) => {
     const api = window.enfestoCad;
@@ -3907,7 +3916,7 @@ export default function App(): React.JSX.Element {
       window.alert('Exportação de arquivo só está disponível rodando dentro do aplicativo Electron.');
       return;
     }
-    if (opcoesDoEncaixe.verificarAoPlotar && problemasDeValidacao.some((p) => p.tipo === 'sobreposicao') && !window.confirm('Há moldes sobrepostos no encaixe. Plotar assim mesmo?')) return;
+    if (!podePlotar()) return;
     try {
       const bytes = new TextEncoder().encode(textoDoPlt(partes, fatores));
       const caminhoSalvo = await api.salvarArquivo(partes.xInicialMm !== undefined || partes.faixa !== undefined ? 'encaixe-parte.plt' : 'encaixe.plt', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
@@ -3915,7 +3924,7 @@ export default function App(): React.JSX.Element {
     } catch (e) {
       window.alert(`Falha ao gerar o PLT: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt, opcoesDoEncaixe.verificarAoPlotar, problemasDeValidacao]);
+  }, [pecas, enfesto, tecido, registrarEventoEPersistir, textoDoPlt, podePlotar]);
 
   /** "Plotar direto" (ADR 0184): grava o risco na pasta que o programa do plotter vigia. */
   const enviarTextoAoPlotter = useCallback(async (prefixo: string, gerar: () => string) => {
@@ -3938,7 +3947,9 @@ export default function App(): React.JSX.Element {
     }
   }, [avisar, portaDeSaida, mudarFilaDeImpressao, esvaziarFilaDeImpressao]);
 
-  const enviarAoPlotter = useCallback(() => enviarTextoAoPlotter(projetoAtual.codigo || 'risco', textoDoPlt), [enviarTextoAoPlotter, projetoAtual.codigo, textoDoPlt]);
+  const enviarAoPlotter = useCallback(async () => {
+    if (podePlotar()) await enviarTextoAoPlotter(projetoAtual.codigo || 'risco', textoDoPlt);
+  }, [enviarTextoAoPlotter, podePlotar, projetoAtual.codigo, textoDoPlt]);
 
   // O arquivo da mesa de corte (ADR 0140): o encaixe em ISO (G-code), com a faca, o piqueteador, o furador e a caneta.
   const exportarIso = useCallback(
@@ -3949,7 +3960,7 @@ export default function App(): React.JSX.Element {
         return;
       }
       try {
-        const texto = gerarIso(pecasNaMesa, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm } : {}) });
+        const texto = gerarIso(pecasQueSaem, { velocidadeMmMin, comCaneta, facaTangencial, compensacaoDaLaminaMm, furadorM43, ...(enfestoNaMesa ? { larguraDaMesaMm: enfestoNaMesa.larguraUtilMm } : {}) });
         if (pelaPorta) {
           mudarFilaDeImpressao(comTrabalho(filaDeImpressaoRef.current, { id: proximoId(), nome: `${projetoAtual.codigo || 'encaixe'}.iso`, destino: portaDeSaida, texto }));
           esvaziarFilaDeImpressao();
@@ -3959,7 +3970,7 @@ export default function App(): React.JSX.Element {
         const bytes = new TextEncoder().encode(texto);
         const caminhoSalvo = await api.salvarArquivo('encaixe.iso', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
         if (!caminhoSalvo) return;
-        const r = resumoDoIso(pecasNaMesa);
+        const r = resumoDoIso(pecasQueSaem);
         registrarEventoEPersistir(
           'exportacao-de-pdf',
           { pecas, tecido, enfesto },
@@ -3969,7 +3980,7 @@ export default function App(): React.JSX.Element {
         window.alert(`Falha ao gerar o ISO: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [pecas, pecasNaMesa, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir, portaDeSaida, projetoAtual.codigo, mudarFilaDeImpressao, esvaziarFilaDeImpressao, avisar],
+    [pecas, pecasQueSaem, enfesto, enfestoNaMesa, tecido, registrarEventoEPersistir, portaDeSaida, projetoAtual.codigo, mudarFilaDeImpressao, esvaziarFilaDeImpressao, avisar],
   );
 
   // O relatório é do que está na tela: o `estadoAtual` do projeto é o da última vez que ele foi salvo.
@@ -6766,7 +6777,7 @@ export default function App(): React.JSX.Element {
               }
             }
             const xml = valores['formato'] === 'xml';
-            const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasNaMesa, enfesto: enfestoNaMesa }) : gerarSvgDoEncaixe(pecasNaMesa, enfestoNaMesa);
+            const conteudo = xml ? gerarXmlDoEncaixe({ nome: projetoAtual.nome, codigo: projetoAtual.codigo, pecas: pecasQueSaem, enfesto: enfestoNaMesa }) : gerarSvgDoEncaixe(pecasQueSaem, enfestoNaMesa);
             void salvarTexto(xml ? 'encaixe.xml' : 'encaixe.svg', conteudo);
             return null;
           }}
@@ -7357,7 +7368,7 @@ export default function App(): React.JSX.Element {
         <DialogoDeCampos
           titulo="Exportar para a mesa de corte (ISO)"
           resumo={[
-            ['Peças', String(pecasNaMesa.length)],
+            ['Peças', String(pecasQueSaem.length)],
             ['Largura da mesa', enfestoNaMesa ? `${numeroComVirgula(enfestoNaMesa.larguraUtilMm / 10, 1)} cm (do enfesto)` : 'a das peças (sem enfesto)'],
           ]}
           campos={[

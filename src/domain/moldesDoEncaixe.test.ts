@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { area, ponto, retanguloEnvolvente } from '../core/geometria';
 import { gerarPlt } from '../formats/plt-exportacao';
 import { aplicarConjunto, comConjunto, conjuntosGuardados, guardarConjuntos, lerQuantidades, textoDasQuantidades } from '../ui/visaoDasPecas';
-import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe } from './encaixeManual';
+import { acaoDaTeclaDoEncaixe, comConjuntoRigido, comFolgaNoEncaixe, fecharEncaixe, semEnvolvente, semFolgaNoEncaixe, voltarAoOriginal } from './encaixeManual';
 import { criarConfiguracaoDeEnfesto } from './enfesto';
-import { criarMolde, linhaDeCorteDaPeca, type Molde } from './molde';
+import { criarMolde, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, type Molde } from './molde';
 import type { ResultadoDeNesting } from './nesting';
 import { fundirPiques } from './piques';
 import { comSentidoAlternado } from './tecidosDoModelo';
@@ -156,5 +156,32 @@ describe('o grupo e a envolvente na peça (ADR 0208)', () => {
 describe('Ctrl+Shift+D', () => {
   it('liga e desliga a distância entre moldes', () => {
     expect(acaoDaTeclaDoEncaixe({ key: 'D', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true })).toEqual({ tipo: 'usar-distancia' });
+  });
+});
+
+describe('a peça lembra que foi espelhada (ADR 0218)', () => {
+  const lados = quadrado({ contorno: [ponto(0, 0), ponto(100, 0), ponto(0, 200)] });
+
+  it('espelhar duas vezes volta a ser como era', () => {
+    const uma = espelharMolde(lados, 'a');
+    expect(uma.espelhada).toBe(true);
+    expect(espelharMolde(uma, 'a').espelhada).toBeUndefined();
+  });
+
+  it('voltar ao original desfaz o espelho e o giro', () => {
+    const mexida = rotacionarMolde(espelharMolde(lados, 'a'), 180);
+    const volta = voltarAoOriginal(mexida);
+    expect(volta.espelhada).toBeUndefined();
+    expect(volta.anguloDeRotacaoGraus).toBe(0);
+    expect(area(volta.contorno)).toBeCloseTo(area(lados.contorno), 6);
+    volta.contorno.forEach((p, i) => {
+      expect(p.x).toBeCloseTo(lados.contorno[i]!.x, 6);
+      expect(p.y).toBeCloseTo(lados.contorno[i]!.y, 6);
+    });
+  });
+
+  it('a cópia espelhada de um par continua espelhada', () => {
+    const par = espelharMolde({ ...lados, emPar: true }, 'a');
+    expect(voltarAoOriginal(par).espelhada).toBe(true);
   });
 });

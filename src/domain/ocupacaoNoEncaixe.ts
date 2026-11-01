@@ -1,6 +1,6 @@
 import { area, areaAssinada, deslocarContornoParaFora, espelharHorizontal, pontoDentroDoContorno, retanguloEnvolvente, rotacionar, type Contorno, type Ponto2D } from '../core/geometria';
 import { comFolgaNoEncaixe, comOrientacaoInicial, compactarResultado, semFolgaNoEncaixe } from './encaixeManual';
-import { areaUtilDaMesa, enfestoComEmendas, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
+import { areaUtilDaMesa, dobraDoEnfesto, enfestoComEmendas, type ConfiguracaoDeEnfesto, type ZonaBloqueada } from './enfesto';
 import { posicaoDoTamanho } from './graduacao';
 import { comGrupoDoEncaixe } from './gruposDoEncaixe';
 import { criarMolde, espelharMolde, linhaDeCorteDaPeca, rotacionarMolde, transladarMolde, type Molde, type RestricaoDeRotacao } from './molde';
@@ -246,7 +246,8 @@ export function entradaDoEncaixe(pecas: readonly Molde[], enfesto: ConfiguracaoD
   const preparadas = pecas.map(comOrientacaoInicial);
   const ocupacao = enfesto.semEnvolvente ? { pecas: preparadas, virtuais: new Map<string, PecaVirtual>() } : comOcupacao(preparadas);
   const comFolga = ocupacao.pecas.map(comFolgaNoEncaixe);
-  const vertical = enfesto.blocosVerticais === true;
+  // A mesa de lado é aberta: com o tecido dobrado, as peças perderiam a dobra. Aí os blocos seguem na horizontal.
+  const vertical = enfesto.blocosVerticais === true && dobraDoEnfesto(enfesto.tipo) === null;
   const comEmendas = enfestoComEmendas(enfesto);
   const mesa = vertical ? mesaDeLado(comEmendas) : comEmendas;
   const dobra = prepararDobra(vertical ? comFolga.map((p) => rotacionarMolde(p, 90)) : comFolga, mesa, sentidoUnico);

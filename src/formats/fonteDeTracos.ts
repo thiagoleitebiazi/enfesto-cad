@@ -63,16 +63,28 @@ const LETRAS: Readonly<Record<string, string>> = {
 const ALTURA_DA_GRADE = 6;
 const AVANCO_DA_LETRA = 5.5;
 
-/** Os traços do texto, em mm, com o começo em (0, 0) e a altura pedida. Sem acentos e em maiúsculas, como o letreiro do plotter. */
+/** Os acentos do português, em cima da letra (e a cedilha, embaixo), na mesma grade (ADR 0218). */
+const ACENTOS: Readonly<Record<string, string>> = {
+  '\u0300': '1.5,8 2.5,7',
+  '\u0301': '1.5,7 2.5,8',
+  '\u0302': '1,7 2,8 3,7',
+  '\u0303': '0.5,7 1.5,8 2.5,7 3.5,8',
+  '\u0327': '2,0 2,-1 1,-2',
+};
+
+/** Os traços do texto, em mm, com o começo em (0, 0) e a altura pedida, em maiúsculas. */
 export function tracosDoTexto(texto: string, alturaMm: number): Ponto2D[][] {
   const escala = alturaMm / ALTURA_DA_GRADE;
-  const limpo = texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-  return [...limpo].flatMap((letra, i) =>
-    (LETRAS[letra]?.split('|') ?? []).map((traco) =>
+  let coluna = -1;
+  return [...texto.normalize('NFD').toUpperCase()].flatMap((letra) => {
+    const acento = ACENTOS[letra];
+    if (acento === undefined && /\p{M}/u.test(letra)) return [];
+    if (acento === undefined) coluna++;
+    return ((acento ?? LETRAS[letra])?.split('|') ?? []).map((traco) =>
       traco.split(' ').map((par) => {
         const [x, y] = par.split(',').map(Number);
-        return { x: (x! + i * AVANCO_DA_LETRA) * escala, y: y! * escala };
+        return { x: (x! + coluna * AVANCO_DA_LETRA) * escala, y: y! * escala };
       }),
-    ),
-  );
+    );
+  });
 }

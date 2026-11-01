@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { digitarNoCampo } from './digitarNoCampo';
+import { confirmarCampo, digitarNoCampo, irAoProximoCampo } from './digitarNoCampo';
 
-const LINHAS = ['1234567890', 'qwertyuiop', 'asdfghjklç', 'zxcvbnm,.-'] as const;
+const LINHAS = ['1234567890', 'qwertyuiop', 'asdfghjklç', 'zxcvbnm,.-', 'áéíóúâêôãõ'] as const;
 
 interface TecladoVirtualProps {
   readonly onFechar: () => void;
@@ -30,6 +30,8 @@ export function TecladoVirtual(props: TecladoVirtualProps): React.JSX.Element {
         {tecla('Maiúsculas', 'Maiúsculas', () => setMaiusculas((v) => !v), maiusculas ? 'ativa' : '')}
         {tecla('Espaço', 'Espaço', digitar(' '), 'larga')}
         {tecla('Apagar', 'Apagar', digitar('apagar'))}
+        {tecla('Tab', 'Tab', () => irAoProximoCampo(document.activeElement))}
+        {tecla('Enter', 'Enter', () => confirmarCampo(document.activeElement))}
         {tecla('Fechar', 'Fechar o teclado', props.onFechar)}
       </div>
     </div>

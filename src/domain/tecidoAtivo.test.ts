@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ponto } from '../core/geometria';
 import { criarConfiguracaoDeEnfesto, type ConfiguracaoDeEnfesto } from './enfesto';
 import { criarMolde, type Molde } from './molde';
-import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, juntarAoEncaixe, pecasDoTecido, separarParaOEncaixe } from './tecidosDoModelo';
+import { comLarguraDoTecido, comPecasMudadas, enfestoDoTecido, juntarAoEncaixe, pecasDoRisco, pecasDoTecido, separarParaOEncaixe } from './tecidosDoModelo';
 
 const enfesto = (): ConfiguracaoDeEnfesto => criarConfiguracaoDeEnfesto({ tipo: 'impar', larguraUtilMm: 1000, comprimentoMm: 3000, quantidadeDeCamadas: 1, margemLateralMm: 0, margemDeExtremidadeMm: 0, distanciaMinimaEntrePecasMm: 0 });
 
@@ -46,5 +46,17 @@ describe('o tecido ativo (ADR 0209)', () => {
     const s = separarParaOEncaixe([peca('a'), peca('b', 'Forro')], { tecido: 'Forro' }, enfesto());
     expect(s.foraDoEncaixe.map((p) => p.id)).toEqual(['a']);
     expect(s.deOutrosTecidos).toEqual([]);
+  });
+});
+
+describe('o que vai para o risco (ADR 0218)', () => {
+  it('a peça depois do fim da mesa não sai', () => {
+    const fora = { ...peca('b'), contorno: peca('b').contorno.map((p) => ponto(p.x, p.y + 4000)) };
+    expect(pecasDoRisco([peca('a'), fora], enfesto()).map((p) => p.id)).toEqual(['a']);
+  });
+
+  it('sem enfesto, não há mesa: todas saem', () => {
+    const lista = [peca('a')];
+    expect(pecasDoRisco(lista, null)).toBe(lista);
   });
 });

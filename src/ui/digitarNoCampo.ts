@@ -13,3 +13,22 @@ export function digitarNoCampo(campo: Element | null, tecla: string): boolean {
   if (campo.selectionStart !== null) campo.setSelectionRange(posicao, posicao);
   return true;
 }
+
+/** Enter: como a tecla de verdade, avisa o campo e envia o formulário dele; no texto longo, quebra a linha. */
+export function confirmarCampo(campo: Element | null): void {
+  if (campo instanceof HTMLTextAreaElement) {
+    digitarNoCampo(campo, '\n');
+    return;
+  }
+  if (!(campo instanceof HTMLInputElement)) return;
+  campo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  campo.form?.requestSubmit();
+}
+
+/** Tab: o campo seguinte da janela aberta, ou da tela, sem contar o próprio teclado. */
+export function irAoProximoCampo(atual: Element | null): void {
+  const raiz = atual?.closest('[role=dialog]') ?? document.body;
+  const campos = Array.from(raiz.querySelectorAll<HTMLElement>('input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')).filter((c) => !c.closest('.teclado-virtual'));
+  const i = atual instanceof HTMLElement ? campos.indexOf(atual) : -1;
+  campos[(i + 1) % campos.length]?.focus();
+}
