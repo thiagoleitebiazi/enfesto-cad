@@ -569,6 +569,7 @@ export function PainelDoProvador3D(props: {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     for (const [i, [nome, variante]] of cores.entries()) {
+      setMensagem(`Calculando a cor ${i + 1} de ${cores.length}…`);
       const parte = document.createElement('canvas');
       parte.width = largura;
       parte.height = altura;
@@ -604,6 +605,8 @@ export function PainelDoProvador3D(props: {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const vistas = todas ? VISTAS : [['Esta vista', camera.guinada] as const];
     for (const [i, [nome, guinada]] of vistas.entries()) {
+      // Num computador lento, leva até um minuto: sem aviso, parecia que o botão não tinha pegado.
+      setMensagem(todas ? `Calculando a vista ${i + 1} de ${vistas.length}…` : 'Calculando a imagem…');
       const parte = document.createElement('canvas');
       parte.width = todas ? largura : canvas.width;
       parte.height = altura;
@@ -622,7 +625,7 @@ export function PainelDoProvador3D(props: {
     }
     const nome = `provador-3d-${props.nomeDoModelo.replace(/[^A-Za-z0-9._-]+/g, '-')}${todas ? '-frente-lado-costas' : ''}.png`;
     const caminho = await props.onSalvarArquivo(nome, await blob.arrayBuffer());
-    if (caminho) setMensagem(`Imagem salva em ${caminho}`);
+    setMensagem(caminho ? `Imagem salva em ${caminho}` : null);
   };
 
   /**
@@ -956,16 +959,18 @@ function PartePecas(props: {
         precisar. A segunda de um par (a manga esquerda) já sai espelhada.
       </p>
       {mangas.length > 1 && !mangas[0]!.mesmoPar && (
-        <label>
-          Manga do modelo
-          <select aria-label="Manga do modelo" value={mangaVestida?.pecaId ?? ''} onChange={(e) => props.onTrocarManga(e.target.value)}>
-            {mangas.map((m) => (
-              <option key={m.pecaId} value={m.pecaId}>
-                {m.rotulo}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="campos-da-peca-3d">
+          <label>
+            Manga do modelo
+            <select aria-label="Manga do modelo" value={mangaVestida?.pecaId ?? ''} onChange={(e) => props.onTrocarManga(e.target.value)}>
+              {mangas.map((m) => (
+                <option key={m.pecaId} value={m.pecaId}>
+                  {m.rotulo}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       )}
       {props.instancias.map((inst) => {
         const c = props.montagem.pecas[inst.chave]!;

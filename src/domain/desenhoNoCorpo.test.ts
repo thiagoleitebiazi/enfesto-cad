@@ -88,4 +88,18 @@ describe('as poses do manequim (ADR 0138)', () => {
       expect(Math.abs(b.fim.x)).toBeGreaterThan(s.a);
     }
   });
+
+  it('mãos na cintura: a mão acompanha o quadril, com vão para o pano, e não entra no corpo', () => {
+    for (const publico of ['feminino', 'masculino'] as const) {
+      const c = corpoDoManequim(MEDIDAS_DO_PUBLICO[publico], 'maos-na-cintura', publico);
+      for (const b of [c.bracos.direito, c.bracos.esquerdo]) {
+        // A ponta da mão, a uns 170 mm do punho, fica fora do tronco.
+        const y = b.fim.y + b.mao!.y * 170;
+        const x = b.fim.x + b.mao!.x * 170;
+        expect(Math.abs(x)).toBeGreaterThan(secaoNaAltura(c, y)!.a + 20);
+        // E aponta para fora: o quadril abre da cintura para baixo.
+        expect(Math.sign(b.mao!.x)).toBe(Math.sign(b.fim.x));
+      }
+    }
+  });
 });

@@ -1479,9 +1479,9 @@ async function principal() {
   await foto('37-provador-estampa.png');
   await parteDaJanela('Imagem');
   await botaoNaJanela('Salvar frente, lado e costas (PNG)');
-  // As três vistas demoram mais onde não há placa de vídeo, como no Mac do GitHub: espera o arquivo, não um tempo fixo.
+  // As três vistas demoram mais onde não há placa de vídeo, como no Mac do GitHub, e até um minuto no Mac Intel: espera o arquivo.
   const tresVistas = () => fs.readdirSync(SAIDA).filter((f) => f.startsWith('provador-3d-') && f.endsWith('-frente-lado-costas.png'));
-  for (let i = 0; i < 60 && tresVistas().length === 0; i++) await espera(500);
+  for (let i = 0; i < 300 && tresVistas().length === 0; i++) await espera(500);
   await espera(500);
   const pngs = tresVistas();
   const png = pngs[0] ? fs.readFileSync(path.join(SAIDA, pngs[0])) : null;
@@ -1499,7 +1499,7 @@ async function principal() {
   const alta = pngAlta ? fs.readFileSync(path.join(SAIDA, pngAlta)) : null;
   await botaoNaJanela('Gravar o giro (vídeo WebM)');
   let webm = null;
-  for (let i = 0; i < 40 && !webm; i++) {
+  for (let i = 0; i < 240 && !webm; i++) {
     await espera(500);
     const n = fs.readdirSync(SAIDA).find((x) => x.endsWith('-giro.webm'));
     if (n && !(await js(`!!Array.from(document.querySelectorAll('[role=dialog] button')).find(b => b.textContent.startsWith('Gravando o giro'))`))) webm = fs.readFileSync(path.join(SAIDA, n));

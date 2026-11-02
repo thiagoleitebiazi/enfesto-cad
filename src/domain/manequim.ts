@@ -200,6 +200,9 @@ export const ROTULO_DA_POSE: Readonly<Record<PoseDoManequim, string>> = {
 };
 
 /** Quanto o braço sai do corpo (graus, da vertical) em cada pose. */
+/** O vão entre a mão na cintura e o corpo (mm), para o pano. */
+const FOLGA_DA_MAO_NO_CORPO_MM = 22;
+
 const ABERTURA_DA_POSE: Readonly<Record<PoseDoManequim, number>> = { padrao: 15, 'bracos-abaixados': 7, 'bracos-abertos': 60, 'maos-na-cintura': 40 };
 
 /** A forma do corpo pelas medidas, para quem só tem as medidas: a criança pela altura, o resto pela diferença do quadril. */
@@ -257,15 +260,20 @@ export function corpoDoManequim(medidasDadas: MedidasDoManequim, pose: PoseDoMan
     const meio = p3(inicio.x + d.x * L * 0.55, inicio.y + d.y * L * 0.55, poseDoBraco === 'maos-na-cintura' ? zOmbro - 0.1 * L : zOmbro);
     if (poseDoBraco === 'maos-na-cintura') {
       // O cotovelo vai para o lado e para trás; o antebraço volta dele para a cintura, e o punho dobra: a mão fica deitada
-      // no lado do quadril, com os dedos para baixo e para a frente.
-      const s = secaoNaAltura({ tronco } as unknown as CorpoDoManequim, cintura)!;
-      const alvo = p3(lado * (s.a + raioDoBraco * 0.62), cintura + 0.005 * H, s.b * 0.3);
+      // no lado do quadril, com os dedos para baixo e para a frente, afastada dele o bastante para o pano passar por baixo. Encostada
+      // e apontando para dentro, ela entrava no corpo, e o pano ficava por fora dos dedos.
+      const secao = { tronco } as unknown as CorpoDoManequim;
+      const s = secaoNaAltura(secao, cintura)!;
+      const sq = secaoNaAltura(secao, quadril)!;
+      const alvo = p3(lado * (s.a + raioDoBraco * 0.62 + FOLGA_DA_MAO_NO_CORPO_MM), cintura + 0.005 * H, s.b * 0.3);
       const dx = alvo.x - meio.x;
       const dy = alvo.y - meio.y;
       const dz = alvo.z - meio.z;
       const l = Math.hypot(dx, dy, dz) || 1;
       const k = Math.min(1, (L * 0.45) / l);
-      const [mx, my, mz] = [-lado * 0.3, -0.85, 0.43];
+      // Acompanha a linha do quadril, que abre da cintura para baixo.
+      const abre = (sq.a - s.a) / Math.max(1, cintura - quadril);
+      const [mx, my, mz] = [lado * 0.85 * abre, -0.85, 0.43];
       const ml = Math.hypot(mx, my, mz);
       return { inicio, meio, fim: p3(meio.x + dx * k, meio.y + dy * k, meio.z + dz * k), raio: raioDoBraco, mao: p3(mx / ml, my / ml, mz / ml) };
     }

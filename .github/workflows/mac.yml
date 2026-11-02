@@ -88,6 +88,11 @@ jobs:
         continue-on-error: true
         run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
 
+      - name: Vestir uma camiseta sem nomes (chip Apple)
+        timeout-minutes: 6
+        continue-on-error: true
+        run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/camiseta.cjs
+
       - name: Guardar as fotos do teste
         if: always()
         uses: actions/upload-artifact@v4
@@ -124,7 +129,7 @@ jobs:
   intel:
     needs: mac
     runs-on: macos-15-intel
-    timeout-minutes: 60
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
 
@@ -162,9 +167,14 @@ jobs:
           npm run build
 
       - name: Usar o programa
-        timeout-minutes: 30
+        timeout-minutes: 35
         continue-on-error: true
         run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
+
+      - name: Vestir uma camiseta sem nomes
+        timeout-minutes: 8
+        continue-on-error: true
+        run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/camiseta.cjs
 
       - name: Guardar as fotos do teste
         if: always()
