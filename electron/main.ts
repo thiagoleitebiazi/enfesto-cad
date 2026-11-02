@@ -8,6 +8,7 @@ import type { Server } from 'node:http';
 import { emCascata, ladoALado, porNoLugar } from './arrumarJanelas';
 import { pedirAoServidor, urlDoServidorValida } from './conexaoDeColaboracao';
 import { criarServidorDeColaboracao } from './servidorDeColaboracao';
+import { pastaDeDadosDeSempre } from './pastaDeDados';
 import { enviarAPorta, lerPortaDeSaida } from './portaDeSaida';
 import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +56,10 @@ import {
 } from './pastasCompartilhadas';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// A pasta de dados (os projetos, as preferências, o diagnóstico) continua a de antes da troca do nome para Enfesto (ADR 0238).
+const pastaDeSempre = pastaDeDadosDeSempre(app.getPath('userData'), app.getName(), app.getPath('appData'));
+if (pastaDeSempre) app.setPath('userData', pastaDeSempre);
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -258,12 +263,12 @@ async function avisarQueNaoAbriu(motivo: string, tentados: readonly ModoDeAbertu
   for (;;) {
     const opcoes: Electron.MessageBoxOptions = {
       type: 'error',
-      title: 'Enfesto CAD',
-      message: 'O Enfesto CAD não conseguiu mostrar a tela neste computador',
+      title: 'Enfesto',
+      message: 'O Enfesto não conseguiu mostrar a tela neste computador',
       detail:
         `O programa tentou abrir de ${tentados.length} modos diferentes, e em nenhum a tela apareceu.\n\n` +
         'O mais comum é um antivírus ou outro programa de segurança estar impedindo. Tente, nesta ordem:\n' +
-        '1. Pôr o Enfesto CAD nas exceções do antivírus e abrir de novo.\n' +
+        '1. Pôr o Enfesto nas exceções do antivírus e abrir de novo.\n' +
         '2. Reiniciar o computador e abrir de novo.\n\n' +
         'Se continuar, use "Copiar o diagnóstico" e cole numa mensagem para quem lhe passou o programa: ele diz o que aconteceu neste computador.\n\n' +
         `Resumo: ${resumo}`,
@@ -273,7 +278,7 @@ async function avisarQueNaoAbriu(motivo: string, tentados: readonly ModoDeAbertu
       noLink: true,
     };
     const resposta = await (janela.isDestroyed() ? dialog.showMessageBox(opcoes) : dialog.showMessageBox(janela, opcoes));
-    if (resposta.response === 0) clipboard.writeText(`Enfesto CAD ${app.getVersion()} — a tela não apareceu.\n${resumo}\n\n${fimDoDiagnostico()}`);
+    if (resposta.response === 0) clipboard.writeText(`Enfesto ${app.getVersion()} — a tela não apareceu.\n${resumo}\n\n${fimDoDiagnostico()}`);
     else if (resposta.response === 1) shell.showItemInFolder(arquivoDeDiagnostico());
     else break;
   }
@@ -307,15 +312,15 @@ function menuDoMac(): Menu {
   };
   return Menu.buildFromTemplate([
     {
-      label: 'Enfesto CAD',
+      label: 'Enfesto',
       submenu: [
-        { role: 'about', label: 'Sobre o Enfesto CAD' },
+        { role: 'about', label: 'Sobre o Enfesto' },
         { type: 'separator' },
-        { role: 'hide', label: 'Ocultar o Enfesto CAD' },
+        { role: 'hide', label: 'Ocultar o Enfesto' },
         { role: 'hideOthers', label: 'Ocultar os outros' },
         { role: 'unhide', label: 'Mostrar todos' },
         { type: 'separator' },
-        { role: 'quit', label: 'Sair do Enfesto CAD' },
+        { role: 'quit', label: 'Sair do Enfesto' },
       ],
     },
     {
@@ -359,7 +364,7 @@ function criarJanelaPrincipal(): void {
     // A janela só aparece depois de desenhada e conferida: quem usa o programa nunca vê uma janela preta à espera.
     show: false,
     backgroundColor: '#e8e9eb',
-    title: MODO_SERVIDOR ? 'Enfesto CAD — servidor de encaixes' : 'Enfesto CAD',
+    title: MODO_SERVIDOR ? 'Enfesto — servidor de encaixes' : 'Enfesto',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -485,8 +490,8 @@ function criarJanelaPrincipal(): void {
     void dialog
       .showMessageBox({
         type: 'info',
-        title: 'Enfesto CAD',
-        message: 'Abrindo o Enfesto CAD…',
+        title: 'Enfesto',
+        message: 'Abrindo o Enfesto…',
         detail:
           tentados.length === 0
             ? 'Neste computador a abertura está demorando mais que o normal. Aguarde: se a tela não aparecer, o programa tenta sozinho outro modo de abertura.'
@@ -539,7 +544,7 @@ function criarJanelaPrincipal(): void {
     registrarDiagnostico(`recuperacao motivo=${motivo} tentativa=${tentativas + 1}`);
     if (tentativas >= MAXIMO_DE_TENTATIVAS_DE_RECUPERACAO) {
       dialog.showErrorBox(
-        'Enfesto CAD não conseguiu mostrar a tela',
+        'Enfesto não conseguiu mostrar a tela',
         `A interface não carregou depois de ${tentativas + 1} tentativas.\n\n` +
           `Envie este arquivo para o suporte:\n${arquivoDeDiagnostico()}`,
       );
@@ -605,8 +610,8 @@ ipcMain.handle('abrir-arquivo-dxf', async () => {
 
 // Os outros arquivos de texto que a interface abre: o projeto exportado (ADR 0156) e os outros.
 const ARQUIVOS_DE_TEXTO = {
-  projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto CAD', extensions: ['enfesto'] },
-  perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto CAD', extensions: ['json'] },
+  projeto: { title: 'Importar projeto', name: 'Projeto do Enfesto', extensions: ['enfesto'] },
+  perfil: { title: 'Carregar perfil', name: 'Perfil do Enfesto', extensions: ['json'] },
   iso: { title: 'Importar arquivo de corte ISO', name: 'ISO (G-code)', extensions: ['iso', 'nc', 'cnc', 'tap', 'txt'] },
   rul: { title: 'Arquivo de regras de graduação', name: 'Regras (RUL)', extensions: ['rul', 'txt'] },
 } as const;
@@ -1241,8 +1246,8 @@ async function perguntarSeAbriuDireito(): Promise<boolean> {
   if (TESTE_DE_ABERTURA || pedidoDeAbertura.modo !== null || !devePerguntarSeAbriuDireito(estadoDaAbertura)) return false;
   const resposta = await dialog.showMessageBox({
     type: 'question',
-    title: 'Enfesto CAD',
-    message: 'A janela do Enfesto CAD abriu direito da última vez?',
+    title: 'Enfesto',
+    message: 'A janela do Enfesto abriu direito da última vez?',
     detail: 'O programa foi fechado logo depois de abrir, duas vezes seguidas. Se a janela ficou preta ou vazia, ele passa a abrir em outro modo.',
     buttons: ['Sim, abriu direito', 'Não, ficou preta ou vazia'],
     defaultId: 0,
@@ -1264,7 +1269,7 @@ if (!instanciaUnica) {
 } else {
   process.on('uncaughtException', (erro) => {
     registrarDiagnostico(`erro-no-processo-principal ${erro.stack ?? erro.message}`);
-    dialog.showErrorBox('Enfesto CAD', `Aconteceu um erro no programa:\n\n${erro.message}\n\nO que aconteceu ficou gravado em:\n${arquivoDeDiagnostico()}`);
+    dialog.showErrorBox('Enfesto', `Aconteceu um erro no programa:\n\n${erro.message}\n\nO que aconteceu ficou gravado em:\n${arquivoDeDiagnostico()}`);
   });
 
   app.on('child-process-gone', (_e, detalhes) => {

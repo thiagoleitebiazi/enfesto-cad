@@ -1,4 +1,4 @@
-# TODO — Enfesto CAD
+# TODO — Enfesto
 
 Rastreia as 10 etapas do plano original. "Feito" só é marcado quando existe
 código real, testado, por trás — não quando existe só a tela.
@@ -315,10 +315,10 @@ Vite, camadas `core/domain/(nesting)/(formats)/(persistence)/ui`. Ver
   aproveitamento devolvido pelo próprio motor de nesting — confirma que as
   duas camadas concordam sobre a mesma geometria.
 - [x] Empacotamento Windows real via `electron-builder` (NSIS): script
-  `npm run package:win` gera `release/Enfesto CAD Setup 0.1.0.exe` (~89MB,
+  `npm run package:win` gera `release/Enfesto Setup 0.1.0.exe` (~89MB,
   instalador de verdade com desinstalador) e `release/win-unpacked/` (build
   desempacotado). Verificado lançando o executável empacotado diretamente
-  (sem instalar no sistema): janela real abre com o título "Enfesto CAD".
+  (sem instalar no sistema): janela real abre com o título "Enfesto".
   Ver ADR 0008.
 - [x] Risco real descoberto ao auditar a árvore completa de dependências
   pela primeira vez (`npm audit` após instalar `electron-builder`):

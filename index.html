@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enfesto CAD</title>
+    <title>Enfesto</title>
   </head>
   <body>
     <div id="root">
@@ -12,7 +12,7 @@
         id="abrindo"
         style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font: 16px 'Segoe UI', system-ui, sans-serif; color: #4b5563; background: #e8e9eb"
       >
-        Abrindo o Enfesto CAD…
+        Abrindo o Enfesto…
       </div>
     </div>
     <script>
@@ -25,12 +25,12 @@
         window.addEventListener(
           'error',
           function (evento) {
-            dizer('O Enfesto CAD não conseguiu montar a tela (' + (evento.message || 'um arquivo do programa não carregou') + '). Feche e abra de novo; se continuar, instale o programa de novo.');
+            dizer('O Enfesto não conseguiu montar a tela (' + (evento.message || 'um arquivo do programa não carregou') + '). Feche e abra de novo; se continuar, instale o programa de novo.');
           },
           true,
         );
         setTimeout(function () {
-          dizer('O Enfesto CAD está demorando para montar a tela neste computador. Aguarde mais um pouco; se ela não aparecer, feche e abra de novo.');
+          dizer('O Enfesto está demorando para montar a tela neste computador. Aguarde mais um pouco; se ela não aparecer, feche e abra de novo.');
         }, 20000);
       })();
     </script>

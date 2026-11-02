@@ -42,7 +42,7 @@ jobs:
       - name: Abrir o programa montado (chip Apple)
         timeout-minutes: 3
         run: |
-          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          APP="release/mac-universal/Enfesto.app/Contents/MacOS/Enfesto"
           ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-apple.png" \
             "$APP" --user-data-dir="$RUNNER_TEMP/dados-apple" 2>&1 | tee abertura-apple.txt
           grep -q "ABERTURA-OK" abertura-apple.txt
@@ -57,7 +57,7 @@ jobs:
             echo "Este Mac do GitHub não tem o Rosetta: a parte Intel não foi aberta." | tee abertura-intel.txt
             exit 0
           fi
-          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          APP="release/mac-universal/Enfesto.app/Contents/MacOS/Enfesto"
           # Prazo longo: o Rosetta sem placa de vídeo é bem mais lento que um Mac Intel de verdade.
           ENFESTO_CAD_PRAZO_DE_ABERTURA_S=120 ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel.png" \
             arch -x86_64 "$APP" --user-data-dir="$RUNNER_TEMP/dados-intel" 2>&1 | tee abertura-intel.txt
@@ -73,7 +73,7 @@ jobs:
             echo "Este Mac do GitHub não tem o Rosetta." | tee abertura-intel-modos.txt
             exit 0
           fi
-          APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          APP="release/mac-universal/Enfesto.app/Contents/MacOS/Enfesto"
           for MODO in video-no-principal sem-isolamento com-gpu; do
             ENFESTO_CAD_PRAZO_DE_ABERTURA_S=120 ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-$MODO.png" \
               arch -x86_64 "$APP" --abertura="$MODO" --user-data-dir="$RUNNER_TEMP/dados-intel-$MODO" 2>&1 | tee "abertura-intel-$MODO.txt" || true
@@ -122,7 +122,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v0.1.0 release/Enfesto-CAD-*-mac.dmg --clobber
+        run: gh release upload v0.1.0 release/Enfesto-*-mac.dmg --clobber
 
   # Um Mac Intel de verdade (no de chip Apple, o Intel é só emulado pelo Rosetta): abre o instalador montado acima, com o
   # prazo normal e em cada modo de segurança, e usa o programa. Vem depois do lançamento: uma falha aqui avisa, não o segura.
@@ -149,9 +149,9 @@ jobs:
         run: |
           uname -m
           hdiutil attach "$(ls montado/release/*-mac.dmg)" -mountpoint "$RUNNER_TEMP/dmg" -nobrowse -quiet
-          cp -R "$RUNNER_TEMP/dmg/Enfesto CAD.app" "$RUNNER_TEMP/Enfesto CAD.app"
+          cp -R "$RUNNER_TEMP/dmg/Enfesto.app" "$RUNNER_TEMP/Enfesto.app"
           hdiutil detach "$RUNNER_TEMP/dmg" -quiet
-          APP="$RUNNER_TEMP/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          APP="$RUNNER_TEMP/Enfesto.app/Contents/MacOS/Enfesto"
           ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-padrao.png" \
             "$APP" --user-data-dir="$RUNNER_TEMP/dados-padrao" 2>&1 | tee abertura-intel-padrao.txt || true
           for MODO in video-no-principal sem-isolamento com-gpu; do

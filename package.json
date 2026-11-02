@@ -57,7 +57,7 @@
   },
   "build": {
     "appId": "com.enfestocad.app",
-    "productName": "Enfesto CAD",
+    "productName": "Enfesto",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -93,11 +93,11 @@
       "category": "public.app-category.graphics-design",
       "identity": "-",
       "hardenedRuntime": false,
-      "artifactName": "Enfesto-CAD-${version}-mac.${ext}"
+      "artifactName": "Enfesto-${version}-mac.${ext}"
     },
     "dmg": {
       "icon": "build/icon.icns",
-      "title": "Enfesto CAD"
+      "title": "Enfesto"
     }
   }
 }

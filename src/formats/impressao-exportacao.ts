@@ -40,7 +40,7 @@ export async function gerarPdfParaImpressaoDigital(
   const trechos = trechosDoComprimento(comprimento);
   const k = mmParaPontos(1);
   const primeiro = trechos[0]!;
-  const doc = new PDFDocument({ size: [k * largura, k * (primeiro.ate - primeiro.de)], margin: 0, compress: false, info: { Title: titulo, Creator: 'Enfesto CAD' } });
+  const doc = new PDFDocument({ size: [k * largura, k * (primeiro.ate - primeiro.de)], margin: 0, compress: false, info: { Title: titulo, Creator: 'Enfesto' } });
   trechos.forEach((trecho, i) => {
     if (i > 0) doc.addPage({ size: [k * largura, k * (trecho.ate - trecho.de)], margin: 0 });
     // Do mundo (mm) para a página (pontos): a largura (o x do mundo) ao contrário na horizontal, o comprimento descendo.

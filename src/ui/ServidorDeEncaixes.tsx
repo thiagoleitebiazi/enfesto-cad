@@ -24,7 +24,7 @@ interface ServidorDeEncaixesProps {
 const criarWorkerDoEncaixe = (): WorkerDoEncaixe => new Worker(new URL('../nesting.worker.ts', import.meta.url), { type: 'module' });
 
 /**
- * O servidor de encaixes (ADR 0147): o Enfesto CAD aberto com "--servidor-de-encaixes" mostra só esta janela, que
+ * O servidor de encaixes (ADR 0147): o Enfesto aberto com "--servidor-de-encaixes" mostra só esta janela, que
  * atende a fila da rede (ADR 0143) — sempre, um pedido de cada vez, com a fila própria (num arquivo à parte da fila de
  * quem desenha) — e pode abrir sozinho ao entrar no Windows, numa máquina só para calcular.
  */
@@ -40,7 +40,7 @@ export function ServidorDeEncaixes(props: ServidorDeEncaixesProps): React.JSX.El
 
   // O título da janela (o da página cobriria o que o programa deu a ela).
   useEffect(() => {
-    document.title = 'Enfesto CAD — servidor de encaixes';
+    document.title = 'Enfesto — servidor de encaixes';
   }, []);
 
   useEffect(() => {

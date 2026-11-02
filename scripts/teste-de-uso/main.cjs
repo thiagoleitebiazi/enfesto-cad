@@ -2234,7 +2234,7 @@ async function principal() {
     width: 720,
     height: 560,
     show: true,
-    title: 'Enfesto CAD — servidor de encaixes',
+    title: 'Enfesto — servidor de encaixes',
     webPreferences: { preload: path.join(RAIZ, 'dist-electron', 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   await servidor.loadURL('app://enfesto/index.html?modo=servidor');

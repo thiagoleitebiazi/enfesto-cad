@@ -300,7 +300,7 @@ describe('a pergunta de se a janela abriu direito', () => {
 
 describe('a linha de comando da abertura', () => {
   it('sem nada pedido', () => {
-    expect(lerLinhaDeComando(['C:\\Programas\\Enfesto CAD.exe'])).toEqual({ modo: null, tentados: [], compatibilidade: false, padrao: false });
+    expect(lerLinhaDeComando(['C:\\Programas\\Enfesto.exe'])).toEqual({ modo: null, tentados: [], compatibilidade: false, padrao: false });
   });
 
   it('a continuação de uma abertura que falhou diz o modo e os já tentados', () => {

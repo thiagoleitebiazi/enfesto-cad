@@ -72,7 +72,7 @@ export function projetoDoArquivo(
   try {
     bruto = JSON.parse(texto);
   } catch {
-    return { erro: 'O arquivo não é um projeto do Enfesto CAD (não dá para ler).' };
+    return { erro: 'O arquivo não é um projeto do Enfesto (não dá para ler).' };
   }
   const lido = lerProjeto(bruto);
   if (!lido.ok) return { erro: lido.erro };

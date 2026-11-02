@@ -23,7 +23,7 @@ describe('o arquivo ISO para a mesa de corte (ADR 0140)', () => {
   it('o cabeçalho, as unidades, o fim; as peças na ordem do comprimento', () => {
     const iso = gerarIso([peca('b', 500), peca('a', 0)], { larguraDaMesaMm: 1000 });
     const c = comandos(iso);
-    expect(c.slice(0, 6)).toEqual(['%', '(ENFESTO CAD - CORTE AUTOMATICO, ISO 6983)', '(T1 FACA, T2 PIQUETEADOR, T3 CANETA, T4 FURADOR)', 'G21', 'G90', 'G0 Z5.00']);
+    expect(c.slice(0, 6)).toEqual(['%', '(ENFESTO - CORTE AUTOMATICO, ISO 6983)', '(T1 FACA, T2 PIQUETEADOR, T3 CANETA, T4 FURADOR)', 'G21', 'G90', 'G0 Z5.00']);
     expect(c.slice(-3)).toEqual(['G0 X0.00 Y0.00', 'M30', '%']);
     expect(c.indexOf('(Peca a M)')).toBeLessThan(c.indexOf('(Peca b M)'));
   });

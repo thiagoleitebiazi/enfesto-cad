@@ -71,7 +71,7 @@ export function gerarRul(pecas: readonly Molde[], estilo: string, agora: Date): 
   const mm = String(agora.getMonth() + 1).padStart(2, '0');
   const cabecalho = [
     'ASTM/D13 PROPOSAL 1 VERSION: D 6673-10',
-    'AUTHOR: ENFESTO CAD',
+    'AUTHOR: ENFESTO',
     `CREATION DATE: ${dd}-${mm}-${agora.getFullYear()}`,
     `CREATION TIME: ${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`,
     'UNITS: METRIC',

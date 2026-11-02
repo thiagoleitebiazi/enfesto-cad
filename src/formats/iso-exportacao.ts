@@ -100,7 +100,7 @@ export function gerarIso(pecas: readonly Molde[], opcoes: OpcoesDoIso = {}): str
   const altura = todos.reduce((maior, p) => Math.max(maior, p.x), opcoes.larguraDaMesaMm ?? 0);
   const naMesa = (p: Ponto2D): Ponto2D => mundoParaDxf(p, altura);
   const f = Math.round(opcoes.velocidadeMmMin ?? VELOCIDADE_PADRAO_MM_MIN);
-  const linhas: string[] = ['%', '(ENFESTO CAD - CORTE AUTOMATICO, ISO 6983)', '(T1 FACA, T2 PIQUETEADOR, T3 CANETA, T4 FURADOR)', 'G21', 'G90', `G0 Z${n(ALTURA_DE_ANDAR)}`];
+  const linhas: string[] = ['%', '(ENFESTO - CORTE AUTOMATICO, ISO 6983)', '(T1 FACA, T2 PIQUETEADOR, T3 CANETA, T4 FURADOR)', 'G21', 'G90', `G0 Z${n(ALTURA_DE_ANDAR)}`];
   let ferramenta = 0;
   const usar = (t: number): void => {
     if (t === ferramenta) return;

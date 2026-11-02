@@ -1,4 +1,4 @@
-# Enfesto CAD
+# Enfesto
 
 CAD industrial de enfesto têxtil, encaixe (nesting) e preparação para corte —
 aplicação desktop para Windows e Mac. Projeto novo, começado do zero (ver
@@ -29,7 +29,7 @@ a plotter foi retirado ([ADR 0225](ADR/0225-sem-plotter.md)).
 
 Instalador pronto (não precisa de Node/npm) na
 [página de releases](https://github.com/thiagoleitebiazi/enfesto-cad/releases/tag/v0.1.0):
-**[Enfesto CAD Setup 0.1.0.exe](https://github.com/thiagoleitebiazi/enfesto-cad/releases/download/v0.1.0/Enfesto.CAD.Setup.0.1.0.exe)**
+**[Enfesto Setup 0.1.0.exe](https://github.com/thiagoleitebiazi/enfesto-cad/releases/download/v0.1.0/Enfesto.Setup.0.1.0.exe)**
 — Windows 10/11, 64 bits.
 
 **O Windows vai mostrar um aviso "O Windows protegeu o computador" ao abrir
@@ -47,7 +47,7 @@ O programa só mostra a janela depois de conferir que a tela foi desenhada —
 ele não fica numa janela preta à espera.
 
 - Se a abertura demorar (uns 8 segundos), aparece o aviso **"Abrindo o
-  Enfesto CAD…"**. É só aguardar.
+  Enfesto…"**. É só aguardar.
 - Se a tela não vier no modo normal, o programa **reabre sozinho em outro
   modo de abertura** (até três outros), e guarda o que funcionou: nas vezes
   seguintes ele já abre direto nesse modo.
@@ -56,7 +56,7 @@ ele não fica numa janela preta à espera.
   quem lhe passou o programa: ali está o que aconteceu no computador.
 
 O que mais impede a tela de aparecer é um antivírus ou outro programa de
-segurança: ponha o Enfesto CAD nas exceções dele e abra de novo.
+segurança: ponha o Enfesto nas exceções dele e abra de novo.
 
 Para abrir sempre no modo mais compatível, acrescente
 `--modo-de-compatibilidade` no fim do campo "Destino" do atalho do programa
@@ -70,23 +70,23 @@ outro componente instalado à parte: o instalador leva tudo.
 ## Baixar e instalar no Mac
 
 Na mesma [página de releases](https://github.com/thiagoleitebiazi/enfesto-cad/releases/tag/v0.1.0):
-**[Enfesto-CAD-0.1.0-mac.dmg](https://github.com/thiagoleitebiazi/enfesto-cad/releases/download/v0.1.0/Enfesto-CAD-0.1.0-mac.dmg)**
+**[Enfesto-0.1.0-mac.dmg](https://github.com/thiagoleitebiazi/enfesto-cad/releases/download/v0.1.0/Enfesto-0.1.0-mac.dmg)**
 — macOS 12 (Monterey) ou mais novo, em Mac com chip Apple (M1, M2, M3, M4…) ou
 Intel: o mesmo arquivo serve para os dois.
 
-1. Abra o arquivo `.dmg` baixado e arraste o **Enfesto CAD** para a pasta
+1. Abra o arquivo `.dmg` baixado e arraste o **Enfesto** para a pasta
    **Aplicativos**.
-2. Abra o Enfesto CAD pela pasta Aplicativos. Na primeira vez o Mac avisa que
+2. Abra o Enfesto pela pasta Aplicativos. Na primeira vez o Mac avisa que
    não pode verificar o programa, porque ele não tem a assinatura paga da Apple
    (como o instalador do Windows também não tem). Clique em **OK** (ou
    **Concluído**).
 3. Abra **Ajustes do Sistema → Privacidade e Segurança**, desça até a
-   mensagem sobre o Enfesto CAD e clique em **Abrir Mesmo Assim**; confirme
+   mensagem sobre o Enfesto e clique em **Abrir Mesmo Assim**; confirme
    com a senha do Mac. (Num macOS mais antigo, também funciona clicar no
    programa com o botão direito → **Abrir**.)
 
 Se o Mac disser que o programa **"está danificado"**, abra o Terminal e
-rode `xattr -cr "/Applications/Enfesto CAD.app"`; depois abra de novo.
+rode `xattr -cr "/Applications/Enfesto.app"`; depois abra de novo.
 
 No Mac, o **⌘ (Command)** faz o mesmo que o **Ctrl** nos atalhos (⌘S salva,
 ⌘Z desfaz…); dois dedos no trackpad movem a vista e a pinça dá zoom. A lista
@@ -143,7 +143,7 @@ Gera os bundles do renderer (`dist/`) e do processo principal/preload
 npm run package:win
 ```
 
-Produz `release/Enfesto CAD Setup 0.1.0.exe` (NSIS) via `electron-builder` —
+Produz `release/Enfesto Setup 0.1.0.exe` (NSIS) via `electron-builder` —
 **sem assinatura digital** (ver aviso na seção "Baixar e instalar" acima).
 
 ## Estrutura

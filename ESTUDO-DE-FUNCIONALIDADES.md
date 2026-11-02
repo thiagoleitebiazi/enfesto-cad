@@ -1,8 +1,8 @@
-# Estudo de funcionalidades — o ecossistema de referência e o Enfesto CAD
+# Estudo de funcionalidades — o ecossistema de referência e o Enfesto
 
 Pedido do usuário (2026-10-24): "um estudo completo para adicionar todas as funcionalidades, de forma completa,
 do [ecossistema de referência] e implementá-las aqui". Este documento é o estudo: o que cada módulo da referência
-faz (pelas páginas oficiais atuais e pelo manual de modelagem da versão 10), como está o Enfesto CAD em cada ponto,
+faz (pelas páginas oficiais atuais e pelo manual de modelagem da versão 10), como está o Enfesto em cada ponto,
 o que dá para fazer **aqui de verdade** e em que ordem. O nome do produto de referência não é escrito no repositório
 (regra do projeto); os módulos são chamados pela função.
 
@@ -10,7 +10,7 @@ o que dá para fazer **aqui de verdade** e em que ordem. O nome do produto de re
 
 Para cada função:
 
-- **Situação no Enfesto CAD:** ✅ tem · 🟡 tem em parte · ⬜ não tem.
+- **Situação no Enfesto:** ✅ tem · 🟡 tem em parte · ⬜ não tem.
 - **Viabilidade aqui:** **L** = dá para fazer completo neste programa (local, no computador) · **P** = dá para
   fazer, mas com um limite que fica dito (ex.: simulação aproximada) · **S** = depende de serviço, conta ou chave de
   terceiros (só com a autorização e os dados do usuário) · **H** = é equipamento (máquina, plotter, quadro): o
@@ -24,7 +24,7 @@ inventa.
 
 ## 1. Gestão de coleção (PLM)
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Coleções (estação, ano, datas), vários projetos dentro de uma estrutura | ✅ (ADR 0108) | — |
 | Mix de produtos num quadro (cores, formas, tecidos, categorias) | ✅ (cartões com o croqui, resumo e filtros, ADR 0108) | — |
@@ -37,7 +37,7 @@ inventa.
 
 ## 2. Desenho técnico, ficha técnica e pré-custo
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Desenho técnico vetorial (croqui frente e costas) | ✅ (ADR 0107; exporta SVG e vai no PDF da ficha; zoom, grade e ímã, ADR 0116; cotas com a letra do ponto de medida da tabela, ADR 0117) | — |
 | Espelhamento automático (desenha um lado, o outro sai) | ✅ (ADR 0107) | — |
@@ -55,7 +55,7 @@ inventa.
 
 ## 3. Modelagem e graduação
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Modelagem do zero: pontos, retas, curvas, pences, pregas, costura, piques, fio, textos | ✅ (ADR 0013–0082) | — |
 | Extrair peças de áreas fechadas do desenho | ✅ (Extrair molde) | — |
@@ -68,7 +68,7 @@ inventa.
 
 ## 4. Encaixe e servidor de encaixe
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Encaixe automático com muitas combinações e relatório | ✅ heurístico (R-3: sem garantia de ótimo) | — |
 | Margens de segurança, restrição do fio, rotação por brilho/estampa, simetria | ✅ | — |
@@ -85,7 +85,7 @@ inventa.
 
 ## 5. Digitalização de moldes de papel
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Foto do molde no desenho, com escala calibrada por dois pontos | ✅ (Imagens/Digitalizar) | — |
 | Correção de perspectiva e da lente | ✅ (a perspectiva pelos 4 cantos da referência, ADR 0109; a lente por um ponto em cada lado da referência, ADR 0122) | — |
@@ -96,7 +96,7 @@ inventa.
 
 ## 6. 3D
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Manequim 3D com medidas ajustáveis (público-alvo, tabela de medidas) | ✅ (Conferência › Provador 3D: público, 10 medidas, o tamanho da ficha, ADR 0111) | — |
 | Costura virtual: escolher os pontos do molde 2D a unir e montar no manequim | ✅ (as laterais e os ombros sugeridos; as outras clicando nos pontos; montagem aproximada, ADR 0111; o bolso e a aplicação costurados sobre outra peça, ADR 0123) | — |
@@ -108,7 +108,7 @@ inventa.
 
 ## 7. Sala de corte
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Ordem de corte a partir do encaixe e do planejamento | ✅ (plano confirmado) | — |
 | Situação de cada ordem, consumo planejado × executado, sugestão de correção | ✅ (ADR 0098, painel da sala de corte no ADR 0100) | — |
@@ -120,7 +120,7 @@ inventa.
 
 ## 8. IA de criação
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Painel de inspiração (imagens de modelagem, tecido, cor, aviamento, estampa) | ✅ (Modelo › Criação › Inspiração: as imagens por categoria, as notas, as cores tiradas de cada uma, o conceito e a paleta, ADR 0112) | — |
 | Gerar a imagem de uma peça a partir das inspirações; variações | 🟡 (pronto para o serviço de imagens da OpenAI com a conta e a chave do usuário (cifrada pelo cofre do sistema), o resultado marcado como rascunho; sem chave, "não configurada"; testado por um serviço de mentira — falta a chave para o de verdade, ADR 0112) | S (a chave do usuário) |
@@ -130,14 +130,14 @@ inventa.
 
 ## 9. Vendas
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | Recomendação de tamanho pelas medidas do corpo e a tabela de medidas, com a explicação | ✅ (Modelo › Loja: a folga de cada ponto, o "entre dois tamanhos", o guia de medidas em CSV e HTML, ADR 0110; o tecido que cede — malha, malha com elastano, ADR 0119) | a loja virtual é S |
 | Provador virtual, busca visual, combinações de looks | 🟡 (os looks da coleção, com a prancha; a busca por imagem na biblioteca, pela forma e pelas cores, ADR 0145; o provador 3D e a recomendação de tamanho, ADR 0110–0111) | S (a loja virtual para o cliente) |
 
 ## 10. Integrações
 
-| Função | Enfesto CAD | Viab. |
+| Função | Enfesto | Viab. |
 |---|---|---|
 | ERP (ordens, produtos, estoque) | ✅ pela pasta de troca: as ordens entram, as ordens com a situação do corte, os rolos, os movimentos de estoque, os cortes e o consumo saem (ADR 0141) | S (a ligação direta pela rede: precisa do ERP, da credencial e do mapeamento) |
 | Arquivos de troca (DXF, PDF, Excel, CSV) | ✅ | — |
@@ -167,7 +167,7 @@ testada, verificada no programa gerado e registrada num ADR; nada fica com cara 
    marcado como rascunho.
 
 O que é **equipamento** (máquina de corte, enfestadeiras, mesa, plotter, quadro de captura) não vira função de
-programa: o Enfesto CAD gera os arquivos (PDF 1:1, DXF, PLT) e diz "não conectado". O que precisa de **servidor,
+programa: o Enfesto gera os arquivos (PDF 1:1, DXF, PLT) e diz "não conectado". O que precisa de **servidor,
 nuvem ou conta de terceiros** (colaboração simultânea, servidor de encaixe entre estações, IA, loja virtual, ERP)
 fica para quando houver o serviço — e a parte local de cada um entra nas fases acima.
 
@@ -181,7 +181,7 @@ aqui; foram lidos:
 
 O "o que há de novo" da área de treinamento não abre fora do navegador (a página é montada por JavaScript).
 
-O que essas fontes listam e o Enfesto CAD ainda não tinha, na ordem em que entra:
+O que essas fontes listam e o Enfesto ainda não tinha, na ordem em que entra:
 
 | Da referência | Situação |
 |---|---|
@@ -202,7 +202,7 @@ Ficam de fora, como na primeira rodada:
 
 Fontes lidas: as páginas oficiais de todos os produtos da referência listados no site (o encaixe, o servidor de
 encaixes, a modelagem, o 3D, o estúdio de criação, o desenho e a ficha, a criação por IA), comparadas com o que o
-Enfesto CAD já faz e com as duas rodadas anteriores. Fica de fora o que depende de servidor, de máquina ou de serviço de
+Enfesto já faz e com as duas rodadas anteriores. Fica de fora o que depende de servidor, de máquina ou de serviço de
 terceiros (já dito acima).
 
 | Da referência | Situação |

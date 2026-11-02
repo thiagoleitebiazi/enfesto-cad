@@ -27,9 +27,9 @@ export function aplicarPerfil(a: Armazenamento, texto: string): number {
   try {
     bruto = JSON.parse(texto) as typeof bruto;
   } catch {
-    throw new Error('O arquivo não é um perfil do Enfesto CAD.');
+    throw new Error('O arquivo não é um perfil do Enfesto.');
   }
-  if (bruto.perfilDoEnfestoCad !== 1 || typeof bruto.valores !== 'object' || bruto.valores === null) throw new Error('O arquivo não é um perfil do Enfesto CAD.');
+  if (bruto.perfilDoEnfestoCad !== 1 || typeof bruto.valores !== 'object' || bruto.valores === null) throw new Error('O arquivo não é um perfil do Enfesto.');
   const entradas = Object.entries(bruto.valores).filter((e): e is [string, string] => e[0].startsWith(PREFIXO) && typeof e[1] === 'string');
   restaurarPadroes(a);
   for (const [k, v] of entradas) a.setItem(k, v);

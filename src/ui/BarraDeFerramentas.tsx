@@ -524,7 +524,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
             <path d="M3 10.1 10 13.5l7-3.4" stroke="#8fb4e6" />
             <path d="M10 3 3 6.6l7 3.4 7-3.4L10 3Z" fill="#e8eef8" stroke="#e8eef8" />
           </svg>
-          Enfesto CAD
+          Enfesto
         </span>
         <button onClick={props.onNovoProjeto} title="Novo projeto (Ctrl+N)">
           <Icone nome="novo" />
@@ -743,7 +743,7 @@ export function BarraDeFerramentas(props: BarraDeFerramentasProps): React.JSX.El
               { tipo: 'acao', rotulo: 'Atalhos de teclado', atalho: 'F1', onEscolher: props.onAbrirAtalhos },
               ...(props.onAbrirManual ? [{ tipo: 'acao' as const, rotulo: 'Manual', onEscolher: props.onAbrirManual }] : []),
               ...(props.onAbrirNovidades ? [{ tipo: 'acao' as const, rotulo: 'O que há de novo', onEscolher: props.onAbrirNovidades }] : []),
-              { tipo: 'acao', rotulo: 'Sobre o Enfesto CAD', onEscolher: props.onAbrirSobre },
+              { tipo: 'acao', rotulo: 'Sobre o Enfesto', onEscolher: props.onAbrirSobre },
             ]}
           />
         </div>

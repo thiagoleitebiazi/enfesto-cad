@@ -152,10 +152,10 @@ export function PainelDeAjuda(props: PainelDeAjudaProps): React.JSX.Element {
     );
   }
   return (
-    <Sobreposicao titulo="Sobre o Enfesto CAD" onFechar={props.onFechar}>
+    <Sobreposicao titulo="Sobre o Enfesto" onFechar={props.onFechar}>
       <div className="painel-de-ajuda painel-sobre">
         <p className="nome-do-programa">
-          Enfesto CAD <span>versão {version}</span>
+          Enfesto <span>versão {version}</span>
         </p>
         <p>{description}.</p>
         <dl className="lista-de-propriedades">
