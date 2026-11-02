@@ -1,12 +1,13 @@
 /*
  * A camiseta sem nomes (ADR 0234): abre o programa gerado (dist e dist-electron), importa um molde de camiseta cujas peças não têm
  * nome e confere, na tela de verdade, que o provador 3D já abre com tudo no corpo e costurado, que ela assenta sem ninguém escolher
- * nada, e que a outra manga do molde pode ser escolhida. Tira uma foto de cada passo.
+ * nada, e que a outra manga do molde pode ser escolhida. Por fim, importa um ISO cortado com faca tangencial, em que a faca sobe em
+ * cada canto, e confere que as peças entram sem aviso (ADR 0236). Tira uma foto de cada passo.
  *
  *   npm run build
  *   npx electron scripts/teste-de-uso/camiseta.cjs
  *
- * CAMISETA_DXF: outro arquivo no lugar de camiseta-de-teste.dxf (os moldes reais não entram no repositório). As fotos e o registro
+ * CAMISETA_DXF e CAMISETA_ISO: outros arquivos no lugar dos de teste (os moldes reais não entram no repositório). As fotos e o registro
  * (camiseta.txt) vão para a pasta de SAIDA_DO_TESTE (ou ./uso). Sai com 0 se tudo conferiu, e 1 se não.
  */
 const { app, BrowserWindow, dialog } = require('electron');
@@ -17,6 +18,8 @@ const path = require('path');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const SAIDA = path.resolve(process.env.SAIDA_DO_TESTE || path.join(process.cwd(), 'uso'));
 const MOLDE = path.resolve(process.env.CAMISETA_DXF || path.join(__dirname, 'camiseta-de-teste.dxf'));
+const ISO = path.resolve(process.env.CAMISETA_ISO || path.join(__dirname, 'camiseta-faca-tangencial.iso'));
+let arquivoParaAbrir = MOLDE;
 
 fs.mkdirSync(SAIDA, { recursive: true });
 const REGISTRO = path.join(SAIDA, 'camiseta.txt');
@@ -28,7 +31,7 @@ const log = (texto) => {
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'enfesto-cad-camiseta-')));
-dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [MOLDE] });
+dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [arquivoParaAbrir] });
 require(path.join(RAIZ, 'dist-electron', 'main.js'));
 
 let falhas = 0;
@@ -120,6 +123,16 @@ async function principal() {
     conferir('a manga comprida também assenta', comprida.startsWith('Assentou'), comprida);
     await foto('camiseta-4-manga-comprida.png');
   }
+  await js(`(document.querySelector('[role=dialog] .sobreposicao-fechar') || { click() {} }).click()`);
+  await espera(800);
+  arquivoParaAbrir = ISO;
+  await aba('Início');
+  await botao('Importar ISO');
+  await espera(2500);
+  const faixa = await js(`((document.querySelector('.faixa-da-importacao') || {}).textContent || '')`);
+  const depois = await js(`document.querySelectorAll('.lista-de-pecas li').length`);
+  conferir('o ISO da faca tangencial entra inteiro, sem aviso', faixa === '' && depois === 10, `${depois} peça(s); aviso: "${faixa}"`);
+  await foto('camiseta-5-iso-importado.png');
 }
 
 (async () => {
