@@ -75,7 +75,7 @@ jobs:
           fi
           APP="release/mac-universal/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
           for MODO in video-no-principal sem-isolamento com-gpu; do
-            ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-$MODO.png" \
+            ENFESTO_CAD_PRAZO_DE_ABERTURA_S=120 ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-$MODO.png" \
               arch -x86_64 "$APP" --abertura="$MODO" --user-data-dir="$RUNNER_TEMP/dados-intel-$MODO" 2>&1 | tee "abertura-intel-$MODO.txt" || true
           done
           grep -h "ABERTURA-" abertura-intel-*.txt | tee abertura-intel-modos.txt
@@ -118,3 +118,63 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload v0.1.0 release/Enfesto-CAD-*-mac.dmg --clobber
+
+  # Um Mac Intel de verdade (no de chip Apple, o Intel é só emulado pelo Rosetta): abre o instalador montado acima, com o
+  # prazo normal e em cada modo de segurança, e usa o programa. Vem depois do lançamento: uma falha aqui avisa, não o segura.
+  intel:
+    needs: mac
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Baixar o instalador montado
+        uses: actions/download-artifact@v4
+        with:
+          name: enfesto-cad-mac
+          path: montado
+
+      - name: Abrir o instalador, em todos os modos
+        timeout-minutes: 8
+        run: |
+          uname -m
+          hdiutil attach "$(ls montado/release/*-mac.dmg)" -mountpoint "$RUNNER_TEMP/dmg" -nobrowse -quiet
+          cp -R "$RUNNER_TEMP/dmg/Enfesto CAD.app" "$RUNNER_TEMP/Enfesto CAD.app"
+          hdiutil detach "$RUNNER_TEMP/dmg" -quiet
+          APP="$RUNNER_TEMP/Enfesto CAD.app/Contents/MacOS/Enfesto CAD"
+          ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-padrao.png" \
+            "$APP" --user-data-dir="$RUNNER_TEMP/dados-padrao" 2>&1 | tee abertura-intel-padrao.txt || true
+          for MODO in video-no-principal sem-isolamento com-gpu; do
+            ENFESTO_CAD_TESTE_DE_ABERTURA=1 ENFESTO_CAD_FOTO_DA_ABERTURA="$PWD/abertura-intel-$MODO.png" \
+              "$APP" --abertura="$MODO" --user-data-dir="$RUNNER_TEMP/dados-$MODO" 2>&1 | tee "abertura-intel-$MODO.txt" || true
+          done
+          grep -H "ABERTURA-" abertura-intel-*.txt | tee abertura-intel-resumo.txt
+          grep -q "ABERTURA-OK" abertura-intel-padrao.txt
+
+      - name: Gerar o programa para o teste de uso
+        run: |
+          npm ci
+          npm run build
+
+      - name: Usar o programa
+        timeout-minutes: 30
+        continue-on-error: true
+        run: SAIDA_DO_TESTE="$PWD/uso" npx electron scripts/teste-de-uso/main.cjs
+
+      - name: Guardar as fotos do teste
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enfesto-cad-mac-intel-fotos
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            abertura-*.png
+            abertura-*.txt
+            uso/*.png
+            uso/*.txt
