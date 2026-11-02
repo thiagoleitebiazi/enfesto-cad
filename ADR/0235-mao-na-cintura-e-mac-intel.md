@@ -18,6 +18,8 @@ Resultado na primeira rodada: os quatro modos abriram na máquina Intel, no praz
 
 **O aviso.** Ao salvar, a tela diz o que está calculando, vista por vista.
 
+**A trama de lado.** Bem de perto, a trama virava um pontilhado perto do contorno. Ela apaga pelo tamanho do pixel no pano, e esse tamanho era medido de frente; de lado, o pano se espreme na tela. Agora conta a inclinação.
+
 **A camiseta na tela.** `scripts/teste-de-uso/camiseta.cjs` importa um molde sem nomes no programa de verdade, com `camiseta-de-teste.dxf` ou com o arquivo de `CAMISETA_DXF`, e confere o reconhecimento, a simulação e a troca de manga. Roda no Mac Apple e no Intel. Os moldes reais não entram no repositório.
 
 ## O que não foi feito

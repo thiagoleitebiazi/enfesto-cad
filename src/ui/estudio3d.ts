@@ -294,6 +294,12 @@ function trama(tipo: TramaDoTecido, u: number, v: number, pe: number, saida: Flo
 }
 
 /** O alcance da borda (mm): a barra dobrada e o que há nela cabem aí. */
+/**
+ * Quantos mm do pano cabem num pixel, na direção em que ele se inclina: visto de lado, o pano se espreme na tela, e a trama,
+ * medida pelo tamanho do pixel de frente, virava um pontilhado perto do contorno.
+ */
+export const peNaInclinacao = (pe: number, olhar: number): number => pe / Math.max(0.12, Math.abs(olhar));
+
 export const ALCANCE_DA_BORDA = 26;
 /**
  * O franzido ao lado da costura, ao longo dela (mm): de -1 a 1, sem repetir. Uma onda só, de 7 em 7 mm, parecia uma fileira de
@@ -1064,7 +1070,7 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
         ab = ab * k + auxiliar[2]!;
       }
       if (m.trama) {
-        trama(m.trama, u, va, peDoPixel, micro);
+        trama(m.trama, u, va, peNaInclinacao(peDoPixel, olhar), micro);
         const bx = ny * tz - nz * ty;
         const by = nz * tx - nx * tz;
         const bz = nx * ty - ny * tx;

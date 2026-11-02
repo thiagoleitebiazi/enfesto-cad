@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cameraDeFrente, projecao, vistaDaProjecao } from './cena3d';
 import { mapaDaPeca } from './lotesDoTecido';
-import { franzidoDaCostura } from './estudio3d';
+import { franzidoDaCostura, peNaInclinacao } from './estudio3d';
 import { enfraquece, faixasDaImagem, opacidadeDoTecido, QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MaterialDoEstudio, type QualidadeDoEstudio } from './estudio3d';
 
 const ALTURA = 1700;
@@ -232,6 +232,15 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {
     const lotes = [esfera(TECIDO)];
     expect(render(lotes, QUALIDADE_FINAL)).toEqual(render(lotes, QUALIDADE_FINAL));
+  });
+});
+
+describe('a trama no pano de lado (ADR 0235)', () => {
+  it('quanto mais de lado, mais pano num pixel: a trama apaga antes de virar pontilhado', () => {
+    expect(peNaInclinacao(0.2, 1)).toBeCloseTo(0.2, 9);
+    expect(peNaInclinacao(0.2, -0.5)).toBeCloseTo(0.4, 9);
+    expect(enfraquece(1, peNaInclinacao(0.2, 0.3))).toBeLessThan(enfraquece(1, peNaInclinacao(0.2, 1)));
+    expect(Number.isFinite(peNaInclinacao(0.2, 0))).toBe(true);
   });
 });
 
