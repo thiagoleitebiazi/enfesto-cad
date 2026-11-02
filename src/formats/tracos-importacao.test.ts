@@ -47,6 +47,6 @@ describe('as peças dos traços (ADR 0157)', () => {
     const r = pecasDosTracos('IN;PU0,0;PD4000,0,4000,4000,0,4000,0,0;PU400,400;PD3600,400,3600,3600,400,3600,400,400;PU;');
     expect(r.pecas).toHaveLength(1);
     expect(r.pecas[0]!.furos).toEqual([]);
-    expect(pecasDosTracos('IN;PU0,0;PD100,100;PU;').avisos[0]).toMatch(/Nenhuma linha fechada/);
+    expect(pecasDosTracos('IN;PU0,0;PD100,100;PU;').avisos[0]).toMatch(/não traz o desenho de nenhuma peça/);
   });
 });

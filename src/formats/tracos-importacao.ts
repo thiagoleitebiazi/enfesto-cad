@@ -3,6 +3,8 @@ import { area, ponto, retanguloEnvolvente, type Ponto2D } from '../core/geometri
 /**
  * O leitor de traços (ADR 0157, 0225): por dentro da importação do ISO, que chega aqui como canetas descendo e subindo.
  * tem traços e textos, então as peças são deduzidas:
+ * - traços abertos que, ponta com ponta, fecham uma volta são uma linha fechada: a faca sobe nos cantos para girar, e o
+ *   contorno vem em pedaços (ADR 0236);
  * - a linha fechada que não está dentro de outra é o contorno de uma peça (o retângulo da mesa, com um canto na origem
  *   do papel, fica de fora);
  * - a linha fechada dentro dela é um furo; se tem mais da metade da área, é a linha de costura, que fica de fora;
@@ -131,6 +133,63 @@ function arestaMaisPerto(p: Ponto2D, c: readonly Ponto2D[]): { readonly d: numbe
 
 const FECHA_MM = 0.5;
 const PIQUE_MAXIMO_MM = 20;
+/** Até onde duas pontas de traços são a mesma (mm): com a compensação da lâmina, o eixo volta deslocado depois de cada giro. */
+const EMENDA_MM = 6;
+/** A linha que quase fecha: a menor volta que conta (mm) e o maior vão, sobre o comprimento dela. */
+const MENOR_VOLTA_MM = 100;
+const MAIOR_VAO_DA_VOLTA = 0.1;
+/** Quantas tentativas de emenda, no máximo, num arquivo. */
+const LIMITE_DE_EMENDAS = 50_000;
+
+const distancia = (a: Ponto2D, b: Ponto2D): number => Math.hypot(a.x - b.x, a.y - b.y);
+const comprimentoDe = (p: readonly Ponto2D[]): number => p.reduce((s, q, i) => (i === 0 ? 0 : s + distancia(p[i - 1]!, q)), 0);
+
+/**
+ * Os traços abertos que, ponta com ponta, dão uma volta inteira viram uma linha fechada; os outros (piques, linhas internas) ficam
+ * soltos. Procura com volta atrás: no canto em que um pique sai do contorno, a primeira ponta perto pode não ser a do contorno.
+ */
+function emendarTracos(tracos: readonly Ponto2D[][]): { readonly voltas: Ponto2D[][]; readonly soltos: Ponto2D[][] } {
+  const ordem = tracos.map((_, i) => i).sort((a, b) => comprimentoDe(tracos[b]!) - comprimentoDe(tracos[a]!));
+  const usado = new Set<number>();
+  const voltas: Ponto2D[][] = [];
+  let tentativas = 0;
+  for (const inicio of ordem) {
+    if (usado.has(inicio)) continue;
+    const comeco = tracos[inicio]![0]!;
+    const caminho: Array<{ readonly i: number; readonly invertido: boolean }> = [{ i: inicio, invertido: false }];
+    const noCaminho = new Set([inicio]);
+    const andar = (fim: Ponto2D, andado: number): boolean => {
+      if (++tentativas > LIMITE_DE_EMENDAS) return false;
+      if (caminho.length > 1 && distancia(fim, comeco) <= EMENDA_MM && andado >= MENOR_VOLTA_MM) return true;
+      for (const k of ordem) {
+        if (usado.has(k) || noCaminho.has(k)) continue;
+        const t = tracos[k]!;
+        for (const invertido of [false, true]) {
+          if (distancia(invertido ? t[t.length - 1]! : t[0]!, fim) > EMENDA_MM) continue;
+          caminho.push({ i: k, invertido });
+          noCaminho.add(k);
+          if (andar(invertido ? t[0]! : t[t.length - 1]!, andado + comprimentoDe(t))) return true;
+          caminho.pop();
+          noCaminho.delete(k);
+        }
+      }
+      return false;
+    };
+    const t0 = tracos[inicio]!;
+    if (!andar(t0[t0.length - 1]!, comprimentoDe(t0))) continue;
+    const volta: Ponto2D[] = [];
+    for (const { i, invertido } of caminho) {
+      usado.add(i);
+      for (const q of invertido ? [...tracos[i]!].reverse() : tracos[i]!) {
+        const ultimo = volta[volta.length - 1];
+        if (!ultimo || distancia(ultimo, q) > FECHA_MM) volta.push(q);
+      }
+    }
+    if (distancia(volta[0]!, volta[volta.length - 1]!) <= FECHA_MM) volta.pop();
+    voltas.push(volta);
+  }
+  return { voltas, soltos: tracos.filter((_, i) => !usado.has(i)) };
+}
 
 /** Os traços em mm, nos eixos do desenho (o comprimento do papel no y, a largura no x, para baixo). */
 /** As unidades em que o ISO importado chega: 0,025 mm. */
@@ -142,7 +201,7 @@ export function pecasDosTracos(texto: string): { readonly pecas: PecaDosTracos[]
   const { tracos, textos } = lerTracos(texto);
   const avisos: string[] = [];
   const fechados: Array<{ readonly pontos: Ponto2D[]; readonly area: number; readonly naOrigem: boolean }> = [];
-  const abertos: Ponto2D[][] = [];
+  const pedacos: Ponto2D[][] = [];
   for (const t of tracos) {
     const naOrigem = t.pontos.length === 5 && t.pontos.some((p) => p.x === 0 && p.y === 0);
     const p = t.pontos.map(noDesenho);
@@ -151,7 +210,16 @@ export function pecasDosTracos(texto: string): { readonly pecas: PecaDosTracos[]
     if (p.length >= 4 && Math.hypot(primeiro.x - ultimo.x, primeiro.y - ultimo.y) <= FECHA_MM) {
       const pontos = p.slice(0, -1);
       fechados.push({ pontos, area: area(pontos), naOrigem });
-    } else abertos.push(p);
+    } else pedacos.push(p);
+  }
+  const emendados = emendarTracos(pedacos);
+  for (const pontos of emendados.voltas) fechados.push({ pontos, area: area(pontos), naOrigem: false });
+  let abertos = emendados.soltos;
+  // Sem nenhuma linha fechada, a que quase fecha é a peça: um vão no contorno não pode deixar o arquivo inteiro de fora.
+  if (fechados.length === 0) {
+    const quaseFecham = abertos.filter((l) => l.length >= 3 && comprimentoDe(l) >= MENOR_VOLTA_MM && distancia(l[0]!, l[l.length - 1]!) <= MAIOR_VAO_DA_VOLTA * comprimentoDe(l));
+    for (const pontos of quaseFecham) fechados.push({ pontos, area: area(pontos), naOrigem: false });
+    abertos = abertos.filter((l) => !quaseFecham.includes(l));
   }
   fechados.sort((a, b) => b.area - a.area);
   // O retângulo com um canto na origem do papel, com outra linha fechada dentro, é a mesa.
@@ -162,7 +230,7 @@ export function pecasDosTracos(texto: string): { readonly pecas: PecaDosTracos[]
     if (!dona) pecas.push({ contorno: f.pontos, area: f.area, furos: [] });
     else if (f.area <= dona.area / 2) dona.furos.push(f.pontos);
   }
-  if (pecas.length === 0) avisos.push('Nenhuma linha fechada no arquivo: não há peças para importar.');
+  if (pecas.length === 0) avisos.push('Este arquivo não traz o desenho de nenhuma peça: nada foi importado.');
   const resultado: PecaDosTracos[] = pecas.map((p) => {
     const caixa = retanguloEnvolvente(p.contorno);
     const daPeca = abertos.filter((l) => {
