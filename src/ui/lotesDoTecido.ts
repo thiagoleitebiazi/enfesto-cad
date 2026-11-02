@@ -24,7 +24,8 @@ export interface TecidoParaOEstudio {
   readonly triangulos: ArrayLike<number>;
   readonly pecas: readonly PecaParaOEstudio[];
   /** Os dois lados de cada costura: a normal é a mesma, e a emenda não vira uma quina no desenho. */
-  readonly costuras?: { readonly a: ArrayLike<number>; readonly b1: ArrayLike<number>; readonly b2: ArrayLike<number> };
+  /** Cada ponto `a` de costura vai ao ponto `f` do caminho de `b1` a `b2`, do outro lado dela. */
+  readonly costuras?: { readonly a: ArrayLike<number>; readonly b1: ArrayLike<number>; readonly b2: ArrayLike<number>; readonly f?: ArrayLike<number> };
   /** Pinta pela tensão (o quanto estica) em vez da cor. */
   readonly tensoes?: ArrayLike<number>;
   /** Os botões (os furos do molde): o triângulo, a posição nele (b1, b2; b0 = 1 − b1 − b2) e o raio (mm). */
@@ -143,6 +144,65 @@ export function rugasDaPeca(posicoes: ArrayLike<number>, uv: ArrayLike<number>, 
     }
   }
   return soma;
+}
+
+/** Até que vão a costura é dada como fechada, no desenho (mm): acima disso ela ainda está sendo costurada. */
+const MAIOR_VAO_DA_COSTURA_MM = 6;
+const VOLTAS_DE_JUNTAR_AS_COSTURAS = 4;
+/** O quanto cada lado da costura passa da linha dela, no desenho (mm): a margem de costura, que na roupa fica por dentro. */
+const MARGEM_DA_COSTURA_MM = 1.6;
+
+/**
+ * Os pontos da roupa, com os dois lados de cada costura juntos no desenho. A simulação para com 1 ou 2 mm entre eles, e por esse vão
+ * se via o corpo, claro: um fio no meio da costura. Juntar os pontos não basta, porque entre um ponto e outro as beiradas das duas
+ * peças fazem curvas diferentes: cada uma ainda passa um pouco da linha, como a margem de costura da roupa de verdade.
+ */
+export function pontosDaRoupa(t: TecidoParaOEstudio): ArrayLike<number> {
+  const c = t.costuras;
+  if (!c?.f) return t.x;
+  const x = Float64Array.from(t.x);
+  const soma = new Float64Array(x.length);
+  const conta = new Uint16Array(x.length / 3);
+  for (let volta = 0; volta < VOLTAS_DE_JUNTAR_AS_COSTURAS; volta++) {
+    soma.fill(0);
+    conta.fill(0);
+    for (let k = 0; k < c.a.length; k++) {
+      const [a, b1, b2, f] = [c.a[k]!, c.b1[k]!, c.b2[k]!, c.f[k]!];
+      const px = x[3 * b1]! * (1 - f) + x[3 * b2]! * f;
+      const py = x[3 * b1 + 1]! * (1 - f) + x[3 * b2 + 1]! * f;
+      const pz = x[3 * b1 + 2]! * (1 - f) + x[3 * b2 + 2]! * f;
+      if (Math.hypot(x[3 * a]! - px, x[3 * a + 1]! - py, x[3 * a + 2]! - pz) > MAIOR_VAO_DA_COSTURA_MM) continue;
+      soma[3 * a] = soma[3 * a]! + px;
+      soma[3 * a + 1] = soma[3 * a + 1]! + py;
+      soma[3 * a + 2] = soma[3 * a + 2]! + pz;
+      conta[a] = conta[a]! + 1;
+    }
+    // Cada lado anda meio caminho: o outro faz o resto, e a costura fica onde a simulação a deixou.
+    for (let i = 0; i < conta.length; i++) {
+      if (conta[i] === 0) continue;
+      for (let e = 0; e < 3; e++) x[3 * i + e] = (x[3 * i + e]! + soma[3 * i + e]! / conta[i]!) / 2;
+    }
+  }
+  // Para fora da peça: na beirada, os vizinhos ficam todos de um lado.
+  const fora = new Float64Array(x.length);
+  const T = t.triangulos;
+  for (let k = 0; k < T.length; k++) {
+    const v = T[k]!;
+    if (conta[v] === 0) continue;
+    const base = k - (k % 3);
+    for (let q = 0; q < 3; q++) {
+      const o = T[base + q]!;
+      if (o === v) continue;
+      for (let e = 0; e < 3; e++) fora[3 * v + e] = fora[3 * v + e]! + x[3 * v + e]! - x[3 * o + e]!;
+    }
+  }
+  for (let i = 0; i < conta.length; i++) {
+    if (conta[i] === 0) continue;
+    const l = Math.hypot(fora[3 * i]!, fora[3 * i + 1]!, fora[3 * i + 2]!);
+    if (l < 1e-9) continue;
+    for (let e = 0; e < 3; e++) x[3 * i + e] = x[3 * i + e]! + (MARGEM_DA_COSTURA_MM * fora[3 * i + e]!) / l;
+  }
+  return x;
 }
 
 /** As normais de toda a roupa, com os dois lados de cada costura na mesma direção. */
@@ -289,6 +349,7 @@ export function loteDoZiper(x: ArrayLike<number>, n: ArrayLike<number>, pontos: 
 /** A roupa em lotes: um por peça, mais os botões e os zíperes. `refino`: quantas vezes cada triângulo vira quatro. */
 export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstudio[] {
   const normais = normaisDaRoupa(t);
+  const X = pontosDaRoupa(t);
   const lotes: LoteDoEstudio[] = [];
   const brilho = t.tensoes ? 0 : (t.brilho ?? 0) / 100;
   const transparencia = (t.transparencia ?? 0) / 100;
@@ -297,7 +358,7 @@ export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstu
     const posicoes = new Float32Array(pontos * 3);
     const normaisDaPeca = new Float32Array(pontos * 3);
     for (let i = 0; i < pontos * 3; i++) {
-      posicoes[i] = t.x[3 * peca.inicio + i]!;
+      posicoes[i] = X[3 * peca.inicio + i]!;
       normaisDaPeca[i] = normais[3 * peca.inicio + i]!;
     }
     const indices = new Uint32Array(peca.quantidade * 3);
@@ -323,7 +384,6 @@ export function lotesDoTecido(t: TecidoParaOEstudio, refino: number): LoteDoEstu
     const m = refinar({ posicoes, normais: normaisDaPeca, uv, ...(t.rugaMm ? { rugas: rugasDaPeca(posicoes, uv, indices) } : {}), indices }, refino);
     lotes.push({ posicoes: m.posicoes, normais: m.normais, ...(m.uv ? { uv: m.uv } : {}), ...(m.rugas ? { rugas: m.rugas } : {}), indices: m.indices, material });
   }
-  const X = t.x;
   for (const ziper of t.ziperes ?? []) {
     const lote = loteDoZiper(X, normais, ziper.pontos, ziper.comprimentoMm);
     if (lote) lotes.push(lote);

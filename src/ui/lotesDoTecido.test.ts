@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, rugasDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
+import { loteDoBotao, loteDoZiper, lotesDoTecido, mapaDaPeca, pontosDaRoupa, rugasDaPeca, type TecidoParaOEstudio } from './lotesDoTecido';
 import { loteDoCorpo, normaisSuaves, refinar } from './malhasDoEstudio';
 
 /** Duas peças de um triângulo cada, que se tocam na costura. */
@@ -67,6 +67,30 @@ describe('a roupa em lotes', () => {
     const lotes = lotesDoTecido({ ...DUAS_PECAS, costuras: { a: Uint32Array.of(0), b1: Uint32Array.of(3), b2: Uint32Array.of(3) } }, 0);
     const [a, b] = [lotes[0]!.normais, lotes[1]!.normais];
     expect(a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!).toBeCloseTo(1, 4);
+  });
+
+  it('os dois lados da costura se juntam no desenho: pelo vão de 2 mm se via o corpo (ADR 0237)', () => {
+    const lado = (dx: number, dz: number): number[] => [dx, 0, dz];
+    const x = Float64Array.from([...lado(0, 0), ...lado(2, 0), ...lado(5, 0)]);
+    const pontos = pontosDaRoupa({ x, triangulos: new Uint32Array(), pecas: [], costuras: { a: Uint32Array.of(0, 1), b1: Uint32Array.of(1, 0), b2: Uint32Array.of(1, 0), f: Float64Array.of(0, 0) } });
+    expect(Math.abs(pontos[0]! - pontos[3]!)).toBeLessThan(0.05);
+    // Ficam no meio do caminho, e quem não é costura não anda.
+    expect(pontos[0]!).toBeCloseTo(1, 1);
+    expect(pontos[6]!).toBe(5);
+  });
+
+  it('cada lado passa um pouco da linha da costura: entre os pontos, as beiradas não abrem um vão', () => {
+    // Duas peças, uma de cada lado de x = 0, costuradas ponto com ponto.
+    const x = Float64Array.from([0, 0, 0, 0, 100, 0, -50, 50, 0, 0, 0, 0, 0, 100, 0, 50, 50, 0]);
+    const pontos = pontosDaRoupa({ x, triangulos: Uint32Array.of(0, 1, 2, 3, 4, 5), pecas: [], costuras: { a: Uint32Array.of(0, 1, 3, 4), b1: Uint32Array.of(3, 4, 0, 1), b2: Uint32Array.of(3, 4, 0, 1), f: Float64Array.of(0, 0, 0, 0) } });
+    expect(pontos[0]!).toBeGreaterThan(0.5);
+    expect(pontos[9]!).toBeLessThan(-0.5);
+  });
+
+  it('a costura ainda aberta não entorta o desenho: longe, cada lado fica onde está', () => {
+    const x = Float64Array.from([0, 0, 0, 50, 0, 0]);
+    const pontos = pontosDaRoupa({ x, triangulos: new Uint32Array(), pecas: [], costuras: { a: Uint32Array.of(0, 1), b1: Uint32Array.of(1, 0), b2: Uint32Array.of(1, 0), f: Float64Array.of(0, 0) } });
+    expect([pontos[0], pontos[3]]).toEqual([0, 50]);
   });
 
   it('o mapa de tensão: a cor por triângulo, sem refino, sem trama e sem brilho', () => {

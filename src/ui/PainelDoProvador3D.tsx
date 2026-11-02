@@ -328,7 +328,7 @@ export function PainelDoProvador3D(props: {
         triangulos: m.sim.triangulos,
         pecas,
         botoes: m.botoes,
-        costuras: { a: m.sim.costuraA, b1: m.sim.costuraB1, b2: m.sim.costuraB2 },
+        costuras: { a: m.sim.costuraA, b1: m.sim.costuraB1, b2: m.sim.costuraB2, f: m.sim.costuraF },
         trama: tramaDoTecido(montagem.tecido),
         ...(refino > 0 ? { rugaMm: distanciaDasRugas(montagem.tecido) } : {}),
         ...(modo === 'tensao' ? { tensoes: tensoes(m.sim) } : {}),

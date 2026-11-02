@@ -1,5 +1,5 @@
 import type { CampoDoCorpo, MalhaHumana } from './corpoHumano';
-import { campoDoCorpo, lerCampo, malhaHumana, proporcoesDoCorpo } from './corpoHumano';
+import { campoDoCorpo, lerCampo, luvaNasMaos, malhaHumana, proporcoesDoCorpo, type MaoDoCorpo } from './corpoHumano';
 import type { FichaTecnica } from './fichaTecnica';
 import type { RegrasDeCaimento } from './recomendacaoDeTamanho';
 import { guiaDeMedidas } from './recomendacaoDeTamanho';
@@ -397,11 +397,22 @@ function corpoPronto(corpo: CorpoDoManequim): CorpoPronto {
 
 const camposDoCorpo = new WeakMap<CorpoDoManequim, CampoDoCorpo>();
 
+/** O tamanho da mão, do punho à ponta dos dedos, sobre a altura do corpo. */
+const MAO_NA_ALTURA = 0.108;
+
+function maoDoBraco(corpo: CorpoDoManequim, b: BracoOuPerna): MaoDoCorpo {
+  const l = Math.hypot(b.fim.x - b.meio.x, b.fim.y - b.meio.y, b.fim.z - b.meio.z) || 1;
+  return { punho: b.fim, direcao: b.mao ?? p3((b.fim.x - b.meio.x) / l, (b.fim.y - b.meio.y) / l, (b.fim.z - b.meio.z) / l), comprimentoMm: MAO_NA_ALTURA * corpo.alturaMm };
+}
+
 function campoDe(corpo: CorpoDoManequim): CampoDoCorpo {
   const achado = camposDoCorpo.get(corpo);
   if (achado) return achado;
   const pronto = corpoPronto(corpo);
-  pronto.campo ??= campoDoCorpo(pronto.malha);
+  if (!pronto.campo) {
+    pronto.campo = campoDoCorpo(pronto.malha);
+    luvaNasMaos(pronto.campo, [maoDoBraco(corpo, corpo.bracos.direito), maoDoBraco(corpo, corpo.bracos.esquerdo)]);
+  }
   camposDoCorpo.set(corpo, pronto.campo);
   return pronto.campo;
 }

@@ -748,6 +748,67 @@ export function campoDoCorpo(malha: MalhaHumana): CampoDoCorpo {
   return { ox, oy, oz, passo, nx, ny, nz, d };
 }
 
+/** Quanto a mão engrossa na colisão (mm): fecha os vãos entre os dedos. */
+const INCHACO_DA_MAO_MM = 8;
+/** Quantas voltas de média suave na grade da mão: arredondam o polegar, para o punho da roupa não enganchar nele. */
+const VOLTAS_DE_ALISAR_A_MAO = 3;
+
+export interface MaoDoCorpo {
+  readonly punho: { readonly x: number; readonly y: number; readonly z: number };
+  /** Para onde os dedos apontam (de tamanho 1). */
+  readonly direcao: { readonly x: number; readonly y: number; readonly z: number };
+  readonly comprimentoMm: number;
+}
+
+/**
+ * A mão vira uma luva na colisão (ADR 0237): o pano de 12 mm não acha os dedos, que são mais finos que ele, e entrava entre eles ou
+ * enganchava no polegar. A grade da mão é alisada e engrossada; o desenho continua com os dedos, por dentro. Vai sumindo no punho.
+ */
+export function luvaNasMaos(c: CampoDoCorpo, maos: readonly MaoDoCorpo[]): void {
+  const { nx, ny, nz, passo, d } = c;
+  for (const mao of maos) {
+    const alcance = mao.comprimentoMm * 0.65;
+    const pontos: number[] = [];
+    const pesos: number[] = [];
+    const fim = { x: mao.punho.x + mao.direcao.x * mao.comprimentoMm, y: mao.punho.y + mao.direcao.y * mao.comprimentoMm, z: mao.punho.z + mao.direcao.z * mao.comprimentoMm };
+    const faixa = (a: number, b: number, o: number, n: number): [number, number] => [
+      Math.max(1, Math.floor((Math.min(a, b) - alcance - o) / passo)),
+      Math.min(n - 2, Math.ceil((Math.max(a, b) + alcance - o) / passo)),
+    ];
+    const [i0, i1] = faixa(mao.punho.x, fim.x, c.ox, nx);
+    const [j0, j1] = faixa(mao.punho.y, fim.y, c.oy, ny);
+    const [k0, k1] = faixa(mao.punho.z, fim.z, c.oz, nz);
+    for (let k = k0; k <= k1; k++) {
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const [px, py, pz] = [c.ox + i * passo - mao.punho.x, c.oy + j * passo - mao.punho.y, c.oz + k * passo - mao.punho.z];
+          const ao = px * mao.direcao.x + py * mao.direcao.y + pz * mao.direcao.z;
+          const s = Math.max(0, Math.min(mao.comprimentoMm, ao));
+          if (Math.hypot(px - mao.direcao.x * s, py - mao.direcao.y * s, pz - mao.direcao.z * s) > alcance) continue;
+          // Do punho (nada) até o começo da palma (tudo): o antebraço não muda.
+          const peso = Math.max(0, Math.min(1, (ao + 10) / 40));
+          if (peso === 0) continue;
+          pontos.push(i + j * nx + k * nx * ny);
+          pesos.push(peso * peso * (3 - 2 * peso));
+        }
+      }
+    }
+    const novo = new Float32Array(pontos.length);
+    for (let volta = 0; volta < VOLTAS_DE_ALISAR_A_MAO; volta++) {
+      pontos.forEach((g, q) => {
+        const media = (d[g - 1]! + d[g + 1]! + d[g - nx]! + d[g + nx]! + d[g - nx * ny]! + d[g + nx * ny]! + 2 * d[g]!) / 8;
+        novo[q] = d[g]! + (media - d[g]!) * pesos[q]!;
+      });
+      pontos.forEach((g, q) => {
+        d[g] = novo[q]!;
+      });
+    }
+    pontos.forEach((g, q) => {
+      d[g] = d[g]! - INCHACO_DA_MAO_MM * pesos[q]!;
+    });
+  }
+}
+
 /** A distância com sinal e a direção para fora, lidas na grade (em `s`: d, nx, ny, nz). */
 export function lerCampo(c: CampoDoCorpo, x: number, y: number, z: number, s: Float64Array): void {
   const fx = Math.max(0, Math.min(c.nx - 1.001, (x - c.ox) / c.passo));

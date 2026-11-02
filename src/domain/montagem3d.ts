@@ -290,8 +290,19 @@ const RECUO_DO_GANCHO_MM = 100;
  * da face (o meio do corpo é +x); nas costas, à esquerda. O molde pode vir de uma perna ou da outra: pela cópia só, a peça ia
  * para a perna errada, de avesso, e a calça não fechava.
  */
-function pernaPeloGancho(instancia: InstanciaDaPeca, config: ConfiguracaoDaInstancia): PosicaoNoCorpo {
+export function pernaPeloGancho(instancia: InstanciaDaPeca, config: ConfiguracaoDaInstancia): PosicaoNoCorpo {
   const { u, v } = coordenadasDaFace(instancia, config.girarGraus, contornoComoPontos(instancia.contorno));
+  // O quadril desce devagar; o gancho é uma ponta, e o contorno volta logo abaixo dele.
+  const { direita, esquerda } = ganchoNaFace(u, v);
+  const costas = config.posicao.endsWith('-costas');
+  const direitaDoCorpo = direita >= esquerda !== costas;
+  // Sem gancho nenhum (a perna reta), fica como a cópia mandou.
+  if (Math.abs(direita - esquerda) < 8) return config.posicao;
+  return `perna-${direitaDoCorpo ? 'direita' : 'esquerda'}-${costas ? 'costas' : 'frente'}` as PosicaoNoCorpo;
+}
+
+/** Quanto o contorno recua logo abaixo do ponto mais saliente de cada lado, na metade de cima da peça de pé (mm). */
+export function ganchoNaFace(u: ArrayLike<number>, v: ArrayLike<number>): { readonly direita: number; readonly esquerda: number } {
   let vMin = Infinity;
   let vMax = -Infinity;
   for (let i = 0; i < v.length; i++) {
@@ -318,14 +329,7 @@ function pernaPeloGancho(instancia: InstanciaDaPeca, config: ConfiguracaoDaInsta
     }
     return contorno === -Infinity ? 0 : extremo - contorno;
   };
-  // O quadril desce devagar; o gancho é uma ponta, e o contorno volta logo abaixo dele.
-  const direita = recuo(1);
-  const esquerda = recuo(-1);
-  const costas = config.posicao.endsWith('-costas');
-  const direitaDoCorpo = direita >= esquerda !== costas;
-  // Sem gancho nenhum (a perna reta), fica como a cópia mandou.
-  if (Math.abs(direita - esquerda) < 8) return config.posicao;
-  return `perna-${direitaDoCorpo ? 'direita' : 'esquerda'}-${costas ? 'costas' : 'frente'}` as PosicaoNoCorpo;
+  return { direita: recuo(1), esquerda: recuo(-1) };
 }
 
 function configuracaoPeloNome(instancia: InstanciaDaPeca, largura: number): ConfiguracaoDaInstancia {
@@ -650,13 +654,21 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
     e1.x /= e1l;
     e1.y /= e1l;
     const e2 = { x: 0, y: 0, z: -lado };
-    const r = Math.max(W / (2 * Math.PI), braco.raio + 25);
+    const maiorRaio = Math.max(W / (2 * Math.PI), braco.raio + 25);
+    // Da linha mais larga para baixo, a manga afina com a peça até o punho, e as bordas se encontram embaixo do braço já na partida.
+    // Num tubo reto, perto do punho elas ficavam dos lados do braço e, ao costurar, fechavam através dele: o braço saía pela costura.
+    const larguraDaLinha = larguraPorLinha(instancia, config.girarGraus);
+    let vMaisLargo = vMax;
+    for (let q = -vMax; q <= vMax; q += 20) if (larguraDaLinha(q) > larguraDaLinha(vMaisLargo)) vMaisLargo = q;
     const inicio = -braco.raio * 0.8 + config.ajusteMm * -1;
     // O alto da cabeça vai no alto do braço (e não o meio da caixa da peça, que numa manga torta fica fora do eixo).
     const eixo = eixoDaManga(instancia.contorno);
     const uDoApice = eixo ? coordenadasDaFace(instancia, config.girarGraus, [eixo.apice.x, eixo.apice.y]).u[0]! : 0;
     for (let i = 0; i < n; i++) {
       const l = inicio + (vMax - face.v[i]!);
+      // O braço afina para o punho: a manga nunca começa dentro dele.
+      const menorRaio = braco.raio * (1 - (ESTREITA_O_BRACO * Math.max(0, Math.min(L, l))) / L) + FOLGA_DA_MANGA_MM;
+      const r = face.v[i]! >= vMaisLargo ? maiorRaio : Math.max(menorRaio, Math.min(maiorRaio, larguraDaLinha(face.v[i]!) / (2 * Math.PI)));
       const f = (face.u[i]! - uDoApice + config.desvioMm) / r;
       const c = { x: braco.inicio.x + d.x * l, y: braco.inicio.y + d.y * l, z: braco.inicio.z + d.z * l };
       saida[3 * i] = c.x + r * (Math.cos(f) * e1.x + Math.sin(f) * e2.x);
@@ -721,6 +733,10 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
   }
   return saida;
 }
+
+/** O quanto o braço afina do ombro ao punho, e o vão da manga em volta dele na partida (mm). */
+const ESTREITA_O_BRACO = 0.4;
+const FOLGA_DA_MANGA_MM = 10;
 
 /** O quanto a dobra da gola descansa do comprimento da beira do decote: a ribana só estica na beira costurada. */
 const DESCANSO_DA_DOBRA_DA_GOLA = 0.89;
@@ -1014,11 +1030,16 @@ function pontoPeloComprimento(contorno: Contorno, de: number, ate: number, dista
   }
 }
 
-/** O lado do contorno que é o decote: no quarto de cima da peça, de um lado ao outro do meio dela, e fundo no meio. O decote em V, de dois lados, não entra. */
+/** O trecho do contorno que é o decote: no quarto de cima da peça, de um lado ao outro do meio dela, e fundo no meio. É um lado só, ou, no V, dois que se encontram no meio. */
 export function decoteDaPeca(instancia: InstanciaDaPeca, girarGraus: number): LadoDoContorno | null {
   const { u, v, altura } = coordenadasDaFace(instancia, girarGraus, contornoComoPontos(instancia.contorno));
   const faixa = altura / 4;
-  for (const lado of ladosDoContorno(instancia.contorno)) {
+  const lados = ladosDoContorno(instancia.contorno);
+  const emV = lados.map((a, k) => {
+    const b = lados[(k + 1) % lados.length]!;
+    return { de: a.de, ate: b.ate, comprimento: a.comprimento + b.comprimento };
+  });
+  for (const lado of [...lados, ...emV]) {
     if (v[lado.de]! < faixa || v[lado.ate]! < faixa || u[lado.de]! * u[lado.ate]! >= 0) continue;
     let fundo = Infinity;
     for (const i of trechoDoContorno(instancia.contorno.length, lado.de, lado.ate)) fundo = Math.min(fundo, v[i]!);

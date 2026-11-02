@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { voltaDoTronco } from './corpoHumano';
+import { luvaNasMaos, voltaDoTronco, type CampoDoCorpo } from './corpoHumano';
 import { FACES_DO_CORPO, PONTOS_DO_CORPO } from './corpoHumano.dados';
 import { corpoDoManequim, distanciaAoCorpo, malhaDoCorpo, MEDIDAS_DO_PUBLICO, publicoDasMedidas, type PublicoDoManequim } from './manequim';
 
@@ -107,10 +107,18 @@ describe('o campo de distâncias do corpo', () => {
 
   it('a distância lida na grade bate com a dos pontos da malha: a superfície fica no zero', () => {
     const { vertices: v } = malhaDoCorpo(corpo);
+    const naMao = (x: number, y: number, z: number): boolean => [corpo.bracos.direito, corpo.bracos.esquerdo].some((b) => Math.hypot(x - b.fim.x, y - b.fim.y, z - b.fim.z) < 230);
     let pior = 0;
-    for (let i = 0; i < v.length; i += 3 * 40) pior = Math.max(pior, Math.abs(distanciaAoCorpo(corpo, v[i]!, v[i + 1]!, v[i + 2]!).d));
-    // A grade é de 8 mm: nos dedos e nas orelhas, finos, ela erra um pouco mais.
+    let maisForaDaLuva = -Infinity;
+    for (let i = 0; i < v.length; i += 3 * 40) {
+      const d = distanciaAoCorpo(corpo, v[i]!, v[i + 1]!, v[i + 2]!).d;
+      if (naMao(v[i]!, v[i + 1]!, v[i + 2]!)) maisForaDaLuva = Math.max(maisForaDaLuva, d);
+      else pior = Math.max(pior, Math.abs(d));
+    }
+    // A grade é de 8 mm: nas orelhas, finas, ela erra um pouco mais.
     expect(pior).toBeLessThan(9);
+    // A mão é uma luva na colisão (ADR 0237): os dedos do desenho ficam dentro dela.
+    expect(maisForaDaLuva).toBeLessThan(2);
   });
 
   it('entre as pernas e embaixo do braço é fora; dentro da coxa e do braço é dentro', () => {
@@ -119,5 +127,33 @@ describe('o campo de distâncias do corpo', () => {
     expect(distanciaAoCorpo(corpo, 0, corpo.niveis.gancho - 150, 0).d).toBeGreaterThan(0);
     expect(distanciaAoCorpo(corpo, direita.meio.x, 0.4 * corpo.alturaMm, direita.meio.z).d).toBeLessThan(-20);
     expect(distanciaAoCorpo(corpo, esquerdo.meio.x, esquerdo.meio.y, esquerdo.meio.z).d).toBeLessThan(-10);
+  });
+});
+
+describe('a mão na colisão (ADR 0237)', () => {
+  const campo = (): CampoDoCorpo => ({ ox: 0, oy: 0, oz: 0, passo: 8, nx: 60, ny: 30, nz: 30, d: new Float32Array(60 * 30 * 30).fill(20) });
+  const em = (c: CampoDoCorpo, x: number): number => c.d[Math.round(x / 8) + 15 * c.nx + 15 * c.nx * c.ny]!;
+  const mao = { punho: { x: 200, y: 120, z: 120 }, direcao: { x: 1, y: 0, z: 0 }, comprimentoMm: 180 };
+
+  it('engrossa a mão inteira, e mais nada: o vão entre os dedos fecha', () => {
+    const c = campo();
+    luvaNasMaos(c, [mao]);
+    expect(em(c, 300)).toBeCloseTo(12, 3);
+    expect(em(c, 150)).toBe(20);
+  });
+
+  it('vai sumindo no punho: o antebraço não ganha um degrau', () => {
+    const c = campo();
+    luvaNasMaos(c, [mao]);
+    expect(em(c, 208)).toBeGreaterThan(12);
+    expect(em(c, 208)).toBeLessThan(20);
+  });
+
+  it('arredonda o que sai da mão: o polegar não engancha o punho da roupa', () => {
+    const c = campo();
+    const g = Math.round(300 / 8) + 15 * c.nx + 15 * c.nx * c.ny;
+    c.d[g] = -20;
+    luvaNasMaos(c, [mao]);
+    expect(c.d[g]! - -28).toBeGreaterThan(5);
   });
 });
