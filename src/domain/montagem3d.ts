@@ -23,7 +23,8 @@ export type PosicaoNoCorpo =
   | 'perna-direita-costas'
   | 'perna-esquerda-frente'
   | 'perna-esquerda-costas'
-  | 'sobre-outra-peca';
+  | 'sobre-outra-peca'
+  | 'gola';
 
 export const ROTULO_DA_POSICAO: Readonly<Record<PosicaoNoCorpo, string>> = {
   fora: 'Fora (não vai ao corpo)',
@@ -38,6 +39,7 @@ export const ROTULO_DA_POSICAO: Readonly<Record<PosicaoNoCorpo, string>> = {
   'perna-esquerda-frente': 'Perna esquerda, frente',
   'perna-esquerda-costas': 'Perna esquerda, costas',
   'sobre-outra-peca': 'Sobre outra peça (bolso, aplicação)',
+  gola: 'Gola (em volta do pescoço)',
 };
 
 export type AlturaDoTopo = 'pescoco' | 'ombro' | 'busto' | 'cintura' | 'quadril';
@@ -75,6 +77,8 @@ export interface ConfiguracaoDaInstancia {
   readonly estampa?: EstampaDaPeca;
   /** Na posição "sobre outra peça": em qual e onde (ADR 0123). */
   readonly sobre?: SobreOutraPeca;
+  /** Na gola: quanto do comprimento dela (de 0 a 1) vai nas costas; o resto vai na frente, que tem o decote maior (ADR 0234). */
+  readonly costasDaGola?: number;
 }
 
 /**
@@ -478,6 +482,8 @@ export function giroPelaForma(instancia: InstanciaDaPeca, girarGraus: number, po
     if (daManga !== null) return daManga;
   }
   const face = coordenadasDaFace(instancia, girarGraus, contornoComoPontos(instancia.contorno));
+  // A gola corre deitada em volta do pescoço.
+  if (posicao === 'gola') return face.altura > face.largura ? normalizarGiro(girarGraus + 90) : girarGraus;
   const d = diferencaDasPontas(face.u, face.v);
   if (Math.abs(d) < 0.08) return girarGraus;
   const largoEmCima = d > 0;
@@ -659,6 +665,22 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
     }
     return saida;
   }
+  if (p === 'gola') {
+    // Um anel acima dos ombros, que fecha no ombro esquerdo: do começo da peça, vai pelas costas e volta pela frente, com a face para
+    // fora. A volta se estreita para cima, como o descanso dela (`encolheDaGola`).
+    const base = corpo.niveis.pescoco + 20 + config.ajusteMm;
+    const costas = config.costasDaGola ?? 0.5;
+    for (let i = 0; i < n; i++) {
+      const raio = (W * encolheDaGola(face.v[i]!, contorno.altura)) / (2 * Math.PI);
+      // Meia volta nas costas e meia na frente, cada uma com a parte da gola que é dela: dividida ao meio, a gola se torcia ao costurar.
+      const t = (face.u[i]! + W / 2 + config.desvioMm) / W;
+      const f = Math.PI / 2 + Math.PI * (t <= costas ? t / costas : 1 + (t - costas) / (1 - costas));
+      saida[3 * i] = raio * Math.sin(f);
+      saida[3 * i + 1] = base + face.v[i]! + contorno.altura / 2;
+      saida[3 * i + 2] = raio * Math.cos(f);
+    }
+    return saida;
+  }
   // Em volta do tronco (ou da perna): uma elipse afastada do corpo, grande o bastante para meia volta caber na peça
   // (a frente e as costas se encontram dos lados); a peça vai por ela medida pelo comprimento, sem esticar.
   let cx = 0;
@@ -697,6 +719,24 @@ export function posicoesDeArrumacao(corpo: CorpoDoManequim, instancia: Instancia
     saida[3 * i + 1] = topo - (vMax - face.v[i]!);
     saida[3 * i + 2] = q.z;
   }
+  return saida;
+}
+
+/** O quanto a dobra da gola descansa do comprimento da beira do decote: a ribana só estica na beira costurada. */
+const DESCANSO_DA_DOBRA_DA_GOLA = 0.89;
+
+/** Quanto do comprimento descansa à altura `v` da face da gola (de altura `altura`): tudo na beira de baixo, menos na dobra. */
+const encolheDaGola = (v: number, altura: number): number => 1 - (1 - DESCANSO_DA_DOBRA_DA_GOLA) * (0.5 + v / altura);
+
+/**
+ * Os pontos da gola (x, y seguidos) na forma em que descansam, para os comprimentos da simulação. A beira do decote vai esticada e a
+ * dobra aperta o pescoço, mas a peça é um retângulo: desenhada mais curta em cima, a gola não fechava num anel liso, e a emenda
+ * quebrava num V (ADR 0234). O comprimento é que encolhe, altura por altura.
+ */
+export function descansoDaGola(instancia: InstanciaDaPeca, girarGraus: number, pontos: ArrayLike<number>): Float64Array {
+  const { u, v, altura } = coordenadasDaFace(instancia, girarGraus, pontos);
+  const saida = new Float64Array(pontos.length);
+  for (let i = 0; i < u.length; i++) saida.set([u[i]! * encolheDaGola(v[i]!, altura), v[i]!], 2 * i);
   return saida;
 }
 
@@ -892,7 +932,8 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
   const candidatos: Candidato[] = [];
   for (const inst of instancias) {
     const config = montagem.pecas[inst.chave];
-    if (!config || config.posicao === 'fora') continue;
+    // A gola tem as costuras dela, no fim.
+    if (!config || config.posicao === 'fora' || config.posicao === 'gola') continue;
     const todos = posicoesDeArrumacao(corpo, inst, config, contornoComoPontos(inst.contorno));
     if (!todos) continue;
     let yMax = -Infinity;
@@ -953,7 +994,96 @@ export function sugerirCosturas(corpo: CorpoDoManequim, instancias: readonly Ins
     });
   }
   novas.push(...costurasDasMangas(corpo, instancias, montagem, candidatos, usados, novoId));
+  novas.push(...costurasDaGola(corpo, instancias, montagem, usados, novoId));
   return novas;
+}
+
+/** O ponto do trecho do contorno mais perto de `distancia` mm do começo dele. */
+function pontoPeloComprimento(contorno: Contorno, de: number, ate: number, distancia: number): number {
+  const n = contorno.length;
+  let andado = 0;
+  let achado = de;
+  let melhor = Infinity;
+  for (let i = de; ; i = (i + 1) % n) {
+    if (Math.abs(andado - distancia) < melhor) {
+      melhor = Math.abs(andado - distancia);
+      achado = i;
+    }
+    if (i === ate) return achado;
+    andado += Math.hypot(contorno[(i + 1) % n]!.x - contorno[i]!.x, contorno[(i + 1) % n]!.y - contorno[i]!.y);
+  }
+}
+
+/** O lado do contorno que é o decote: no quarto de cima da peça, de um lado ao outro do meio dela, e fundo no meio. O decote em V, de dois lados, não entra. */
+export function decoteDaPeca(instancia: InstanciaDaPeca, girarGraus: number): LadoDoContorno | null {
+  const { u, v, altura } = coordenadasDaFace(instancia, girarGraus, contornoComoPontos(instancia.contorno));
+  const faixa = altura / 4;
+  for (const lado of ladosDoContorno(instancia.contorno)) {
+    if (v[lado.de]! < faixa || v[lado.ate]! < faixa || u[lado.de]! * u[lado.ate]! >= 0) continue;
+    let fundo = Infinity;
+    for (const i of trechoDoContorno(instancia.contorno.length, lado.de, lado.ate)) fundo = Math.min(fundo, v[i]!);
+    if (fundo < Math.min(v[lado.de]!, v[lado.ate]!) - 5) return lado;
+  }
+  return null;
+}
+
+/**
+ * A gola com o decote (ADR 0234): a beira de baixo dela vai com o decote das costas e com o da frente, dividida na proporção deles,
+ * e as duas pontas se fecham uma na outra, no ombro esquerdo. No meio das costas, a emenda vira uma dobradiça, e o decote a puxa num V.
+ */
+function costurasDaGola(corpo: CorpoDoManequim, instancias: readonly InstanciaDaPeca[], montagem: Montagem3D, usados: Set<string>, novoId: () => string): Costura3D[] {
+  const gola = instancias.find((i) => montagem.pecas[i.chave]?.posicao === 'gola');
+  const config = gola && montagem.pecas[gola.chave];
+  if (!gola || !config) return [];
+  const doDecote = (posicao: PosicaoNoCorpo): { readonly inst: InstanciaDaPeca; readonly lado: LadoDoContorno } | null => {
+    const inst = instancias.find((i) => montagem.pecas[i.chave]?.posicao === posicao);
+    const lado = inst ? decoteDaPeca(inst, montagem.pecas[inst.chave]!.girarGraus) : null;
+    return inst && lado && !usados.has(`${inst.chave}|${lado.de}|${lado.ate}`) ? { inst, lado } : null;
+  };
+  const costas = doDecote('costas');
+  const frente = doDecote('frente');
+  if (!costas || !frente) return [];
+  const { u, v, altura } = coordenadasDaFace(gola, config.girarGraus, contornoComoPontos(gola.contorno));
+  // As pontas da gola, pelas beiras: a dobra é pouco mais curta que a beira do decote, e o canto dela é aberto demais para contar como canto.
+  const n = gola.contorno.length;
+  const naBeira = (lado: 1 | -1): number[] => Array.from({ length: n }, (_, i) => i).filter((i) => v[i]! * lado > altura / 2 - 1);
+  const pontasDa = (lista: readonly number[]): [number, number] => {
+    const porU = [...lista].sort((a, b) => u[a]! - u[b]!);
+    return [porU[0]!, porU[porU.length - 1]!];
+  };
+  const [baixoE, baixoD] = pontasDa(naBeira(-1));
+  const [altoE, altoD] = pontasDa(naBeira(1));
+  if (baixoE === baixoD || altoE === altoD) return [];
+  // A beira do decote no sentido do contorno, e o que vem depois dela: uma ponta, a dobra e a outra ponta.
+  const seguindo = v[(baixoE + 1) % n]! < -altura / 2 + 1;
+  const beira = seguindo ? { de: baixoE, ate: baixoD } : { de: baixoD, ate: baixoE };
+  const [alto1, alto2] = seguindo ? [altoD, altoE] : [altoE, altoD];
+  // O anel começa (no u menor) pelas costas.
+  const [primeiro, segundo] = seguindo ? [costas, frente] : [frente, costas];
+  const total = comprimentoDoTrecho(gola.contorno, beira.de, beira.ate);
+  const divisao = pontoPeloComprimento(gola.contorno, beira.de, beira.ate, (total * primeiro.lado.comprimento) / (costas.lado.comprimento + frente.lado.comprimento));
+  if (divisao === beira.de || divisao === beira.ate) return [];
+  usados.add(`${costas.inst.chave}|${costas.lado.de}|${costas.lado.ate}`);
+  usados.add(`${frente.inst.chave}|${frente.lado.de}|${frente.lado.ate}`);
+  const comODecote = (de: number, ate: number, destino: { readonly inst: InstanciaDaPeca; readonly lado: LadoDoContorno }): Costura3D => {
+    const lado = destino.lado;
+    return {
+      id: novoId(),
+      a: { chave: gola.chave, de, ate, assinatura: gola.assinatura },
+      b: { chave: destino.inst.chave, de: lado.de, ate: lado.ate, assinatura: destino.inst.assinatura },
+      invertida: sentidoSugerido(corpo, { inst: gola, config, de, ate }, { inst: destino.inst, config: montagem.pecas[destino.inst.chave]!, de: lado.de, ate: lado.ate }),
+    };
+  };
+  return [
+    comODecote(beira.de, divisao, primeiro),
+    comODecote(divisao, beira.ate, segundo),
+    {
+      id: novoId(),
+      a: { chave: gola.chave, de: beira.ate, ate: alto1, assinatura: gola.assinatura },
+      b: { chave: gola.chave, de: alto2, ate: beira.de, assinatura: gola.assinatura },
+      invertida: sentidoSugerido(corpo, { inst: gola, config, de: beira.ate, ate: alto1 }, { inst: gola, config, de: alto2, ate: beira.de }),
+    },
+  ];
 }
 
 /**
@@ -1096,6 +1226,7 @@ export function lerMontagem3d(bruto: unknown): Montagem3D {
         alturaDoTopo: ALTURAS.includes(c.alturaDoTopo as AlturaDoTopo) ? (c.alturaDoTopo as AlturaDoTopo) : 'ombro',
         ajusteMm: numero(c.ajusteMm, 0),
         desvioMm: numero(c.desvioMm, 0),
+        ...(typeof c.costasDaGola === 'number' && c.costasDaGola > 0 && c.costasDaGola < 1 ? { costasDaGola: c.costasDaGola } : {}),
         girarGraus: normalizarGiro(girar),
         cor: typeof c.cor === 'string' && /^#[0-9a-f]{6}$/i.test(c.cor) ? c.cor : COR_DE_PARTIDA,
       };

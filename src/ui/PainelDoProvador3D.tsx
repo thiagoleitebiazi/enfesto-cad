@@ -23,7 +23,6 @@ import {
 import {
   comprimentoDoTrecho,
   corMaisEscura,
-  configuracoesDasInstancias,
   coordenadasDaFace,
   trechoDoContorno,
   giroPelaForma,
@@ -74,17 +73,19 @@ import { lotesDoTecido, mapaDaPeca, type PecaParaOEstudio, type TecidoParaOEstud
 import { pontoNoTronco, preMoldeDoDesenho } from '../domain/desenhoNoCorpo';
 import { ROTULO_DA_POSE, type PoseDoManequim, type Ponto3D } from '../domain/manequim';
 import { numeroComVirgula } from '../core/numeros';
+import { comAManga, mangasDoProvador, montagemDoProvador, pecasDoProvador } from '../domain/formaDasPecas';
 
 type AbaDoProvador = 'pecas' | 'costuras' | 'manequim' | 'tecido' | 'imagem' | 'desenho';
 
 /** A borda de uma peça pela face dela, com os lados do contorno que têm costura marcados. */
-function mapaDaInstancia(inst: InstanciaDaPeca, girarGraus: number, costuras: readonly Costura3D[]): MapaDaPeca {
+function mapaDaInstancia(inst: InstanciaDaPeca, config: ConfiguracaoDaInstancia, costuras: readonly Costura3D[]): MapaDaPeca {
   const pontos = new Float64Array(inst.contorno.length * 2);
   inst.contorno.forEach((p, i) => pontos.set([p.x, p.y], 2 * i));
-  const face = coordenadasDaFace(inst, girarGraus, pontos);
+  const face = coordenadasDaFace(inst, config.girarGraus, pontos);
   const contorno = new Float64Array(face.u.length * 2);
   for (let i = 0; i < face.u.length; i++) contorno.set([face.u[i]!, face.v[i]!], 2 * i);
-  const costurado = new Uint8Array(inst.contorno.length);
+  // A gola é uma dobra: a beira livre dela não tem barra.
+  const costurado = new Uint8Array(inst.contorno.length).fill(config.posicao === 'gola' ? 2 : 0);
   for (const c of costuras) {
     for (const lado of [c.a, c.b]) {
       if (lado.chave === inst.chave) for (const i of trechoDoContorno(inst.contorno.length, lado.de, lado.ate)) costurado[i] = 1;
@@ -164,15 +165,19 @@ export function PainelDoProvador3D(props: {
   // Provar outro tamanho (ADR 0223): só muda aqui, o projeto fica como está. O manequim tem a escolha dele.
   const [tamanhoDasPecas, setTamanhoDasPecas] = useState('');
   const tamanhosDoMolde = useMemo(() => tamanhosDasPecas(props.pecas), [props.pecas]);
-  const instancias = useMemo(() => instanciasDasPecas(pecasNoTamanho(props.pecas, tamanhoDasPecas)), [props.pecas, tamanhoDasPecas]);
-  const [montagem, setMontagem] = useState<Montagem3D>(() => ({ ...props.montagemGuardada, pecas: configuracoesDasInstancias(instancias, props.montagemGuardada) }));
+  const instancias = useMemo(() => instanciasDasPecas(pecasDoProvador(pecasNoTamanho(props.pecas, tamanhoDasPecas))), [props.pecas, tamanhoDasPecas]);
+  // As peças sem nome vão ao corpo pela forma, já costuradas (ADR 0234).
+  const [inicio] = useState(() => montagemDoProvador(instancias, props.montagemGuardada, props.novoId));
+  const [montagem, setMontagem] = useState<Montagem3D>(inicio.montagem);
   const guardadaRef = useRef(montagem);
   const [aba, setAba] = useState<AbaDoProvador>('pecas');
   const [camera, setCamera] = useState<Camera3D>(() => cameraDeFrente(montagem.manequim.medidas.alturaCm * 10));
   const [modo, setModo] = useState<'cor' | 'tensao'>('cor');
   const [simulando, setSimulando] = useState(false);
   const [estado, setEstado] = useState<EstadoDaSimulacao>({ fase: 'arrumado', tempo: 0 });
-  const [mensagem, setMensagem] = useState<string | null>(null);
+  const [mensagem, setMensagem] = useState<string | null>(
+    inicio.reconhecidas.length > 0 ? `Reconhecido pela forma: ${inicio.reconhecidas.join(', ')}; ${inicio.montagem.costuras.length} costura(s) prontas. Confira na aba Peças.` : null,
+  );
   // A resolução das imagens salvas (1, 2 ou 4 vezes 600 × 900) e o giro em vídeo sendo gravado (ADR 0139).
   const [fatorDaImagem, setFatorDaImagem] = useState(2);
   /** A vista ampliada: sem as abas e a linha de estado, o desenho toma a janela toda. */
@@ -258,7 +263,7 @@ export function PainelDoProvador3D(props: {
     const mapas = new Map<string, MapaDaPeca>();
     for (const p of sim.pecas) {
       const inst = instancias.find((i) => i.chave === p.chave)!;
-      mapas.set(p.chave, mapaDaInstancia(inst, montagem.pecas[p.chave]!.girarGraus, costurasValidas));
+      mapas.set(p.chave, mapaDaInstancia(inst, montagem.pecas[p.chave]!, costurasValidas));
       const face = coordenadasDaFace(inst, montagem.pecas[p.chave]!.girarGraus, p.malha.pontos);
       const uv = new Float64Array(face.u.length * 2);
       for (let i = 0; i < face.u.length; i++) {
@@ -803,7 +808,7 @@ export function PainelDoProvador3D(props: {
               {mensagem}
             </p>
           )}
-          {aba === 'pecas' && <PartePecas instancias={instancias} montagem={montagem} imagens={props.imagens} onMudar={mudarPeca} onTrocar={(chave, config) => setMontagem((m) => ({ ...m, pecas: { ...m.pecas, [chave]: config } }))} />}
+          {aba === 'pecas' && <PartePecas instancias={instancias} montagem={montagem} imagens={props.imagens} onTrocarManga={(pecaId) => setMontagem((m) => comAManga(instancias, m, pecaId, props.novoId))} onMudar={mudarPeca} onTrocar={(chave, config) => setMontagem((m) => ({ ...m, pecas: { ...m.pecas, [chave]: config } }))} />}
           {aba === 'costuras' && (
             <ParteCosturas
               instancias={instancias}
@@ -939,14 +944,29 @@ function PartePecas(props: {
   readonly imagens: readonly ImagemDoModelo[];
   readonly onMudar: (chave: string, mudanca: Partial<ConfiguracaoDaInstancia>) => void;
   readonly onTrocar: (chave: string, config: ConfiguracaoDaInstancia) => void;
+  readonly onTrocarManga: (pecaId: string) => void;
 }): React.JSX.Element {
   if (props.instancias.length === 0) return <p className="nota-do-formulario">O projeto não tem peças.</p>;
+  const mangas = mangasDoProvador(props.instancias);
+  const mangaVestida = mangas.find((m) => m.instancias.some((i) => props.montagem.pecas[i.chave]?.posicao.startsWith('manga-')));
   return (
     <section aria-label="Peças" className="secao-do-provador lista-de-pecas-3d">
       <p className="nota-do-formulario">
         Cada peça vai a um lugar do corpo; a figura mostra como ela fica, com o alto em cima. O alto vem da forma (a ponta estreita em cima; na perna, a larga; na manga, a cabeça) — confira e gire se
         precisar. A segunda de um par (a manga esquerda) já sai espelhada.
       </p>
+      {mangas.length > 1 && !mangas[0]!.mesmoPar && (
+        <label>
+          Manga do modelo
+          <select aria-label="Manga do modelo" value={mangaVestida?.pecaId ?? ''} onChange={(e) => props.onTrocarManga(e.target.value)}>
+            {mangas.map((m) => (
+              <option key={m.pecaId} value={m.pecaId}>
+                {m.rotulo}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {props.instancias.map((inst) => {
         const c = props.montagem.pecas[inst.chave]!;
         const fora = c.posicao === 'fora';

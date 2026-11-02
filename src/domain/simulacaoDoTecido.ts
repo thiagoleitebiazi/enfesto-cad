@@ -4,7 +4,7 @@ import { corpoDoManequim, distanciaAoCorpo, grade } from './manequim';
 import type { MalhaDaPeca } from './malhaDaPeca';
 import { trechoDaBorda } from './malhaDaPeca';
 import type { ConfiguracaoDaInstancia, Costura3D, InstanciaDaPeca, Tecido3D } from './montagem3d';
-import { pontosCosturadosDaPecaDeCima, pontosNaPecaDeBaixo, posicoesDeArrumacao } from './montagem3d';
+import { descansoDaGola, pontosCosturadosDaPecaDeCima, pontosNaPecaDeBaixo, posicoesDeArrumacao } from './montagem3d';
 
 /**
  * A simulação do caimento (ADR 0111): o tecido como partículas (os pontos da malha de cada peça) ligadas por
@@ -244,7 +244,8 @@ export function montarSimulacao(entrada: EntradaDaSimulacao): Simulacao {
     } else {
       x.set(posicoesDeArrumacao(e.corpo, inst, config, m.pontos)!, p.inicio * 3);
     }
-    const dist2d = (i: number, j: number): number => Math.hypot(m.pontos[2 * i]! - m.pontos[2 * j]!, m.pontos[2 * i + 1]! - m.pontos[2 * j + 1]!);
+    const emDescanso = config.posicao === 'gola' ? descansoDaGola(inst, config.girarGraus, m.pontos) : m.pontos;
+    const dist2d = (i: number, j: number): number => Math.hypot(emDescanso[2 * i]! - emDescanso[2 * j]!, emDescanso[2 * i + 1]! - emDescanso[2 * j + 1]!);
     for (let k = 0; k < m.triangulos.length; k += 3) {
       const a = m.triangulos[k]!;
       const b = m.triangulos[k + 1]!;

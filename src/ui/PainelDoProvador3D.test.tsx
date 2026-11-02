@@ -6,6 +6,7 @@ import { criarMolde, type Molde } from '../domain/molde';
 import { MONTAGEM_VAZIA, type Montagem3D } from '../domain/montagem3d';
 import { MEDIDAS_DO_PUBLICO } from '../domain/manequim';
 import { novaFichaTecnica, type FichaTecnica } from '../domain/fichaTecnica';
+import { camisetaSemNomes } from '../domain/camisetaDeTeste';
 import { PainelDoProvador3D } from './PainelDoProvador3D';
 
 beforeEach(() => {
@@ -249,5 +250,31 @@ describe('PainelDoProvador3D — o bolso sobre a frente (ADR 0123)', () => {
     fireEvent.change(screen.getByLabelText('Onde vai Retalho'), { target: { value: 'sobre-outra-peca' } });
     expect(screen.getByLabelText('Sobre que peça vai Retalho')).toHaveValue('f#0');
     expect(screen.getByLabelText('Distância do alto de Retalho')).toHaveValue(60);
+  });
+});
+
+describe('as peças sem nome no provador (ADR 0234)', () => {
+  it('a camiseta abre no corpo e já costurada, com o aviso do que foi reconhecido', () => {
+    abrir({ pecas: camisetaSemNomes() });
+    expect(screen.getByRole('alert').textContent).toMatch(/Reconhecido pela forma: .*Gola.*13 costura\(s\)/);
+    expect(screen.getByText(/5 peça\(s\) em volta do corpo, 13 costura\(s\)/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Simular' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('as duas mangas do molde viram uma escolha, e a costura acompanha', async () => {
+    const { ultima } = abrir({ pecas: camisetaSemNomes() });
+    const escolha = screen.getByLabelText('Manga do modelo') as HTMLSelectElement;
+    expect(escolha.value).toBe('p4');
+    fireEvent.change(escolha, { target: { value: 'p3' } });
+    expect((screen.getByLabelText('Manga do modelo') as HTMLSelectElement).value).toBe('p3');
+    await waitFor(() => expect(ultima().pecas['p3#0']!.posicao).toBe('manga-direita'), { timeout: 2000 });
+    expect(ultima().pecas['p4#0']!.posicao).toBe('fora');
+    expect(ultima().costuras).toHaveLength(13);
+  });
+
+  it('o projeto sem peça de tronco abre como antes, sem aviso nem escolha de manga', () => {
+    abrir();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByLabelText('Manga do modelo')).toBeNull();
   });
 });

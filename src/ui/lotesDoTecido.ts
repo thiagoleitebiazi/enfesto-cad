@@ -43,7 +43,7 @@ const PASSO_DO_MAPA_MM = 2;
 
 /**
  * A grade da borda de uma peça (ADR 0231). `contorno`: os pontos na face (u, v seguidos), fechado; `costurado`: 1 em cada
- * lado do contorno que tem costura (o lado `i` vai do ponto `i` ao seguinte).
+ * lado do contorno que tem costura (o lado `i` vai do ponto `i` ao seguinte), 2 onde o pano só dobra (a beira da gola) e 0 na barra.
  */
 export function mapaDaPeca(contorno: ArrayLike<number>, costurado: ArrayLike<number>): MapaDaPeca {
   const n = contorno.length / 2;
@@ -84,7 +84,7 @@ export function mapaDaPeca(contorno: ArrayLike<number>, costurado: ArrayLike<num
         if (d < distancia[g]!) {
           distancia[g] = d;
           caminho[g] = andado + t * l;
-          marca[g] = costurado[i]! ? 1 : 0;
+          marca[g] = costurado[i]!;
         }
       }
     }

@@ -295,6 +295,11 @@ function trama(tipo: TramaDoTecido, u: number, v: number, pe: number, saida: Flo
 
 /** O alcance da borda (mm): a barra dobrada e o que há nela cabem aí. */
 export const ALCANCE_DA_BORDA = 26;
+/**
+ * O franzido ao lado da costura, ao longo dela (mm): de -1 a 1, sem repetir. Uma onda só, de 7 em 7 mm, parecia uma fileira de
+ * pontinhos ao lado da costura quando se chegava perto.
+ */
+export const franzidoDaCostura = (s: number): number => 0.55 * Math.sin(s * 0.19) + 0.3 * Math.sin(s * 0.47 + 1.3) + 0.15 * Math.sin(s * 0.83 + 4.1);
 /** A largura da barra (mm): a linha do pesponto corre a esta distância da borda livre. */
 const LARGURA_DA_BARRA = 15;
 /** O passo do ponto da máquina (mm) e a parte dele em que a linha aparece. */
@@ -1120,12 +1125,15 @@ export function renderizarEstudio(v: VistaDoEstudio, lotes: readonly LoteDoEstud
             nz -= k * (borda[3]! * tz + borda[4]! * bz);
           };
           let luzDaBorda = 1;
-          if (borda[2]! > 0) {
+          if (borda[2] === 2) {
+            // A dobra da gola: só um vinco leve na beirada, sem barra nem pesponto.
+            luzDaBorda *= 1 - 0.18 * Math.exp(-((d / 1.2) ** 2));
+          } else if (borda[2]! > 0) {
             // A costura: o sulco, onde os dois panos se juntam, e o franzido leve dos lados dele.
             const sulco = Math.exp(-((d / 1.7) ** 2));
-            luzDaBorda *= 1 - 0.5 * sulco;
-            inclina(0.55 * sulco);
-            inclina(-0.1 * Math.exp(-(((d - 5) / 3) ** 2)) * Math.sin(borda[1]! * 0.9));
+            luzDaBorda *= 1 - 0.38 * sulco;
+            inclina(0.45 * sulco);
+            inclina(-0.1 * Math.exp(-(((d - 5) / 3) ** 2)) * franzidoDaCostura(borda[1]!));
           } else {
             // A borda livre: a beirada dobrada e, a uma barra dela, o pesponto, com o pano um pouco afundado nas duas linhas.
             luzDaBorda *= 1 - 0.3 * Math.exp(-((d / 0.9) ** 2));

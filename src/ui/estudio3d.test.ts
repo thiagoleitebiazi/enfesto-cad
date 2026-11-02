@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cameraDeFrente, projecao, vistaDaProjecao } from './cena3d';
 import { mapaDaPeca } from './lotesDoTecido';
+import { franzidoDaCostura } from './estudio3d';
 import { enfraquece, faixasDaImagem, opacidadeDoTecido, QUALIDADE_FINAL, QUALIDADE_RAPIDA, renderizarEstudio, type FundoDoEstudio, type LoteDoEstudio, type MaterialDoEstudio, type QualidadeDoEstudio } from './estudio3d';
 
 const ALTURA = 1700;
@@ -231,5 +232,18 @@ describe('o estúdio: a imagem calculada ponto a ponto (ADR 0228)', () => {
   it('a mesma cena dá a mesma imagem (o ruído é fixo: a tela não treme parada)', () => {
     const lotes = [esfera(TECIDO)];
     expect(render(lotes, QUALIDADE_FINAL)).toEqual(render(lotes, QUALIDADE_FINAL));
+  });
+});
+
+describe('o franzido ao lado da costura (ADR 0234)', () => {
+  it('não repete: uma onda de 7 em 7 mm parecia uma fileira de pontinhos de perto', () => {
+    let soma = 0;
+    let maior = 0;
+    for (let s = 0; s < 700; s++) {
+      soma += Math.abs(franzidoDaCostura(s) - franzidoDaCostura(s + 7));
+      maior = Math.max(maior, Math.abs(franzidoDaCostura(s)));
+    }
+    expect(soma / 700).toBeGreaterThan(0.3);
+    expect(maior).toBeLessThanOrEqual(1);
   });
 });

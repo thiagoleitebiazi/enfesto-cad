@@ -189,3 +189,12 @@ describe('os aviamentos', () => {
     expect(soma).toBeGreaterThan(0);
   });
 });
+
+describe('a dobra da gola (ADR 0234)', () => {
+  it('a beira que só dobra fica marcada à parte da costura e da barra', () => {
+    const quadrado = [0, 0, 100, 0, 100, 100, 0, 100];
+    const mapa = mapaDaPeca(quadrado, [1, 2, 0, 2]);
+    const marcas = new Set(mapa.costurado);
+    expect([...marcas].sort()).toEqual([0, 1, 2]);
+  });
+});
